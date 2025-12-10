@@ -63,7 +63,7 @@ export function shareCollection(data: Collection) {
 
   loadingScreen.showModal();
 
-  fetch(location.origin + '/blob', {
+  fetch(store.player.fallback + '/blob', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

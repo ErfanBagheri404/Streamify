@@ -24,7 +24,7 @@ export default function() {
     handler: () => {
       let stateVal = '';
       if (!state.customInstance) {
-        const pi = prompt(i18n('settings_enter_piped_api'), 'https://pipedapi.kavin.rocks');
+        const pi = prompt(i18n('settings_enter_piped_api'), 'https://api.piped.private.coffee');
         const iv = prompt(i18n('settings_enter_invidious_api'), 'https://iv.ggtyler.dev');
         const useIv = confirm('Use Invidious For Playback?');
 
