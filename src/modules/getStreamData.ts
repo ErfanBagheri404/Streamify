@@ -69,10 +69,10 @@ export default async function(
 
   const useInvidious = (index = 0): Promise<Piped> =>
     (status === 'N') ?
-      Promise.allSettled(invidious.map(fetchDataFromInvidious))
+      Promise.allSettled(invidious.filter(Boolean).map(fetchDataFromInvidious))
         .then(res => {
           const ff = res.find(r => r.status === 'fulfilled');
-          if (ff?.value) return ff.value;
+          if (ff?.value) return ff.value as unknown as Piped;
           return emergency(Error('No Invidious sources are available'));
         }) :
       fetchDataFromInvidious(invidious[index])
@@ -83,36 +83,39 @@ export default async function(
         });
 
 
-  const usePiped = (src: string[], index = 0): Promise<Piped> =>
-    (status === 'N') ?
-      Promise.allSettled(src.map(fetchDataFromPiped))
+  const usePiped = (src: string[], index = 0): Promise<Piped> => {
+    const list = src.filter(Boolean);
+    if (!list.length) return useInvidious();
+    return (status === 'N') ?
+      Promise.allSettled(list.map(fetchDataFromPiped))
         .then(res => {
           const ff = res.find(r => r.status === 'fulfilled');
-          if (ff?.value) return ff.value;
+          if (ff?.value) return ff.value as unknown as Piped;
           return useInvidious();
         }) :
 
-      fetchDataFromPiped(src[index])
+      fetchDataFromPiped(list[index])
         .catch(() => {
-          if (index + 1 === src.length)
+          if (index + 1 === list.length)
             return useInvidious();
-          else return usePiped(src, index + 1);
+          else return usePiped(list, index + 1);
         });
+  }
 
 
   const useHls = () => Promise
-    .allSettled((hls.api.length ? hls.api : piped).map(fetchDataFromPiped))
+    .allSettled((hls.api.length ? hls.api : piped).filter(Boolean).map(fetchDataFromPiped))
     .then(res => {
       const ff = res.filter(r => r.status === 'fulfilled');
       hls.manifests.length = 0;
 
       ff.forEach(r => {
-        if (r.value.hls) {
-          hls.manifests.push(r.value.hls);
+        if ((r as PromiseFulfilledResult<Piped>).value.hls) {
+          hls.manifests.push((r as PromiseFulfilledResult<Piped>).value.hls);
         }
       });
 
-      return ff[0].value || { message: 'No HLS sources are available.' };
+      return (ff[0] as PromiseFulfilledResult<Piped>)?.value || { message: 'No HLS sources are available.' };
     });
 
   const useLocal = async () => await import('./localExtraction.ts').then(mod => mod.fetchDataFromLocal(id));
@@ -124,10 +127,8 @@ export default async function(
   if (status === 'I')
     return useInvidious();
 
-  return usePiped(
-    status === 'P' ?
-      proxy : piped
-  );
+  const primary = ((status === 'P' ? proxy : piped).filter(Boolean).length ? proxy : piped);
+  return usePiped(primary);
 
 }
 

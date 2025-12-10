@@ -34,7 +34,7 @@ export default async function() {
       store.api.hyperpipe = data.hyperpipe;
       store.api.jiosaavn = data.jiosaavn;
       store.player.hls.api = data.hls;
-      store.player.fallback = location.origin;
+      store.player.fallback = 'https://streamifyend.netlify.app';
     });
 
 

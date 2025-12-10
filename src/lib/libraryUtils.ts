@@ -220,7 +220,7 @@ async function getSharedCollection(
 
   loadingScreen.showModal();
 
-  const data = await fetch(`${location.origin}/blob/${id}`)
+  const data = await fetch(`${store.player.fallback}/blob/${id}`)
     .then(res => res.json())
     .catch(() => '');
 

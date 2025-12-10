@@ -1,164 +1,169 @@
-
-export const params = (new URL(location.href)).searchParams;
+export const params = new URL(location.href).searchParams;
 
 export let state = {
   enforceProxy: false,
   jiosaavn: false,
-  defaultSuperCollection: 'featured',
-  customInstance: '',
+  defaultSuperCollection: "featured",
+  customInstance: "",
   stableVolume: false,
   prefetch: false,
   HLS: false,
-  quality: 'medium' as 'low' | 'medium' | 'high',
+  quality: "medium" as "low" | "medium" | "high",
   loadImage: true,
-  linkHost: '',
-  dlFormat: 'opus' as typeof store.downloadFormat,
-  theme: 'auto',
-  customColor: '',
-  roundness: '0.4rem',
+  linkHost: "",
+  dlFormat: "opus" as typeof store.downloadFormat,
+  theme: "auto",
+  customColor: "",
+  roundness: "0.4rem",
   searchSuggestions: true,
-  searchFilter: '',
-  startupTab: '/search',
-  watchMode: '',
+  searchFilter: "",
+  startupTab: "/search",
+  watchMode: "",
   enqueueRelatedStreams: false,
   shuffle: false,
   filterLT10: false,
   allowDuplicates: false,
   history: true,
   discover: true,
-  volume: '100',
-  shareAction: 'play' as 'play' | 'watch' | 'download',
-  dbsync: '',
-  language: 'en',
-  codec: 'any' as 'opus' | 'aac' | 'any',
-  partsManagerPIN: '',
-  'part Reserved Collections': true,
-  'part Navigation Library': true,
-  'part Featured Playlists': true,
-  'part Subscription Feed': true,
-  'part Collections': true,
-  'part Start Radio': true,
-  'part View Author': true,
-  'part Playlists': true,
-  'part Channels': true,
-  'part Watch On': true,
-  'part For You': true,
-  'part Artists': true,
-  'part Albums': true
-}
+  volume: "100",
+  shareAction: "play" as "play" | "watch" | "download",
+  dbsync: "",
+  language: "en",
+  codec: "any" as "opus" | "aac" | "any",
+  partsManagerPIN: "",
+  "part Reserved Collections": true,
+  "part Navigation Library": true,
+  "part Featured Playlists": true,
+  "part Subscription Feed": true,
+  "part Collections": true,
+  "part Start Radio": true,
+  "part View Author": true,
+  "part Playlists": true,
+  "part Channels": true,
+  "part Watch On": true,
+  "part For You": true,
+  "part Artists": true,
+  "part Albums": true,
+};
 
 type AppSettings = typeof state;
 
+const savedStore = localStorage.getItem("store");
+if (savedStore) state = JSON.parse(savedStore);
 
-const savedStore = localStorage.getItem('store');
-if (savedStore)
-  state = JSON.parse(savedStore);
-
-
-export function setState<K extends keyof AppSettings>(key: K, val: AppSettings[K]) {
+export function setState<K extends keyof AppSettings>(
+  key: K,
+  val: AppSettings[K]
+) {
   state[key] = val;
   const str = JSON.stringify(state);
-  localStorage.setItem('store', str);
+  localStorage.setItem("store", str);
 }
-
 
 export const store: {
   player: {
-    playbackState: 'none' | 'playing' | 'paused',
+    playbackState: "none" | "playing" | "paused";
     hls: {
-      src: (arg0: string) => void,
-      api: string[],
-      manifests: string[]
-    },
-    supportsOpus: Promise<boolean>,
-    data: Piped | undefined,
-    legacy: boolean,
-    fallback: string,
-    useSaavn: boolean
-  },
-  lrcSync: (arg0: number) => {} | void,
+      src: (arg0: string) => void;
+      api: string[];
+      manifests: string[];
+    };
+    supportsOpus: Promise<boolean>;
+    data: Piped | undefined;
+    legacy: boolean;
+    fallback: string;
+    useSaavn: boolean;
+  };
+  lrcSync: (arg0: number) => {} | void;
   queue: {
-    list: string[],
-    append: (data: DOMStringMap | CollectionItem, prepend?: boolean) => void,
-    firstChild: () => HTMLElement | undefined
-  },
-  stream: CollectionItem,
-  streamHistory: string[]
+    list: string[];
+    append: (data: DOMStringMap | CollectionItem, prepend?: boolean) => void;
+    firstChild: () => HTMLElement | undefined;
+  };
+  stream: CollectionItem;
+  streamHistory: string[];
   api: {
-    piped: string[],
-    proxy: string[],
-    status: 'U' | 'P' | 'I' | 'N',
-    invidious: string[],
-    hyperpipe: string[],
-    jiosaavn: string,
-    index: number
-  },
-  linkHost: string,
-  searchQuery: string,
-  addToCollectionOptions: string[],
-  actionsMenu: CollectionItem,
-  list: List & Record<'url' | 'type' | 'uploader', string>,
-  downloadFormat: 'opus' | 'wav' | 'mp3' | 'ogg'
+    piped: string[];
+    proxy: string[];
+    status: "U" | "P" | "I" | "N";
+    invidious: string[];
+    hyperpipe: string[];
+    jiosaavn: string;
+    index: number;
+  };
+  linkHost: string;
+  searchQuery: string;
+  addToCollectionOptions: string[];
+  actionsMenu: CollectionItem;
+  list: List & Record<"url" | "type" | "uploader", string>;
+  downloadFormat: "opus" | "wav" | "mp3" | "ogg";
 } = {
   player: {
-    playbackState: 'none',
+    playbackState: "none",
     hls: {
-      src: () => '',
+      src: () => "",
       manifests: [],
-      api: ['https://pipedapi.kavin.rocks']
+      api: ["https://api.piped.private.coffee"],
     },
-    supportsOpus: navigator.mediaCapabilities.decodingInfo({
-      type: 'file',
-      audio: {
-        contentType: 'audio/webm;codecs=opus'
-      }
-    }).then(res => res.supported),
+    supportsOpus: navigator.mediaCapabilities
+      .decodingInfo({
+        type: "file",
+        audio: {
+          contentType: "audio/webm;codecs=opus",
+        },
+      })
+      .then((res) => res.supported),
     data: undefined,
-    legacy: !('OffscreenCanvas' in window),
-    fallback: '',
+    legacy: !("OffscreenCanvas" in window),
+    fallback: "https://streamifyend.netlify.app",
     useSaavn: state.jiosaavn,
   },
-  lrcSync: () => { },
+  lrcSync: () => {},
   queue: {
     list: [],
-    append: () => { },
+    append: () => {},
     firstChild: () => undefined,
   },
   stream: {
-    id: params.get('s') || '',
-    title: '',
-    author: '',
-    duration: '',
-    channelUrl: ''
+    id: params.get("s") || "",
+    title: "",
+    author: "",
+    duration: "",
+    channelUrl: "",
   },
   streamHistory: [],
   api: {
-    piped: ['https://pipedapi.kavin.rocks'],
+    piped: ["https://api.piped.private.coffee"],
     proxy: [],
-    invidious: ['https://iv.ggtyler.dev'],
-    hyperpipe: ['https://hyperpipeapi.onrender.com'],
-    jiosaavn: 'https://saavn.dev',
-    status: 'P',
-    index: 0
+    invidious: [
+      "https://yewtu.be",
+      "https://inv.nadeko.net",
+      "https://invidious.nerdvpn.de/",
+      "https://invidious.f5.si/",
+      'https://inv.perditum.com/'
+    ],
+    hyperpipe: ["https://hyperpipeapi.onrender.com"],
+    jiosaavn: "https://saavn.dev",
+    status: "P",
+    index: 0,
   },
   linkHost: state.linkHost || location.origin,
-  searchQuery: '',
+  searchQuery: "",
   actionsMenu: {
-    id: '',
-    title: '',
-    author: '',
-    duration: '',
-    channelUrl: ''
+    id: "",
+    title: "",
+    author: "",
+    duration: "",
+    channelUrl: "",
   },
   list: {
-    name: '',
-    url: '',
-    type: '',
-    id: '',
-    uploader: '',
-    thumbnail: ''
+    name: "",
+    url: "",
+    type: "",
+    id: "",
+    uploader: "",
+    thumbnail: "",
   },
   addToCollectionOptions: [],
-  downloadFormat: state.dlFormat
-}
-
+  downloadFormat: state.dlFormat,
+};
