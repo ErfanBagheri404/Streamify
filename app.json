@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "Streamify Mobile",
+    "slug": "streamify-mobile",
+    "scheme": "streamify",
+    "sdkVersion": "54.0.0",
+    "orientation": "portrait",
+    "platforms": ["ios", "android"],
+    "plugins": [
+      "expo-font",
+      ["expo-build-properties", { "android": { "compileSdkVersion": 34 } }]
+    ]
+  }
+}
