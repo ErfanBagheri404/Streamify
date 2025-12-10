@@ -1,9 +1,10 @@
 import { getDB, saveDB } from "../lib/libraryUtils";
 import { notify } from "../lib/utils";
+import { store } from "../lib/store";
 
 export default function(dbhash: string, syncBtn: HTMLElement) {
 
-  const hashpoint = location.origin + '/dbs/' + dbhash;
+  const hashpoint = store.player.fallback + '/dbs/' + dbhash;
   const importIcon = 'ri-cloud-fill';
   const needsSyncIcon = 'ri-cloud-off-fill'
   const isSynced = () => syncBtn.className === importIcon;
