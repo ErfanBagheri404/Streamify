@@ -1,5 +1,4 @@
-import * as React from "react";
-import { useCallback, useState, memo } from "react";
+import React, { useCallback, useState } from "react";
 import styled from "styled-components/native";
 
 export type StreamItemProps = {
@@ -80,25 +79,28 @@ const SubMeta = styled.Text`
 function StreamItem(props: StreamItemProps) {
   const { title, author, duration, views, uploaded, thumbnailUrl } = props;
 
-  const [imageError, setImageError] = useState(false);
+  const [imageError, setImageError] = React.useState(false);
 
-  const handleImageError = useCallback(() => {
+  const handleImageError = React.useCallback(() => {
     setImageError(true);
   }, []);
 
-  const formatAuthor = useCallback((authorName?: string) => {
+  const formatAuthor = React.useCallback((authorName?: string) => {
     return authorName ? authorName.replace(" - Topic", "") : "";
   }, []);
 
-  const formatSubMeta = useCallback((views?: string, uploaded?: string) => {
-    const parts = [];
-    if (views) parts.push(views);
-    if (uploaded) {
-      const cleanedUploaded = uploaded.replace("Streamed ", "");
-      parts.push(cleanedUploaded);
-    }
-    return parts.join(" • ");
-  }, []);
+  const formatSubMeta = React.useCallback(
+    (views?: string, uploaded?: string) => {
+      const parts = [];
+      if (views) parts.push(views);
+      if (uploaded) {
+        const cleanedUploaded = uploaded.replace("Streamed ", "");
+        parts.push(cleanedUploaded);
+      }
+      return parts.join(" • ");
+    },
+    []
+  );
 
   return (
     <Row>
@@ -125,4 +127,4 @@ function StreamItem(props: StreamItemProps) {
   );
 }
 
-export default memo(StreamItem);
+export default React.memo(StreamItem);
