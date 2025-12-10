@@ -79,28 +79,25 @@ const SubMeta = styled.Text`
 function StreamItem(props: StreamItemProps) {
   const { title, author, duration, views, uploaded, thumbnailUrl } = props;
 
-  const [imageError, setImageError] = React.useState(false);
+  const [imageError, setImageError] = useState(false);
 
-  const handleImageError = React.useCallback(() => {
+  const handleImageError = useCallback(() => {
     setImageError(true);
   }, []);
 
-  const formatAuthor = React.useCallback((authorName?: string) => {
+  const formatAuthor = useCallback((authorName?: string) => {
     return authorName ? authorName.replace(" - Topic", "") : "";
   }, []);
 
-  const formatSubMeta = React.useCallback(
-    (views?: string, uploaded?: string) => {
-      const parts = [];
-      if (views) parts.push(views);
-      if (uploaded) {
-        const cleanedUploaded = uploaded.replace("Streamed ", "");
-        parts.push(cleanedUploaded);
-      }
-      return parts.join(" • ");
-    },
-    []
-  );
+  const formatSubMeta = useCallback((views?: string, uploaded?: string) => {
+    const parts = [];
+    if (views) parts.push(views);
+    if (uploaded) {
+      const cleanedUploaded = uploaded.replace("Streamed ", "");
+      parts.push(cleanedUploaded);
+    }
+    return parts.join(" • ");
+  }, []);
 
   return (
     <Row>
