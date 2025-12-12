@@ -1,68 +1,61 @@
-import { author, img, title } from "../lib/dom";
-import { generateImageUrl } from "../lib/imageUtils";
-import { state, store } from "../lib/store";
-import { hostResolver } from "../lib/utils";
+// import { author, img, title } from "../lib/dom";
+// import { generateImageUrl } from "../lib/imageUtils";
+// import { state, store } from "../lib/store";
+// import { hostResolver } from "../lib/utils";
 
-let more = () => undefined;
+// let more = () => undefined;
 
-document.getElementById('moreBtn')!.addEventListener('click', () => more());
+// document.getElementById("moreBtn")!.addEventListener("click", () => more());
 
+// import type { CollectionItem } from "../types/global";
 
-export async function setMetaData(data: CollectionItem) {
+// export async function setMetaData(data: CollectionItem) {
+//   // remove ' - Topic' from author name if it exists
 
-  // remove ' - Topic' from author name if it exists
+//   store.stream = data;
 
+//   let music = "";
+//   let authorText = store.stream.author;
+//   if (data.author.endsWith(" - Topic")) {
+//     music = "&w=720&h=720&fit=cover";
+//     authorText = data.author.slice(0, -8);
+//   }
 
-  store.stream = data;
+//   const metadataObj: MediaMetadataInit = {
+//     title: data.title,
+//     artist: authorText,
+//   };
 
+//   const imgX = generateImageUrl(data.id, "maxres", music);
+//   if (state.loadImage) {
+//     img.src = imgX;
+//     metadataObj.artwork = [
+//       { src: img.src, sizes: "96x96" },
+//       { src: img.src, sizes: "128x128" },
+//       { src: img.src, sizes: "192x192" },
+//       { src: img.src, sizes: "256x256" },
+//       { src: img.src, sizes: "384x384" },
+//       { src: img.src, sizes: "512x512" },
+//     ];
+//     img.alt = data.title;
+//   }
 
-  let music = '';
-  let authorText = store.stream.author;
-  if (data.author.endsWith(' - Topic')) {
-    music = '&w=720&h=720&fit=cover';
-    authorText = data.author.slice(0, -8);
-  }
+//   title.href = hostResolver(`/watch?v=${data.id}`);
+//   title.textContent = data.title;
 
-  const metadataObj: MediaMetadataInit = {
-    title: data.title,
-    artist: authorText,
-  };
+//   author.textContent = authorText;
 
-  const imgX = generateImageUrl(data.id, 'maxres', music);
-  if (state.loadImage) {
-    img.src = imgX
-    metadataObj.artwork = [
-      { src: img.src, sizes: '96x96' },
-      { src: img.src, sizes: '128x128' },
-      { src: img.src, sizes: '192x192' },
-      { src: img.src, sizes: '256x256' },
-      { src: img.src, sizes: '384x384' },
-      { src: img.src, sizes: '512x512' },
-    ]
-    img.alt = data.title;
-  }
+//   more = function () {
+//     store.actionsMenu = data;
+//     const dialog = document.createElement("dialog") as HTMLDialogElement;
+//     document.body.appendChild(dialog);
+//     import("../components/ActionsMenu").then((mod) => mod.default(dialog));
+//   };
 
+//   if (location.pathname === "/") document.title = data.title + " - ytify";
 
-  title.href = hostResolver(`/watch?v=${data.id}`);
-  title.textContent = data.title;
-
-  author.textContent = authorText;
-
-  more = function() {
-    store.actionsMenu = data;
-    const dialog = document.createElement('dialog') as HTMLDialogElement;
-    document.body.appendChild(dialog);
-    import('../components/ActionsMenu.ts')
-      .then(mod => mod.default(dialog));
-  }
-
-  if (location.pathname === '/')
-    document.title = data.title + ' - ytify';
-
-
-  if ('mediaSession' in navigator) {
-    navigator.mediaSession.setPositionState();
-    navigator.mediaSession.metadata = new MediaMetadata(metadataObj);
-  }
-
-}
+//   if ("mediaSession" in navigator) {
+//     navigator.mediaSession.setPositionState();
+//     navigator.mediaSession.metadata = new MediaMetadata(metadataObj);
+//   }
+// }
