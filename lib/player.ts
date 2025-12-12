@@ -5,39 +5,40 @@ import { setMetaData } from "../modules/setMetadata";
 import { getDB } from "./libraryUtils";
 import getStreamData from "../modules/getStreamData";
 
-export default async function player(id: string | null = '') {
+const isWeb = typeof document !== "undefined";
 
+export default async function player(id: string | null = "") {
   if (!id) return;
 
-  if (state.watchMode) {
+  if (state.watchMode && isWeb) {
     store.actionsMenu.id = id;
-    const dialog = document.createElement('dialog');
+    const dialog = document.createElement("dialog");
     dialog.open = true;
-    dialog.className = 'watcher';
+    dialog.className = "watcher";
     document.body.appendChild(dialog);
-    import('../components/WatchVideo')
-      .then(mod => mod.default(dialog));
+    import("../components/WatchVideo").then((mod) => mod.default(dialog));
     return;
   }
 
-  playButton.classList.replace(playButton.className, 'ri-loader-3-line');
+  if (isWeb && playButton)
+    playButton.classList.replace(playButton.className, "ri-loader-3-line");
 
   if (state.jiosaavn) {
-    if (!store.player.useSaavn)
-      store.player.useSaavn = true;
-    else if (store.stream.author.endsWith('Topic'))
-      return import('../modules/jioSaavn').then(mod => mod.default());
+    if (!store.player.useSaavn) store.player.useSaavn = true;
+    else if (store.stream.author.endsWith("Topic"))
+      return import("../modules/jioSaavn").then((mod) => mod.default());
   }
 
-  title.textContent = 'Fetching Data...';
+  if (isWeb && title) title.textContent = "Fetching Data...";
 
   const data = await getStreamData(id);
 
-  if (data && 'audioStreams' in data)
-    store.player.data = data;
+  if (data && "audioStreams" in data) store.player.data = data;
   else {
-    playButton.classList.replace(playButton.className, 'ri-stop-circle-fill');
-    title.textContent = data.message || data.error || 'Fetching Data Failed';
+    if (isWeb && playButton)
+      playButton.classList.replace(playButton.className, "ri-stop-circle-fill");
+    if (isWeb && title)
+      title.textContent = data.message || data.error || "Fetching Data Failed";
     return;
   }
 
@@ -46,65 +47,65 @@ export default async function player(id: string | null = '') {
     title: data.title,
     author: data.uploader,
     duration: convertSStoHHMMSS(data.duration),
-    channelUrl: data.uploaderUrl
+    channelUrl: data.uploaderUrl,
   });
 
   if (store.player.legacy) {
-    audio.src = data.hls;
-    audio.load();
-  }
-  else {
+    if (isWeb && audio) {
+      audio.src = data.hls as string;
+      audio.load();
+    }
+  } else {
     const { hls } = store.player;
     if (state.HLS) {
       const hlsUrl = hls.manifests.shift();
-      if (hlsUrl) hls.src(hlsUrl);
-    }
-    else import('../modules/setAudioStreams')
-      .then(mod => mod.default(
-        data.audioStreams
-          .sort((a: { bitrate: string }, b: { bitrate: string }) => (parseInt(a.bitrate) - parseInt(b.bitrate))
+      if (hlsUrl) hls.src(hlsUrl as string);
+    } else
+      import("../modules/setAudioStreams").then((mod) =>
+        mod.default(
+          data.audioStreams.sort(
+            (a: { bitrate: string }, b: { bitrate: string }) =>
+              parseInt(a.bitrate) - parseInt(b.bitrate)
           ),
-        data.livestream
-      ));
+          data.livestream
+        )
+      );
   }
 
+  if (isWeb) params.set("s", id);
 
-  params.set('s', id);
-
-  if (location.pathname === '/')
-    history.replaceState({}, '', location.origin + '?s=' + params.get('s'));
-
-
+  if (isWeb && location.pathname === "/")
+    history.replaceState(
+      {},
+      "",
+      location.origin + "?s=" + (params.get("s") || id)
+    );
 
   if (state.enqueueRelatedStreams)
-    import('../modules/enqueueRelatedStreams')
-      .then(mod => mod.default(data.relatedStreams as StreamItem[]));
-
+    import("../modules/enqueueRelatedStreams").then((mod) =>
+      mod.default(data.relatedStreams as StreamItem[])
+    );
 
   // favbutton reset
-  if (favButton.checked) {
+  if (isWeb && favButton && favButton.checked) {
     favButton.checked = false;
-    favIcon.classList.remove('ri-heart-fill');
+    if (favIcon) favIcon.classList.remove("ri-heart-fill");
   }
 
   // favbutton set
   if (getDB().favorites?.hasOwnProperty(id)) {
-    favButton.checked = true;
-    favIcon.classList.add('ri-heart-fill');
+    if (isWeb && favButton) {
+      favButton.checked = true;
+      if (favIcon) favIcon.classList.add("ri-heart-fill");
+    }
   }
-
-
 
   // related streams imported into discovery after 1min 40seconds, short streams are naturally filtered out
 
   if (state.discover)
-    import('../modules/setDiscoveries')
-      .then(mod => {
-        setTimeout(() => {
-          mod.default(id, data.relatedStreams as StreamItem[]);
-        }, 1e5);
-      });
-
+    import("../modules/setDiscoveries").then((mod) => {
+      setTimeout(() => {
+        mod.default(id, data.relatedStreams as StreamItem[]);
+      }, 1e5);
+    });
 }
-
-
