@@ -1,4 +1,9 @@
-export const params = new URL(location.href).searchParams;
+import type { CollectionItem, List } from "../types/global";
+
+const isWeb = typeof location !== "undefined";
+const getParams = () =>
+  isWeb ? new URL(location.href).searchParams : new URLSearchParams();
+export const params = getParams();
 
 export let state = {
   enforceProxy: false,
@@ -48,8 +53,10 @@ export let state = {
 
 type AppSettings = typeof state;
 
-const savedStore = localStorage.getItem("store");
-if (savedStore) state = JSON.parse(savedStore);
+if (isWeb && typeof localStorage !== "undefined") {
+  const savedStore = localStorage.getItem("store");
+  if (savedStore) state = JSON.parse(savedStore);
+}
 
 export function setState<K extends keyof AppSettings>(
   key: K,
@@ -57,7 +64,9 @@ export function setState<K extends keyof AppSettings>(
 ) {
   state[key] = val;
   const str = JSON.stringify(state);
-  localStorage.setItem("store", str);
+  if (isWeb && typeof localStorage !== "undefined") {
+    localStorage.setItem("store", str);
+  }
 }
 
 export const store: {
@@ -105,16 +114,19 @@ export const store: {
       manifests: [],
       api: ["https://api.piped.private.coffee"],
     },
-    supportsOpus: navigator.mediaCapabilities
-      .decodingInfo({
-        type: "file",
-        audio: {
-          contentType: "audio/webm;codecs=opus",
-        },
-      })
-      .then((res) => res.supported),
+    supportsOpus:
+      isWeb && "mediaCapabilities" in navigator
+        ? (navigator.mediaCapabilities as any)
+            .decodingInfo({
+              type: "file",
+              audio: {
+                contentType: "audio/webm;codecs=opus",
+              },
+            })
+            .then((res: any) => res.supported)
+        : Promise.resolve(false),
     data: undefined,
-    legacy: !("OffscreenCanvas" in window),
+    legacy: isWeb ? !("OffscreenCanvas" in window) : false,
     fallback: "https://streamifyend.netlify.app",
     useSaavn: state.jiosaavn,
   },
@@ -140,14 +152,14 @@ export const store: {
       "https://inv.nadeko.net",
       "https://invidious.nerdvpn.de/",
       "https://invidious.f5.si/",
-      'https://inv.perditum.com/'
+      "https://inv.perditum.com/",
     ],
     hyperpipe: ["https://hyperpipeapi.onrender.com"],
     jiosaavn: "https://saavn.dev",
     status: "P",
     index: 0,
   },
-  linkHost: state.linkHost || location.origin,
+  linkHost: state.linkHost || (isWeb ? location.origin : ""),
   searchQuery: "",
   actionsMenu: {
     id: "",

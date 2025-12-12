@@ -36,7 +36,9 @@ export default function ListsScreen() {
         <FlatList
           data={data}
           keyExtractor={(item, idx) => String(idx)}
-          renderItem={({ item }) => <ListItem {...item} />}
+          renderItem={({ item }: { item: (typeof data)[0] }) => (
+            <ListItem {...item} />
+          )}
         />
       </Content>
     </Screen>

@@ -1,11 +1,13 @@
 import { addListToCollection, createCollection } from "../lib/libraryUtils";
 import { convertSStoHHMMSS, notify, goTo } from "../lib/utils";
 import { i18n } from "../scripts/i18n";
+import type { CollectionItem } from "../types/global";
 
 export default async function () {
   const instance = prompt(
     i18n("piped_enter_auth"),
-    "https://api.piped.private.coffee");
+    "https://api.piped.private.coffee"
+  );
   if (!instance) return;
 
   const username = prompt(i18n("piped_enter_username"));

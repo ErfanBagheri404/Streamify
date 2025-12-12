@@ -1,6 +1,6 @@
-import { title, playButton } from "../lib/dom.ts";
-import { store, state } from "../lib/store.ts";
-import { getDownloadLink, notify } from "../lib/utils.ts";
+import { title, playButton } from "../lib/dom";
+import { store, state } from "../lib/store";
+import { getDownloadLink, notify } from "../lib/utils";
 
 export default function (audio: HTMLAudioElement) {
   audio.pause();
