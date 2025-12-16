@@ -76,7 +76,7 @@ export class AudioStreamManager {
         } catch (error) {
           console.warn(
             `[Audio] Failed to delete cached file for track ${trackId}:`,
-            error
+            error,
           );
         }
       }
@@ -88,7 +88,7 @@ export class AudioStreamManager {
         } catch (error) {
           console.warn(
             `[Audio] Failed to delete cached file for track ${id}:`,
-            error
+            error,
           );
         }
       }
@@ -105,7 +105,7 @@ export class AudioStreamManager {
   private async cacheSoundCloudStream(
     streamUrl: string,
     trackId: string,
-    controller: AbortController
+    controller: AbortController,
   ): Promise<string> {
     // Check if we already have this track cached
     if (this.soundCloudCache.has(trackId)) {
@@ -118,7 +118,7 @@ export class AudioStreamManager {
     const cachePromise = this.cacheSoundCloudStreamAsync(
       streamUrl,
       trackId,
-      controller
+      controller,
     );
 
     // Wait for cache to complete, but with a short timeout to avoid blocking playback
@@ -128,12 +128,12 @@ export class AudioStreamManager {
         if (this.soundCloudCache.has(trackId)) {
           const cachedPath = this.soundCloudCache.get(trackId)!;
           console.log(
-            `[Audio] Cache ready quickly, using cached file for track: ${trackId}`
+            `[Audio] Cache ready quickly, using cached file for track: ${trackId}`,
           );
           resolve(`file://${cachedPath}`);
         } else {
           console.log(
-            `[Audio] Cache not ready quickly, using original stream for track: ${trackId}`
+            `[Audio] Cache not ready quickly, using original stream for track: ${trackId}`,
           );
           resolve(streamUrl);
         }
@@ -163,7 +163,7 @@ export class AudioStreamManager {
     streamUrl: string,
     cacheFilePath: string,
     trackId: string,
-    controller: AbortController
+    controller: AbortController,
   ): Promise<void> {
     try {
       console.log(`[Audio] Starting full track download for track: ${trackId}`);
@@ -179,7 +179,7 @@ export class AudioStreamManager {
               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
           },
           sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
-        }
+        },
       );
 
       if (
@@ -187,7 +187,7 @@ export class AudioStreamManager {
         fullDownloadResult.status === 206
       ) {
         console.log(
-          `[Audio] Full track download completed for track: ${trackId}`
+          `[Audio] Full track download completed for track: ${trackId}`,
         );
 
         // Merge the files or use the full file for subsequent plays
@@ -197,7 +197,7 @@ export class AudioStreamManager {
     } catch (error) {
       console.warn(
         `[Audio] Full track download failed for track ${trackId}:`,
-        error
+        error,
       );
       // Don't throw - this is background optimization
     }
@@ -209,7 +209,7 @@ export class AudioStreamManager {
   private async cacheSoundCloudStreamAsync(
     streamUrl: string,
     trackId: string,
-    controller: AbortController
+    controller: AbortController,
   ): Promise<void> {
     // Check if we already have this track cached
     if (this.soundCloudCache.has(trackId)) {
@@ -218,7 +218,7 @@ export class AudioStreamManager {
     }
 
     console.log(
-      `[Audio] Background caching first 1MB of SoundCloud stream for track: ${trackId}`
+      `[Audio] Background caching first 1MB of SoundCloud stream for track: ${trackId}`,
     );
 
     try {
@@ -247,19 +247,19 @@ export class AudioStreamManager {
               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
           },
           sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
-        }
+        },
       );
 
       if (downloadResult.status !== 200 && downloadResult.status !== 206) {
         throw new Error(
-          `Failed to download stream chunk: ${downloadResult.status}`
+          `Failed to download stream chunk: ${downloadResult.status}`,
         );
       }
 
       console.log(
         `[Audio] Successfully cached ${
           downloadResult.headers?.["content-length"] || "unknown size"
-        } bytes for track: ${trackId}`
+        } bytes for track: ${trackId}`,
       );
 
       // Store in cache
@@ -270,7 +270,7 @@ export class AudioStreamManager {
         streamUrl,
         cacheFilePath,
         trackId,
-        controller
+        controller,
       );
 
       console.log(`[Audio] Background caching completed for track: ${trackId}`);
@@ -278,7 +278,7 @@ export class AudioStreamManager {
       console.log(
         `[Audio] Background caching failed: ${
           error instanceof Error ? error.message : error
-        }`
+        }`,
       );
       // Don't throw - this is background caching, failures shouldn't affect playback
     }
@@ -317,13 +317,13 @@ export class AudioStreamManager {
     onStatusUpdate?: (status: string) => void,
     source?: string,
     trackTitle?: string,
-    trackArtist?: string
+    trackArtist?: string,
   ): Promise<string> {
     // Store track information for better SoundCloud searching
     this.currentTrackTitle = trackTitle;
     this.currentTrackArtist = trackArtist;
 
-    console.log(`[AudioStreamManager] getAudioUrl called with:`, {
+    console.log("[AudioStreamManager] getAudioUrl called with:", {
       videoId,
       source,
       trackTitle,
@@ -341,16 +341,16 @@ export class AudioStreamManager {
     if (source === "soundcloud") {
       onStatusUpdate?.("Using SoundCloud strategy (with fallbacks)");
       console.log(
-        `[AudioStreamManager] SoundCloud mode activated for: ${videoId}`
+        `[AudioStreamManager] SoundCloud mode activated for: ${videoId}`,
       );
       try {
         console.log(
-          `[Audio] Attempting SoundCloud extraction for track: ${videoId}`
+          `[Audio] Attempting SoundCloud extraction for track: ${videoId}`,
         );
         const soundCloudUrl = await this.trySoundCloud(
           videoId,
           this.currentTrackTitle,
-          this.currentTrackArtist
+          this.currentTrackArtist,
         );
 
         if (soundCloudUrl) {
@@ -360,7 +360,7 @@ export class AudioStreamManager {
       } catch (error) {
         console.error(
           "[Audio] SoundCloud strategy failed, will try fallback strategies:",
-          error
+          error,
         );
         // Don't throw immediately - allow fallback strategies to try
         onStatusUpdate?.("SoundCloud failed, trying fallback strategies...");
@@ -372,7 +372,7 @@ export class AudioStreamManager {
     // Try concurrent testing first (ytify v8 concept)
     const concurrentResult = await this.testConcurrentStrategies(
       videoId,
-      onStatusUpdate
+      onStatusUpdate,
     );
 
     if (concurrentResult) {
@@ -385,7 +385,7 @@ export class AudioStreamManager {
 
   private async testConcurrentStrategies(
     videoId: string,
-    onStatusUpdate?: (status: string) => void
+    onStatusUpdate?: (status: string) => void,
   ): Promise<string | null> {
     onStatusUpdate?.("Testing strategies concurrently...");
 
@@ -399,7 +399,7 @@ export class AudioStreamManager {
           const url = await Promise.race([
             strategy(videoId),
             new Promise<string>((_, reject) =>
-              setTimeout(() => reject(new Error("Timeout")), 8000)
+              setTimeout(() => reject(new Error("Timeout")), 8000),
             ),
           ]);
           const latency = Date.now() - startTime;
@@ -429,7 +429,7 @@ export class AudioStreamManager {
 
   private async testSequentialStrategies(
     videoId: string,
-    onStatusUpdate?: (status: string) => void
+    onStatusUpdate?: (status: string) => void,
   ): Promise<string> {
     const errors: string[] = [];
 
@@ -455,7 +455,7 @@ export class AudioStreamManager {
     }
 
     throw new Error(
-      `All audio extraction strategies failed. Errors: ${errors.join("; ")}`
+      `All audio extraction strategies failed. Errors: ${errors.join("; ")}`,
     );
   }
 
@@ -469,10 +469,10 @@ export class AudioStreamManager {
       (error) => {
         console.warn(
           `[AudioStreamManager] Prefetch failed for ${videoId}:`,
-          error
+          error,
         );
         throw error;
-      }
+      },
     );
 
     this.prefetchQueue.set(videoId, prefetchPromise);
@@ -506,7 +506,7 @@ export class AudioStreamManager {
     url: string,
     options: RequestInit = {},
     retries = 3,
-    timeout = 30000
+    timeout = 30000,
   ): Promise<Response> {
     for (let i = 0; i <= retries; i++) {
       try {
@@ -528,7 +528,9 @@ export class AudioStreamManager {
         });
         clearTimeout(timeoutId);
 
-        if (response.ok) return response;
+        if (response.ok) {
+          return response;
+        }
 
         if (i < retries) {
           // Try with proxy
@@ -536,7 +538,7 @@ export class AudioStreamManager {
           const proxyController = new AbortController();
           const proxyTimeoutId = setTimeout(
             () => proxyController.abort(),
-            timeout
+            timeout,
           );
 
           const proxyResponse = await fetch(proxyUrl, {
@@ -552,13 +554,17 @@ export class AudioStreamManager {
           });
           clearTimeout(proxyTimeoutId);
 
-          if (proxyResponse.ok) return proxyResponse;
+          if (proxyResponse.ok) {
+            return proxyResponse;
+          }
         }
       } catch (error) {
-        if (i === retries) throw error;
+        if (i === retries) {
+          throw error;
+        }
         // Exponential backoff
         await new Promise((resolve) =>
-          setTimeout(resolve, 2000 * Math.pow(2, i))
+          setTimeout(resolve, 2000 * Math.pow(2, i)),
         );
       }
     }
@@ -574,8 +580,9 @@ export class AudioStreamManager {
       });
       clearTimeout(timeoutId);
 
-      if (!response.ok)
+      if (!response.ok) {
         throw new Error(`Local server returned ${response.status}`);
+      }
 
       const data = await response.json();
       if (data.streamingData?.adaptiveFormats) {
@@ -592,7 +599,7 @@ export class AudioStreamManager {
       throw new Error(
         `Local extraction unavailable: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     }
   }
@@ -623,7 +630,7 @@ export class AudioStreamManager {
       for (const endpoint of jiosaavnEndpoints) {
         try {
           const query = encodeURIComponent(
-            `${cleanTitle} ${cleanAuthor}`
+            `${cleanTitle} ${cleanAuthor}`,
           ).trim();
           const searchUrl = `${endpoint}?query=${query}`;
 
@@ -632,7 +639,7 @@ export class AudioStreamManager {
             searchUrl,
             {},
             2,
-            30000
+            30000,
           );
           const searchData = await searchResponse.json();
 
@@ -666,7 +673,7 @@ export class AudioStreamManager {
       throw new Error(
         `JioSaavn search failed: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     }
   }
@@ -676,8 +683,8 @@ export class AudioStreamManager {
       // YouTube Music extraction using alternative endpoints
       const musicEndpoints = [
         `https://music.youtube.com/watch?v=${videoId}`,
-        `https://yt1s.com/api/ajax/search/home`,
-        `https://yt5s.com/api/ajax/search/home`,
+        "https://yt1s.com/api/ajax/search/home",
+        "https://yt5s.com/api/ajax/search/home",
       ];
 
       for (const endpoint of musicEndpoints) {
@@ -707,25 +714,25 @@ export class AudioStreamManager {
                 const audioUrl = audioMatches[0].match(/"audioUrl":"([^"]*)"/);
                 if (audioUrl && audioUrl[1]) {
                   return decodeURIComponent(
-                    audioUrl[1].replace(/\\u0026/g, "&")
+                    audioUrl[1].replace(/\\u0026/g, "&"),
                   );
                 }
               }
 
               // Alternative: Look for adaptive formats
               const adaptiveMatches = html.match(
-                /"adaptiveFormats":\[([^\]]*)\]/
+                /"adaptiveFormats":\[([^\]]*)\]/,
               );
               if (adaptiveMatches && adaptiveMatches[1]) {
                 try {
                   const formats = JSON.parse(`[${adaptiveMatches[1]}]`);
                   const audioFormats = formats.filter((f: any) =>
-                    f.mimeType?.startsWith("audio/")
+                    f.mimeType?.startsWith("audio/"),
                   );
 
                   if (audioFormats.length > 0) {
                     const bestAudio = audioFormats.sort(
-                      (a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0)
+                      (a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0),
                     )[0];
                     if (bestAudio && bestAudio.url) {
                       return bestAudio.url;
@@ -762,7 +769,7 @@ export class AudioStreamManager {
               if (data.links && data.links.mp3) {
                 const mp3Links = data.links.mp3;
                 const bestQuality = Object.keys(mp3Links).sort(
-                  (a, b) => parseInt(b) - parseInt(a)
+                  (a, b) => parseInt(b) - parseInt(a),
                 )[0];
                 if (bestQuality && mp3Links[bestQuality]?.k) {
                   return mp3Links[bestQuality].k;
@@ -780,7 +787,7 @@ export class AudioStreamManager {
       throw new Error(
         `YouTube Music extraction failed: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     }
   }
@@ -820,7 +827,7 @@ export class AudioStreamManager {
       throw new Error(
         `Hyperpipe failed: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     }
   }
@@ -852,10 +859,12 @@ export class AudioStreamManager {
             },
           },
           1, // 1 retry
-          12000 // 12 second timeout
+          12000, // 12 second timeout
         );
 
-        if (!response.ok) continue;
+        if (!response.ok) {
+          continue;
+        }
 
         const data = await response.json();
 
@@ -864,13 +873,14 @@ export class AudioStreamManager {
           const audioFormats = data.adaptiveFormats
             .filter(
               (f: any) =>
-                f.type?.startsWith("audio/") || f.mimeType?.startsWith("audio/")
+                f.type?.startsWith("audio/") ||
+                f.mimeType?.startsWith('audio/'),
             )
             .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
 
           if (audioFormats.length > 0 && audioFormats[0].url) {
             console.log(
-              `[AudioStreamManager] Found audio via Invidious instance ${instance}`
+              `[AudioStreamManager] Found audio via Invidious instance ${instance}`,
             );
             return audioFormats[0].url;
           }
@@ -881,13 +891,14 @@ export class AudioStreamManager {
           const audioStreams = data.formatStreams
             .filter(
               (f: any) =>
-                f.type?.startsWith("audio/") || f.mimeType?.startsWith("audio/")
+                f.type?.startsWith("audio/") ||
+                f.mimeType?.startsWith('audio/'),
             )
             .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
 
           if (audioStreams.length > 0 && audioStreams[0].url) {
             console.log(
-              `[AudioStreamManager] Found audio via Invidious formatStreams ${instance}`
+              `[AudioStreamManager] Found audio via Invidious formatStreams ${instance}`,
             );
             return audioStreams[0].url;
           }
@@ -896,7 +907,7 @@ export class AudioStreamManager {
         // Check for direct audio URL in response
         if (data.audioUrl) {
           console.log(
-            `[AudioStreamManager] Found direct audio URL via Invidious ${instance}`
+            `[AudioStreamManager] Found direct audio URL via Invidious ${instance}`,
           );
           return data.audioUrl;
         }
@@ -918,8 +929,9 @@ export class AudioStreamManager {
       });
       clearTimeout(timeoutId);
 
-      if (!response.ok)
+      if (!response.ok) {
         throw new Error(`YouTube embed returned ${response.status}`);
+      }
 
       const html = await response.text();
 
@@ -937,7 +949,7 @@ export class AudioStreamManager {
       throw new Error(
         `YouTube embed extraction failed: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     }
   }
@@ -967,7 +979,7 @@ export class AudioStreamManager {
       // Use a public Spotify search proxy
       const searchResponse = await fetch(
         `https://spotify-api-wrapper.onrender.com/search?q=${query}&type=track&limit=1`,
-        { signal: controller.signal }
+        { signal: controller.signal },
       );
       clearTimeout(timeoutId);
 
@@ -992,7 +1004,7 @@ export class AudioStreamManager {
         // Use a service to extract audio from Spotify track
         const extractResponse = await fetch(
           `https://spotify-downloader1.p.rapidapi.com/download-track?track_url=${encodeURIComponent(
-            track.external_urls.spotify
+            track.external_urls.spotify,
           )}`,
           {
             method: "GET",
@@ -1001,7 +1013,7 @@ export class AudioStreamManager {
               "X-RapidAPI-Host": "spotify-downloader1.p.rapidapi.com",
             },
             signal: controller.signal,
-          }
+          },
         );
 
         if (extractResponse.ok) {
@@ -1016,7 +1028,7 @@ export class AudioStreamManager {
       throw new Error(
         `Spotify Web API failed: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     }
   }
@@ -1025,11 +1037,11 @@ export class AudioStreamManager {
     videoId: string,
     trackTitle?: string,
     trackArtist?: string,
-    onStatusUpdate?: (status: string) => void
+    onStatusUpdate?: (status: string) => void,
   ): Promise<string> {
     try {
       console.log(
-        `[Audio] trySoundCloud called with videoId: ${videoId}, title: ${trackTitle}, artist: ${trackArtist}`
+        `[Audio] trySoundCloud called with videoId: ${videoId}, title: ${trackTitle}, artist: ${trackArtist}`,
       );
 
       // Check if this is a SoundCloud track (from our search results)
@@ -1044,7 +1056,7 @@ export class AudioStreamManager {
       // Strategy 1: Try to access the track directly via widget API
       try {
         console.log(
-          `[Audio] Trying to access track ${trackId} directly via widget API`
+          `[Audio] Trying to access track ${trackId} directly via widget API`,
         );
 
         // Add retry logic for better reliability
@@ -1073,7 +1085,7 @@ export class AudioStreamManager {
 
             clearTimeout(timeoutId);
             console.log(
-              `[Audio] Direct widget response status: ${directResponse.status}`
+              `[Audio] Direct widget response status: ${directResponse.status}`,
             );
 
             if (directResponse.ok) {
@@ -1081,23 +1093,23 @@ export class AudioStreamManager {
               console.log(
                 `[Audio] Successfully retrieved track: ${
                   trackData.title || trackData.id
-                }`
+                }`,
               );
 
               if (trackData && trackData.media?.transcodings?.length > 0) {
                 console.log(
-                  `[Audio] Track has ${trackData.media.transcodings.length} transcodings`
+                  `[Audio] Track has ${trackData.media.transcodings.length} transcodings`,
                 );
                 return await this.extractSoundCloudStream(
                   trackData,
-                  controller
+                  controller,
                 );
               } else {
-                console.log(`[Audio] Track has no transcodings available`);
+                console.log("[Audio] Track has no transcodings available");
               }
             } else {
               console.log(
-                `[Audio] Direct widget failed with status: ${directResponse.status}`
+                `[Audio] Direct widget failed with status: ${directResponse.status}`,
               );
               const errorText = await directResponse.text();
               console.log(`[Audio] Direct widget error: ${errorText}`);
@@ -1108,12 +1120,12 @@ export class AudioStreamManager {
             console.log(
               `[Audio] Direct widget attempt ${retryCount} failed: ${
                 retryError instanceof Error ? retryError.message : retryError
-              }`
+              }`,
             );
             if (retryCount < maxRetries) {
               console.log(`[Audio] Retrying in ${retryCount * 1000}ms...`);
               await new Promise((resolve) =>
-                setTimeout(resolve, retryCount * 1000)
+                setTimeout(resolve, retryCount * 1000),
               );
             }
           }
@@ -1122,13 +1134,13 @@ export class AudioStreamManager {
         console.log(
           `[Audio] Direct widget strategy failed: ${
             directError instanceof Error ? directError.message : directError
-          }`
+          }`,
         );
       }
 
       // Strategy 2: Try using the SoundCloud widget API directly
       try {
-        console.log(`[Audio] Trying widget API directly`);
+        console.log("[Audio] Trying widget API directly");
         // Use a proper SoundCloud URL format
         const widgetUrl = `https://api-widget.soundcloud.com/resolve?url=https://api.soundcloud.com/tracks/${trackId}&client_id=${this.SOUNDCLOUD_CLIENT_ID}&format=json`;
         console.log(`[Audio] Widget URL: ${widgetUrl}`);
@@ -1156,8 +1168,8 @@ export class AudioStreamManager {
         if (widgetResponse.ok) {
           const widgetData = await widgetResponse.json();
           console.log(
-            `[Audio] Widget response data keys:`,
-            Object.keys(widgetData)
+            "[Audio] Widget response data keys:",
+            Object.keys(widgetData),
           );
           if (widgetData && widgetData.media && widgetData.media.transcodings) {
             console.log(`[Audio] Found track via widget: ${widgetData.title}`);
@@ -1166,14 +1178,14 @@ export class AudioStreamManager {
             console.log(
               `[Audio] Found track via widget (no transcodings): ${
                 widgetData.title || widgetData.id
-              }`
+              }`,
             );
             // Even if no transcodings, we can try to use this data
             return await this.extractSoundCloudStream(widgetData, controller);
           }
         } else {
           console.log(
-            `[Audio] Widget API failed with status: ${widgetResponse.status}`
+            `[Audio] Widget API failed with status: ${widgetResponse.status}`,
           );
           const errorText = await widgetResponse.text();
           console.log(`[Audio] Widget API error: ${errorText}`);
@@ -1182,7 +1194,7 @@ export class AudioStreamManager {
         console.log(
           `[Audio] Widget strategy failed: ${
             widgetError instanceof Error ? widgetError.message : widgetError
-          }`
+          }`,
         );
       }
 
@@ -1195,7 +1207,7 @@ export class AudioStreamManager {
           console.log(`[Audio] Searching for track: "${searchQuery}"`);
 
           const searchUrl = `https://proxy.searchsoundcloud.com/tracks?q=${encodeURIComponent(
-            searchQuery
+            searchQuery,
           )}&limit=10&client_id=${this.SOUNDCLOUD_CLIENT_ID}`;
           console.log(`[Audio] Search URL: ${searchUrl}`);
 
@@ -1212,7 +1224,7 @@ export class AudioStreamManager {
 
           clearTimeout(timeoutId);
           console.log(
-            `[Audio] Search response status: ${searchResponse.status}`
+            `[Audio] Search response status: ${searchResponse.status}`,
           );
 
           if (searchResponse.ok) {
@@ -1220,20 +1232,20 @@ export class AudioStreamManager {
             console.log(
               `[Audio] Search found ${
                 searchData.collection?.length || 0
-              } tracks`
+              } tracks`,
             );
 
             if (searchData.collection && searchData.collection.length > 0) {
               // Look for exact match by track ID first
               const exactMatch = searchData.collection.find(
-                (track: any) => String(track.id) === trackId
+                (track: any) => String(track.id) === trackId,
               );
 
               if (exactMatch) {
                 console.log(`[Audio] Found exact match: ${exactMatch.title}`);
                 return await this.extractSoundCloudStream(
                   exactMatch,
-                  controller
+                  controller,
                 );
               }
 
@@ -1255,26 +1267,26 @@ export class AudioStreamManager {
 
               if (titleMatch) {
                 console.log(
-                  `[Audio] Found title/artist match: ${titleMatch.title}`
+                  `[Audio] Found title/artist match: ${titleMatch.title}`,
                 );
                 return await this.extractSoundCloudStream(
                   titleMatch,
-                  controller
+                  controller,
                 );
               }
 
               // If no exact matches, try the first track with transcodings
               const availableTrack = searchData.collection.find(
-                (track: any) => track.media?.transcodings?.length > 0
+                (track: any) => track.media?.transcodings?.length > 0,
               );
 
               if (availableTrack) {
                 console.log(
-                  `[Audio] Using first available track: ${availableTrack.title}`
+                  `[Audio] Using first available track: ${availableTrack.title}`,
                 );
                 return await this.extractSoundCloudStream(
                   availableTrack,
-                  controller
+                  controller,
                 );
               }
             }
@@ -1283,20 +1295,20 @@ export class AudioStreamManager {
           console.log(
             `[Audio] Search strategy failed: ${
               searchError instanceof Error ? searchError.message : searchError
-            }`
+            }`,
           );
         }
       }
 
       // Strategy 4: Fallback - try to construct a direct stream URL
-      console.log(`[Audio] Falling back to direct URL construction`);
+      console.log("[Audio] Falling back to direct URL construction");
       const fallbackUrl = `https://api.soundcloud.com/tracks/${trackId}/stream?client_id=${this.SOUNDCLOUD_CLIENT_ID}`;
       console.log(`[Audio] Fallback URL: ${fallbackUrl}`);
 
       // Test if this URL works using CORS proxy
       const proxiedFallbackUrl = this.getCorsProxyUrl(fallbackUrl);
       console.log(
-        `[Audio] Using CORS proxy for fallback test: ${proxiedFallbackUrl}`
+        `[Audio] Using CORS proxy for fallback test: ${proxiedFallbackUrl}`,
       );
 
       try {
@@ -1309,14 +1321,14 @@ export class AudioStreamManager {
         });
 
         if (testResponse.ok) {
-          console.log(`[Audio] Fallback URL is accessible`);
+          console.log("[Audio] Fallback URL is accessible");
           return fallbackUrl;
         }
       } catch (testError) {
         console.log(
           `[Audio] Fallback URL test failed: ${
             testError instanceof Error ? testError.message : testError
-          }`
+          }`,
         );
       }
 
@@ -1325,14 +1337,14 @@ export class AudioStreamManager {
       throw new Error(
         `SoundCloud playback failed: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     }
   }
 
   private async extractSoundCloudStream(
     trackData: any,
-    controller: AbortController
+    controller: AbortController,
   ): Promise<string> {
     if (
       !trackData.media ||
@@ -1346,13 +1358,13 @@ export class AudioStreamManager {
     const preferredTranscoding =
       trackData.media.transcodings.find(
         (t: any) =>
-          t.preset === "mp3_standard" && t.format?.protocol === "progressive"
+          t.preset === "mp3_standard" && t.format?.protocol === "progressive",
       ) ||
       trackData.media.transcodings.find(
-        (t: any) => t.format?.protocol === "progressive"
+        (t: any) => t.format?.protocol === "progressive",
       ) ||
       trackData.media.transcodings.find(
-        (t: any) => t.format?.protocol === "hls"
+        (t: any) => t.format?.protocol === "hls",
       );
 
     if (!preferredTranscoding) {
@@ -1360,7 +1372,7 @@ export class AudioStreamManager {
     }
 
     console.log(
-      `[Audio] Found transcoding: ${preferredTranscoding.preset} (${preferredTranscoding.format?.protocol})`
+      `[Audio] Found transcoding: ${preferredTranscoding.preset} (${preferredTranscoding.format?.protocol})`,
     );
 
     const transcodingUrl = preferredTranscoding.url;
@@ -1372,7 +1384,7 @@ export class AudioStreamManager {
     if (trackData.track_authorization) {
       resolveUrl.searchParams.append(
         "track_authorization",
-        trackData.track_authorization
+        trackData.track_authorization,
       );
     }
 
@@ -1392,38 +1404,38 @@ export class AudioStreamManager {
       if (streamResponse.ok) {
         const streamData = await streamResponse.json();
         if (streamData.url) {
-          console.log(`[Audio] SoundCloud stream URL resolved successfully`);
+          console.log("[Audio] SoundCloud stream URL resolved successfully");
 
           // For SoundCloud, we need to use the CORS proxy for the actual stream too
           // because the resolved URLs often have CORS restrictions
           const proxiedStreamUrl = this.getCorsProxyUrl(streamData.url);
           console.log(
-            `[Audio] Using CORS proxy for stream: ${proxiedStreamUrl}`
+            `[Audio] Using CORS proxy for stream: ${proxiedStreamUrl}`,
           );
 
           // Cache the first megabyte of the stream before returning
           return await this.cacheSoundCloudStream(
             proxiedStreamUrl,
             trackData.id.toString(),
-            controller
+            controller,
           );
         }
       } else {
         console.warn(
-          `[Audio] Failed to resolve stream. Status: ${streamResponse.status}`
+          `[Audio] Failed to resolve stream. Status: ${streamResponse.status}`,
         );
       }
     } catch (streamError) {
       console.log(
         `[Audio] Failed to fetch stream URL: ${
           streamError instanceof Error ? streamError.message : streamError
-        }`
+        }`,
       );
     }
 
     // Fallback: Try using the widget API to get a working stream
     console.log(
-      `[Audio] Trying widget API fallback for track: ${trackData.id}`
+      `[Audio] Trying widget API fallback for track: ${trackData.id}`,
     );
     try {
       const widgetUrl = `https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/${trackData.id}`;
@@ -1442,26 +1454,26 @@ export class AudioStreamManager {
 
         // Look for stream URLs in the widget HTML
         const streamUrlMatch = widgetHtml.match(
-          /\"(https?:\/\/[^\"]*\.mp3[^\"]*)\"/
+          /\"(https?:\/\/[^\"]*\.mp3[^\"]*)\"/,
         );
         if (streamUrlMatch) {
           console.log(
-            `[Audio] Found stream URL in widget: ${streamUrlMatch[1]}`
+            `[Audio] Found stream URL in widget: ${streamUrlMatch[1]}`,
           );
 
           // Use CORS proxy for the stream URL too
           const proxiedWidgetStreamUrl = this.getCorsProxyUrl(
-            streamUrlMatch[1]
+            streamUrlMatch[1],
           );
           console.log(
-            `[Audio] Using CORS proxy for widget stream: ${proxiedWidgetStreamUrl}`
+            `[Audio] Using CORS proxy for widget stream: ${proxiedWidgetStreamUrl}`,
           );
 
           // Cache the first megabyte of the stream before returning
           return await this.cacheSoundCloudStream(
             proxiedWidgetStreamUrl,
             trackData.id.toString(),
-            controller
+            controller,
           );
         }
       }
@@ -1469,19 +1481,19 @@ export class AudioStreamManager {
       console.log(
         `[Audio] Widget fallback failed: ${
           widgetError instanceof Error ? widgetError.message : widgetError
-        }`
+        }`,
       );
     }
 
     // Last resort: return the transcoding URL with CORS proxy
-    console.log(`[Audio] Using transcoding URL with CORS proxy as last resort`);
+    console.log("[Audio] Using transcoding URL with CORS proxy as last resort");
 
     // Cache the first megabyte of the stream before returning
     const proxiedUrl = this.getCorsProxyUrl(resolveUrl.toString());
     return await this.cacheSoundCloudStream(
       proxiedUrl,
       trackData.id.toString(),
-      controller
+      controller,
     );
   }
 
@@ -1521,7 +1533,9 @@ export class AudioStreamManager {
           });
           clearTimeout(timeoutId);
 
-          if (!response.ok) continue;
+          if (!response.ok) {
+            continue;
+          }
 
           const data = await response.json();
           if (data.audioStreams && data.audioStreams.length > 0) {
@@ -1544,7 +1558,7 @@ export class AudioStreamManager {
       throw new Error(
         `Piped API failed: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     }
   }
@@ -1555,7 +1569,7 @@ export class AudioStreamManager {
       this.healthyInvidiousInstances.length === 0 &&
       !this.instanceHealthCheckInterval
     ) {
-      console.log(`[Audio] Initializing Invidious health checks...`);
+      console.log("[Audio] Initializing Invidious health checks...");
       this.startInstanceHealthChecking();
       // Wait a bit for health checks to complete
       await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -1576,10 +1590,12 @@ export class AudioStreamManager {
               },
             },
             1, // 1 retry for healthy instances
-            10000 // 10 second timeout
+            10000, // 10 second timeout
           );
 
-          if (!response.ok) continue;
+          if (!response.ok) {
+            continue;
+          }
 
           const data = await response.json();
 
@@ -1589,13 +1605,13 @@ export class AudioStreamManager {
               .filter(
                 (f: any) =>
                   f.type?.startsWith("audio/") ||
-                  f.mimeType?.startsWith("audio/")
+                  f.mimeType?.startsWith("audio/"),
               )
               .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
 
             if (audioFormats.length > 0 && audioFormats[0].url) {
               console.log(
-                `[AudioStreamManager] Found audio via healthy Invidious instance ${instance}`
+                `[AudioStreamManager] Found audio via healthy Invidious instance ${instance}`,
               );
               return audioFormats[0].url;
             }
@@ -1607,13 +1623,13 @@ export class AudioStreamManager {
               .filter(
                 (f: any) =>
                   f.type?.startsWith("audio/") ||
-                  f.mimeType?.startsWith("audio/")
+                  f.mimeType?.startsWith("audio/"),
               )
               .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
 
             if (audioStreams.length > 0 && audioStreams[0].url) {
               console.log(
-                `[AudioStreamManager] Found audio via healthy Invidious formatStreams ${instance}`
+                `[AudioStreamManager] Found audio via healthy Invidious formatStreams ${instance}`,
               );
               return audioStreams[0].url;
             }
@@ -1622,7 +1638,7 @@ export class AudioStreamManager {
           // Check for direct audio URL in response
           if (data.audioUrl) {
             console.log(
-              `[AudioStreamManager] Found direct audio URL via healthy Invidious ${instance}`
+              `[AudioStreamManager] Found direct audio URL via healthy Invidious ${instance}`,
             );
             return data.audioUrl;
           }
@@ -1634,7 +1650,7 @@ export class AudioStreamManager {
     }
 
     console.log(
-      `[AudioStreamManager] No healthy Invidious instances available, falling back to regular Invidious`
+      "[AudioStreamManager] No healthy Invidious instances available, falling back to regular Invidious",
     );
 
     // Fallback to regular Invidious if no healthy instances
@@ -1644,7 +1660,7 @@ export class AudioStreamManager {
   // Helper method to get video info with extended timeout
   private async getVideoInfoWithTimeout(
     videoId: string,
-    timeout = 30000
+    timeout = 30000,
   ): Promise<{ title?: string; author?: string }> {
     try {
       // Try multiple sources for video info
@@ -1706,7 +1722,7 @@ export class AudioStreamManager {
 
   // Helper method to get video info
   private async getVideoInfo(
-    videoId: string
+    videoId: string,
   ): Promise<{ title?: string; author?: string }> {
     try {
       const controller = new AbortController();
@@ -1715,7 +1731,7 @@ export class AudioStreamManager {
         `https://yewtu.be/api/v1/videos/${videoId}`,
         {
           signal: controller.signal,
-        }
+        },
       );
       clearTimeout(timeoutId);
 
@@ -1732,7 +1748,7 @@ export class AudioStreamManager {
           `https://www.youtube.com/embed/${videoId}`,
           {
             signal: controller.signal,
-          }
+          },
         );
         clearTimeout(timeoutId);
 
@@ -1755,9 +1771,12 @@ export class AudioStreamManager {
   private startInstanceHealthChecking() {
     this.checkInvidiousHealth();
     // Check health every 5 minutes
-    this.instanceHealthCheckInterval = setInterval(() => {
-      this.checkInvidiousHealth();
-    }, 5 * 60 * 1000);
+    this.instanceHealthCheckInterval = setInterval(
+      () => {
+        this.checkInvidiousHealth();
+      },
+      5 * 60 * 1000,
+    );
   }
 
   private async checkInvidiousHealth() {
@@ -1799,7 +1818,7 @@ export class AudioStreamManager {
             },
           },
           1, // 1 retry for health checks
-          8000 // 8 second timeout
+          8000, // 8 second timeout
         );
 
         const responseTime = Date.now() - startTime;
@@ -1811,7 +1830,7 @@ export class AudioStreamManager {
       } catch (error) {
         console.warn(
           `[AudioStreamManager] Health check failed for ${instance}:`,
-          error
+          error,
         );
         return {
           instance,
@@ -1831,7 +1850,7 @@ export class AudioStreamManager {
     this.healthyInvidiousInstances = healthyInstances.slice(0, 5); // Keep top 5 fastest
     console.log(
       `[AudioStreamManager] Found ${this.healthyInvidiousInstances.length} healthy Invidious instances:`,
-      this.healthyInvidiousInstances
+      this.healthyInvidiousInstances,
     );
   }
 
@@ -1863,26 +1882,26 @@ export async function getAudioStreamUrl(
   onStatus?: (status: string) => void,
   source?: string,
   trackTitle?: string,
-  trackArtist?: string
+  trackArtist?: string,
 ): Promise<string> {
   return AudioStreamManager.getInstance().getAudioUrl(
     videoId,
     onStatus,
     source,
     trackTitle,
-    trackArtist
+    trackArtist,
   );
 }
 
 export async function prefetchAudioStreamUrl(
   videoId: string,
-  source?: string
+  source?: string,
 ): Promise<void> {
   return AudioStreamManager.getInstance().prefetchAudioUrl(videoId, source);
 }
 
 export async function prefetchAudioStreamQueue(
-  videoIds: string[]
+  videoIds: string[],
 ): Promise<void> {
   return AudioStreamManager.getInstance().prefetchQueueItems(videoIds);
 }

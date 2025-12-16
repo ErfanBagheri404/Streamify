@@ -50,16 +50,26 @@ const units = [
 ];
 
 function fmtTimeAgo(stamp: number | string | undefined): string {
-  if (!stamp) return "unknown date";
+  if (!stamp) {
+    return "unknown date";
+  }
   let n = Number(stamp);
-  if (Number.isNaN(n)) return "unknown date";
+  if (Number.isNaN(n)) {
+    return "unknown date";
+  }
   const ms = n > 1_000_000_000_000 ? n : n * 1000;
   const secDiff = (Date.now() - ms) / 1000;
-  if (secDiff < 0) return "just now";
-  if (secDiff > 1_600_000_000) return "long ago";
+  if (secDiff < 0) {
+    return "just now";
+  }
+  if (secDiff > 1_600_000_000) {
+    return "long ago";
+  }
   for (const u of units) {
     const val = Math.floor(secDiff / u.d);
-    if (val >= 1) return `${val} ${u.l}${val > 1 ? "s" : ""} ago`;
+    if (val >= 1) {
+      return `${val} ${u.l}${val > 1 ? "s" : ""} ago`;
+    }
   }
   return "just now";
 }
@@ -67,7 +77,7 @@ function fmtTimeAgo(stamp: number | string | undefined): string {
 // Robust fetcher for Piped/Invidious
 const fetchWithFallbacks = async (
   instances: string[],
-  endpoint: string
+  endpoint: string,
 ): Promise<any> => {
   for (const baseUrl of instances) {
     const startTime = Date.now();
@@ -102,13 +112,17 @@ const fetchWithFallbacks = async (
 export const searchAPI = {
   getSuggestions: async (
     query: string,
-    source: string = "youtube"
+    source: string = "youtube",
   ): Promise<string[]> => {
-    if (!query.trim()) return [];
-    if (source === "soundcloud")
+    if (!query.trim()) {
+      return [];
+    }
+    if (source === "soundcloud") {
       return await searchAPI.getSoundCloudSuggestions(query);
-    if (source === "spotify")
+    }
+    if (source === "spotify") {
       return await searchAPI.getSpotifySuggestions(query);
+    }
     // Default: YouTube suggestions via Piped
     const endpoint = `/suggestions?query=${encodeURIComponent(query)}`;
     const data = await fetchWithFallbacks(PIPED_INSTANCES, endpoint);
@@ -116,14 +130,18 @@ export const searchAPI = {
   },
 
   getSoundCloudSuggestions: async (query: string): Promise<string[]> => {
-    if (!query.trim()) return [];
+    if (!query.trim()) {
+      return [];
+    }
     try {
       const html = await fetch(
         `https://soundcloud.com/search?q=${encodeURIComponent(query)}`,
-        { headers: { "User-Agent": USER_AGENT, Accept: "text/html" } }
+        { headers: { "User-Agent": USER_AGENT, Accept: "text/html" } },
       ).then((r) => (r.ok ? r.text() : Promise.reject(r.status)));
       const m = html.match(/"query":"([^"]+)"/g);
-      if (!m) return [];
+      if (!m) {
+        return [];
+      }
       const suggestions = [
         ...new Set(m.map((s) => JSON.parse(`{${s}}`).query)),
       ];
@@ -157,7 +175,7 @@ export const searchAPI = {
     console.log(`[API] Searching Piped: "${query}"`);
     const filterParam = filter === "" ? "all" : filter;
     const endpoint = `/search?q=${encodeURIComponent(
-      query
+      query,
     )}&filter=${filterParam}`;
     const data = await fetchWithFallbacks(PIPED_INSTANCES, endpoint);
     return data && Array.isArray(data.items) ? data.items : [];
@@ -167,7 +185,7 @@ export const searchAPI = {
     console.log(`[API] Searching Invidious: "${query}"`);
     const sortParam = sortType === "date" ? "upload_date" : "view_count";
     const endpoint = `/search?q=${encodeURIComponent(
-      query
+      query,
     )}&sort_by=${sortParam}`;
     const data = await fetchWithFallbacks(INVIDIOUS_INSTANCES, endpoint);
     return Array.isArray(data) ? data : [];
@@ -182,7 +200,9 @@ export const searchAPI = {
       const tracks = await searchAPI.scrapeSoundCloudSearch(query);
 
       // Format the results manually instead of calling formatSearchResults
-      if (!Array.isArray(tracks)) return [];
+      if (!Array.isArray(tracks)) {
+        return [];
+      }
 
       // Deduplicate tracks by ID to prevent duplicate keys
       const seenIds = new Set<string>();
@@ -193,7 +213,7 @@ export const searchAPI = {
             const trackId = String(track.id);
             if (seenIds.has(trackId)) {
               console.log(
-                `[API] Skipping duplicate SoundCloud track: ${trackId}`
+                `[API] Skipping duplicate SoundCloud track: ${trackId}`,
               );
               return false;
             }
@@ -241,10 +261,14 @@ export const searchAPI = {
   },
 
   formatSearchResults: (results: any[]): SearchResult[] => {
-    if (!Array.isArray(results)) return [];
+    if (!Array.isArray(results)) {
+      return [];
+    }
     return results
       .map((item) => {
-        if (!item) return null;
+        if (!item) {
+          return null;
+        }
         // --- SOUNDCLOUD ---
         if (item._isSoundCloud || item.kind === "track") {
           const artwork = item.artwork_url
@@ -303,7 +327,7 @@ export const searchAPI = {
     try {
       // Use the SoundCloud proxy API
       const searchUrl = `https://proxy.searchsoundcloud.com/tracks?q=${encodeURIComponent(
-        query
+        query,
       )}`;
 
       const controller = new AbortController();
@@ -344,7 +368,7 @@ export const searchAPI = {
       }));
 
       console.log(
-        `[API] 🟢 SoundCloud Proxy Success: Found ${tracks.length} tracks`
+        `[API] 🟢 SoundCloud Proxy Success: Found ${tracks.length} tracks`,
       );
       return tracks;
     } catch (e: any) {

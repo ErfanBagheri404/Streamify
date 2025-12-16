@@ -35,7 +35,7 @@ declare module 'react-native-ytdl' {
   export function getInfo(url: string, options?: {}): Promise<YTDLVideoInfo>;
   export function getFormats(url: string): Promise<any[]>;
   export function downloadFromInfo(info: YTDLVideoInfo, options?: {}): any;
-  
+
   const YTDL: {
     getInfo: typeof getInfo;
     getFormats: typeof getFormats;

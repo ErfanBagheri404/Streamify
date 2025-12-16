@@ -46,9 +46,7 @@ export default function ListItem(props: ListItemProps) {
 
   return (
     <Row>
-      {!!thumbnail && (
-        <Thumb source={{ uri: thumbnail }} resizeMode="cover" />
-      )}
+      {!!thumbnail && <Thumb source={{ uri: thumbnail }} resizeMode="cover" />}
       <Content>
         <Title numberOfLines={2}>{title}</Title>
         {!!uploader_data && <Uploader>{uploader_data}</Uploader>}

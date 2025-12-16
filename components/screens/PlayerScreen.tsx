@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from "expo-av";
+import type { AVPlaybackStatusError } from "expo-av";
 import {
   getAudioStreamUrl,
   prefetchAudioStreamUrl,
@@ -166,7 +167,7 @@ export default function PlayerScreen({ route, navigation }: any) {
   const playlist = route.params?.playlist || [];
   const currentIndex = route.params?.currentIndex || 0;
 
-  console.log(`[Player] Screen opened with item:`, {
+  console.log("[Player] Screen opened with item:", {
     id: item?.id,
     title: item?.title,
     source: item?.source,
@@ -175,7 +176,7 @@ export default function PlayerScreen({ route, navigation }: any) {
   });
 
   // Debug: Log navigation state
-  console.log(`[Player] Navigation state:`, {
+  console.log("[Player] Navigation state:", {
     canGoBack: navigation.canGoBack(),
     currentRoute: navigation.getState?.(),
   });
@@ -196,7 +197,9 @@ export default function PlayerScreen({ route, navigation }: any) {
   const positionUpdateThreshold = 1000; // Minimum 1 second between position updates
 
   const formatTime = (millis: number) => {
-    if (!millis) return "0:00";
+    if (!millis) {
+      return "0:00";
+    }
     const total = Math.floor(millis / 1000);
     const m = Math.floor(total / 60);
     const s = total % 60;
@@ -242,7 +245,7 @@ export default function PlayerScreen({ route, navigation }: any) {
         `[Player] Previous item: ${previousItem.title} (${previousItem.id})`
       );
       console.log(
-        `[Player] Previous item complete data:`,
+        "[Player] Previous item complete data:",
         JSON.stringify(previousItem, null, 2)
       );
       // Stop current playback before navigation
@@ -279,7 +282,7 @@ export default function PlayerScreen({ route, navigation }: any) {
       }
       console.log(`[Player] Next item: ${nextItem.title} (${nextItem.id})`);
       console.log(
-        `[Player] Next item complete data:`,
+        "[Player] Next item complete data:",
         JSON.stringify(nextItem, null, 2)
       );
 
@@ -358,11 +361,17 @@ export default function PlayerScreen({ route, navigation }: any) {
     };
 
     const load = async () => {
-      if (sound) await sound.unloadAsync();
-      if (!mounted) return;
+      if (sound) {
+        await sound.unloadAsync();
+      }
+      if (!mounted) {
+        return;
+      }
       setSound(null);
       setError("");
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setStatusMsg("Loading...");
 
       let uri: string | null = null; // Declare uri outside try block
@@ -372,7 +381,7 @@ export default function PlayerScreen({ route, navigation }: any) {
           `[Player] Loading audio for track: ${item.title} (${item.id}), source: ${item.source}, author: ${item.author}, duration: ${item.duration}`
         );
         console.log(
-          `[Player] Complete track data:`,
+          "[Player] Complete track data:",
           JSON.stringify(item, null, 2)
         );
         uri = await getAudioUrlWithFallback(
@@ -382,9 +391,11 @@ export default function PlayerScreen({ route, navigation }: any) {
           item.title,
           item.author
         );
-        if (!mounted) return;
+        if (!mounted) {
+          return;
+        }
 
-        console.log(`[Player] Got stream URL, creating audio object...`);
+        console.log("[Player] Got stream URL, creating audio object...");
       } catch (error) {
         console.error(
           `[Player] Failed to load track: ${item.title} (${item.id}):`,
@@ -400,7 +411,7 @@ export default function PlayerScreen({ route, navigation }: any) {
         setStatusMsg("Track unavailable");
 
         // Just show error, don't auto-skip
-        console.log(`[Player] Track failed, user can manually skip if desired`);
+        console.log("[Player] Track failed, user can manually skip if desired");
         return;
       }
 
@@ -424,7 +435,9 @@ export default function PlayerScreen({ route, navigation }: any) {
             // Audio mode is already configured globally in the useEffect above
           },
           (status) => {
-            if (!mounted) return; // Exit if the component has unmounted
+            if (!mounted) {
+              return;
+            } // Exit if the component has unmounted
 
             if (status.isLoaded) {
               // --- Success Case: Audio is loaded ---
@@ -466,8 +479,9 @@ export default function PlayerScreen({ route, navigation }: any) {
               // --- Error Case: Audio failed to load ---
               // `isLoaded` is false, so status is AVPlaybackStatusError.
               // We can safely access the `error` property here.
-              if (status.error) {
-                const errorMessage = `Playback error: ${status.error}`;
+              const errorStatus = status as AVPlaybackStatusError;
+              if (errorStatus.error) {
+                const errorMessage = `Playback error: ${errorStatus.error}`;
                 console.error("[Player]", errorMessage);
                 setError(errorMessage);
               }
@@ -488,7 +502,7 @@ export default function PlayerScreen({ route, navigation }: any) {
             errorMessage
           );
           if (uri) {
-            console.error(`[Player] Stream URL:`, uri);
+            console.error("[Player] Stream URL:", uri);
           }
           setError(errorMessage);
           setStatusMsg("");
@@ -507,7 +521,9 @@ export default function PlayerScreen({ route, navigation }: any) {
 
   /* --------------  PLAY / PAUSE  -------------- */
   const handlePlayPause = async () => {
-    if (!sound || !item) return;
+    if (!sound || !item) {
+      return;
+    }
     isPlaying ? await sound.pauseAsync() : await sound.playAsync();
   };
 
@@ -516,14 +532,14 @@ export default function PlayerScreen({ route, navigation }: any) {
 
   /* --------------  RENDER  -------------- */
   console.log(
-    `[Player] Render - item:`,
+    "[Player] Render - item:",
     item ? `${item.title} (${item.id})` : "null",
     `sound: ${sound ? "exists" : "null"}, isPlaying: ${isPlaying}`
   );
 
   // Handle state sync issue: if we have a sound playing but no item data
   if (!item && sound) {
-    console.log(`[Player] State sync issue: sound exists but no item data`);
+    console.log("[Player] State sync issue: sound exists but no item data");
     // Create a placeholder item to maintain UI consistency
     const placeholderItem = {
       id: "unknown",

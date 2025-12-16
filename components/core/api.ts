@@ -10,18 +10,25 @@ export const API = {
 export async function fetchStreamFromPiped(id: string, api: string) {
   const res = await fetch(`${api}/streams/${id}`);
   const data = await res.json();
-  if (data.error) throw new Error(data.error);
+  if (data.error) {
+    throw new Error(data.error);
+  }
   return data as Piped;
 }
 
 export async function fetchStreamFromInvidious(id: string, api: string) {
   const res = await fetch(`${api}/api/v1/videos/${id}`);
   const data = await res.json();
-  if (data.error) throw new Error(data.error);
+  if (data.error) {
+    throw new Error(data.error);
+  }
   return data as unknown as Piped;
 }
 
-export async function getStreamData(id: string, prefer: 'piped' | 'invidious' = 'piped') {
+export async function getStreamData(
+  id: string,
+  prefer: 'piped' | 'invidious' = 'piped',
+) {
   const src = prefer === 'piped' ? API.piped : API.invidious;
   const list = src.filter(Boolean);
   for (const base of list) {
@@ -47,8 +54,16 @@ export async function getStreamData(id: string, prefer: 'piped' | 'invidious' = 
 
 export function getBestAudioUrl(piped: Piped) {
   const list = (piped?.audioStreams || []).filter((s: any) => !!s?.url);
-  if (!list.length) return undefined;
-  const sorted = list.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+  if (!list.length) {
+    return undefined;
+  }
+  const sorted = list.sort(
+    (a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0),
+  );
   const best = sorted[0];
-  return { url: best.url as string, mimeType: best?.mimeType, bitrate: best?.bitrate };
+  return {
+    url: best.url as string,
+    mimeType: best?.mimeType,
+    bitrate: best?.bitrate,
+  };
 }

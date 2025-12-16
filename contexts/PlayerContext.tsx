@@ -40,7 +40,7 @@ interface PlayerContextType {
   playTrack: (
     track: Track,
     playlist?: Track[],
-    index?: number
+    index?: number,
   ) => Promise<void>;
   playPause: () => Promise<void>;
   nextTrack: () => Promise<void>;
@@ -132,7 +132,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 undefined,
                 "soundcloud",
                 track.title,
-                track.artist
+                track.artist,
               );
             } else {
               // For YouTube tracks
@@ -141,13 +141,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 undefined,
                 "youtube",
                 track.title,
-                track.artist
+                track.artist,
               );
             }
           } catch (streamingError) {
             console.error(
               "[PlayerContext] Failed to get streaming URL:",
-              streamingError
+              streamingError,
             );
             // If streaming fails, try to use a placeholder or fallback
             // For now, we'll continue with a null audioUrl and handle it below
@@ -157,7 +157,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         if (!audioUrl) {
           // Instead of throwing an error, create a placeholder track
           console.warn(
-            "[PlayerContext] No audio URL available, creating placeholder"
+            "[PlayerContext] No audio URL available, creating placeholder",
           );
           // We'll still create the sound object but with a silent/placeholder audio
           // This allows the UI to show the track info even if playback isn't available
@@ -169,14 +169,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           if (audioUrl) {
             const { sound } = await Audio.Sound.createAsync(
               { uri: audioUrl },
-              { shouldPlay: true }
+              { shouldPlay: true },
             );
             newSound = sound;
           } else {
             // Create a silent sound object to allow UI to work
             const { sound } = await Audio.Sound.createAsync(
               { uri: "https://www.soundjay.com/misc/sounds/silence.mp3" }, // Silent placeholder
-              { shouldPlay: false, volume: 0 }
+              { shouldPlay: false, volume: 0 },
             );
             newSound = sound;
             console.warn("[PlayerContext] Created placeholder sound object");
@@ -190,7 +190,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         } catch (soundError) {
           console.error(
             "[PlayerContext] Failed to create sound object:",
-            soundError
+            soundError,
           );
           // Even if sound creation fails, we can still show the track in UI
           setIsPlaying(false);
@@ -214,11 +214,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsLoading(false);
       }
     },
-    [audioManager, playlist, currentIndex]
+    [audioManager, playlist, currentIndex],
   );
 
   const playPause = useCallback(async () => {
-    if (!soundRef.current || !currentTrack?.audioUrl) return;
+    if (!soundRef.current || !currentTrack?.audioUrl) {
+      return;
+    }
 
     try {
       if (isPlaying) {
@@ -234,7 +236,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [isPlaying, currentTrack?.audioUrl]);
 
   const nextTrack = useCallback(async () => {
-    if (playlist.length === 0) return;
+    if (playlist.length === 0) {
+      return;
+    }
 
     // Handle repeat one mode
     if (repeatMode === "one" && currentTrack) {
@@ -267,7 +271,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [playlist, currentIndex, playTrack, repeatMode, currentTrack]);
 
   const previousTrack = useCallback(async () => {
-    if (playlist.length === 0) return;
+    if (playlist.length === 0) {
+      return;
+    }
 
     const prevIndex =
       currentIndex === 0 ? playlist.length - 1 : currentIndex - 1;
@@ -279,7 +285,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [playlist, currentIndex, playTrack]);
 
   const seekTo = useCallback(async (position: number) => {
-    if (!soundRef.current) return;
+    if (!soundRef.current) {
+      return;
+    }
 
     try {
       await soundRef.current.setPositionAsync(position);
@@ -314,7 +322,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       // Create shuffled playlist (excluding current track)
       const currentTrackItem = playlist[currentIndex];
       const remainingTracks = playlist.filter(
-        (_, index) => index !== currentIndex
+        (_, index) => index !== currentIndex,
       );
 
       // Fisher-Yates shuffle
@@ -334,7 +342,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       // Restore original playlist order
       const currentTrackItem = playlist[currentIndex];
       const originalIndex = originalPlaylistRef.current.findIndex(
-        (track) => track.id === currentTrackItem?.id
+        (track) => track.id === currentTrackItem?.id,
       );
 
       setPlaylist(originalPlaylistRef.current);
