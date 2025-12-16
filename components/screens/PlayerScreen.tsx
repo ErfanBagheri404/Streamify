@@ -25,6 +25,16 @@ const Screen = styled.View`
   background-color: #000;
   padding: 16px;
 `;
+const LoadingContainer = styled.View`
+  flex: 1;
+  justify-content: center;
+  align-items: center;
+`;
+
+const EmptyPlayerContainer = styled.View`
+  flex: 1;
+  background-color: #000;
+`;
 const Header = styled.View`
   flex-direction: row;
   justify-content: space-between;
@@ -44,6 +54,11 @@ const HeaderTitle = styled.Text`
   color: #fff;
   font-size: 16px;
   font-weight: bold;
+`;
+const PlaylistPositionText = styled.Text`
+  color: #9ca3af;
+  font-size: 12px;
+  margin-top: 2px;
 `;
 const AlbumArt = styled.Image`
   width: ${Dimensions.get("window").width - 32}px;
@@ -100,8 +115,9 @@ const ControlsContainer = styled.View`
   margin-top: 16px;
   margin-bottom: 32px;
 `;
-const PlayButton = styled.TouchableOpacity`
-  background-color: #a3e635;
+const PlayButton = styled.TouchableOpacity<{ disabled?: boolean }>`
+  background-color: ${(props: { disabled: any }) =>
+    props.disabled ? "#333" : "#a3e635"};
   width: 72px;
   height: 72px;
   border-radius: 36px;
@@ -155,6 +171,14 @@ export default function PlayerScreen({ route, navigation }: any) {
   const playlist = route.params?.playlist || [];
   const currentIndex = route.params?.currentIndex || 0;
 
+  console.log(`[Player] Screen opened with item:`, {
+    id: item?.id,
+    title: item?.title,
+    source: item?.source,
+    playlistLength: playlist.length,
+    currentIndex,
+  });
+
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [durationMillis, setDurationMillis] = useState(0);
@@ -163,12 +187,100 @@ export default function PlayerScreen({ route, navigation }: any) {
   const [error, setError] = useState("");
   const appState = useRef(AppState.currentState);
 
+  // Track failed tracks to avoid infinite loops
+  const failedTracks = useRef<Set<string>>(new Set());
+
+  // Add debouncing for position updates to reduce flickering
+  const lastPositionUpdate = useRef(0);
+  const positionUpdateThreshold = 1000; // Minimum 1 second between position updates
+
   const formatTime = (millis: number) => {
     if (!millis) return "0:00";
     const total = Math.floor(millis / 1000);
     const m = Math.floor(total / 60);
     const s = total % 60;
     return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+
+  /* --------------  SAFE NAVIGATION  -------------- */
+  const handleGoBack = () => {
+    try {
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        console.log(
+          "[Player] No previous screen available, navigating to Home"
+        );
+        navigation.navigate("Home");
+      }
+    } catch (error) {
+      console.log("[Player] Navigation error, falling back to Home");
+      navigation.navigate("Home");
+    }
+  };
+
+  /* --------------  PLAYLIST NAVIGATION  -------------- */
+  const navigateToPrevious = async () => {
+    if (!item) {
+      console.log("[Player] Cannot navigate: no current item");
+      return;
+    }
+    console.log(`[Player] Navigating to previous track: ${currentIndex - 1}`);
+    if (currentIndex > 0 && playlist.length > 0) {
+      const previousItem = playlist[currentIndex - 1];
+      if (!previousItem) {
+        console.log("[Player] Cannot navigate: previous item not found");
+        return;
+      }
+      console.log(
+        `[Player] Previous item: ${previousItem.title} (${previousItem.id})`
+      );
+      // Stop current playback before navigation
+      if (sound) {
+        await sound.stopAsync();
+        await sound.unloadAsync();
+      }
+
+      // Add a small delay to ensure cleanup completes and prevent rate limiting
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      navigation.replace("Player", {
+        item: previousItem,
+        playlist,
+        currentIndex: currentIndex - 1,
+      });
+    }
+  };
+
+  const navigateToNext = async () => {
+    if (!item) {
+      console.log("[Player] Cannot navigate: no current item");
+      return;
+    }
+    console.log(`[Player] Navigating to next track: ${currentIndex + 1}`);
+    if (currentIndex < playlist.length - 1 && playlist.length > 0) {
+      const nextItem = playlist[currentIndex + 1];
+      if (!nextItem) {
+        console.log("[Player] Cannot navigate: next item not found");
+        return;
+      }
+      console.log(`[Player] Next item: ${nextItem.title} (${nextItem.id})`);
+
+      // Stop current playback before navigation
+      if (sound) {
+        await sound.stopAsync();
+        await sound.unloadAsync();
+      }
+
+      // Add a small delay to ensure cleanup completes and prevent rate limiting
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      navigation.replace("Player", {
+        item: nextItem,
+        playlist,
+        currentIndex: currentIndex + 1,
+      });
+    }
   };
 
   /* --------------  AUDIO SESSION  -------------- */
@@ -181,6 +293,8 @@ export default function PlayerScreen({ route, navigation }: any) {
         shouldDuckAndroid: true,
         interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
         playThroughEarpieceAndroid: false,
+        // Additional settings to reduce audio flickering
+        staysActiveInBackground: true,
       });
     })();
     const sub = AppState.addEventListener("change", (next) => {
@@ -191,6 +305,15 @@ export default function PlayerScreen({ route, navigation }: any) {
 
   /* --------------  LOAD SONG WHEN ID CHANGES  -------------- */
   useEffect(() => {
+    // Guard against running when no item is provided
+    if (!item) {
+      console.log("[Player] No item provided, skipping audio loading");
+      return;
+    }
+
+    // Clear failed tracks when starting fresh
+    failedTracks.current.clear();
+
     let mounted = true;
 
     // Prefetch next track for seamless playback (ytify v8 concept)
@@ -212,14 +335,17 @@ export default function PlayerScreen({ route, navigation }: any) {
       if (sound) await sound.unloadAsync();
       if (!mounted) return;
       setSound(null);
-      setIsPlaying(false);
-      setPositionMillis(0);
-      setDurationMillis(0);
       setError("");
-      setStatusMsg("");
+      if (!mounted) return;
+      setStatusMsg("Loading...");
+
+      let uri: string | null = null; // Declare uri outside try block
 
       try {
-        const uri = await getAudioUrlWithFallback(
+        console.log(
+          `[Player] Loading audio for track: ${item.title} (${item.id}), source: ${item.source}, author: ${item.author}, duration: ${item.duration}`
+        );
+        uri = await getAudioUrlWithFallback(
           item.id,
           (msg) => mounted && setStatusMsg(msg),
           item.source,
@@ -228,14 +354,137 @@ export default function PlayerScreen({ route, navigation }: any) {
         );
         if (!mounted) return;
 
+        console.log(`[Player] Got stream URL, creating audio object...`);
+      } catch (error) {
+        console.error(
+          `[Player] Failed to load track: ${item.title} (${item.id}):`,
+          error
+        );
+
+        // Track this failed track
+        failedTracks.current.add(item.id);
+        setError(
+          `Unable to play this track: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
+        );
+        setStatusMsg("Track unavailable");
+
+        // Auto-skip to next track if available
+        if (currentIndex < playlist.length - 1) {
+          console.log(`[Player] Auto-skipping to next track...`);
+
+          // Find the next track that hasn't failed
+          let nextIndex = currentIndex + 1;
+          while (
+            nextIndex < playlist.length &&
+            failedTracks.current.has(playlist[nextIndex]?.id)
+          ) {
+            nextIndex++;
+          }
+
+          if (nextIndex < playlist.length) {
+            setTimeout(async () => {
+              if (mounted) {
+                // Stop current playback before navigation
+                if (sound) {
+                  try {
+                    await sound.stopAsync();
+                    await sound.unloadAsync();
+                    console.log(
+                      `[Player] Stopped current track before auto-skip`
+                    );
+                  } catch (error) {
+                    console.log(
+                      `[Player] Error stopping current track:`,
+                      error
+                    );
+                  }
+                }
+
+                navigation.replace("Player", {
+                  item: playlist[nextIndex],
+                  playlist,
+                  currentIndex: nextIndex,
+                });
+              }
+            }, 2000);
+          } else {
+            console.log(`[Player] No more available tracks`);
+          }
+        } else {
+          console.log(`[Player] No more tracks available`);
+        }
+        return;
+      }
+
+      try {
         const { sound: newSound } = await Audio.Sound.createAsync(
-          { uri },
-          { shouldPlay: true },
+          { uri: uri! },
+          {
+            shouldPlay: true,
+            // Optimize for better playback quality and reduce flickering
+            androidImplementation: "MediaPlayer", // Use MediaPlayer for better stability
+            progressUpdateIntervalMillis: 2000, // Further reduce update frequency to prevent UI flicker
+            // Reduce audio quality issues
+            audioPan: 0,
+            volume: 1.0,
+            rate: 1.0,
+            isMuted: false,
+            isLooping: false,
+            // Additional optimizations for streaming
+
+            // interruptionModeAndroid is not a valid prop for AVPlaybackStatusToSet
+            // Audio mode is already configured globally in the useEffect above
+          },
           (status) => {
-            if (status.isLoaded && mounted) {
+            if (!mounted) return; // Exit if the component has unmounted
+
+            if (status.isLoaded) {
+              // --- Success Case: Audio is loaded ---
               setIsPlaying(status.isPlaying);
               setDurationMillis(status.durationMillis ?? 0);
-              setPositionMillis(status.positionMillis);
+
+              // Debounce position updates to reduce flickering
+              const now = Date.now();
+              if (now - lastPositionUpdate.current >= positionUpdateThreshold) {
+                setPositionMillis(status.positionMillis);
+                lastPositionUpdate.current = now;
+              }
+
+              // Auto-advance to next track when current track ends
+              if (status.didJustFinish && !status.isLooping) {
+                console.log("[Player] Track finished, advancing to next...");
+                navigateToNext();
+                return;
+              }
+
+              if (status.isBuffering) {
+                console.log("[Player] Audio is buffering...");
+                // Don't show buffering status for very short buffer events to reduce flicker
+                if (
+                  status.positionMillis > 0 &&
+                  status.durationMillis &&
+                  status.positionMillis / status.durationMillis > 0.1
+                ) {
+                  // Only show after 10% progress
+                  setStatusMsg("Buffering...");
+                }
+              } else {
+                // Clear buffering status when not buffering
+                if (statusMsg === "Buffering...") {
+                  setStatusMsg("");
+                }
+              }
+            } else {
+              // --- Error Case: Audio failed to load ---
+              // `isLoaded` is false, so status is AVPlaybackStatusError.
+              // We can safely access the `error` property here.
+              if (status.error) {
+                const errorMessage = `Playback error: ${status.error}`;
+                console.error("[Player]", errorMessage);
+                setError(errorMessage);
+              }
             }
           }
         );
@@ -247,7 +496,15 @@ export default function PlayerScreen({ route, navigation }: any) {
         }
       } catch (e: any) {
         if (mounted) {
-          setError(e.message || "Playback failed");
+          const errorMessage = e.message || "Playback failed";
+          console.error(
+            `[Player] Audio loading failed for ${item.title}:`,
+            errorMessage
+          );
+          if (uri) {
+            console.error(`[Player] Stream URL:`, uri);
+          }
+          setError(errorMessage);
           setStatusMsg("");
         }
         console.error("[Player] load error:", e);
@@ -260,11 +517,11 @@ export default function PlayerScreen({ route, navigation }: any) {
       mounted = false;
       sound?.unloadAsync();
     };
-  }, [item.id]);
+  }, [item?.id]);
 
   /* --------------  PLAY / PAUSE  -------------- */
   const handlePlayPause = async () => {
-    if (!sound) return;
+    if (!sound || !item) return;
     isPlaying ? await sound.pauseAsync() : await sound.playAsync();
   };
 
@@ -272,24 +529,82 @@ export default function PlayerScreen({ route, navigation }: any) {
     durationMillis > 0 ? (positionMillis / durationMillis) * 100 : 0;
 
   /* --------------  RENDER  -------------- */
-  if (!item)
+  if (!item) {
     return (
-      <Screen style={{ justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color="#a3e635" />
-      </Screen>
+      <EmptyPlayerContainer>
+        <Screen>
+          <StatusBar barStyle="light-content" />
+          <Header>
+            <TouchableOpacity onPress={handleGoBack}>
+              <Ionicons name="chevron-down" size={24} color="#fff" />
+            </TouchableOpacity>
+
+            <HeaderTextContainer>
+              <HeaderText>NOW PLAYING</HeaderText>
+              <HeaderTitle numberOfLines={1}>No track loaded</HeaderTitle>
+            </HeaderTextContainer>
+
+            <Ionicons name="ellipsis-horizontal" size={24} color="#fff" />
+          </Header>
+
+          <AlbumArt
+            source={{
+              uri: "https://placehold.co/400x400/000000/a3e635?text=No+Track",
+            }}
+          />
+
+          <SongDetailsContainer>
+            <SongInfo>
+              <SongTitle numberOfLines={2}>No track selected</SongTitle>
+              <ArtistName>Select a track to start playing</ArtistName>
+            </SongInfo>
+            <Ionicons name="heart-outline" size={24} color="#fff" />
+          </SongDetailsContainer>
+
+          <ProgressBarContainer>
+            <ProgressBar>
+              <Progress width={0} />
+            </ProgressBar>
+            <TimeContainer>
+              <TimeText>0:00</TimeText>
+              <TimeText>0:00</TimeText>
+            </TimeContainer>
+          </ProgressBarContainer>
+
+          <ControlsContainer>
+            <Ionicons name="shuffle" size={24} color="#666" />
+            <TouchableOpacity disabled={true}>
+              <Ionicons name="play-skip-back" size={24} color="#666" />
+            </TouchableOpacity>
+            <PlayButton onPress={() => {}} disabled={true}>
+              <Ionicons name="play" size={28} color="#666" />
+            </PlayButton>
+            <TouchableOpacity disabled={true}>
+              <Ionicons name="play-skip-forward" size={24} color="#666" />
+            </TouchableOpacity>
+            <Ionicons name="chatbox-ellipses-outline" size={24} color="#666" />
+          </ControlsContainer>
+        </Screen>
+      </EmptyPlayerContainer>
     );
+  }
 
   return (
     <Screen>
       <StatusBar barStyle="light-content" />
       <Header>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={handleGoBack}>
           <Ionicons name="chevron-down" size={24} color="#fff" />
         </TouchableOpacity>
 
         <HeaderTextContainer>
           <HeaderText>NOW PLAYING</HeaderText>
           <HeaderTitle numberOfLines={1}>{item.author || "…"}</HeaderTitle>
+          {playlist.length > 1 && (
+            <PlaylistPositionText>
+              {currentIndex + 1} of {playlist.length}
+            </PlaylistPositionText>
+          )}
         </HeaderTextContainer>
 
         <Ionicons name="ellipsis-horizontal" size={24} color="#fff" />
@@ -325,15 +640,41 @@ export default function PlayerScreen({ route, navigation }: any) {
 
       <ControlsContainer>
         <Ionicons name="shuffle" size={24} color="#fff" />
-        <Ionicons name="play-skip-back" size={24} color="#fff" />
-        <PlayButton onPress={handlePlayPause}>
+        <TouchableOpacity
+          onPress={navigateToPrevious}
+          disabled={currentIndex === 0 || playlist.length === 0}
+        >
+          <Ionicons
+            name="play-skip-back"
+            size={24}
+            color={
+              currentIndex === 0 || playlist.length === 0 ? "#666" : "#fff"
+            }
+          />
+        </TouchableOpacity>
+        <PlayButton onPress={handlePlayPause} disabled={!item}>
           <Ionicons
             name={isPlaying ? "pause" : "play"}
             size={28}
-            color="#000"
+            color={!item ? "#666" : "#000"}
           />
         </PlayButton>
-        <Ionicons name="play-skip-forward" size={24} color="#fff" />
+        <TouchableOpacity
+          onPress={navigateToNext}
+          disabled={
+            currentIndex >= playlist.length - 1 || playlist.length === 0
+          }
+        >
+          <Ionicons
+            name="play-skip-forward"
+            size={24}
+            color={
+              currentIndex >= playlist.length - 1 || playlist.length === 0
+                ? "#666"
+                : "#fff"
+            }
+          />
+        </TouchableOpacity>
         <Ionicons name="chatbox-ellipses-outline" size={24} color="#fff" />
       </ControlsContainer>
     </Screen>

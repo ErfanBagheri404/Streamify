@@ -290,6 +290,11 @@ export default function SearchScreen({ navigation }: any) {
         );
         setSuggestions(newSuggestions.slice(0, 5));
         setShowSuggestions(true);
+
+        // Auto-trigger search for SoundCloud when user types 3+ characters
+        if (selectedSource === "soundcloud") {
+          handleSearch(text);
+        }
       } catch (e) {
         console.log("Suggestion error", e);
       }
@@ -382,10 +387,17 @@ export default function SearchScreen({ navigation }: any) {
           )}
 
         {!isLoading &&
-          searchResults.map((item) => (
+          searchResults.map((item, index) => (
             <TouchableOpacity
               key={`${item.source || "yt"}-${item.id}`}
-              onPress={() => navigation.navigate("Player", { item })}
+              onPress={() => {
+                // Create playlist from search results and navigate with current index
+                navigation.navigate("Player", {
+                  item,
+                  playlist: searchResults,
+                  currentIndex: index,
+                });
+              }}
             >
               <StreamItem
                 id={item.id}
