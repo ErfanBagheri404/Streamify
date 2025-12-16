@@ -1,0 +1,28 @@
+{
+  "extends": ["@react-native-community/eslint-config"],
+  "rules": {
+    "no-unused-vars": "warn",
+    "no-console": "warn",
+    "react-hooks/exhaustive-deps": "warn",
+    "@typescript-eslint/no-explicit-any": "warn"
+  },
+  "env": {
+    "node": true,
+    "es2021": true,
+    "react-native/react-native": true,
+    "jest/globals": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2021,
+    "sourceType": "module",
+    "ecmaFeatures": {
+      "jsx": true
+    }
+  },
+  "plugins": ["react", "react-native", "@typescript-eslint", "jest"],
+  "settings": {
+    "react": {
+      "version": "detect"
+    }
+  }
+}
