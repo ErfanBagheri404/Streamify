@@ -183,27 +183,57 @@ export const searchAPI = {
 
       // Format the results manually instead of calling formatSearchResults
       if (!Array.isArray(tracks)) return [];
-      return tracks
-        .filter((track) => track && track._isSoundCloud)
-        .map((track) => {
-          const artwork = track.artwork_url
-            ? track.artwork_url.replace("large.jpg", "t500x500.jpg")
-            : track.user?.avatar_url;
-          return {
-            id: String(track.id),
-            title: track.title || "Unknown Title",
-            author: track.user?.username || "Unknown Artist",
-            duration: track.duration
-              ? String(Math.floor(track.duration / 1000))
-              : "0",
-            views: String(track.playback_count || 0),
-            uploaded: fmtTimeAgo(new Date(track.created_at).getTime()),
-            thumbnailUrl: artwork,
-            img: artwork,
-            href: track.permalink_url,
-            source: "soundcloud",
-          };
-        });
+
+      // Deduplicate tracks by ID to prevent duplicate keys
+      const seenIds = new Set<string>();
+      return (
+        tracks
+          .filter((track) => track && track._isSoundCloud)
+          .filter((track) => {
+            const trackId = String(track.id);
+            if (seenIds.has(trackId)) {
+              console.log(
+                `[API] Skipping duplicate SoundCloud track: ${trackId}`
+              );
+              return false;
+            }
+            seenIds.add(trackId);
+            return true;
+          })
+          // Filter out tracks that are likely to be unavailable
+          .filter((track) => {
+            // Skip tracks with very short duration (likely incomplete)
+            if (track.duration && track.duration < 10000) {
+              console.log(`[API] Skipping short track: ${track.id}`);
+              return false;
+            }
+            // Skip tracks with no duration info
+            if (!track.duration) {
+              console.log(`[API] Skipping track with no duration: ${track.id}`);
+              return false;
+            }
+            return true;
+          })
+          .map((track) => {
+            const artwork = track.artwork_url
+              ? track.artwork_url.replace("large.jpg", "t500x500.jpg")
+              : track.user?.avatar_url;
+            return {
+              id: String(track.id),
+              title: track.title || "Unknown Title",
+              author: track.user?.username || "Unknown Artist",
+              duration: track.duration
+                ? String(Math.floor(track.duration / 1000))
+                : "0",
+              views: String(track.playback_count || 0),
+              uploaded: fmtTimeAgo(new Date(track.created_at).getTime()),
+              thumbnailUrl: artwork,
+              img: artwork,
+              href: track.permalink_url,
+              source: "soundcloud",
+            };
+          })
+      );
     } catch (error) {
       console.warn("[API] 🔴 SoundCloud proxy failed:", error);
       return [];
