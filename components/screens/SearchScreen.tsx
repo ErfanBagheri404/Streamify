@@ -4,6 +4,7 @@ import styled from "styled-components/native";
 import StreamItem from "../StreamItem";
 import { searchAPI } from "../../lib/searchAPI";
 import { SafeArea } from "../SafeArea";
+import { usePlayer } from "../../contexts/PlayerContext";
 
 // --- Styled Components ---
 
@@ -166,6 +167,37 @@ export default function SearchScreen({ navigation }: any) {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const { playTrack } = usePlayer();
+
+  // Debug: Log when component mounts/unmounts
+  useEffect(() => {
+    console.log(
+      `[Search] SearchScreen mounted/updated. Results: ${searchResults.length}, Query: "${searchQuery}"`
+    );
+    return () => {
+      console.log(
+        `[Search] SearchScreen unmounting. Results: ${searchResults.length}, Query: "${searchQuery}"`
+      );
+    };
+  }, [searchResults.length, searchQuery]);
+
+  // Restore search results when returning from PlayerScreen
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      console.log(
+        `[Search] Screen focused - preserving results: ${searchResults.length} items`
+      );
+      // Don't clear results when returning from PlayerScreen
+      if (searchResults.length === 0 && searchQuery.trim()) {
+        console.log(
+          `[Search] Results empty but query exists: "${searchQuery}", restoring search`
+        );
+        handleSearch(searchQuery);
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation, searchResults.length, searchQuery]);
 
   // State for Filters
   const [selectedSource, setSelectedSource] = useState("youtube");
@@ -201,12 +233,36 @@ export default function SearchScreen({ navigation }: any) {
   const handleSearch = useCallback(
     async (manualQuery?: string) => {
       const queryToUse = manualQuery || searchQuery;
+      console.log(
+        `[Search] handleSearch called with query: "${queryToUse}" (manual: ${
+          manualQuery || "none"
+        })`
+      );
       if (!queryToUse.trim()) return;
+
+      // Don't clear results if we're already showing results for the same query
+      if (searchResults.length > 0 && searchQuery === queryToUse) {
+        console.log(
+          `[Search] Query unchanged (${queryToUse}), preserving existing results`
+        );
+        return;
+      }
 
       setShowSuggestions(false);
       Keyboard.dismiss();
       setIsLoading(true);
-      setSearchResults([]);
+
+      // Only clear results if we're actually changing the search query
+      if (searchQuery !== queryToUse || searchResults.length === 0) {
+        console.log(
+          `[Search] Clearing results for new query: "${queryToUse}" (was: "${searchQuery}")`
+        );
+        setSearchResults([]);
+      } else {
+        console.log(
+          `[Search] Preserving existing results for same query: "${queryToUse}"`
+        );
+      }
 
       try {
         let results: any[] = [];
@@ -273,12 +329,20 @@ export default function SearchScreen({ navigation }: any) {
   }, [selectedSource]);
 
   const handleTextChange = (text: string) => {
+    console.log(
+      `[Search] handleTextChange called with: "${text}" (current: "${searchQuery}")`
+    );
     setSearchQuery(text);
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
     if (text.length < 3) {
       setSuggestions([]);
       setShowSuggestions(false);
+      // Don't clear search results unless the text is completely empty
+      if (text.length === 0 && searchResults.length > 0) {
+        console.log(`[Search] Clearing search results due to empty query`);
+        setSearchResults([]);
+      }
       return;
     }
 
@@ -390,13 +454,38 @@ export default function SearchScreen({ navigation }: any) {
           searchResults.map((item, index) => (
             <TouchableOpacity
               key={`${item.source || "yt"}-${item.id}`}
-              onPress={() => {
-                // Create playlist from search results and navigate with current index
-                navigation.navigate("Player", {
-                  item,
-                  playlist: searchResults,
-                  currentIndex: index,
-                });
+              onPress={async () => {
+                // Play track using player context instead of navigation
+                console.log(
+                  `[Search] Playing track: ${item.title} (${item.id})`
+                );
+
+                // Format track data for player context
+                const track = {
+                  id: item.id,
+                  title: item.title,
+                  artist: item.author,
+                  duration: parseInt(item.duration) || 0,
+                  thumbnail: item.thumbnailUrl || item.img,
+                  audioUrl: undefined, // Will be fetched by player context
+                  source: item.source || "youtube",
+                  _isSoundCloud: item.source === "soundcloud",
+                };
+
+                await playTrack(
+                  track,
+                  searchResults.map((result: any) => ({
+                    id: result.id,
+                    title: result.title,
+                    artist: result.author,
+                    duration: parseInt(result.duration) || 0,
+                    thumbnail: result.thumbnailUrl || result.img,
+                    audioUrl: undefined,
+                    source: result.source || "youtube",
+                    _isSoundCloud: result.source === "soundcloud",
+                  })),
+                  index
+                );
               }}
             >
               <StreamItem

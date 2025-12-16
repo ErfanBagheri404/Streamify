@@ -25,11 +25,6 @@ const Screen = styled.View`
   background-color: #000;
   padding: 16px;
 `;
-const LoadingContainer = styled.View`
-  flex: 1;
-  justify-content: center;
-  align-items: center;
-`;
 
 const EmptyPlayerContainer = styled.View`
   flex: 1;
@@ -179,6 +174,12 @@ export default function PlayerScreen({ route, navigation }: any) {
     currentIndex,
   });
 
+  // Debug: Log navigation state
+  console.log(`[Player] Navigation state:`, {
+    canGoBack: navigation.canGoBack(),
+    currentRoute: navigation.getState?.(),
+  });
+
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [durationMillis, setDurationMillis] = useState(0);
@@ -187,8 +188,8 @@ export default function PlayerScreen({ route, navigation }: any) {
   const [error, setError] = useState("");
   const appState = useRef(AppState.currentState);
 
-  // Track failed tracks to avoid infinite loops
-  const failedTracks = useRef<Set<string>>(new Set());
+  // failedTracks removed - no longer needed
+  // const failedTracks = useRef<Set<string>>(new Set());
 
   // Add debouncing for position updates to reduce flickering
   const lastPositionUpdate = useRef(0);
@@ -205,17 +206,22 @@ export default function PlayerScreen({ route, navigation }: any) {
   /* --------------  SAFE NAVIGATION  -------------- */
   const handleGoBack = () => {
     try {
+      // First try to go back to the previous screen in the stack
       if (navigation.canGoBack()) {
+        console.log("[Player] Attempting to go back using navigation.goBack()");
         navigation.goBack();
       } else {
         console.log(
-          "[Player] No previous screen available, navigating to Home"
+          "[Player] No previous screen available, navigating to Search tab"
         );
-        navigation.navigate("Home");
+        // Navigate to Search tab to preserve search state
+        console.log("[Player] Navigating to Home -> Search");
+        navigation.navigate("Home", { screen: "Search" });
       }
     } catch (error) {
-      console.log("[Player] Navigation error, falling back to Home");
-      navigation.navigate("Home");
+      console.log("[Player] Navigation error:", error);
+      console.log("[Player] Falling back to Search tab");
+      navigation.navigate("Home", { screen: "Search" });
     }
   };
 
@@ -235,6 +241,10 @@ export default function PlayerScreen({ route, navigation }: any) {
       console.log(
         `[Player] Previous item: ${previousItem.title} (${previousItem.id})`
       );
+      console.log(
+        `[Player] Previous item complete data:`,
+        JSON.stringify(previousItem, null, 2)
+      );
       // Stop current playback before navigation
       if (sound) {
         await sound.stopAsync();
@@ -244,7 +254,10 @@ export default function PlayerScreen({ route, navigation }: any) {
       // Add a small delay to ensure cleanup completes and prevent rate limiting
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      navigation.replace("Player", {
+      console.log(
+        `[Player] Navigating to previous track: ${previousItem.title} (${previousItem.id})`
+      );
+      navigation.push("Player", {
         item: previousItem,
         playlist,
         currentIndex: currentIndex - 1,
@@ -265,6 +278,10 @@ export default function PlayerScreen({ route, navigation }: any) {
         return;
       }
       console.log(`[Player] Next item: ${nextItem.title} (${nextItem.id})`);
+      console.log(
+        `[Player] Next item complete data:`,
+        JSON.stringify(nextItem, null, 2)
+      );
 
       // Stop current playback before navigation
       if (sound) {
@@ -275,7 +292,10 @@ export default function PlayerScreen({ route, navigation }: any) {
       // Add a small delay to ensure cleanup completes and prevent rate limiting
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      navigation.replace("Player", {
+      console.log(
+        `[Player] Navigating to next track: ${nextItem.title} (${nextItem.id})`
+      );
+      navigation.push("Player", {
         item: nextItem,
         playlist,
         currentIndex: currentIndex + 1,
@@ -308,11 +328,17 @@ export default function PlayerScreen({ route, navigation }: any) {
     // Guard against running when no item is provided
     if (!item) {
       console.log("[Player] No item provided, skipping audio loading");
+      console.log(
+        `[Player] Current state - item: ${item}, sound: ${sound}, isPlaying: ${isPlaying}`
+      );
       return;
     }
 
-    // Clear failed tracks when starting fresh
-    failedTracks.current.clear();
+    console.log(
+      `[Player] Item changed, loading new track: ${item.title} (${item.id})`
+    );
+
+    // failedTracks removed - no longer clearing failed tracks
 
     let mounted = true;
 
@@ -345,6 +371,10 @@ export default function PlayerScreen({ route, navigation }: any) {
         console.log(
           `[Player] Loading audio for track: ${item.title} (${item.id}), source: ${item.source}, author: ${item.author}, duration: ${item.duration}`
         );
+        console.log(
+          `[Player] Complete track data:`,
+          JSON.stringify(item, null, 2)
+        );
         uri = await getAudioUrlWithFallback(
           item.id,
           (msg) => mounted && setStatusMsg(msg),
@@ -361,8 +391,7 @@ export default function PlayerScreen({ route, navigation }: any) {
           error
         );
 
-        // Track this failed track
-        failedTracks.current.add(item.id);
+        // failedTracks removed - no longer tracking failed tracks
         setError(
           `Unable to play this track: ${
             error instanceof Error ? error.message : "Unknown error"
@@ -370,51 +399,8 @@ export default function PlayerScreen({ route, navigation }: any) {
         );
         setStatusMsg("Track unavailable");
 
-        // Auto-skip to next track if available
-        if (currentIndex < playlist.length - 1) {
-          console.log(`[Player] Auto-skipping to next track...`);
-
-          // Find the next track that hasn't failed
-          let nextIndex = currentIndex + 1;
-          while (
-            nextIndex < playlist.length &&
-            failedTracks.current.has(playlist[nextIndex]?.id)
-          ) {
-            nextIndex++;
-          }
-
-          if (nextIndex < playlist.length) {
-            setTimeout(async () => {
-              if (mounted) {
-                // Stop current playback before navigation
-                if (sound) {
-                  try {
-                    await sound.stopAsync();
-                    await sound.unloadAsync();
-                    console.log(
-                      `[Player] Stopped current track before auto-skip`
-                    );
-                  } catch (error) {
-                    console.log(
-                      `[Player] Error stopping current track:`,
-                      error
-                    );
-                  }
-                }
-
-                navigation.replace("Player", {
-                  item: playlist[nextIndex],
-                  playlist,
-                  currentIndex: nextIndex,
-                });
-              }
-            }, 2000);
-          } else {
-            console.log(`[Player] No more available tracks`);
-          }
-        } else {
-          console.log(`[Player] No more tracks available`);
-        }
+        // Just show error, don't auto-skip
+        console.log(`[Player] Track failed, user can manually skip if desired`);
         return;
       }
 
@@ -529,7 +515,86 @@ export default function PlayerScreen({ route, navigation }: any) {
     durationMillis > 0 ? (positionMillis / durationMillis) * 100 : 0;
 
   /* --------------  RENDER  -------------- */
-  if (!item) {
+  console.log(
+    `[Player] Render - item:`,
+    item ? `${item.title} (${item.id})` : "null",
+    `sound: ${sound ? "exists" : "null"}, isPlaying: ${isPlaying}`
+  );
+
+  // Handle state sync issue: if we have a sound playing but no item data
+  if (!item && sound) {
+    console.log(`[Player] State sync issue: sound exists but no item data`);
+    // Create a placeholder item to maintain UI consistency
+    const placeholderItem = {
+      id: "unknown",
+      title: "Unknown Track",
+      author: "Unknown Artist",
+      duration: "0",
+      source: "unknown",
+      thumbnailUrl: "https://placehold.co/400x400/000000/a3e635?text=Unknown",
+    };
+
+    // Use the placeholder item for UI rendering, but keep the actual sound
+    return (
+      <Screen>
+        <StatusBar barStyle="light-content" />
+        <Header>
+          <TouchableOpacity onPress={handleGoBack}>
+            <Ionicons name="chevron-down" size={24} color="#fff" />
+          </TouchableOpacity>
+
+          <HeaderTextContainer>
+            <HeaderText>NOW PLAYING</HeaderText>
+            <HeaderTitle numberOfLines={1}>{placeholderItem.title}</HeaderTitle>
+          </HeaderTextContainer>
+
+          <Ionicons name="ellipsis-horizontal" size={24} color="#fff" />
+        </Header>
+
+        <AlbumArt
+          source={{
+            uri: placeholderItem.thumbnailUrl,
+          }}
+        />
+
+        <SongDetailsContainer>
+          <SongInfo>
+            <SongTitle numberOfLines={2}>{placeholderItem.title}</SongTitle>
+            <ArtistName>{placeholderItem.author}</ArtistName>
+          </SongInfo>
+          <Ionicons name="heart-outline" size={24} color="#fff" />
+        </SongDetailsContainer>
+
+        <ProgressBarContainer>
+          <ProgressBar>
+            <Progress width={progress} />
+          </ProgressBar>
+          <TimeContainer>
+            <TimeText>{formatTime(positionMillis)}</TimeText>
+            <TimeText>{formatTime(durationMillis)}</TimeText>
+          </TimeContainer>
+        </ProgressBarContainer>
+
+        <ControlsContainer>
+          <Ionicons name="shuffle" size={24} color="#666" />
+          <TouchableOpacity onPress={navigateToPrevious}>
+            <Ionicons name="play-skip-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <PlayButton onPress={handlePlayPause}>
+            <Ionicons
+              name={isPlaying ? "pause" : "play"}
+              size={28}
+              color="#000"
+            />
+          </PlayButton>
+          <TouchableOpacity onPress={navigateToNext}>
+            <Ionicons name="play-skip-forward" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Ionicons name="chatbox-ellipses-outline" size={24} color="#fff" />
+        </ControlsContainer>
+      </Screen>
+    );
+  } else if (!item) {
     return (
       <EmptyPlayerContainer>
         <Screen>
