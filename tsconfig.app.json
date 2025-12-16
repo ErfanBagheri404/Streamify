@@ -6,7 +6,7 @@
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["react-native", "jest"]
+    "types": ["react-native", "styled-components-react-native", "node"]
   },
   "include": [
     "App.tsx",
