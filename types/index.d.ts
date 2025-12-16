@@ -41,7 +41,16 @@ declare global {
   };
 
   type Invidious = {
-    adaptiveFormats: Record<'type' | 'bitrate' | 'encoding' | 'clen' | 'url' | 'resolution' | 'quality', string>[];
+    adaptiveFormats: Record<
+      | 'type'
+      | 'bitrate'
+      | 'encoding'
+      | 'clen'
+      | 'url'
+      | 'resolution'
+      | 'quality',
+      string
+    >[];
     recommendedVideos: {
       title: string;
       author: string;

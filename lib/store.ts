@@ -61,11 +61,13 @@ export let state = {
 type AppSettings = typeof state;
 
 const savedStore = localStorage.getItem("store");
-if (savedStore) state = JSON.parse(savedStore);
+if (savedStore) {
+  state = JSON.parse(savedStore);
+}
 
 export function setState<K extends keyof AppSettings>(
   key: K,
-  val: AppSettings[K]
+  val: AppSettings[K],
 ) {
   state[key] = val;
   const str = JSON.stringify(state);

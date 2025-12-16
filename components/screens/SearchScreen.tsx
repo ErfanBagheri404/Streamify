@@ -172,11 +172,11 @@ export default function SearchScreen({ navigation }: any) {
   // Debug: Log when component mounts/unmounts
   useEffect(() => {
     console.log(
-      `[Search] SearchScreen mounted/updated. Results: ${searchResults.length}, Query: "${searchQuery}"`
+      `[Search] SearchScreen mounted/updated. Results: ${searchResults.length}, Query: "${searchQuery}"`,
     );
     return () => {
       console.log(
-        `[Search] SearchScreen unmounting. Results: ${searchResults.length}, Query: "${searchQuery}"`
+        `[Search] SearchScreen unmounting. Results: ${searchResults.length}, Query: "${searchQuery}"`,
       );
     };
   }, [searchResults.length, searchQuery]);
@@ -185,12 +185,12 @@ export default function SearchScreen({ navigation }: any) {
   useEffect(() => {
     const unsubscribe = navigation.addListener("focus", () => {
       console.log(
-        `[Search] Screen focused - preserving results: ${searchResults.length} items`
+        `[Search] Screen focused - preserving results: ${searchResults.length} items`,
       );
       // Don't clear results when returning from PlayerScreen
       if (searchResults.length === 0 && searchQuery.trim()) {
         console.log(
-          `[Search] Results empty but query exists: "${searchQuery}", restoring search`
+          `[Search] Results empty but query exists: "${searchQuery}", restoring search`,
         );
         handleSearch(searchQuery);
       }
@@ -209,22 +209,33 @@ export default function SearchScreen({ navigation }: any) {
 
   function shortCount(num: number | string): string {
     const n = typeof num === "string" ? parseInt(num, 10) : num;
-    if (Number.isNaN(n)) return "";
-    if (n < 1000) return n.toString();
-    if (n < 1000000) return `${(n / 1000).toFixed(1).replace(".0", "")}K`;
-    if (n < 1000000000) return `${(n / 1000000).toFixed(1).replace(".0", "")}M`;
+    if (Number.isNaN(n)) {
+      return "";
+    }
+    if (n < 1000) {
+      return n.toString();
+    }
+    if (n < 1000000) {
+      return `${(n / 1000).toFixed(1).replace(".0", "")}K`;
+    }
+    if (n < 1000000000) {
+      return `${(n / 1000000).toFixed(1).replace(".0", "")}M`;
+    }
     return `${(n / 1000000000).toFixed(1).replace(".0", "")}B`;
   }
 
   const formatDuration = (seconds: number): string => {
-    if (seconds === 0) return "LIVE";
+    if (seconds === 0) {
+      return "LIVE";
+    }
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    if (hours > 0)
-      return `${hours}:${minutes.toString().padStart(2, "0")}:${secs
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs
         .toString()
-        .padStart(2, "0")}`;
+        .padStart(2, '0')}`;
+    }
     return `${minutes}:${secs.toString().padStart(2, "0")}`;
   };
 
@@ -236,14 +247,16 @@ export default function SearchScreen({ navigation }: any) {
       console.log(
         `[Search] handleSearch called with query: "${queryToUse}" (manual: ${
           manualQuery || "none"
-        })`
+        })`,
       );
-      if (!queryToUse.trim()) return;
+      if (!queryToUse.trim()) {
+        return;
+      }
 
       // Don't clear results if we're already showing results for the same query
       if (searchResults.length > 0 && searchQuery === queryToUse) {
         console.log(
-          `[Search] Query unchanged (${queryToUse}), preserving existing results`
+          `[Search] Query unchanged (${queryToUse}), preserving existing results`,
         );
         return;
       }
@@ -255,12 +268,12 @@ export default function SearchScreen({ navigation }: any) {
       // Only clear results if we're actually changing the search query
       if (searchQuery !== queryToUse || searchResults.length === 0) {
         console.log(
-          `[Search] Clearing results for new query: "${queryToUse}" (was: "${searchQuery}")`
+          `[Search] Clearing results for new query: "${queryToUse}" (was: "${searchQuery}")`,
         );
         setSearchResults([]);
       } else {
         console.log(
-          `[Search] Preserving existing results for same query: "${queryToUse}"`
+          `[Search] Preserving existing results for same query: "${queryToUse}"`,
         );
       }
 
@@ -301,7 +314,7 @@ export default function SearchScreen({ navigation }: any) {
           // Remove YouTube-specific noise from upload string
           uploaded: r.uploaded?.replace(
             /(\[\d.\]+\['MKB'\]?)\s*views?\s*•?\s*/i,
-            ""
+            "",
           ),
         }));
 
@@ -313,7 +326,7 @@ export default function SearchScreen({ navigation }: any) {
         setIsLoading(false);
       }
     },
-    [searchQuery, selectedFilter, selectedSource]
+    [searchQuery, selectedFilter, selectedSource],
   );
 
   // Auto-trigger search when switching Sources/Filters if we have a query
@@ -330,17 +343,19 @@ export default function SearchScreen({ navigation }: any) {
 
   const handleTextChange = (text: string) => {
     console.log(
-      `[Search] handleTextChange called with: "${text}" (current: "${searchQuery}")`
+      `[Search] handleTextChange called with: "${text}" (current: "${searchQuery}")`,
     );
     setSearchQuery(text);
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
 
     if (text.length < 3) {
       setSuggestions([]);
       setShowSuggestions(false);
       // Don't clear search results unless the text is completely empty
       if (text.length === 0 && searchResults.length > 0) {
-        console.log(`[Search] Clearing search results due to empty query`);
+        console.log("[Search] Clearing search results due to empty query");
         setSearchResults([]);
       }
       return;
@@ -350,7 +365,7 @@ export default function SearchScreen({ navigation }: any) {
       try {
         const newSuggestions = await searchAPI.getSuggestions(
           text,
-          selectedSource
+          selectedSource,
         );
         setSuggestions(newSuggestions.slice(0, 5));
         setShowSuggestions(true);
@@ -383,7 +398,9 @@ export default function SearchScreen({ navigation }: any) {
           onSubmitEditing={() => handleSearch()}
           returnKeyType="search"
           onFocus={() => {
-            if (suggestions.length > 0) setShowSuggestions(true);
+            if (suggestions.length > 0) {
+              setShowSuggestions(true);
+            }
           }}
         />
       </Header>
@@ -457,7 +474,7 @@ export default function SearchScreen({ navigation }: any) {
               onPress={async () => {
                 // Play track using player context instead of navigation
                 console.log(
-                  `[Search] Playing track: ${item.title} (${item.id})`
+                  `[Search] Playing track: ${item.title} (${item.id})`,
                 );
 
                 // Format track data for player context
@@ -484,7 +501,7 @@ export default function SearchScreen({ navigation }: any) {
                     source: result.source || "youtube",
                     _isSoundCloud: result.source === "soundcloud",
                   })),
-                  index
+                  index,
                 );
               }}
             >

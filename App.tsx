@@ -80,8 +80,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
             options.tabBarLabel !== undefined
               ? options.tabBarLabel
               : options.title !== undefined
-              ? options.title
-              : route.name;
+                ? options.title
+                : route.name;
 
           const isFocused = state.index === index;
 
@@ -109,8 +109,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
             route.name === "HomeTab"
               ? "home"
               : route.name === "Search"
-              ? "search"
-              : "settings";
+                ? "search"
+                : "settings";
 
           return (
             <TouchableOpacity
@@ -145,6 +145,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 function HomeTabs() {
   return (
     <Tab.Navigator
+      id="HomeTabs"
       tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
         headerShown: false,
@@ -184,6 +185,7 @@ function AppContent() {
       <View style={{ flex: 1 }}>
         <NavigationContainer>
           <Stack.Navigator
+            id="MainStack"
             initialRouteName="Home"
             screenOptions={{ headerShown: false }}
           >

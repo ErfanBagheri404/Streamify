@@ -91,7 +91,9 @@ function StreamItem(props: StreamItemProps) {
 
   const formatSubMeta = useCallback((views?: string, uploaded?: string) => {
     const parts = [];
-    if (views) parts.push(views);
+    if (views) {
+      parts.push(views);
+    }
     if (uploaded) {
       const cleanedUploaded = uploaded.replace("Streamed ", "");
       parts.push(cleanedUploaded);

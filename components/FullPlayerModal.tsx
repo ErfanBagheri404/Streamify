@@ -134,7 +134,9 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [duration, setDuration] = useState(0);
 
   useEffect(() => {
-    if (!sound) return;
+    if (!sound) {
+      return;
+    }
 
     const updatePosition = async () => {
       try {

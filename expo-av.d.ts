@@ -38,10 +38,10 @@ declare module "expo-av" {
   }
 
   export function isAVPlaybackStatusSuccess(
-    status: AVPlaybackStatus
+    status: AVPlaybackStatus,
   ): status is AVPlaybackStatusSuccess;
   export function isAVPlaybackStatusError(
-    status: AVPlaybackStatus
+    status: AVPlaybackStatus,
   ): status is AVPlaybackStatusError;
 
   export interface Subscription {
@@ -52,10 +52,10 @@ declare module "expo-av" {
     static createAsync(
       source: { uri: string },
       options?: any,
-      callback?: (status: AVPlaybackStatus) => void
+      callback?: (status: AVPlaybackStatus) => void,
     ): Promise<{ sound: Sound }>;
     setOnPlaybackStatusUpdate(
-      callback: (status: AVPlaybackStatus) => void
+      callback: (status: AVPlaybackStatus) => void,
     ): Subscription;
     playAsync(): Promise<void>;
     pauseAsync(): Promise<void>;
@@ -70,10 +70,10 @@ declare module "expo-av" {
       static createAsync(
         source: { uri: string },
         options?: any,
-        callback?: (status: AVPlaybackStatus) => void
+        callback?: (status: AVPlaybackStatus) => void,
       ): Promise<{ sound: Sound }>;
       setOnPlaybackStatusUpdate(
-        callback: (status: AVPlaybackStatus) => void
+        callback: (status: AVPlaybackStatus) => void,
       ): Subscription;
       playAsync(): Promise<void>;
       pauseAsync(): Promise<void>;
