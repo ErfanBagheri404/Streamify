@@ -242,6 +242,14 @@ export default function HomeScreen({ navigation }: any) {
           views="934K views"
           uploaded="1 year ago"
         />
+        <StreamItem
+          id="dfdf"
+          title="Player"
+          author="Electro Chill"
+          duration="02:54"
+          views="934K views"
+          uploaded="1 year ago"
+        />
       </PlaylistSection>
     </SafeArea>
   );

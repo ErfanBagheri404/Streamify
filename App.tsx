@@ -4,13 +4,14 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { enableScreens } from "react-native-screens";
-import { Text } from "react-native";
 
-// Import your screens
+// Expo vector-icons
+import { Ionicons } from "@expo/vector-icons";
+
+// Screens
 import HomeScreen from "./components/screens/HomeScreen";
 import ListsScreen from "./components/screens/ListsScreen";
 import PlayerScreen from "./components/screens/PlayerScreen";
-import DownloadsScreen from "./components/screens/DownloadsScreen";
 import SearchScreen from "./components/screens/SearchScreen";
 import SettingsScreen from "./components/screens/SettingsScreen";
 
@@ -19,25 +20,18 @@ enableScreens();
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// This custom icon component remains the same
-function TabBarIcon({
-  name,
-  color,
-  size,
-}: {
-  name: string;
-  color: string;
-  size: number;
-}) {
-  const icons: { [key: string]: string } = {
-    home: "🏠",
-    search: "🔍",
-    settings: "⚙️",
+/* ---------- Icon helper ---------- */
+type IconProps = { name: string; color: string; size: number };
+const TabBarIcon: React.FC<IconProps> = ({ name, color, size }) => {
+  const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
+    home: "home",
+    search: "search",
+    settings: "settings-sharp",
   };
-  return <Text style={{ fontSize: size, color }}>{icons[name] || "🏠"}</Text>;
-}
+  return <Ionicons name={iconMap[name] || "home"} size={size} color={color} />;
+};
 
-// Your Tab Navigator remains the same
+/* ---------- Bottom Tabs ---------- */
 function HomeTabs() {
   return (
     <Tab.Navigator
@@ -48,6 +42,7 @@ function HomeTabs() {
           if (route.name === "HomeTab") iconName = "home";
           else if (route.name === "Search") iconName = "search";
           else if (route.name === "Settings") iconName = "settings";
+          else if (route.name === "Player") iconName = "play";
           return <TabBarIcon name={iconName} color={color} size={size} />;
         },
         tabBarActiveTintColor: "#a3e635",
@@ -71,13 +66,14 @@ function HomeTabs() {
         component={HomeScreen}
         options={{ title: "Home" }}
       />
+      <Tab.Screen name="Player" component={PlayerScreen} />
       <Tab.Screen name="Search" component={SearchScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
 }
 
-// Your main App component now only contains the navigators
+/* ---------- Root Stack ---------- */
 export default function App() {
   return (
     <NavigationContainer>
@@ -88,7 +84,6 @@ export default function App() {
         <Stack.Screen name="Home" component={HomeTabs} />
         <Stack.Screen name="Lists" component={ListsScreen} />
         <Stack.Screen name="Player" component={PlayerScreen} />
-        <Stack.Screen name="Downloads" component={DownloadsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
