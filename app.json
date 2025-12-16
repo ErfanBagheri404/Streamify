@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Streamify Mobile",
-    "slug": "streamify-mobile",
+    "name": "Streamify",
+    "slug": "streamify",
     "scheme": "streamify",
     "sdkVersion": "54.0.0",
     "orientation": "portrait",
