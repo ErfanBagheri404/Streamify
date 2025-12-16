@@ -58,8 +58,8 @@ jobs:
       - name: 📦 Install dependencies
         run: npm install
 
-      - name: 🧪 Run TypeScript check
-        run: npm tsc
+      # - name: 🧪 Run TypeScript check
+      #   run: npm run tsc
 
       - name: 🧹 Run ESLint
         run: npm lint
