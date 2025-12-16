@@ -1,9 +1,16 @@
-import type { CollectionItem, List } from "../types/global";
+export const params = new URL(location.href).searchParams;
 
-const isWeb = typeof location !== "undefined";
-const getParams = () =>
-  isWeb ? new URL(location.href).searchParams : new URLSearchParams();
-export const params = getParams();
+// Import missing types
+type CollectionItem = {
+  id: string;
+  title: string;
+  author: string;
+  duration: string;
+  channelUrl: string;
+  lastUpdated?: string;
+};
+
+type List = Record<"id" | "name" | "thumbnail", string>;
 
 export let state = {
   enforceProxy: false,
@@ -53,10 +60,8 @@ export let state = {
 
 type AppSettings = typeof state;
 
-if (isWeb && typeof localStorage !== "undefined") {
-  const savedStore = localStorage.getItem("store");
-  if (savedStore) state = JSON.parse(savedStore);
-}
+const savedStore = localStorage.getItem("store");
+if (savedStore) state = JSON.parse(savedStore);
 
 export function setState<K extends keyof AppSettings>(
   key: K,
@@ -64,9 +69,7 @@ export function setState<K extends keyof AppSettings>(
 ) {
   state[key] = val;
   const str = JSON.stringify(state);
-  if (isWeb && typeof localStorage !== "undefined") {
-    localStorage.setItem("store", str);
-  }
+  localStorage.setItem("store", str);
 }
 
 export const store: {
@@ -114,19 +117,16 @@ export const store: {
       manifests: [],
       api: ["https://api.piped.private.coffee"],
     },
-    supportsOpus:
-      isWeb && "mediaCapabilities" in navigator
-        ? (navigator.mediaCapabilities as any)
-            .decodingInfo({
-              type: "file",
-              audio: {
-                contentType: "audio/webm;codecs=opus",
-              },
-            })
-            .then((res: any) => res.supported)
-        : Promise.resolve(false),
+    supportsOpus: navigator.mediaCapabilities
+      .decodingInfo({
+        type: "file",
+        audio: {
+          contentType: "audio/webm;codecs=opus",
+        },
+      })
+      .then((res) => res.supported),
     data: undefined,
-    legacy: isWeb ? !("OffscreenCanvas" in window) : false,
+    legacy: !("OffscreenCanvas" in window),
     fallback: "https://streamifyend.netlify.app",
     useSaavn: state.jiosaavn,
   },
@@ -159,7 +159,7 @@ export const store: {
     status: "P",
     index: 0,
   },
-  linkHost: state.linkHost || (isWeb ? location.origin : ""),
+  linkHost: state.linkHost || location.origin,
   searchQuery: "",
   actionsMenu: {
     id: "",
