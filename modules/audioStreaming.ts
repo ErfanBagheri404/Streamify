@@ -323,6 +323,13 @@ export class AudioStreamManager {
     this.currentTrackTitle = trackTitle;
     this.currentTrackArtist = trackArtist;
 
+    console.log(`[AudioStreamManager] getAudioUrl called with:`, {
+      videoId,
+      source,
+      trackTitle,
+      trackArtist,
+    });
+
     // Check if we have a prefetched result
     const prefetched = this.prefetchQueue.get(videoId);
     if (prefetched) {
@@ -330,9 +337,12 @@ export class AudioStreamManager {
       return prefetched;
     }
 
-    // --- STRICT SOUNDCLOUD HANDLING ---
+    // --- SOUNDCLOUD HANDLING (with fallbacks) ---
     if (source === "soundcloud") {
-      onStatusUpdate?.("Using SoundCloud strategy (Strict Mode)");
+      onStatusUpdate?.("Using SoundCloud strategy (with fallbacks)");
+      console.log(
+        `[AudioStreamManager] SoundCloud mode activated for: ${videoId}`
+      );
       try {
         console.log(
           `[Audio] Attempting SoundCloud extraction for track: ${videoId}`
@@ -349,15 +359,11 @@ export class AudioStreamManager {
         }
       } catch (error) {
         console.error(
-          "[Audio] SoundCloud strategy failed for SoundCloud track:",
+          "[Audio] SoundCloud strategy failed, will try fallback strategies:",
           error
         );
-        // CRITICAL: In strict mode, we throw immediately. We do NOT fallback.
-        throw new Error(
-          `SoundCloud playback failed: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`
-        );
+        // Don't throw immediately - allow fallback strategies to try
+        onStatusUpdate?.("SoundCloud failed, trying fallback strategies...");
       }
     }
 
@@ -1050,10 +1056,14 @@ export class AudioStreamManager {
             const directUrl = `https://api-widget.soundcloud.com/resolve?url=https://api.soundcloud.com/tracks/${trackId}&client_id=${this.SOUNDCLOUD_CLIENT_ID}&format=json`;
             console.log(`[Audio] Direct widget URL: ${directUrl}`);
 
+            // Use CORS proxy for the API call
+            const proxiedDirectUrl = this.getCorsProxyUrl(directUrl);
+            console.log(`[Audio] Using CORS proxy: ${proxiedDirectUrl}`);
+
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-            const directResponse = await fetch(directUrl, {
+            const directResponse = await fetch(proxiedDirectUrl, {
               headers: {
                 "User-Agent":
                   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -1123,10 +1133,14 @@ export class AudioStreamManager {
         const widgetUrl = `https://api-widget.soundcloud.com/resolve?url=https://api.soundcloud.com/tracks/${trackId}&client_id=${this.SOUNDCLOUD_CLIENT_ID}&format=json`;
         console.log(`[Audio] Widget URL: ${widgetUrl}`);
 
+        // Use CORS proxy for the widget API call
+        const proxiedWidgetUrl = this.getCorsProxyUrl(widgetUrl);
+        console.log(`[Audio] Using CORS proxy for widget: ${proxiedWidgetUrl}`);
+
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-        const widgetResponse = await fetch(widgetUrl, {
+        const widgetResponse = await fetch(proxiedWidgetUrl, {
           headers: {
             "User-Agent":
               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -1279,9 +1293,14 @@ export class AudioStreamManager {
       const fallbackUrl = `https://api.soundcloud.com/tracks/${trackId}/stream?client_id=${this.SOUNDCLOUD_CLIENT_ID}`;
       console.log(`[Audio] Fallback URL: ${fallbackUrl}`);
 
-      // Test if this URL works
+      // Test if this URL works using CORS proxy
+      const proxiedFallbackUrl = this.getCorsProxyUrl(fallbackUrl);
+      console.log(
+        `[Audio] Using CORS proxy for fallback test: ${proxiedFallbackUrl}`
+      );
+
       try {
-        const testResponse = await fetch(fallbackUrl, {
+        const testResponse = await fetch(proxiedFallbackUrl, {
           method: "HEAD",
           headers: {
             "User-Agent":
