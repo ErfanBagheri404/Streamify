@@ -47,7 +47,7 @@ jobs:
         id: npm-cache-dir-path
         run: echo "dir=$(npm cache dir)" >> $GITHUB_OUTPUT
 
-            - name: 📱 Setup EAS build cache
+      - name: 📱 Setup EAS build cache
         uses: actions/cache@v3
         with:
           path: ${{ env.HOME }}/.eas-build-local
@@ -81,17 +81,17 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-        # - name: 📦 Get npm cache directory path
-        # id: npm-cache-dir-path
-        # run: echo "dir=$(npm cache dir)" >> $GITHUB_OUTPUT
+      # - name: 📦 Get npm cache directory path
+      #   id: npm-cache-dir-path
+      #   run: echo "dir=$(npm cache dir)" >> $GITHUB_OUTPUT
 
-        # - name: 📱 Setup EAS build cache    
-        # uses: actions/cache@v3
-        # with:
-        #   path: ${{ env.HOME }}/.eas-build-local
-        #   key: ${{ runner.os }}-eas-build-local-${{ hashFiles('**/package.json') }}
-        #   restore-keys: |
-        #     ${{ runner.os }}-eas-build-local-
+      # - name: 📱 Setup EAS build cache    
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: ${{ env.HOME }}/.eas-build-local
+      #     key: ${{ runner.os }}-eas-build-local-${{ hashFiles('**/package.json') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-eas-build-local-
 
       - name: 📦 Install dependencies
         run: |
