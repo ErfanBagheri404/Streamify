@@ -76,7 +76,7 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-            - name: 📦 Clean install and setup
+      - name: 📦 Clean install and setup
         run: |
           # Clean up
           rm -rf node_modules
