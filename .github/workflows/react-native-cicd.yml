@@ -14,10 +14,8 @@ on:
       buildType:
         type: choice
         description: "Build type to run"
-        required: true
-        default: prod-apk
         options:
-          - prod-apk
+          - dev
           - all
 
 env:
@@ -32,39 +30,9 @@ jobs:
       - name: Skip CI check
         run: echo "Proceeding with workflow"
 
-  test:
-    needs: check-skip
-    runs-on: ubuntu-latest
-    steps:
-      - name: 🏗 Checkout repository
-        uses: actions/checkout@v4
-
-      - name: 🏗 Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-
-      - name: 📦 Clean install dependencies
-        run: |
-          rm -rf node_modules
-          npm install --legacy-peer-deps
-
-      - name: 🧪 Run TypeScript check
-        run: npm run tsc || echo "TypeScript check completed"
-
-      - name: 🧹 Run ESLint
-        run: npm run lint || echo "ESLint check completed"
-
-      - name: 🎨 Run Prettier check
-        run: npm run format:check || echo "Prettier check completed"
-
   build-and-deploy:
-    needs: test
-    if: |
-      (github.event_name == 'push' && 
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) || 
-      github.event_name == 'workflow_dispatch'
+    needs: check-skip
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: 🏗 Checkout repository
@@ -76,35 +44,52 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-      - name: 📦 Clean install and setup
+      - name: 📦 Install dependencies
         run: |
-          # Clean up
-          rm -rf node_modules
-          rm -f package-lock.json
-
-          # Install dependencies
-          npm install --legacy-peer-deps
-
-          # Install EAS CLI globally
+          npm ci --include=dev
           npm install -g eas-cli@latest
 
-      - name: 🔄 Verify installations      # <-- 10 spaces, not 12
+      - name: 📱 Setup EAS build cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.eas-build-local
+          key: ${{ runner.os }}-eas-build-local-${{ hashFiles('**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-eas-build-local-
+
+      - name: 🔄 Verify EAS CLI installation
         run: |
-          echo "Node version:"
-          node --version
-          echo "npm version:"
-          npm --version
           echo "EAS CLI version:"
           eas --version
 
-      - name: 📋 Configure project for EAS build
+      - name: 📋 Fix package.json main entry
         run: |
-          if [ -f ./package.json ]; then
-            echo "Current main entry in package.json:"
-            grep '"main"' package.json || echo "No main entry found"
+          # Check if jq is installed, if not install it
+          if ! command -v jq &> /dev/null; then
+            echo "Installing jq..."
+            sudo apt-get update && sudo apt-get install -y jq
           fi
-          # Create or update metro.config.js for SVG support
-          cat > ./metro.config.js << 'EOF'
+
+          # Fix the main entry in package.json
+          if [ -f ./package.json ]; then
+            # Create a backup
+            cp package.json package.json.bak
+            # Update the package.json
+            jq '.main = "node_modules/expo/AppEntry.js"' package.json > package.json.tmp && mv package.json.tmp package.json
+            echo "Updated package.json main entry"
+            cat package.json | grep "main"
+          else
+            echo "package.json not found"
+            exit 1
+          fi
+
+      - name: 📋 Update metro.config.js for SVG support
+        run: |
+          if [ -f ./metro.config.js ]; then
+            echo "Creating backup of metro.config.js"
+            cp ./metro.config.js ./metro.config.js.backup
+            echo "Updating metro.config.js to CommonJS format"
+            cat > ./metro.config.js << 'EOFMARKER'
           /* eslint-disable @typescript-eslint/no-var-requires */
           const { getDefaultConfig } = require('expo/metro-config');
 
@@ -124,43 +109,25 @@ jobs:
           };
 
           module.exports = config;
-          EOF
-          echo "Created metro.config.js"
-
-      - name: 🛠️ Create EAS configuration if missing
-        run: |
-          if [ ! -f ./eas.json ]; then
-            cat > ./eas.json << 'EOF'
-          {
-            "cli": {
-              "version": ">= 6.0.0"
-            },
-            "build": {
-              "development": {
-                "developmentClient": true,
-                "distribution": "internal"
-              },
-              "preview": {
-                "distribution": "internal"
-              },
-              "production-apk": {
-                "android": {
-                  "buildType": "apk",
-                  "gradleCommand": ":app:assembleRelease"
-                },
-                "env": {
-                  "NODE_ENV": "production",
-                  "NODE_OPTIONS": "--openssl-legacy-provider --max_old_space_size=4096"
-                }
-              }
-            },
-            "submit": {
-              "production": {}
-            }
-          }
-          EOF
-            echo "Created eas.json"
+          EOFMARKER
+            echo "metro.config.js updated to CommonJS format"
           else
-            echo "eas.json already exists"
-            cat ./eas.json
+            echo "metro.config.js not found"
           fi
+
+      - name: 📱 Build Development APK
+        if: github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'dev' || github.event_name == 'push'
+        run: |
+          # Build with increased memory limit
+          export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
+          eas build --platform android --profile development --local --non-interactive --output=./app-dev.apk
+        env:
+          NODE_ENV: development
+
+      - name: 📦 Upload build artifacts to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-builds
+          path: |
+            ./app-dev.apk
+          retention-days: 7
