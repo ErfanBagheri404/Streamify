@@ -32,8 +32,7 @@
     "contexts/**/*.ts",
     "utils/**/*.ts",
     "lib/**/*.ts",
-    "types/**/*.d.ts",
-    "modules/**/*.ts"
+    "types/**/*.d.ts"
   ],
   "exclude": ["node_modules", "modules", "dist", "**/*.spec.ts", "**/*.test.ts"]
 }
