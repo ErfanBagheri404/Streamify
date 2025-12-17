@@ -44,7 +44,7 @@
     "react-native-svg": "15.12.1",
     "react-native-ytdl": "^4.8.3",
     "sortablejs": "^1.15.6",
-    "styled-components": "^6.1.19",
+    "styled-components": "^5.3.11",
     "uhtml": "^5.0.9",
     "upng-js": "^2.1.0"
   },

@@ -153,7 +153,7 @@ export default function HomeScreen({ navigation }: any) {
   return (
     <SafeArea>
       {/* Header */}
-      <ScrollView>
+      <ScrollView style={{ flex: 1 }}>
         <HeaderRow>
           <HelloText>
             Hello,{" "}
