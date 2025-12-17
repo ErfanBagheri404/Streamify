@@ -97,14 +97,13 @@ jobs:
           echo "EAS CLI version:"
           eas --version
 
-      - name: 📋 Configure project for EAS build
+            - name: 📋 Configure project for EAS build
         run: |
-         
           if [ -f ./package.json ]; then
             echo "Current main entry in package.json:"
             grep '"main"' package.json || echo "No main entry found"
           fi
-          
+
           # Create or update metro.config.js for SVG support
           cat > ./metro.config.js << 'EOF'
 /* eslint-disable @typescript-eslint/no-var-requires */
