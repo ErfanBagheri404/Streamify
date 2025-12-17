@@ -93,7 +93,7 @@ export default function SettingsScreen() {
         <HeaderTitle>Settings</HeaderTitle>
       </Header>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
         {settings.map((section, sectionIndex) => (
           <SettingsSection key={sectionIndex}>
             <SectionTitle>{section.title}</SectionTitle>
