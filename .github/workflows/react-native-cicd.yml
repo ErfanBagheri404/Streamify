@@ -76,19 +76,19 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-      - name: 📦 Clean install and setup
+            - name: 📦 Clean install and setup
         run: |
           # Clean up
           rm -rf node_modules
           rm -f package-lock.json
-          
+
           # Install dependencies
           npm install --legacy-peer-deps
-          
+
           # Install EAS CLI globally
           npm install -g eas-cli@latest
 
-            - name: 🔄 Verify installations
+      - name: 🔄 Verify installations      # <-- 10 spaces, not 12
         run: |
           echo "Node version:"
           node --version
