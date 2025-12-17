@@ -124,10 +124,26 @@ jobs:
         env:
           NODE_ENV: development
 
+      # NEW: print Gradle log when build fails
+      - name: 🔍 Print Gradle log (if failed)
+        if: failure()
+        run: |
+          LOG=$(ls -t ./logs/*.log 2>/dev/null | head -n1)
+          if [ -f "$LOG" ]; then
+            echo "==========  GRADLE LOG  ======================================"
+            cat "$LOG"
+            echo "=============================================================="
+          else
+            echo "No gradle log found – build probably failed earlier."
+          fi
+
+      # UPDATED: upload both APK and Gradle log
       - name: 📦 Upload build artifacts to GitHub
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: app-builds
           path: |
             ./app-dev.apk
+            ./logs/*.log
           retention-days: 7
