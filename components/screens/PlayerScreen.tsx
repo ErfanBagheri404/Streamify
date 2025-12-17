@@ -112,8 +112,7 @@ const ControlsContainer = styled.View`
   margin-bottom: 32px;
 `;
 const PlayButton = styled.TouchableOpacity<{ disabled?: boolean }>`
-  background-color: ${(props: { disabled: any }) =>
-    props.disabled ? "#333" : "#a3e635"};
+  background-color: ${(props) => (props.disabled ? "#333" : "#a3e635")};
   width: 72px;
   height: 72px;
   border-radius: 36px;
