@@ -88,7 +88,7 @@ jobs:
           # Install EAS CLI globally
           npm install -g eas-cli@latest
 
-      - name: 🔄 Verify installations
+            - name: 🔄 Verify installations
         run: |
           echo "Node version:"
           node --version
@@ -97,140 +97,70 @@ jobs:
           echo "EAS CLI version:"
           eas --version
 
-            - name: 📋 Configure project for EAS build
+      - name: 📋 Configure project for EAS build
         run: |
           if [ -f ./package.json ]; then
             echo "Current main entry in package.json:"
             grep '"main"' package.json || echo "No main entry found"
           fi
-
           # Create or update metro.config.js for SVG support
           cat > ./metro.config.js << 'EOF'
-/* eslint-disable @typescript-eslint/no-var-requires */
-const { getDefaultConfig } = require('expo/metro-config');
+          /* eslint-disable @typescript-eslint/no-var-requires */
+          const { getDefaultConfig } = require('expo/metro-config');
 
-const config = getDefaultConfig(__dirname);
+          const config = getDefaultConfig(__dirname);
 
-const { transformer, resolver } = config;
+          const { transformer, resolver } = config;
 
-config.transformer = {
-  ...transformer,
-  babelTransformerPath: require.resolve('react-native-svg-transformer/expo'),
-};
+          config.transformer = {
+            ...transformer,
+            babelTransformerPath: require.resolve('react-native-svg-transformer/expo'),
+          };
 
-config.resolver = {
-  ...resolver,
-  assetExts: resolver.assetExts.filter(ext => ext !== 'svg'),
-  sourceExts: [...resolver.sourceExts, 'svg'],
-};
+          config.resolver = {
+            ...resolver,
+            assetExts: resolver.assetExts.filter(ext => ext !== 'svg'),
+            sourceExts: [...resolver.sourceExts, 'svg'],
+          };
 
-module.exports = config;
-EOF
+          module.exports = config;
+          EOF
           echo "Created metro.config.js"
 
       - name: 🛠️ Create EAS configuration if missing
         run: |
           if [ ! -f ./eas.json ]; then
             cat > ./eas.json << 'EOF'
-{
-  "cli": {
-    "version": ">= 6.0.0"
-  },
-  "build": {
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal"
-    },
-    "preview": {
-      "distribution": "internal"
-    },
-    "production-apk": {
-      "android": {
-        "buildType": "apk",
-        "gradleCommand": ":app:assembleRelease"
-      },
-      "env": {
-        "NODE_ENV": "production",
-        "NODE_OPTIONS": "--openssl-legacy-provider --max_old_space_size=4096"
-      }
-    }
-  },
-  "submit": {
-    "production": {}
-  }
-}
-EOF
+          {
+            "cli": {
+              "version": ">= 6.0.0"
+            },
+            "build": {
+              "development": {
+                "developmentClient": true,
+                "distribution": "internal"
+              },
+              "preview": {
+                "distribution": "internal"
+              },
+              "production-apk": {
+                "android": {
+                  "buildType": "apk",
+                  "gradleCommand": ":app:assembleRelease"
+                },
+                "env": {
+                  "NODE_ENV": "production",
+                  "NODE_OPTIONS": "--openssl-legacy-provider --max_old_space_size=4096"
+                }
+              }
+            },
+            "submit": {
+              "production": {}
+            }
+          }
+          EOF
             echo "Created eas.json"
           else
             echo "eas.json already exists"
             cat ./eas.json
-          fi
-
-      - name: 🔑 Login to Expo
-        run: |
-          eas login --token $EXPO_TOKEN
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-
-      - name: 🏗️ Run EAS prebuild (if needed)
-        run: |
-         
-          if [ ! -d "./android" ] || [ ! -d "./ios" ]; then
-            echo "Running expo prebuild..."
-            npx expo prebuild --platform android --clean
-          else
-            echo "Native folders already exist, skipping prebuild"
-          fi
-
-      - name: 📱 Build Production APK
-        if: |
-          github.event_name == 'push' || 
-          github.event.inputs.buildType == 'all' || 
-          github.event.inputs.buildType == 'prod-apk'
-        run: |
-          # Set Node.js options
-          export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
-          
-          echo "Starting EAS build..."
-          echo "EXPO_TOKEN is set: ${#EXPO_TOKEN} characters"
-          echo "Current directory: $(pwd)"
-          echo "Directory contents:"
-          ls -la
-          
-          # Run the build
-          eas build \
-            --platform android \
-            --profile production-apk \
-            --local \
-            --non-interactive \
-            --output=./app-prod.apk \
-            --clear-cache
-        env:
-          NODE_ENV: production
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          NODE_OPTIONS: "--openssl-legacy-provider --max_old_space_size=4096"
-
-      - name: 📦 Upload build artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-build
-          path: |
-            ./app-prod.apk
-            ./eas-build-local-*.log
-          retention-days: 7
-
-      - name: 📊 Build summary
-        if: always()
-        run: |
-          if [ -f "./app-prod.apk" ]; then
-            echo "✅ Build successful!"
-            echo "APK size: $(ls -lh ./app-prod.apk | awk '{print $5}')"
-          else
-            echo "❌ Build failed or APK not found"
-            echo "Checking for logs..."
-            if ls ./eas-build-local-*.log 1> /dev/null 2>&1; then
-              echo "Build logs found:"
-              ls -la ./eas-build-local-*.log
-            fi
           fi
