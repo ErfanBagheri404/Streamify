@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Streamify",
+    "slug": "streamify-mobile",
+    "scheme": "streamify",
+    "sdkVersion": "54.0.0",
+    "orientation": "portrait",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "plugins": [
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 34
+          }
+        }
+      ]
+    ],
+    "android": {
+      "package": "com.erfanbagheri.streamifymobile"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "f2a4600c-e6c6-46c1-ad8b-311d9c30d9d9"
+      }
+    }
+  }
+}

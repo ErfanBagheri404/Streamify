@@ -1,0 +1,163 @@
+import * as React from "react";
+import { TouchableOpacity, View, Image, Text, StyleSheet } from "react-native";
+import styled from "styled-components/native";
+import { Ionicons } from "@expo/vector-icons";
+import { usePlayer } from "../contexts/PlayerContext";
+import { formatDuration } from "../utils/formatters";
+
+const MiniPlayerContainer = styled.View`
+  position: absolute;
+  bottom: 65px;
+  align-self: center; /* keeps it centered */
+  left: 12px;
+  right: 12px;
+  width: auto; /* let flexbox fill the space between left & right */
+  align-self: stretch;
+  height: 64px;
+  flex-direction: row;
+  align-items: center;
+  padding: 0 16px;
+  elevation: 10;
+  shadow-color: #000;
+  shadow-offset: 0px -2px;
+  shadow-opacity: 0.3;
+  shadow-radius: 4px;
+  border-radius: 10px;
+`;
+
+const TrackInfo = styled.View`
+  flex: 1;
+  margin-left: 12px;
+`;
+
+const TrackTitle = styled.Text`
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  number-of-lines: 1;
+`;
+
+const TrackArtist = styled.Text`
+  color: #999;
+  font-size: 12px;
+  margin-top: 2px;
+`;
+
+const ControlsContainer = styled.View`
+  flex-direction: row;
+  align-items: center;
+  margin-left: 16px;
+`;
+
+const ControlButton = styled.TouchableOpacity`
+  padding: 8px;
+  margin-left: 8px;
+`;
+
+const Thumbnail = styled.Image`
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  background-color: #333;
+`;
+
+const PlaceholderThumbnail = styled.View`
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  background-color: #333;
+  justify-content: center;
+  align-items: center;
+`;
+
+interface MiniPlayerProps {
+  onExpand: () => void;
+}
+
+export const MiniPlayer: React.FC<MiniPlayerProps> = ({ onExpand }) => {
+  const {
+    currentTrack,
+    isPlaying,
+    isLoading,
+    colorTheme,
+    playPause,
+    nextTrack,
+    previousTrack,
+  } = usePlayer();
+
+  if (!currentTrack) {
+    return null;
+  }
+
+  const handlePlayPause = async () => {
+    await playPause();
+  };
+
+  const handleNext = async () => {
+    await nextTrack();
+  };
+
+  const handlePrevious = async () => {
+    await previousTrack();
+  };
+
+  return (
+    <MiniPlayerContainer
+      style={{
+        backgroundColor: colorTheme.background,
+        borderTopColor: colorTheme.text + "20" /* 12% opacity */,
+      }}
+    >
+      <TouchableOpacity
+        onPress={onExpand}
+        style={{ flexDirection: "row", alignItems: "center", flex: 1 }}
+      >
+        {currentTrack.thumbnail ? (
+          <Thumbnail source={{ uri: currentTrack.thumbnail }} />
+        ) : (
+          <PlaceholderThumbnail
+            style={{ backgroundColor: colorTheme.text + "1A" }}
+          >
+            <Ionicons
+              name="musical-notes"
+              size={24}
+              color={colorTheme.text + "80"}
+            />
+          </PlaceholderThumbnail>
+        )}
+
+        <TrackInfo>
+          <TrackTitle numberOfLines={1} style={{ color: colorTheme.text }}>
+            {currentTrack.title}
+          </TrackTitle>
+          {currentTrack.artist && (
+            <TrackArtist
+              numberOfLines={1}
+              style={{ color: colorTheme.text, opacity: 0.7 }}
+            >
+              {currentTrack.artist}
+            </TrackArtist>
+          )}
+        </TrackInfo>
+      </TouchableOpacity>
+
+      <ControlsContainer>
+        <ControlButton onPress={handlePrevious}>
+          <Ionicons name="play-back" size={20} color={colorTheme.text} />
+        </ControlButton>
+
+        <ControlButton onPress={handlePlayPause}>
+          <Ionicons
+            name={isPlaying ? "pause" : "play"}
+            size={24}
+            color={colorTheme.text}
+          />
+        </ControlButton>
+
+        <ControlButton onPress={handleNext}>
+          <Ionicons name="play-forward" size={20} color={colorTheme.text} />
+        </ControlButton>
+      </ControlsContainer>
+    </MiniPlayerContainer>
+  );
+};
