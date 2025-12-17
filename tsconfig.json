@@ -25,5 +25,5 @@
   },
   "include": ["**/*.ts", "**/*.tsx", "vite-env.d.ts"],
   "exclude": ["node_modules", "dist", "main.ts.bak"],
-  "extends": "./node_modules/expo/tsconfig.base"
+  "extends": "expo/tsconfig.base"
 }
