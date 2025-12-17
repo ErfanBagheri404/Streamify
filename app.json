@@ -5,10 +5,7 @@
     "scheme": "streamify",
     "sdkVersion": "54.0.0",
     "orientation": "portrait",
-    "platforms": [
-      "ios",
-      "android"
-    ],
+    "platforms": ["ios", "android"],
     "plugins": [
       "expo-font",
       [
@@ -18,7 +15,8 @@
             "compileSdkVersion": 34
           }
         }
-      ]
+      ],
+      "expo-dev-client"
     ],
     "android": {
       "package": "com.erfanbagheri.streamifymobile"
