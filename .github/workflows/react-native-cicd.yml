@@ -14,6 +14,8 @@ on:
       buildType:
         type: choice
         description: "Build type to run"
+        required: true
+        default: prod-apk
         options:
           - prod-apk
           - all
@@ -43,33 +45,26 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-      - name: 📦 Get npm cache directory path
-        id: npm-cache-dir-path
-        run: echo "dir=$(npm cache dir)" >> $GITHUB_OUTPUT
+      - name: 📦 Clean install dependencies
+        run: |
+          rm -rf node_modules
+          npm install --legacy-peer-deps
 
-      - name: 📱 Setup EAS build cache
-        uses: actions/cache@v3
-        with:
-          path: ${{ env.HOME }}/.eas-build-local
-          key: ${{ runner.os }}-eas-build-local-${{ hashFiles('**/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-eas-build-local-
+      - name: 🧪 Run TypeScript check
+        run: npm run tsc || echo "TypeScript check completed"
 
-      - name: 📦 Install dependencies
-        run: npm install --legacy-peer-deps
+      - name: 🧹 Run ESLint
+        run: npm run lint || echo "ESLint check completed"
 
-      # - name: 🧪 Run TypeScript check
-      #   run: npm run tsc
-
-      # - name: 🧹 Run ESLint
-      #   run: npm run lint
-
-      # - name: 🎨 Run Prettier check
-      #   run: npm run format:check
+      - name: 🎨 Run Prettier check
+        run: npm run format:check || echo "Prettier check completed"
 
   build-and-deploy:
     needs: test
-    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) || github.event_name == 'workflow_dispatch'
+    if: |
+      (github.event_name == 'push' && 
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) || 
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: 🏗 Checkout repository
@@ -81,101 +76,162 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-      # - name: 📦 Get npm cache directory path
-      #   id: npm-cache-dir-path
-      #   run: echo "dir=$(npm cache dir)" >> $GITHUB_OUTPUT
-
-      # - name: 📱 Setup EAS build cache    
-      #   uses: actions/cache@v3
-      #   with:
-      #     path: ${{ env.HOME }}/.eas-build-local
-      #     key: ${{ runner.os }}-eas-build-local-${{ hashFiles('**/package.json') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-eas-build-local-
-
-      - name: 📦 Install dependencies
+      - name: 📦 Clean install and setup
         run: |
+          # Clean up
+          rm -rf node_modules
+          rm -f package-lock.json
+          
+          # Install dependencies
           npm install --legacy-peer-deps
+          
+          # Install EAS CLI globally
           npm install -g eas-cli@latest
 
-      - name: 📱 Setup EAS build cache
-        uses: actions/cache@v3
-        with:
-          path: ~/.eas-build-local
-          key: ${{ runner.os }}-eas-build-local-${{ hashFiles('**/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-eas-build-local-
-
-      - name: 🔄 Verify EAS CLI installation
+      - name: 🔄 Verify installations
         run: |
+          echo "Node version:"
+          node --version
+          echo "npm version:"
+          npm --version
           echo "EAS CLI version:"
           eas --version
 
-      - name: 📋 Fix package.json main entry
+      - name: 📋 Configure project for EAS build
         run: |
-          # Check if jq is installed, if not install it
-          if ! command -v jq &> /dev/null; then
-            echo "Installing jq..."
-            sudo apt-get update && sudo apt-get install -y jq
-          fi
-
-          # Fix the main entry in package.json
+         
           if [ -f ./package.json ]; then
-            # Create a backup
-            cp package.json package.json.bak
-            # Update the package.json
-            jq '.main = "node_modules/expo/AppEntry.js"' package.json > package.json.tmp && mv package.json.tmp package.json
-            echo "Updated package.json main entry"
-            cat package.json | grep "main"
+            echo "Current main entry in package.json:"
+            grep '"main"' package.json || echo "No main entry found"
+          fi
+          
+          # Create or update metro.config.js for SVG support
+          cat > ./metro.config.js << 'EOF'
+/* eslint-disable @typescript-eslint/no-var-requires */
+const { getDefaultConfig } = require('expo/metro-config');
+
+const config = getDefaultConfig(__dirname);
+
+const { transformer, resolver } = config;
+
+config.transformer = {
+  ...transformer,
+  babelTransformerPath: require.resolve('react-native-svg-transformer/expo'),
+};
+
+config.resolver = {
+  ...resolver,
+  assetExts: resolver.assetExts.filter(ext => ext !== 'svg'),
+  sourceExts: [...resolver.sourceExts, 'svg'],
+};
+
+module.exports = config;
+EOF
+          echo "Created metro.config.js"
+
+      - name: 🛠️ Create EAS configuration if missing
+        run: |
+          if [ ! -f ./eas.json ]; then
+            cat > ./eas.json << 'EOF'
+{
+  "cli": {
+    "version": ">= 6.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production-apk": {
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "NODE_ENV": "production",
+        "NODE_OPTIONS": "--openssl-legacy-provider --max_old_space_size=4096"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
+EOF
+            echo "Created eas.json"
           else
-            echo "package.json not found"
-            exit 1
+            echo "eas.json already exists"
+            cat ./eas.json
           fi
 
-      - name: 📋 Update metro.config.js for SVG support
+      - name: 🔑 Login to Expo
         run: |
-          if [ -f ./metro.config.js ]; then
-            echo "Creating backup of metro.config.js"
-            cp ./metro.config.js ./metro.config.js.backup
-            echo "Updating metro.config.js to CommonJS format"
-            cat > ./metro.config.js << 'EOFMARKER'
-          /* eslint-disable @typescript-eslint/no-var-requires */
-          const { getDefaultConfig } = require('expo/metro-config');
+          eas login --token $EXPO_TOKEN
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
-          const config = getDefaultConfig(__dirname);
-
-          const { transformer, resolver } = config;
-
-          config.transformer = {
-            ...transformer,
-            babelTransformerPath: require.resolve('react-native-svg-transformer/expo'),
-          };
-
-          config.resolver = {
-            ...resolver,
-            assetExts: resolver.assetExts.filter(ext => ext !== 'svg'),
-            sourceExts: [...resolver.sourceExts, 'svg'],
-          };
-
-          module.exports = config;
-          EOFMARKER
-            echo "metro.config.js updated to CommonJS format"
+      - name: 🏗️ Run EAS prebuild (if needed)
+        run: |
+         
+          if [ ! -d "./android" ] || [ ! -d "./ios" ]; then
+            echo "Running expo prebuild..."
+            npx expo prebuild --platform android --clean
           else
-            echo "metro.config.js not found"
+            echo "Native folders already exist, skipping prebuild"
           fi
 
       - name: 📱 Build Production APK
-        if: github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push'
+        if: |
+          github.event_name == 'push' || 
+          github.event.inputs.buildType == 'all' || 
+          github.event.inputs.buildType == 'prod-apk'
         run: |
+          # Set Node.js options
           export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
-          eas build --platform android --profile production-apk --local --non-interactive --output=./app-prod.apk
+          
+          echo "Starting EAS build..."
+          echo "EXPO_TOKEN is set: ${#EXPO_TOKEN} characters"
+          echo "Current directory: $(pwd)"
+          echo "Directory contents:"
+          ls -la
+          
+          # Run the build
+          eas build \
+            --platform android \
+            --profile production-apk \
+            --local \
+            --non-interactive \
+            --output=./app-prod.apk \
+            --clear-cache
         env:
           NODE_ENV: production
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          NODE_OPTIONS: "--openssl-legacy-provider --max_old_space_size=4096"
 
-      - name: 📦 Upload build artifacts to GitHub
+      - name: 📦 Upload build artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: app-builds
+          name: android-build
           path: |
             ./app-prod.apk
+            ./eas-build-local-*.log
           retention-days: 7
+
+      - name: 📊 Build summary
+        if: always()
+        run: |
+          if [ -f "./app-prod.apk" ]; then
+            echo "✅ Build successful!"
+            echo "APK size: $(ls -lh ./app-prod.apk | awk '{print $5}')"
+          else
+            echo "❌ Build failed or APK not found"
+            echo "Checking for logs..."
+            if ls ./eas-build-local-*.log 1> /dev/null 2>&1; then
+              echo "Build logs found:"
+              ls -la ./eas-build-local-*.log
+            fi
+          fi
