@@ -57,15 +57,14 @@ const SourceButton = styled.TouchableOpacity<{
   padding: 8px 20px;
   height: 36px;
   border-radius: 18px; /* Full Pill Shape */
-  background-color: ${(p: { active: any; color: any }) =>
-    p.active ? p.color || "#fff" : "#262626"};
+  background-color: ${(p) => (p.active ? p.color || "#fff" : "#262626")};
   margin-right: 8px;
   align-items: center;
   justify-content: center;
 `;
 
 const SourceButtonText = styled.Text<{ active?: boolean }>`
-  color: ${(p: { active: any }) =>
+  color: ${(p) =>
     p.active ? "#000" : "#a3a3a3"}; /* Black text on active color */
   font-size: 13px;
   font-weight: 700;
@@ -84,7 +83,7 @@ const FilterButton = styled.TouchableOpacity<{ active?: boolean }>`
   height: 36px;
   border-radius: 18px; /* Consistent Pill Shape */
   /* Active = White, Inactive = Dark Grey (Cleaner than border) */
-  background-color: ${(p: { active: any }) => (p.active ? "#fff" : "#262626")};
+  background-color: ${(p) => (p.active ? "#fff" : "#262626")};
   margin-right: 8px;
   align-items: center;
   justify-content: center;
@@ -92,8 +91,7 @@ const FilterButton = styled.TouchableOpacity<{ active?: boolean }>`
 `;
 
 const FilterButtonText = styled.Text<{ active?: boolean }>`
-  color: ${(p: { active: any }) =>
-    p.active ? "#000" : "#fff"}; /* High contrast */
+  color: ${(p) => (p.active ? "#000" : "#fff")}; /* High contrast */
   font-size: 13px;
   font-weight: 600;
 `;
@@ -172,11 +170,11 @@ export default function SearchScreen({ navigation }: any) {
   // Debug: Log when component mounts/unmounts
   useEffect(() => {
     console.log(
-      `[Search] SearchScreen mounted/updated. Results: ${searchResults.length}, Query: "${searchQuery}"`,
+      `[Search] SearchScreen mounted/updated. Results: ${searchResults.length}, Query: "${searchQuery}"`
     );
     return () => {
       console.log(
-        `[Search] SearchScreen unmounting. Results: ${searchResults.length}, Query: "${searchQuery}"`,
+        `[Search] SearchScreen unmounting. Results: ${searchResults.length}, Query: "${searchQuery}"`
       );
     };
   }, [searchResults.length, searchQuery]);
@@ -185,12 +183,12 @@ export default function SearchScreen({ navigation }: any) {
   useEffect(() => {
     const unsubscribe = navigation.addListener("focus", () => {
       console.log(
-        `[Search] Screen focused - preserving results: ${searchResults.length} items`,
+        `[Search] Screen focused - preserving results: ${searchResults.length} items`
       );
       // Don't clear results when returning from PlayerScreen
       if (searchResults.length === 0 && searchQuery.trim()) {
         console.log(
-          `[Search] Results empty but query exists: "${searchQuery}", restoring search`,
+          `[Search] Results empty but query exists: "${searchQuery}", restoring search`
         );
         handleSearch(searchQuery);
       }
@@ -232,9 +230,9 @@ export default function SearchScreen({ navigation }: any) {
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
     if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${secs
         .toString()
-        .padStart(2, '0')}`;
+        .padStart(2, "0")}`;
     }
     return `${minutes}:${secs.toString().padStart(2, "0")}`;
   };
@@ -247,7 +245,7 @@ export default function SearchScreen({ navigation }: any) {
       console.log(
         `[Search] handleSearch called with query: "${queryToUse}" (manual: ${
           manualQuery || "none"
-        })`,
+        })`
       );
       if (!queryToUse.trim()) {
         return;
@@ -256,7 +254,7 @@ export default function SearchScreen({ navigation }: any) {
       // Don't clear results if we're already showing results for the same query
       if (searchResults.length > 0 && searchQuery === queryToUse) {
         console.log(
-          `[Search] Query unchanged (${queryToUse}), preserving existing results`,
+          `[Search] Query unchanged (${queryToUse}), preserving existing results`
         );
         return;
       }
@@ -268,12 +266,12 @@ export default function SearchScreen({ navigation }: any) {
       // Only clear results if we're actually changing the search query
       if (searchQuery !== queryToUse || searchResults.length === 0) {
         console.log(
-          `[Search] Clearing results for new query: "${queryToUse}" (was: "${searchQuery}")`,
+          `[Search] Clearing results for new query: "${queryToUse}" (was: "${searchQuery}")`
         );
         setSearchResults([]);
       } else {
         console.log(
-          `[Search] Preserving existing results for same query: "${queryToUse}"`,
+          `[Search] Preserving existing results for same query: "${queryToUse}"`
         );
       }
 
@@ -314,7 +312,7 @@ export default function SearchScreen({ navigation }: any) {
           // Remove YouTube-specific noise from upload string
           uploaded: r.uploaded?.replace(
             /(\[\d.\]+\['MKB'\]?)\s*views?\s*•?\s*/i,
-            "",
+            ""
           ),
         }));
 
@@ -326,7 +324,7 @@ export default function SearchScreen({ navigation }: any) {
         setIsLoading(false);
       }
     },
-    [searchQuery, selectedFilter, selectedSource],
+    [searchQuery, selectedFilter, selectedSource]
   );
 
   // Auto-trigger search when switching Sources/Filters if we have a query
@@ -343,7 +341,7 @@ export default function SearchScreen({ navigation }: any) {
 
   const handleTextChange = (text: string) => {
     console.log(
-      `[Search] handleTextChange called with: "${text}" (current: "${searchQuery}")`,
+      `[Search] handleTextChange called with: "${text}" (current: "${searchQuery}")`
     );
     setSearchQuery(text);
     if (typingTimeoutRef.current) {
@@ -365,7 +363,7 @@ export default function SearchScreen({ navigation }: any) {
       try {
         const newSuggestions = await searchAPI.getSuggestions(
           text,
-          selectedSource,
+          selectedSource
         );
         setSuggestions(newSuggestions.slice(0, 5));
         setShowSuggestions(true);
@@ -474,7 +472,7 @@ export default function SearchScreen({ navigation }: any) {
               onPress={async () => {
                 // Play track using player context instead of navigation
                 console.log(
-                  `[Search] Playing track: ${item.title} (${item.id})`,
+                  `[Search] Playing track: ${item.title} (${item.id})`
                 );
 
                 // Format track data for player context
@@ -501,7 +499,7 @@ export default function SearchScreen({ navigation }: any) {
                     source: result.source || "youtube",
                     _isSoundCloud: result.source === "soundcloud",
                   })),
-                  index,
+                  index
                 );
               }}
             >
