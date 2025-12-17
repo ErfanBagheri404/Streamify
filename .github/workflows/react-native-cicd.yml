@@ -47,13 +47,13 @@ jobs:
         id: npm-cache-dir-path
         run: echo "dir=$(npm cache dir)" >> $GITHUB_OUTPUT
 
-      - name: 📦 Setup npm cache
+            - name: 📱 Setup EAS build cache
         uses: actions/cache@v3
         with:
-          path: ${{ steps.npm-cache-dir-path.outputs.dir }}
-          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          path: ${{ env.HOME }}/.eas-build-local
+          key: ${{ runner.os }}-eas-build-local-${{ hashFiles('**/package.json') }}
           restore-keys: |
-            ${{ runner.os }}-npm-
+            ${{ runner.os }}-eas-build-local-
 
       - name: 📦 Install dependencies
         run: npm install --legacy-peer-deps
