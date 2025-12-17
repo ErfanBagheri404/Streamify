@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Modal, TouchableOpacity, View, Text, Dimensions } from "react-native";
 import Slider from "@react-native-community/slider";
+import { SliderProps } from "@react-native-community/slider";
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
 import { usePlayer } from "../contexts/PlayerContext";
@@ -70,10 +71,22 @@ const ProgressContainer = styled.View`
   margin-top: 32px;
 `;
 
-const ProgressBar = styled(Slider)`
+const ProgressBarContainer = styled.View`
   width: 100%;
   height: 4px;
+  justify-content: center;
 `;
+
+const ProgressSlider = React.forwardRef<any, SliderProps>((props, ref) => {
+  return (
+    <Slider
+      ref={ref}
+      {...props}
+      style={[{ width: "100%", height: 4 }, props.style]}
+    />
+  );
+});
+ProgressSlider.displayName = "ProgressSlider";
 
 const TimeContainer = styled.View`
   flex-direction: row;
@@ -242,15 +255,19 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
             </TrackInfo>
 
             <ProgressContainer>
-              <ProgressBar
-                value={currentPosition}
-                maximumValue={duration}
-                minimumValue={0}
-                onSlidingComplete={handleSeek}
-                minimumTrackTintColor={colorTheme.primary}
-                maximumTrackTintColor={colorTheme.text + "4D"} /* 30% opacity */
-                thumbTintColor={colorTheme.primary}
-              />
+              <ProgressBarContainer>
+                <ProgressSlider
+                  value={currentPosition}
+                  maximumValue={duration}
+                  minimumValue={0}
+                  onSlidingComplete={handleSeek}
+                  minimumTrackTintColor={colorTheme.primary}
+                  maximumTrackTintColor={
+                    colorTheme.text + "4D"
+                  } /* 30% opacity */
+                  thumbTintColor={colorTheme.primary}
+                />
+              </ProgressBarContainer>
               <TimeContainer>
                 <TimeText style={{ color: colorTheme.text, opacity: 0.7 }}>
                   {formatTime(currentPosition)}
