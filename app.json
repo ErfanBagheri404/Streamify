@@ -5,18 +5,20 @@
     "scheme": "streamify",
     "sdkVersion": "54.0.0",
     "orientation": "portrait",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "plugins": [
       "expo-font",
       [
         "expo-build-properties",
         {
           "android": {
-            "compileSdkVersion": 35
+            "compileSdkVersion": 34
           }
         }
-      ],
-      "expo-dev-client"
+      ]
     ],
     "android": {
       "package": "com.erfanbagheri.streamifymobile"
@@ -24,7 +26,9 @@
     "extra": {
       "eas": {
         "projectId": "f2a4600c-e6c6-46c1-ad8b-311d9c30d9d9"
-      }
+      },
+      "SPOTIFY_CLIENT_ID": "e4a9619a0ff44e208f8cb006e881ddad",
+      "SPOTIFY_CLIENT_SECRET": "213f0e8ea06f4f6ab625c844fd3e020f"
     }
   }
 }

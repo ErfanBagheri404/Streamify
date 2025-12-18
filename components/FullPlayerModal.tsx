@@ -147,19 +147,25 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [duration, setDuration] = useState(0);
 
   useEffect(() => {
-    if (!sound) {
-      return;
+    if (!sound || !currentTrack?.audioUrl) {
+      return; // Don't track position if no sound or track doesn't have audio
     }
 
     const updatePosition = async () => {
       try {
+        if (!sound) {
+          return; // Don't try to get position if sound doesn't exist
+        }
         const status = await sound.getStatusAsync();
         if (status.isLoaded) {
           setCurrentPosition(status.positionMillis);
           setDuration(status.durationMillis || 0);
         }
       } catch (error) {
-        console.error("Error getting position:", error);
+        // Only log if it's not a "Player does not exist" error (which is expected)
+        if (!error?.toString().includes("Player does not exist")) {
+          console.error("Error getting position:", error);
+        }
       }
     };
 
@@ -170,8 +176,29 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   }, [sound]);
 
   const handleSeek = async (value: number) => {
-    await seekTo(value);
-    setCurrentPosition(value);
+    try {
+      if (sound && currentTrack?.audioUrl) {
+        await seekTo(value);
+        console.log(
+          `[FullPlayerModal] Seek successful, updating position to: ${value}`
+        );
+      } else {
+        console.warn("[FullPlayerModal] Cannot seek: Player not ready");
+      }
+      // Update position visually even if seek fails
+      console.log(`[FullPlayerModal] Updating visual position to: ${value}`);
+      setCurrentPosition(value);
+    } catch (error) {
+      console.error("[FullPlayerModal] Error seeking:", error);
+      console.log(
+        "[FullPlayerModal] Seek failed - player no longer exists (expected during cleanup)"
+      );
+      // Update position visually even if seek fails
+      console.log(
+        `[FullPlayerModal] Updating visual position to: ${value} (after error)`
+      );
+      setCurrentPosition(value);
+    }
   };
 
   const handlePlayPause = async () => {

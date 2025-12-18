@@ -134,17 +134,20 @@ export const searchAPI = {
       return [];
     }
     try {
+      console.log(`[API] Fetching SoundCloud suggestions for: "${query}"`);
       const html = await fetch(
         `https://soundcloud.com/search?q=${encodeURIComponent(query)}`,
         { headers: { "User-Agent": USER_AGENT, Accept: "text/html" } },
       ).then((r) => (r.ok ? r.text() : Promise.reject(r.status)));
       const m = html.match(/"query":"([^"]+)"/g);
       if (!m) {
+        console.log(`[API] No suggestions found in SoundCloud HTML`);
         return [];
       }
       const suggestions = [
         ...new Set(m.map((s) => JSON.parse(`{${s}}`).query)),
       ];
+      console.log(`[API] Found ${suggestions.length} SoundCloud suggestions:`, suggestions);
       return suggestions.slice(0, 5);
     } catch (e) {
       console.warn("[API] SC scraper failed", e);
