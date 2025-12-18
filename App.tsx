@@ -4,7 +4,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { enableScreens } from "react-native-screens";
-import { View, TouchableOpacity, Text } from "react-native";
+import { View, TouchableOpacity, Text, StatusBar } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
 // Expo vector-icons
@@ -104,7 +104,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
             });
           };
 
-          const color = isFocused ? "#a3e635" : "#a3a3a3";
+          const color = isFocused ? "#fff" : "#a3a3a3";
           const iconName =
             route.name === "HomeTab"
               ? "home"
@@ -183,6 +183,11 @@ function AppContent() {
   return (
     <PlayerProvider>
       <View style={{ flex: 1 }}>
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor="transparent"
+          translucent={true}
+        />
         <NavigationContainer>
           <Stack.Navigator
             id="MainStack"

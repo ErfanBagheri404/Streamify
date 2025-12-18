@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import { Keyboard, TouchableOpacity, View } from "react-native";
 import styled from "styled-components/native";
 import StreamItem from "../StreamItem";
-import { searchAPI } from "../../lib/searchAPI";
+import { searchAPI } from "../../modules/searchAPI";
 import { SafeArea } from "../SafeArea";
 import { usePlayer } from "../../contexts/PlayerContext";
 
@@ -12,7 +12,6 @@ const Header = styled.View`
   padding: 16px;
   flex-direction: row;
   align-items: center;
-  background-color: #171717;
 `;
 
 const SearchInput = styled.TextInput`
@@ -47,7 +46,6 @@ const LoadingText = styled.Text`
 const SourceContainer = styled.View`
   flex-direction: row;
   padding: 0 16px 12px 16px;
-  background-color: #171717;
 `;
 
 const SourceButton = styled.TouchableOpacity<{
@@ -73,7 +71,6 @@ const SourceButtonText = styled.Text<{ active?: boolean }>`
 
 // --- FIXED: Sub-Filter Styles ---
 const FilterContainer = styled.ScrollView`
-  background-color: #171717;
   max-height: 50px;
   margin-bottom: 8px;
 `;
@@ -176,6 +173,13 @@ export default function SearchScreen({ navigation }: any) {
       console.log(
         `[Search] SearchScreen unmounting. Results: ${searchResults.length}, Query: "${searchQuery}"`
       );
+      // Clear all timeouts on unmount
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
     };
   }, [searchResults.length, searchQuery]);
 
@@ -202,6 +206,7 @@ export default function SearchScreen({ navigation }: any) {
   const [selectedFilter, setSelectedFilter] = useState("");
 
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // --- Helper Functions ---
 
@@ -344,8 +349,13 @@ export default function SearchScreen({ navigation }: any) {
       `[Search] handleTextChange called with: "${text}" (current: "${searchQuery}")`
     );
     setSearchQuery(text);
+
+    // Clear existing timeouts
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
+    }
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
     }
 
     if (text.length < 3) {
@@ -359,23 +369,35 @@ export default function SearchScreen({ navigation }: any) {
       return;
     }
 
+    // Debounce suggestions (400ms)
     typingTimeoutRef.current = setTimeout(async () => {
       try {
+        console.log(
+          `[Search] Getting suggestions for: "${text}" from ${selectedSource}`
+        );
         const newSuggestions = await searchAPI.getSuggestions(
           text,
           selectedSource
         );
+        console.log(
+          `[Search] Received ${newSuggestions.length} suggestions:`,
+          newSuggestions
+        );
         setSuggestions(newSuggestions.slice(0, 5));
         setShowSuggestions(true);
-
-        // Auto-trigger search for SoundCloud when user types 3+ characters
-        if (selectedSource === "soundcloud") {
-          handleSearch(text);
-        }
       } catch (e) {
         console.log("Suggestion error", e);
       }
-    }, 300);
+    }, 400);
+
+    // Debounce search separately (1000ms - longer delay for actual search)
+    searchTimeoutRef.current = setTimeout(() => {
+      // Auto-trigger search for SoundCloud when user stops typing (3+ characters)
+      if (selectedSource === "soundcloud") {
+        console.log(`[Search] Auto-searching SoundCloud for: "${text}"`);
+        handleSearch(text);
+      }
+    }, 1000); // 1 second delay for search
   };
 
   const onSuggestionPress = (item: string) => {
@@ -459,11 +481,13 @@ export default function SearchScreen({ navigation }: any) {
       >
         {isLoading && <LoadingText>Searching...</LoadingText>}
 
-        {!isLoading &&
-          searchResults.length === 0 &&
-          searchQuery.trim() !== "" && (
-            <NoResultsText>No results found for "{searchQuery}"</NoResultsText>
-          )}
+        {!isLoading && searchResults.length === 0 && (
+          <NoResultsText>
+            {searchQuery.trim() === ""
+              ? "Search for artists, albums, or songs"
+              : `No results found for "${searchQuery}"`}
+          </NoResultsText>
+        )}
 
         {!isLoading &&
           searchResults.map((item, index) => (
