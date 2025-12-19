@@ -19,17 +19,9 @@ const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
 export const PIPED_INSTANCES = [
-  "https://pipedapi.kavin.rocks",
+
   "https://api.piped.private.coffee",
-  "https://pipedapi.leptons.xyz",
-  "https://pipedapi.nosebs.ru",
-  "https://pipedapi-libre.kavin.rocks",
-  "https://piped-api.privacy.com.de",
-  "https://pipedapi.adminforge.de",
-  "https://api.piped.yt",
-  "https://pipedapi.drgns.space",
-  "https://pipedapi.owo.si",
-  "https://pipedapi.ducks.party",
+  
 ];
 
 const INVIDIOUS_INSTANCES = [
@@ -77,7 +69,7 @@ function fmtTimeAgo(stamp: number | string | undefined): string {
 // Robust fetcher for Piped/Invidious
 const fetchWithFallbacks = async (
   instances: string[],
-  endpoint: string,
+  endpoint: string
 ): Promise<any> => {
   for (const baseUrl of instances) {
     const startTime = Date.now();
@@ -112,7 +104,7 @@ const fetchWithFallbacks = async (
 export const searchAPI = {
   getSuggestions: async (
     query: string,
-    source: string = "youtube",
+    source: "youtube" | "soundcloud" | "spotify" = "youtube"
   ): Promise<string[]> => {
     if (!query.trim()) {
       return [];
@@ -123,10 +115,32 @@ export const searchAPI = {
     if (source === "spotify") {
       return await searchAPI.getSpotifySuggestions(query);
     }
-    // Default: YouTube suggestions via Piped
     const endpoint = `/suggestions?query=${encodeURIComponent(query)}`;
     const data = await fetchWithFallbacks(PIPED_INSTANCES, endpoint);
-    return Array.isArray(data) ? data : [];
+    let suggestions: string[] = [];
+
+    if (Array.isArray(data)) {
+      if (data.length > 1 && Array.isArray(data[1])) {
+        suggestions = (data[1] as any[]).filter(
+          (v): v is string => typeof v === "string"
+        );
+      } else {
+        suggestions = (data as any[]).filter(
+          (v): v is string => typeof v === "string"
+        );
+      }
+    } else if (data && Array.isArray((data as any).suggestions)) {
+      suggestions = (data as any).suggestions.filter(
+        (v: any) => typeof v === "string"
+      );
+    }
+
+    if (!suggestions.length) {
+      const ytTerms = ["official video", "lyrics", "live", "remix", "extended"];
+      suggestions = [query, ...ytTerms.map((t) => `${query} ${t}`)];
+    }
+
+    return suggestions.slice(0, 5);
   },
 
   getSoundCloudSuggestions: async (query: string): Promise<string[]> => {
@@ -134,24 +148,60 @@ export const searchAPI = {
       return [];
     }
     try {
-      console.log(`[API] Fetching SoundCloud suggestions for: "${query}"`);
-      const html = await fetch(
-        `https://soundcloud.com/search?q=${encodeURIComponent(query)}`,
-        { headers: { "User-Agent": USER_AGENT, Accept: "text/html" } },
-      ).then((r) => (r.ok ? r.text() : Promise.reject(r.status)));
-      const m = html.match(/"query":"([^"]+)"/g);
-      if (!m) {
-        console.log(`[API] No suggestions found in SoundCloud HTML`);
-        return [];
+      console.log(
+        `[API] Fetching SoundCloud suggestions via proxy for: "${query}"`
+      );
+      const tracks = await searchAPI.scrapeSoundCloudSearch(query);
+      if (!Array.isArray(tracks) || tracks.length === 0) {
+        console.log("[API] No SoundCloud tracks returned for suggestions");
+        const fallbackTerms = [
+          "mix",
+          "remix",
+          "live",
+          "instrumental",
+          "extended",
+        ];
+        return fallbackTerms.map((term) => `${query} ${term}`).slice(0, 5);
       }
-      const suggestions = [
-        ...new Set(m.map((s) => JSON.parse(`{${s}}`).query)),
-      ];
-      console.log(`[API] Found ${suggestions.length} SoundCloud suggestions:`, suggestions);
-      return suggestions.slice(0, 5);
+      const titles = tracks
+        .map((t: any) => t && t.title)
+        .filter(
+          (t): t is string => typeof t === "string" && t.trim().length > 0
+        );
+      const uniqueTitles: string[] = [];
+      for (const title of titles) {
+        if (!uniqueTitles.includes(title)) {
+          uniqueTitles.push(title);
+        }
+        if (uniqueTitles.length >= 5) {
+          break;
+        }
+      }
+      if (uniqueTitles.length === 0) {
+        const fallbackTerms = [
+          "mix",
+          "remix",
+          "live",
+          "instrumental",
+          "extended",
+        ];
+        return fallbackTerms.map((term) => `${query} ${term}`).slice(0, 5);
+      }
+      console.log(
+        `[API] SoundCloud suggestion titles: ${uniqueTitles.length}`,
+        uniqueTitles
+      );
+      return uniqueTitles.slice(0, 5);
     } catch (e) {
-      console.warn("[API] SC scraper failed", e);
-      return [];
+      console.warn("[API] SoundCloud suggestions error:", e);
+      const fallbackTerms = [
+        "mix",
+        "remix",
+        "live",
+        "instrumental",
+        "extended",
+      ];
+      return fallbackTerms.map((term) => `${query} ${term}`).slice(0, 5);
     }
   },
 
@@ -178,7 +228,7 @@ export const searchAPI = {
     console.log(`[API] Searching Piped: "${query}"`);
     const filterParam = filter === "" ? "all" : filter;
     const endpoint = `/search?q=${encodeURIComponent(
-      query,
+      query
     )}&filter=${filterParam}`;
     const data = await fetchWithFallbacks(PIPED_INSTANCES, endpoint);
     return data && Array.isArray(data.items) ? data.items : [];
@@ -188,7 +238,7 @@ export const searchAPI = {
     console.log(`[API] Searching Invidious: "${query}"`);
     const sortParam = sortType === "date" ? "upload_date" : "view_count";
     const endpoint = `/search?q=${encodeURIComponent(
-      query,
+      query
     )}&sort_by=${sortParam}`;
     const data = await fetchWithFallbacks(INVIDIOUS_INSTANCES, endpoint);
     return Array.isArray(data) ? data : [];
@@ -216,7 +266,7 @@ export const searchAPI = {
             const trackId = String(track.id);
             if (seenIds.has(trackId)) {
               console.log(
-                `[API] Skipping duplicate SoundCloud track: ${trackId}`,
+                `[API] Skipping duplicate SoundCloud track: ${trackId}`
               );
               return false;
             }
@@ -330,7 +380,7 @@ export const searchAPI = {
     try {
       // Use the SoundCloud proxy API
       const searchUrl = `https://proxy.searchsoundcloud.com/tracks?q=${encodeURIComponent(
-        query,
+        query
       )}`;
 
       const controller = new AbortController();
@@ -371,7 +421,7 @@ export const searchAPI = {
       }));
 
       console.log(
-        `[API] 🟢 SoundCloud Proxy Success: Found ${tracks.length} tracks`,
+        `[API] 🟢 SoundCloud Proxy Success: Found ${tracks.length} tracks`
       );
       return tracks;
     } catch (e: any) {

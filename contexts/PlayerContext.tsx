@@ -289,7 +289,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         // Create new sound (with fallback for missing audio URL)
-        let newSound;
+        let newSound: Audio.Sound | null = null;
         try {
           if (audioUrl) {
             console.log(`[PlayerContext] Creating sound with URL: ${audioUrl}`);
@@ -325,7 +325,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           setCurrentTrack({ ...track, audioUrl });
         }
 
-        // Set up playback monitoring
+        // Set up playback monitoring (only if sound was created)
+        if (!newSound) {
+          console.warn(
+            "[PlayerContext] Skipping playback monitoring setup: no sound object"
+          );
+          return;
+        }
+
         newSound.setOnPlaybackStatusUpdate((status) => {
           if (status.isLoaded) {
             let lastPosition = 0;
