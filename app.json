@@ -26,9 +26,8 @@
     "extra": {
       "eas": {
         "projectId": "f2a4600c-e6c6-46c1-ad8b-311d9c30d9d9"
-      },
-      "SPOTIFY_CLIENT_ID": "e4a9619a0ff44e208f8cb006e881ddad",
-      "SPOTIFY_CLIENT_SECRET": "213f0e8ea06f4f6ab625c844fd3e020f"
+      }
+      
     }
   }
 }
