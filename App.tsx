@@ -4,11 +4,19 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { enableScreens } from "react-native-screens";
-import { View, TouchableOpacity, Text, StatusBar } from "react-native";
+import {
+  View,
+  TouchableOpacity,
+  Text,
+  StatusBar,
+  TextInput,
+} from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { useFonts } from "expo-font";
 
 // Expo vector-icons
 import { Ionicons } from "@expo/vector-icons";
+import { MaterialIcons } from "@expo/vector-icons";
 
 // Context
 import { PlayerProvider } from "./contexts/PlayerContext";
@@ -21,7 +29,7 @@ import { FullPlayerModal } from "./components/FullPlayerModal";
 import HomeScreen from "./components/screens/HomeScreen";
 import ListsScreen from "./components/screens/ListsScreen";
 import SearchScreen from "./components/screens/SearchScreen";
-import SettingsScreen from "./components/screens/SettingsScreen";
+import LibraryScreen from "./components/screens/LibraryScreen";
 
 enableScreens();
 
@@ -31,12 +39,35 @@ const Tab = createBottomTabNavigator();
 /* ---------- Icon helper ---------- */
 type IconProps = { name: string; color: string; size: number };
 const TabBarIcon: React.FC<IconProps> = ({ name, color, size }) => {
-  const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
-    home: "home",
-    search: "search",
-    settings: "settings-sharp",
+  // Map icon names to their respective libraries and icon names
+  const iconMap: Record<
+    string,
+    { library: "Ionicons" | "MaterialIcons"; iconName: string }
+  > = {
+    home: { library: "Ionicons", iconName: "home-outline" },
+    search: { library: "Ionicons", iconName: "search" },
+    library: { library: "Ionicons", iconName: "library-outline" },
   };
-  return <Ionicons name={iconMap[name] || "home"} size={size} color={color} />;
+
+  const iconConfig = iconMap[name] || { library: "Ionicons", iconName: "home" };
+
+  if (iconConfig.library === "MaterialIcons") {
+    return (
+      <MaterialIcons
+        name={iconConfig.iconName as keyof typeof MaterialIcons.glyphMap}
+        size={size}
+        color={color}
+      />
+    );
+  } else {
+    return (
+      <Ionicons
+        name={iconConfig.iconName as keyof typeof Ionicons.glyphMap}
+        size={size}
+        color={color}
+      />
+    );
+  }
 };
 
 /* ---------- Custom Tab Bar with Gradient ---------- */
@@ -110,7 +141,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
               ? "home"
               : route.name === "Search"
                 ? "search"
-                : "settings";
+                : "library";
 
           return (
             <TouchableOpacity
@@ -163,7 +194,7 @@ function HomeTabs() {
         options={{ title: "Home" }}
       />
       <Tab.Screen name="Search" component={SearchScreen} />
-      <Tab.Screen name="Settings" component={SettingsScreen} />
+      <Tab.Screen name="Your Library" component={LibraryScreen} />
     </Tab.Navigator>
   );
 }
@@ -208,5 +239,35 @@ function AppContent() {
 }
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    GoogleSansRegular: require("./assets/fonts/GoogleSansRegular.ttf"),
+  });
+
+  if (fontsLoaded) {
+    const TextAny: any = Text;
+    const TextInputAny: any = TextInput;
+
+    if (TextAny.defaultProps == null) {
+      TextAny.defaultProps = {};
+    }
+    if (TextInputAny.defaultProps == null) {
+      TextInputAny.defaultProps = {};
+    }
+
+    TextAny.defaultProps.style = [
+      { fontFamily: "GoogleSansRegular" },
+      TextAny.defaultProps.style,
+    ].filter(Boolean);
+
+    TextInputAny.defaultProps.style = [
+      { fontFamily: "GoogleSansRegular" },
+      TextInputAny.defaultProps.style,
+    ].filter(Boolean);
+  }
+
+  if (!fontsLoaded) {
+    return null;
+  }
+
   return <AppContent />;
 }

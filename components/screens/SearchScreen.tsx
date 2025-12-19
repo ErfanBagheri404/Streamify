@@ -1,5 +1,10 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import { Keyboard, TouchableOpacity, View } from "react-native";
+import {
+  Keyboard,
+  TouchableOpacity,
+  View,
+  TouchableWithoutFeedback,
+} from "react-native";
 import styled from "styled-components/native";
 import StreamItem from "../StreamItem";
 import { searchAPI } from "../../modules/searchAPI";
@@ -95,7 +100,7 @@ const FilterButtonText = styled.Text<{ active?: boolean }>`
 
 const SuggestionsOverlay = styled.View`
   position: absolute;
-  top: 80px;
+  top: 110px;
   left: 16px;
   right: 16px;
   background-color: #262626;
@@ -124,6 +129,8 @@ const SuggestionIcon = styled.Text`
   font-size: 14px;
 `;
 
+type SourceType = "youtube" | "soundcloud" | "spotify";
+
 // --- Interfaces ---
 
 interface SearchResult {
@@ -140,7 +147,7 @@ interface SearchResult {
   source?: "youtube" | "soundcloud";
 }
 
-const sourceFilters = [
+const sourceFilters: { id: SourceType; label: string; color: string }[] = [
   { id: "youtube", label: "YouTube", color: "#ff0000" }, // YouTube Red
   { id: "soundcloud", label: "SoundCloud", color: "#ff7700" }, // SC Orange
   { id: "spotify", label: "Spotify", color: "#1db954" }, // Spotify Green
@@ -164,16 +171,19 @@ export default function SearchScreen({ navigation }: any) {
   const [isLoading, setIsLoading] = useState(false);
   const { playTrack } = usePlayer();
 
-  // Debug: Log when component mounts/unmounts
   useEffect(() => {
     console.log(
       `[Search] SearchScreen mounted/updated. Results: ${searchResults.length}, Query: "${searchQuery}"`
     );
     return () => {
       console.log(
-        `[Search] SearchScreen unmounting. Results: ${searchResults.length}, Query: "${searchQuery}"`
+        `[Search] SearchScreen cleanup. Previous results: ${searchResults.length}, Query: "${searchQuery}"`
       );
-      // Clear all timeouts on unmount
+    };
+  }, [searchResults.length, searchQuery]);
+
+  useEffect(() => {
+    return () => {
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
@@ -181,7 +191,7 @@ export default function SearchScreen({ navigation }: any) {
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [searchResults.length, searchQuery]);
+  }, []);
 
   // Restore search results when returning from PlayerScreen
   useEffect(() => {
@@ -202,7 +212,7 @@ export default function SearchScreen({ navigation }: any) {
   }, [navigation, searchResults.length, searchQuery]);
 
   // State for Filters
-  const [selectedSource, setSelectedSource] = useState("youtube");
+  const [selectedSource, setSelectedSource] = useState<SourceType>("youtube");
   const [selectedFilter, setSelectedFilter] = useState("");
 
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -358,7 +368,7 @@ export default function SearchScreen({ navigation }: any) {
       clearTimeout(searchTimeoutRef.current);
     }
 
-    if (text.length < 3) {
+    if (text.trim().length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
       // Don't clear search results unless the text is completely empty
@@ -392,9 +402,8 @@ export default function SearchScreen({ navigation }: any) {
 
     // Debounce search separately (1000ms - longer delay for actual search)
     searchTimeoutRef.current = setTimeout(() => {
-      // Auto-trigger search for SoundCloud when user stops typing (3+ characters)
-      if (selectedSource === "soundcloud") {
-        console.log(`[Search] Auto-searching SoundCloud for: "${text}"`);
+      if (text.trim().length >= 2) {
+        console.log(`[Search] Auto-searching ${selectedSource} for: "${text}"`);
         handleSearch(text);
       }
     }, 1000); // 1 second delay for search
@@ -402,143 +411,154 @@ export default function SearchScreen({ navigation }: any) {
 
   const onSuggestionPress = (item: string) => {
     setSearchQuery(item);
+    setShowSuggestions(false);
     handleSearch(item);
   };
 
+  const handleOutsidePress = () => {
+    if (showSuggestions) {
+      setShowSuggestions(false);
+    }
+    Keyboard.dismiss();
+  };
+
   return (
-    <SafeArea>
-      <Header>
-        <SearchInput
-          placeholder={`Search ${
-            sourceFilters.find((s) => s.id === selectedSource)?.label
-          }...`}
-          placeholderTextColor="#a3a3a3"
-          value={searchQuery}
-          onChangeText={handleTextChange}
-          onSubmitEditing={() => handleSearch()}
-          returnKeyType="search"
-          onFocus={() => {
-            if (suggestions.length > 0) {
-              setShowSuggestions(true);
-            }
-          }}
-        />
-      </Header>
+    <TouchableWithoutFeedback onPress={handleOutsidePress}>
+      <SafeArea>
+        <Header>
+          <SearchInput
+            placeholder={`Search ${
+              sourceFilters.find((s) => s.id === selectedSource)?.label
+            }...`}
+            placeholderTextColor="#a3a3a3"
+            value={searchQuery}
+            onChangeText={handleTextChange}
+            onSubmitEditing={() => handleSearch()}
+            returnKeyType="search"
+            onFocus={() => {
+              if (suggestions.length > 0) {
+                setShowSuggestions(true);
+              }
+            }}
+          />
+        </Header>
 
-      {/* 1. Source Selectors (YouTube / SoundCloud / Spotify) */}
-      <SourceContainer>
-        {sourceFilters.map((source) => (
-          <SourceButton
-            key={source.id}
-            active={selectedSource === source.id}
-            color={source.color}
-            onPress={() => setSelectedSource(source.id)}
-          >
-            <SourceButtonText active={selectedSource === source.id}>
-              {source.label}
-            </SourceButtonText>
-          </SourceButton>
-        ))}
-      </SourceContainer>
-
-      {/* 2. Sub-Filters (Only for YouTube currently) */}
-      {selectedSource === "youtube" && (
-        <FilterContainer
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16 }}
-        >
-          {searchFilters.map((filter) => (
-            <FilterButton
-              key={filter.value}
-              active={selectedFilter === filter.value}
-              onPress={() => setSelectedFilter(filter.value)}
+        {/* 1. Source Selectors (YouTube / SoundCloud / Spotify) */}
+        <SourceContainer>
+          {sourceFilters.map((source) => (
+            <SourceButton
+              key={source.id}
+              active={selectedSource === source.id}
+              color={source.color}
+              onPress={() => setSelectedSource(source.id)}
             >
-              <FilterButtonText active={selectedFilter === filter.value}>
-                {filter.label}
-              </FilterButtonText>
-            </FilterButton>
+              <SourceButtonText active={selectedSource === source.id}>
+                {source.label}
+              </SourceButtonText>
+            </SourceButton>
           ))}
-        </FilterContainer>
-      )}
+        </SourceContainer>
 
-      {/* Suggestions Dropdown */}
-      {showSuggestions && suggestions.length > 0 && (
-        <SuggestionsOverlay>
-          {suggestions.map((item, index) => (
-            <SuggestionItem key={index} onPress={() => onSuggestionPress(item)}>
-              <SuggestionIcon>🔍</SuggestionIcon>
-              <SuggestionText>{item}</SuggestionText>
-            </SuggestionItem>
-          ))}
-        </SuggestionsOverlay>
-      )}
-
-      {/* Results List */}
-      <ResultsContainer
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: 20 }}
-      >
-        {isLoading && <LoadingText>Searching...</LoadingText>}
-
-        {!isLoading && searchResults.length === 0 && (
-          <NoResultsText>
-            {searchQuery.trim() === ""
-              ? "Search for artists, albums, or songs"
-              : `No results found for "${searchQuery}"`}
-          </NoResultsText>
+        {/* 2. Sub-Filters (Only for YouTube currently) */}
+        {selectedSource === "youtube" && (
+          <FilterContainer
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16 }}
+          >
+            {searchFilters.map((filter) => (
+              <FilterButton
+                key={filter.value}
+                active={selectedFilter === filter.value}
+                onPress={() => setSelectedFilter(filter.value)}
+              >
+                <FilterButtonText active={selectedFilter === filter.value}>
+                  {filter.label}
+                </FilterButtonText>
+              </FilterButton>
+            ))}
+          </FilterContainer>
         )}
 
-        {!isLoading &&
-          searchResults.map((item, index) => (
-            <TouchableOpacity
-              key={`${item.source || "yt"}-${item.id}`}
-              onPress={async () => {
-                // Play track using player context instead of navigation
-                console.log(
-                  `[Search] Playing track: ${item.title} (${item.id})`
-                );
+        {/* Suggestions Dropdown */}
+        {showSuggestions && suggestions.length > 0 && (
+          <SuggestionsOverlay>
+            {suggestions.map((item, index) => (
+              <SuggestionItem
+                key={index}
+                onPress={() => onSuggestionPress(item)}
+              >
+                <SuggestionIcon>🔍</SuggestionIcon>
+                <SuggestionText>{item}</SuggestionText>
+              </SuggestionItem>
+            ))}
+          </SuggestionsOverlay>
+        )}
 
-                // Format track data for player context
-                const track = {
-                  id: item.id,
-                  title: item.title,
-                  artist: item.author,
-                  duration: parseInt(item.duration) || 0,
-                  thumbnail: item.thumbnailUrl || item.img,
-                  audioUrl: undefined, // Will be fetched by player context
-                  source: item.source || "youtube",
-                  _isSoundCloud: item.source === "soundcloud",
-                };
+        {/* Results List */}
+        <ResultsContainer
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: 20 }}
+        >
+          {isLoading && <LoadingText>Searching...</LoadingText>}
 
-                await playTrack(
-                  track,
-                  searchResults.map((result: any) => ({
-                    id: result.id,
-                    title: result.title,
-                    artist: result.author,
-                    duration: parseInt(result.duration) || 0,
-                    thumbnail: result.thumbnailUrl || result.img,
-                    audioUrl: undefined,
-                    source: result.source || "youtube",
-                    _isSoundCloud: result.source === "soundcloud",
-                  })),
-                  index
-                );
-              }}
-            >
-              <StreamItem
-                id={item.id}
-                title={item.title}
-                author={item.author}
-                duration={formatDuration(parseInt(item.duration) || 0)}
-                views={item.views}
-                uploaded={item.uploaded}
-                thumbnailUrl={item.thumbnailUrl}
-              />
-            </TouchableOpacity>
-          ))}
-      </ResultsContainer>
-    </SafeArea>
+          {!isLoading && searchResults.length === 0 && (
+            <NoResultsText>
+              Start searching for artists, albums, or songs
+            </NoResultsText>
+          )}
+
+          {!isLoading &&
+            searchResults.map((item, index) => (
+              <TouchableOpacity
+                key={`${item.source || "yt"}-${item.id}`}
+                onPress={async () => {
+                  // Play track using player context instead of navigation
+                  console.log(
+                    `[Search] Playing track: ${item.title} (${item.id})`
+                  );
+
+                  // Format track data for player context
+                  const track = {
+                    id: item.id,
+                    title: item.title,
+                    artist: item.author,
+                    duration: parseInt(item.duration) || 0,
+                    thumbnail: item.thumbnailUrl || item.img,
+                    audioUrl: undefined, // Will be fetched by player context
+                    source: item.source || "youtube",
+                    _isSoundCloud: item.source === "soundcloud",
+                  };
+
+                  await playTrack(
+                    track,
+                    searchResults.map((result: any) => ({
+                      id: result.id,
+                      title: result.title,
+                      artist: result.author,
+                      duration: parseInt(result.duration) || 0,
+                      thumbnail: result.thumbnailUrl || result.img,
+                      audioUrl: undefined,
+                      source: result.source || "youtube",
+                      _isSoundCloud: result.source === "soundcloud",
+                    })),
+                    index
+                  );
+                }}
+              >
+                <StreamItem
+                  id={item.id}
+                  title={item.title}
+                  author={item.author}
+                  duration={formatDuration(parseInt(item.duration) || 0)}
+                  views={item.views}
+                  uploaded={item.uploaded}
+                  thumbnailUrl={item.thumbnailUrl}
+                />
+              </TouchableOpacity>
+            ))}
+        </ResultsContainer>
+      </SafeArea>
+    </TouchableWithoutFeedback>
   );
 }

@@ -3,9 +3,11 @@ declare module "react-native" {
 
   export class View extends React.Component<any> {}
   export class Text extends React.Component<any> {}
+  export class TextInput extends React.Component<any> {}
   export class ScrollView extends React.Component<any> {}
   export class Modal extends React.Component<any> {}
   export class TouchableOpacity extends React.Component<any> {}
+  export class TouchableWithoutFeedback extends React.Component<any> {}
   export class Image extends React.Component<any> {}
   export class FlatList extends React.Component<any> {}
   export class ActivityIndicator extends React.Component<any> {}
@@ -40,7 +42,7 @@ declare module "react-native" {
   export class AppRegistry {
     static registerComponent(
       appKey: string,
-      getComponent: () => React.ComponentType,
+      getComponent: () => React.ComponentType
     ): void;
     static runApplication(appKey: string, params: any): void;
   }
