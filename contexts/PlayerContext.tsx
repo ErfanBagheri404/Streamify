@@ -13,6 +13,7 @@ import {
   getAudioStreamUrl,
 } from "../modules/audioStreaming";
 import { extractColorsFromImage, ColorTheme } from "../utils/imageColors";
+import { StorageService } from "../utils/storage";
 
 export interface Track {
   id: string;
@@ -36,6 +37,7 @@ interface PlayerContextType {
   repeatMode: "off" | "one" | "all";
   isShuffled: boolean;
   colorTheme: ColorTheme;
+  likedSongs: Track[];
 
   // Actions
   playTrack: (
@@ -52,6 +54,8 @@ interface PlayerContextType {
   toggleShuffle: () => void;
   clearPlayer: () => Promise<void>;
   handleStreamFailure: () => Promise<void>;
+  toggleLikeSong: (track: Track) => void;
+  isSongLiked: (trackId: string) => boolean;
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
@@ -68,6 +72,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [repeatMode, setRepeatMode] = useState<"off" | "one" | "all">("off");
   const [isShuffled, setIsShuffled] = useState(false);
+  const [likedSongs, setLikedSongs] = useState<Track[]>([]);
   const [colorTheme, setColorTheme] = useState<ColorTheme>({
     primary: "#a3e635",
     secondary: "#22d3ee",
@@ -82,6 +87,19 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const soundRef = useRef<Audio.Sound | null>(null);
   const audioManager = useRef(new AudioStreamManager()).current;
+
+  // Load liked songs from storage on startup
+  useEffect(() => {
+    const loadLikedSongs = async () => {
+      try {
+        const savedLikedSongs = await StorageService.loadLikedSongs();
+        setLikedSongs(savedLikedSongs);
+      } catch (error) {
+        console.error("Error loading liked songs:", error);
+      }
+    };
+    loadLikedSongs();
+  }, []);
 
   // Update color theme only when track is ready (after loading completes)
   useEffect(() => {
@@ -757,6 +775,35 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [isShuffled, playlist, currentIndex]);
 
+  const toggleLikeSong = useCallback((track: Track) => {
+    setLikedSongs((prev) => {
+      const isCurrentlyLiked = prev.some((song) => song.id === track.id);
+      let updatedSongs: Track[];
+
+      if (isCurrentlyLiked) {
+        // Remove from liked songs
+        updatedSongs = prev.filter((song) => song.id !== track.id);
+      } else {
+        // Add to liked songs
+        updatedSongs = [...prev, track];
+      }
+
+      // Persist to storage
+      StorageService.saveLikedSongs(updatedSongs).catch((error) => {
+        console.error("Error saving liked songs:", error);
+      });
+
+      return updatedSongs;
+    });
+  }, []);
+
+  const isSongLiked = useCallback(
+    (trackId: string) => {
+      return likedSongs.some((song) => song.id === trackId);
+    },
+    [likedSongs]
+  );
+
   const value: PlayerContextType = {
     currentTrack,
     playlist,
@@ -768,6 +815,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     repeatMode,
     isShuffled,
     colorTheme,
+    likedSongs,
     playTrack,
     playPause,
     nextTrack,
@@ -778,6 +826,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     toggleShuffle,
     clearPlayer,
     handleStreamFailure,
+    toggleLikeSong,
+    isSongLiked,
   };
 
   return (

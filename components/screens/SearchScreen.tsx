@@ -31,6 +31,7 @@ const SearchInput = styled.TextInput`
 
 const ResultsContainer = styled.ScrollView`
   flex: 1;
+  margin-bottom:110px;
 `;
 
 const NoResultsText = styled.Text`

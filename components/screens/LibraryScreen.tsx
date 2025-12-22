@@ -6,6 +6,7 @@ import { SafeArea } from "../SafeArea";
 import AntDesign from "@expo/vector-icons/AntDesign";
 import Entypo from "@expo/vector-icons/Entypo";
 import { FontAwesome5, FontAwesome6, Fontisto } from "@expo/vector-icons";
+import { usePlayer } from "../../contexts/PlayerContext";
 
 const Screen = styled.View`
   flex: 1;
@@ -193,8 +194,13 @@ const sampleCollections = [
   },
 ];
 
-export default function LibraryScreen() {
+export default function LibraryScreen({ navigation }: { navigation: any }) {
   const [activeSection, setActiveSection] = React.useState("Playlists");
+  const { likedSongs } = usePlayer();
+
+  const handleLikedSongsPress = () => {
+    navigation.navigate("LikedSongs");
+  };
 
   return (
     <SafeArea>
@@ -240,14 +246,21 @@ export default function LibraryScreen() {
             <SortLabel>Recents</SortLabel>
           </SortLeft>
           <LayoutToggle>
-            <LayoutIcon><AntDesign name="unordered-list" size={14} color="white" /></LayoutIcon>
+            <LayoutIcon>
+              <AntDesign name="unordered-list" size={14} color="white" />
+            </LayoutIcon>
           </LayoutToggle>
         </SortRow>
 
         <Grid>
           <GridRow>
             {sampleCollections.slice(0, 2).map((item) => (
-              <CollectionCard key={item.id}>
+              <CollectionCard
+                key={item.id}
+                onPress={
+                  item.id === "liked" ? handleLikedSongsPress : undefined
+                }
+              >
                 {item.id === "liked" ? (
                   <LikedCoverWrapper>
                     <LikedCoverGradient
@@ -270,7 +283,7 @@ export default function LibraryScreen() {
                       </PinIcon>
                       <PinLabel>Playlist</PinLabel>
                       <PinDot>•</PinDot>
-                      <CollectionMeta>650 songs</CollectionMeta>
+                      <CollectionMeta>{likedSongs.length} songs</CollectionMeta>
                     </PinRow>
                   </>
                 ) : (

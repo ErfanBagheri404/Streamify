@@ -14,9 +14,6 @@ export class AudioStreamManager {
     { url: string; latency: number; strategy: string }[]
   > = new Map();
 
-  private healthyInvidiousInstances: string[] = [];
-  private instanceHealthCheckInterval: NodeJS.Timeout | null = null;
-
   // Track information for better SoundCloud searching
   private currentTrackTitle?: string;
   private currentTrackArtist?: string;
@@ -32,6 +29,132 @@ export class AudioStreamManager {
     this.setupFallbackStrategies();
     // Don't start health checks initially - they'll be started when needed
     // this.startInstanceHealthChecking();
+  }
+
+  // Convert video stream to audio format by finding audio-only alternatives
+  private async convertStreamToMP3(
+    videoUrl: string,
+    videoId: string
+  ): Promise<string> {
+    try {
+      console.log(
+        `[AudioStreamManager] Converting video stream to audio for video: ${videoId}`
+      );
+
+      // Method 1: Try to find audio-only streams with specific itags
+      // YouTube/Invidious audio-only itags: 140 (AAC), 251 (Opus), 139 (AAC low)
+      const audioItags = ["140", "251", "139", "250", "249"];
+
+      for (const itag of audioItags) {
+        try {
+          // Replace the itag parameter in the URL
+          const audioOnlyUrl = videoUrl.replace(/&itag=\d+/, `&itag=${itag}`);
+
+          console.log(`[AudioStreamManager] Testing audio-only itag ${itag}`);
+
+          // Test if this audio-only URL works
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+          const testResponse = await fetch(audioOnlyUrl, {
+            method: "HEAD",
+            signal: controller.signal,
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            },
+          });
+
+          clearTimeout(timeoutId);
+
+          if (testResponse.ok) {
+            console.log(
+              `[AudioStreamManager] Found working audio-only stream with itag ${itag}`
+            );
+            return audioOnlyUrl;
+          }
+        } catch (error) {
+          console.warn(
+            `[AudioStreamManager] Audio-only itag ${itag} failed:`,
+            error
+          );
+          continue;
+        }
+      }
+
+      // Method 2: Try to modify the URL to get an audio-only version
+      // Remove video-specific parameters and add audio-specific ones
+      console.log(
+        `[AudioStreamManager] Trying URL modification for audio extraction`
+      );
+
+      try {
+        // Parse the URL to understand its structure
+        const url = new URL(videoUrl);
+        const params = new URLSearchParams(url.search);
+
+        // Remove video quality parameters
+        params.delete("quality");
+        params.delete("vcodec");
+        params.delete("width");
+        params.delete("height");
+
+        // Add audio-specific parameters
+        params.set("acodec", "mp4a");
+        params.set("abr", "128");
+
+        const modifiedUrl = `${url.origin}${url.pathname}?${params.toString()}`;
+
+        console.log(`[AudioStreamManager] Testing modified URL`);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        const testResponse = await fetch(modifiedUrl, {
+          method: "HEAD",
+          signal: controller.signal,
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          },
+        });
+
+        clearTimeout(timeoutId);
+
+        if (testResponse.ok) {
+          console.log(`[AudioStreamManager] Found working modified audio URL`);
+          return modifiedUrl;
+        }
+      } catch (error) {
+        console.warn(`[AudioStreamManager] URL modification failed:`, error);
+      }
+
+      // Method 3: Last resort - return the original URL with audio extraction hint
+      // The player will need to handle video streams that contain audio
+      console.warn(
+        `[AudioStreamManager] All audio extraction methods failed, returning original stream URL with audio hint`
+      );
+
+      // Add a query parameter to indicate this is an audio extraction request
+      // This helps the player understand it should extract audio from the video stream
+      const audioExtractionUrl = `${videoUrl}&audio_only=true&extract_audio=1`;
+
+      // Log for debugging
+      console.log(
+        `[AudioStreamManager] Returning URL with audio extraction hint`
+      );
+
+      return audioExtractionUrl;
+    } catch (error) {
+      console.error(`[AudioStreamManager] Audio extraction failed:`, error);
+
+      // Even in case of error, return the original URL so playback can still work
+      // The player might be able to handle the video stream directly
+      console.warn(
+        `[AudioStreamManager] Returning original URL due to extraction error: ${videoUrl}`
+      );
+      return videoUrl;
+    }
   }
 
   private setupProxyRotation() {
@@ -497,23 +620,23 @@ export class AudioStreamManager {
 
   private setupFallbackStrategies() {
     // Strategy 1: Local extraction server (if available)
-    this.fallbackStrategies.push(this.tryLocalExtraction.bind(this));
+    // this.fallbackStrategies.push(this.tryLocalExtraction.bind(this));
     // Strategy 2: SoundCloud API (high priority for music)
-    this.fallbackStrategies.push(this.trySoundCloud.bind(this));
+    // this.fallbackStrategies.push(this.trySoundCloud.bind(this));
     // Strategy 3: JioSaavn API for music content
-    this.fallbackStrategies.push(this.tryJioSaavn.bind(this));
+    // this.fallbackStrategies.push(this.tryJioSaavn.bind(this));
     // Strategy 4: YouTube Music extraction
-    this.fallbackStrategies.push(this.tryYouTubeMusic.bind(this));
+    // this.fallbackStrategies.push(this.tryYouTubeMusic.bind(this));
     // Strategy 5: Spotify Web API (requires auth but has good coverage)
-    this.fallbackStrategies.push(this.trySpotifyWebApi.bind(this));
+    // this.fallbackStrategies.push(this.trySpotifyWebApi.bind(this));
     // Strategy 6: Hyperpipe API
-    this.fallbackStrategies.push(this.tryHyperpipe.bind(this));
-    // Strategy 7: Invidious instances (health-checked)
-    this.fallbackStrategies.push(this.tryHealthyInvidious.bind(this));
+    // this.fallbackStrategies.push(this.tryHyperpipe.bind(this));
+    // Strategy 7: Invidious instances (health-checked) - PRIMARY FOR YOUTUBE
+    this.fallbackStrategies.push(this.tryInvidious.bind(this));
     // Strategy 8: Piped API (alternative to Invidious)
-    this.fallbackStrategies.push(this.tryPiped.bind(this));
+    // this.fallbackStrategies.push(this.tryPiped.bind(this));
     // Strategy 9: YouTube embed extraction (last resort)
-    this.fallbackStrategies.push(this.tryYouTubeEmbed.bind(this));
+    // this.fallbackStrategies.push(this.tryYouTubeEmbed.bind(this));
   }
 
   async getAudioUrl(
@@ -714,11 +837,9 @@ export class AudioStreamManager {
   ): Promise<Response> {
     for (let i = 0; i <= retries; i++) {
       try {
-        // Create AbortController with longer timeout
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-        // Try direct fetch first with extended timeout
         const response = await fetch(url, {
           ...options,
           signal: controller.signal,
@@ -732,12 +853,62 @@ export class AudioStreamManager {
         });
         clearTimeout(timeoutId);
 
+        // Enhanced blocking detection
+        const contentType = response.headers.get("content-type");
+        const responseText = await response.text();
+
+        // Check for various blocking indicators
+        const isHtmlResponse = contentType?.includes("text/html");
+        const isApiRequest = url.includes("/api/");
+        const hasCloudflare =
+          responseText.includes("cf-browser-verification") ||
+          responseText.includes("cloudflare") ||
+          responseText.includes("Checking your browser") ||
+          responseText.includes("DDoS protection by Cloudflare");
+        const hasBlockingPage =
+          responseText.includes("blocked") ||
+          responseText.includes("access denied") ||
+          responseText.includes("forbidden");
+
+        if (
+          (isHtmlResponse && isApiRequest) ||
+          hasCloudflare ||
+          hasBlockingPage
+        ) {
+          throw new Error(
+            `Cloudflare/blocked API request: ${hasCloudflare ? "Cloudflare detected" : hasBlockingPage ? "Blocking page" : "HTML response to API request"}`
+          );
+        }
+
+        // Re-create response since we consumed the body
+        const recreatedResponse = new Response(responseText, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        });
+
         if (response.ok) {
-          return response;
+          return recreatedResponse;
+        }
+
+        // Handle specific HTTP error codes
+        if (response.status === 429) {
+          throw new Error(`Rate limited (429): Too many requests`);
+        } else if (response.status === 503) {
+          throw new Error(
+            `Service unavailable (503): Instance may be overloaded`
+          );
+        } else if (response.status === 502) {
+          throw new Error(`Bad gateway (502): Instance proxy error`);
+        } else if (response.status === 404) {
+          throw new Error(`Not found (404): Resource not available`);
+        } else if (response.status >= 500) {
+          throw new Error(
+            `Server error (${response.status}): Instance may be down`
+          );
         }
 
         if (i < retries) {
-          // Try with proxy
           const proxyUrl = this.getNextProxy() + encodeURIComponent(url);
           const proxyController = new AbortController();
           const proxyTimeoutId = setTimeout(
@@ -758,18 +929,66 @@ export class AudioStreamManager {
           });
           clearTimeout(proxyTimeoutId);
 
+          const proxyContentType = proxyResponse.headers.get("content-type");
+          const proxyResponseText = await proxyResponse.text();
+
+          // Check for blocking indicators in proxy response
+          const proxyHasCloudflare =
+            proxyResponseText.includes("cf-browser-verification") ||
+            proxyResponseText.includes("cloudflare") ||
+            proxyResponseText.includes("Checking your browser") ||
+            proxyResponseText.includes("DDoS protection by Cloudflare");
+
+          if (
+            (proxyContentType?.includes("text/html") &&
+              url.includes("/api/")) ||
+            proxyHasCloudflare
+          ) {
+            throw new Error(
+              `Cloudflare/blocked API request via proxy: ${proxyHasCloudflare ? "Cloudflare detected" : "HTML response to API request"}`
+            );
+          }
+
+          // Re-create proxy response
+          const recreatedProxyResponse = new Response(proxyResponseText, {
+            status: proxyResponse.status,
+            statusText: proxyResponse.statusText,
+            headers: proxyResponse.headers,
+          });
+
           if (proxyResponse.ok) {
-            return proxyResponse;
+            return recreatedProxyResponse;
           }
         }
       } catch (error) {
         if (i === retries) {
           throw error;
         }
-        // Exponential backoff
-        await new Promise((resolve) =>
-          setTimeout(resolve, 2000 * Math.pow(2, i))
+
+        // Enhanced error logging
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[AudioStreamManager] fetchWithProxy attempt ${i + 1} failed for ${url}: ${errorMessage}`
         );
+
+        // Don't retry on certain errors (blocking, auth, etc.)
+        if (
+          errorMessage.includes("Cloudflare") ||
+          errorMessage.includes("blocked") ||
+          errorMessage.includes("forbidden") ||
+          errorMessage.includes("401") ||
+          errorMessage.includes("403")
+        ) {
+          throw error; // Don't retry on blocking/auth errors
+        }
+
+        // Exponential backoff with jitter
+        const backoffMs = 2000 * Math.pow(2, i) + Math.random() * 1000;
+        console.log(
+          `[AudioStreamManager] Waiting ${Math.round(backoffMs)}ms before retry ${i + 2}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
       }
     }
     throw new Error(`Failed to fetch ${url} after ${retries + 1} attempts`);
@@ -1037,88 +1256,163 @@ export class AudioStreamManager {
   }
 
   private async tryInvidious(videoId: string): Promise<string> {
-    const invidiousInstances = [
-      "https://yewtu.be",
-      "https://inv.nadeko.net",
-      "https://invidious.nerdvpn.de",
-      "https://invidious.f5.si",
-      "https://inv.perditum.com",
-      "https://invidious.io",
-      "https://invidious.snopyta.org",
-      "https://invidious.kavin.rocks",
-      "https://invidious.tube",
-      "https://invidious.silkky.cloud",
-    ];
+    const instance = "https://echostreamz.com";
 
-    for (const instance of invidiousInstances) {
-      try {
-        const response = await this.fetchWithProxy(
-          `${instance}/api/v1/videos/${videoId}`,
-          {
-            headers: {
-              "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-              Accept: "application/json, text/plain, */*",
-              "Accept-Language": "en-US,en;q=0.9",
-            },
+    try {
+      // Use ?local=true to get proxied URLs that bypass some blocks
+      const response = await this.fetchWithProxy(
+        `${instance}/api/v1/videos/${videoId}?local=true`,
+        {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            Accept: "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
           },
-          1, // 1 retry
-          12000 // 12 second timeout
-        );
+        },
+        2, // 2 retries
+        12000 // 12 second timeout
+      );
 
-        if (!response.ok) {
-          continue;
-        }
-
-        const data = await response.json();
-
-        // Check for adaptive formats (primary method)
-        if (data.adaptiveFormats) {
-          const audioFormats = data.adaptiveFormats
-            .filter(
-              (f: any) =>
-                f.type?.startsWith("audio/") || f.mimeType?.startsWith("audio/")
-            )
-            .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-
-          if (audioFormats.length > 0 && audioFormats[0].url) {
-            console.log(
-              `[AudioStreamManager] Found audio via Invidious instance ${instance}`
-            );
-            return audioFormats[0].url;
-          }
-        }
-
-        // Fallback to formatStreams if adaptiveFormats not available
-        if (data.formatStreams) {
-          const audioStreams = data.formatStreams
-            .filter(
-              (f: any) =>
-                f.type?.startsWith("audio/") || f.mimeType?.startsWith("audio/")
-            )
-            .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-
-          if (audioStreams.length > 0 && audioStreams[0].url) {
-            console.log(
-              `[AudioStreamManager] Found audio via Invidious formatStreams ${instance}`
-            );
-            return audioStreams[0].url;
-          }
-        }
-
-        // Check for direct audio URL in response
-        if (data.audioUrl) {
-          console.log(
-            `[AudioStreamManager] Found direct audio URL via Invidious ${instance}`
-          );
-          return data.audioUrl;
-        }
-      } catch (error) {
-        console.warn(`Invidious instance ${instance} failed:`, error);
-        continue;
+      if (!response.ok) {
+        throw new Error(`Invidious returned ${response.status}`);
       }
+
+      // Check if response is HTML (blocked) instead of JSON
+      const contentType = response.headers.get("content-type");
+      if (!contentType?.includes("json")) {
+        throw new Error("Invidious returned HTML instead of JSON (blocked)");
+      }
+
+      const data = await response.json();
+
+      // Check for adaptive formats (primary method)
+      if (data.adaptiveFormats) {
+        const audioFormats = data.adaptiveFormats
+          .filter(
+            (f: any) =>
+              f.type?.startsWith("audio/") || f.mimeType?.startsWith("audio/")
+          )
+          .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+
+        if (audioFormats.length > 0 && audioFormats[0].url) {
+          // Resolve relative URLs to full URLs
+          let audioUrl = audioFormats[0].url;
+          if (audioUrl.startsWith("/")) {
+            audioUrl = `${instance}${audioUrl}`;
+          }
+          console.log(
+            `[AudioStreamManager] Found audio via Invidious adaptiveFormats`
+          );
+          return audioUrl;
+        }
+      }
+
+      // Fallback to formatStreams if adaptiveFormats not available
+      if (data.formatStreams) {
+        // First try to find audio-only streams
+        const audioStreams = data.formatStreams
+          .filter(
+            (f: any) =>
+              f.type?.startsWith("audio/") || f.mimeType?.startsWith("audio/")
+          )
+          .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+
+        if (audioStreams.length > 0 && audioStreams[0].url) {
+          // Resolve relative URLs to full URLs
+          let audioUrl = audioStreams[0].url;
+          if (audioUrl.startsWith("/")) {
+            audioUrl = `${instance}${audioUrl}`;
+          }
+          console.log(`[AudioStreamManager] Found audio via formatStreams`);
+          return audioUrl;
+        }
+
+        // If no audio-only streams, try video streams that contain audio (muxed)
+        // These are video streams but they also contain audio tracks
+        const videoStreamsWithAudio = data.formatStreams
+          .filter((f: any) => {
+            const type = f.type || f.mimeType || "";
+            // Look for video streams that likely contain audio
+            return (
+              type.startsWith("video/") &&
+              (f.type?.includes("mp4") || f.mimeType?.includes("mp4")) &&
+              // Prefer streams with audio codecs
+              (type.includes("mp4a") || type.includes("audio"))
+            );
+          })
+          .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+
+        if (videoStreamsWithAudio.length > 0 && videoStreamsWithAudio[0].url) {
+          // Resolve relative URLs to full URLs
+          let audioUrl = videoStreamsWithAudio[0].url;
+          if (audioUrl.startsWith("/")) {
+            audioUrl = `${instance}${audioUrl}`;
+          }
+          console.log(
+            `[AudioStreamManager] Found video stream with audio via formatStreams`
+          );
+          return audioUrl;
+        }
+
+        // Last resort: any video stream (can be extracted for audio)
+        const anyVideoStream = data.formatStreams
+          .filter((f: any) => {
+            const type = f.type || f.mimeType || "";
+            return type.startsWith("video/");
+          })
+          .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0))
+          .find((f: any) => f.url);
+
+        if (anyVideoStream) {
+          // Resolve relative URLs to full URLs
+          let audioUrl = anyVideoStream.url;
+          if (audioUrl.startsWith("/")) {
+            audioUrl = `${instance}${audioUrl}`;
+          }
+          console.log(
+            `[AudioStreamManager] Using video stream for audio extraction via formatStreams`
+          );
+          return audioUrl;
+        }
+      }
+
+      // Check for direct audio URL in response
+      if (data.audioUrl) {
+        // Resolve relative URLs to full URLs
+        let audioUrl = data.audioUrl;
+        if (audioUrl.startsWith("/")) {
+          audioUrl = `${instance}${audioUrl}`;
+        }
+        console.log(
+          `[AudioStreamManager] Found direct audio URL via Invidious`
+        );
+        return audioUrl;
+      }
+
+      // If we have a video stream URL, convert it to MP3 format
+      // This handles muxed streams that contain both video and audio
+      if (data.formatStreams && data.formatStreams.length > 0) {
+        const bestStream = data.formatStreams[0];
+        if (bestStream.url) {
+          let streamUrl = bestStream.url;
+          if (streamUrl.startsWith("/")) {
+            streamUrl = `${instance}${streamUrl}`;
+          }
+
+          // Convert video stream to MP3 format using a conversion service
+          console.log(
+            `[AudioStreamManager] Converting video stream to MP3 format`
+          );
+          return await this.convertStreamToMP3(streamUrl, videoId);
+        }
+      }
+
+      throw new Error("No audio formats found in response");
+    } catch (error) {
+      console.warn(`Invidious failed:`, error);
+      throw error;
     }
-    throw new Error("All Invidious instances failed");
   }
 
   private async tryYouTubeEmbed(videoId: string): Promise<string> {
@@ -1716,7 +2010,8 @@ export class AudioStreamManager {
     return null;
   }
 
-  private async tryPiped(videoId: string): Promise<string> {
+  /*
+  // private async tryPiped(videoId: string): Promise<string> {
     try {
       const pipedInstances = [
         "https://pipedapi.kavin.rocks",
@@ -1755,7 +2050,7 @@ export class AudioStreamManager {
           continue;
         }
       }
-      throw new Error("All Piped instances failed");
+      // throw new Error("All Piped instances failed");
     } catch (error) {
       throw new Error(
         `Piped API failed: ${
@@ -1764,100 +2059,9 @@ export class AudioStreamManager {
       );
     }
   }
+  */
 
-  private async tryHealthyInvidious(videoId: string): Promise<string> {
-    // Initialize health checks if not already done
-    if (
-      this.healthyInvidiousInstances.length === 0 &&
-      !this.instanceHealthCheckInterval
-    ) {
-      console.log("[Audio] Initializing Invidious health checks...");
-      this.startInstanceHealthChecking();
-      // Wait a bit for health checks to complete
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    }
-
-    // Use health-checked instances first
-    if (this.healthyInvidiousInstances.length > 0) {
-      for (const instance of this.healthyInvidiousInstances) {
-        try {
-          const response = await this.fetchWithProxy(
-            `${instance}/api/v1/videos/${videoId}`,
-            {
-              headers: {
-                "User-Agent":
-                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-                Accept: "application/json, text/plain, */*",
-                "Accept-Language": "en-US,en;q=0.9",
-              },
-            },
-            1, // 1 retry for healthy instances
-            10000 // 10 second timeout
-          );
-
-          if (!response.ok) {
-            continue;
-          }
-
-          const data = await response.json();
-
-          // Check for adaptive formats (primary method)
-          if (data.adaptiveFormats) {
-            const audioFormats = data.adaptiveFormats
-              .filter(
-                (f: any) =>
-                  f.type?.startsWith("audio/") ||
-                  f.mimeType?.startsWith("audio/")
-              )
-              .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-
-            if (audioFormats.length > 0 && audioFormats[0].url) {
-              console.log(
-                `[AudioStreamManager] Found audio via healthy Invidious instance ${instance}`
-              );
-              return audioFormats[0].url;
-            }
-          }
-
-          // Fallback to formatStreams if adaptiveFormats not available
-          if (data.formatStreams) {
-            const audioStreams = data.formatStreams
-              .filter(
-                (f: any) =>
-                  f.type?.startsWith("audio/") ||
-                  f.mimeType?.startsWith("audio/")
-              )
-              .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-
-            if (audioStreams.length > 0 && audioStreams[0].url) {
-              console.log(
-                `[AudioStreamManager] Found audio via healthy Invidious formatStreams ${instance}`
-              );
-              return audioStreams[0].url;
-            }
-          }
-
-          // Check for direct audio URL in response
-          if (data.audioUrl) {
-            console.log(
-              `[AudioStreamManager] Found direct audio URL via healthy Invidious ${instance}`
-            );
-            return data.audioUrl;
-          }
-        } catch (error) {
-          console.warn(`Healthy Invidious instance ${instance} failed:`, error);
-          continue;
-        }
-      }
-    }
-
-    console.log(
-      "[AudioStreamManager] No healthy Invidious instances available, falling back to regular Invidious"
-    );
-
-    // Fallback to regular Invidious if no healthy instances
-    return this.tryInvidious(videoId);
-  }
+  // Helper method to get video info with extended timeout
 
   // Helper method to get video info with extended timeout
   private async getVideoInfoWithTimeout(
@@ -1867,9 +2071,11 @@ export class AudioStreamManager {
     try {
       // Try multiple sources for video info
       const sources = [
-        `https://yewtu.be/api/v1/videos/${videoId}`,
-        `https://inv.nadeko.net/api/v1/videos/${videoId}`,
         `https://invidious.nerdvpn.de/api/v1/videos/${videoId}`,
+        `https://yewtu.be/api/v1/videos/${videoId}`,
+        `https://invidious.f5.si/api/v1/videos/${videoId}`,
+        `https://inv.perditum.com/api/v1/videos/${videoId}`,
+        `https://inv.nadeko.net/api/v1/videos/${videoId}`,
         `https://www.youtube.com/embed/${videoId}`,
       ];
 
@@ -1930,10 +2136,8 @@ export class AudioStreamManager {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
       const response = await fetch(
-        `https://yewtu.be/api/v1/videos/${videoId}`,
-        {
-          signal: controller.signal,
-        }
+        `https://invidious.nerdvpn.de/api/v1/videos/${videoId}`,
+        { signal: controller.signal }
       );
       clearTimeout(timeoutId);
 
@@ -1969,100 +2173,10 @@ export class AudioStreamManager {
     return {};
   }
 
-  // Invidious instance health checking
-  private startInstanceHealthChecking() {
-    this.checkInvidiousHealth();
-    // Check health every 5 minutes
-    this.instanceHealthCheckInterval = setInterval(
-      () => {
-        this.checkInvidiousHealth();
-      },
-      5 * 60 * 1000
-    );
-  }
-
-  private async checkInvidiousHealth() {
-    const allInvidiousInstances = [
-      "https://yewtu.be",
-      "https://inv.nadeko.net",
-      "https://invidious.nerdvpn.de",
-      "https://invidious.f5.si",
-      "https://inv.perditum.com",
-      "https://invidious.io",
-      "https://invidious.snopyta.org",
-      "https://invidious.kavin.rocks",
-      "https://invidious.tube",
-      "https://invidious.silkky.cloud",
-      "https://invidious.projectsegfau.lt",
-      "https://invidious.privacydev.net",
-      "https://invidious.drgns.space",
-      "https://invidious.jing.rocks",
-      "https://invidious.protokolla.fi",
-      "https://invidious.private.coffee",
-      "https://invidious.perennialte.ch",
-      "https://invidious.pufe.org",
-      "https://invidious.lunar.icu",
-      "https://invidious.privacy.com.de",
-    ];
-
-    const healthChecks = allInvidiousInstances.map(async (instance) => {
-      try {
-        const startTime = Date.now();
-        // Use our enhanced fetchWithProxy for better reliability
-        const response = await this.fetchWithProxy(
-          `${instance}/api/v1/trending`,
-          {
-            headers: {
-              "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-              Accept: "application/json, text/plain, */*",
-              "Accept-Language": "en-US,en;q=0.9",
-            },
-          },
-          1, // 1 retry for health checks
-          8000 // 8 second timeout
-        );
-
-        const responseTime = Date.now() - startTime;
-        return {
-          instance,
-          healthy: response.ok,
-          responseTime: response.ok ? responseTime : Infinity,
-        };
-      } catch (error) {
-        console.warn(
-          `[AudioStreamManager] Health check failed for ${instance}:`,
-          error
-        );
-        return {
-          instance,
-          healthy: false,
-          responseTime: Infinity,
-        };
-      }
-    });
-
-    const results = await Promise.all(healthChecks);
-
-    const healthyInstances = results
-      .filter((result) => result.healthy && result.responseTime < 5000) // Only consider instances responding in under 5 seconds
-      .sort((a, b) => a.responseTime - b.responseTime)
-      .map((result) => result.instance);
-
-    this.healthyInvidiousInstances = healthyInstances.slice(0, 5); // Keep top 5 fastest
-    console.log(
-      `[AudioStreamManager] Found ${this.healthyInvidiousInstances.length} healthy Invidious instances:`,
-      this.healthyInvidiousInstances
-    );
-  }
+  // Cleanup method
 
   // Cleanup method
   public async cleanup() {
-    if (this.instanceHealthCheckInterval) {
-      clearInterval(this.instanceHealthCheckInterval);
-      this.instanceHealthCheckInterval = null;
-    }
-
     // Clean up SoundCloud cached files to prevent storage leaks
     for (const filePath of this.soundCloudCache.values()) {
       try {
