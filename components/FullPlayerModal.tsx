@@ -4,6 +4,7 @@ import Slider from "@react-native-community/slider";
 import { SliderProps } from "@react-native-community/slider";
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
+import { Entypo } from "@expo/vector-icons";
 import { usePlayer } from "../contexts/PlayerContext";
 import { formatTime } from "../utils/formatters";
 
@@ -141,6 +142,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     seekTo,
     setRepeatMode,
     toggleShuffle,
+    toggleLikeSong,
+    isSongLiked,
   } = usePlayer();
 
   const [currentPosition, setCurrentPosition] = useState(0);
@@ -224,6 +227,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     toggleShuffle();
   };
 
+  const handleLike = () => {
+    if (currentTrack) {
+      toggleLikeSong(currentTrack);
+    }
+  };
+
   const getRepeatIcon = () => {
     return "repeat" as const;
   };
@@ -247,11 +256,15 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
           <Text style={{ color: colorTheme.text, opacity: 0.7, fontSize: 14 }}>
             NOW PLAYING
           </Text>
-          <HeaderButton>
-            <Ionicons
-              name="ellipsis-horizontal"
+          <HeaderButton onPress={handleLike}>
+            <Entypo
+              name={isSongLiked(currentTrack.id) ? "heart" : "heart-outlined"}
               size={24}
-              color={colorTheme.text}
+              color={
+                isSongLiked(currentTrack.id)
+                  ? colorTheme.primary
+                  : colorTheme.text
+              }
             />
           </HeaderButton>
         </Header>

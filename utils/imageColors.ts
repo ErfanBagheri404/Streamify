@@ -12,7 +12,7 @@ export interface ColorTheme {
 }
 
 export const extractColorsFromImage = async (
-  imageUrl: string,
+  imageUrl: string
 ): Promise<ColorTheme> => {
   try {
     console.log("[ColorExtraction] Starting extraction for:", imageUrl);
@@ -58,7 +58,7 @@ export const extractColorsFromImage = async (
         return theme;
       } else {
         console.log(
-          "[ColorExtraction] No colors extracted, using default theme",
+          "[ColorExtraction] No colors extracted, using default theme"
         );
       }
     }
@@ -89,7 +89,7 @@ const extractDominantColors = async (imageUrl: string): Promise<string[]> => {
       (Image as any).getSize(
         imageUrl,
         (width, height) => resolve({ width, height }),
-        (error) => reject(error),
+        (error) => reject(error)
       );
     });
 
@@ -108,12 +108,12 @@ const extractDominantColors = async (imageUrl: string): Promise<string[]> => {
     const resizedImage = await ImageManipulator.manipulateAsync(
       imageUrl,
       [{ resize: { width: analysisWidth, height: analysisHeight } }],
-      { format: ImageManipulator.SaveFormat.PNG, base64: true },
+      { format: ImageManipulator.SaveFormat.PNG, base64: true }
     );
 
     console.log(
       "[ColorExtraction] Image manipulation complete, base64 available:",
-      !!resizedImage.base64,
+      !!resizedImage.base64
     );
 
     if (!resizedImage.base64) {
@@ -124,7 +124,7 @@ const extractDominantColors = async (imageUrl: string): Promise<string[]> => {
     const colorAnalysis = await analyzeImageColors(
       resizedImage.base64,
       analysisWidth,
-      analysisHeight,
+      analysisHeight
     );
 
     console.log("[ColorExtraction] Color analysis result:", colorAnalysis);
@@ -145,7 +145,7 @@ const extractDominantColors = async (imageUrl: string): Promise<string[]> => {
 const analyzeImageColors = async (
   base64Data: string,
   width: number,
-  height: number,
+  height: number
 ): Promise<{
   isBlackAndWhite: boolean;
   isDark: boolean;
@@ -167,7 +167,7 @@ const analyzeImageColors = async (
     console.log("[ColorExtraction] Base64 data length:", b64.length);
     console.log(
       "[ColorExtraction] Base64 data preview:",
-      b64.substring(0, 50) + "...",
+      b64.substring(0, 50) + "..."
     );
 
     let rgba: Uint8Array;
@@ -176,7 +176,7 @@ const analyzeImageColors = async (
       const bytes = toByteArray(b64);
       console.log(
         "[ColorExtraction] Converted to bytes, length:",
-        bytes.length,
+        bytes.length
       );
 
       const decoded = UPNG.decode(bytes.buffer);
@@ -192,7 +192,7 @@ const analyzeImageColors = async (
         const frames = UPNG.toRGBA8(decoded);
         console.log(
           "[ColorExtraction] Converted to RGBA8, frames:",
-          frames.length,
+          frames.length
         );
         rgba = frames[0];
       } else if (decoded.data) {
@@ -220,9 +220,9 @@ const analyzeImageColors = async (
     let grayCount = 0;
 
     for (let i = 0; i < rgba.length; i += 4) {
-      const r = rgba[i + 2]; // Assuming BGRA format, so R is at offset 2
-      const g = rgba[i + 1];
-      const b = rgba[i]; // B is at offset 0
+      const r = rgba[i + 2]; // Should be rgba[i + 0]
+      const g = rgba[i + 1]; // Correct
+      const b = rgba[i]; // Should be rgba[i + 2]
       const a = rgba[i + 3];
 
       if (a < 128) {
@@ -287,14 +287,10 @@ const analyzeImageColors = async (
           : (maxVal - minVal) / (1 - Math.abs(2 * lightness - 1));
 
       // Skip colors that are too dark (< 10%) or too light (> 90%) - less restrictive
-      if (lightness < 0.1 || lightness > 0.9) {
-        return;
-      }
+      if (lightness < 0.05 || lightness > 0.95) return;
 
       // Skip very low saturation colors (grays) unless they're very frequent
-      if (saturation < 0.15 && count < validCount * 0.05) {
-        return;
-      }
+      if (saturation < 0.1 && count < validCount * 0.02) return;
 
       // Calculate visual importance score: combines frequency, saturation, and optimal lightness
       const frequencyScore = count / validCount; // 0-1, how frequent
@@ -331,9 +327,9 @@ const analyzeImageColors = async (
 
     if (validCount > 0) {
       // Fallback: if no good color was found (bestScore too low), use the most frequent one
-      if (bestScore < 0.2) {
+      if (bestScore < 0.1) {
         console.log(
-          "[ColorExtraction] No visually prominent color found, falling back to most frequent",
+          "[ColorExtraction] No visually prominent color found, falling back to most frequent"
         );
         let maxCount = 0;
         colorHistogram.forEach((count, colorKey) => {
@@ -394,12 +390,12 @@ const analyzeImageColors = async (
           saturation: Math.round(saturation * 100),
           lightness: Math.round(lightness * 100),
           colorSpace: saturation < 0.12 ? "grayscale" : "colorful",
-        },
+        }
       );
 
       if (saturation < 0.12) {
         console.log(
-          "[ColorExtraction] Detected grayscale dominant color, forcing black and white theme",
+          "[ColorExtraction] Detected grayscale dominant color, forcing black and white theme"
         );
         return {
           isBlackAndWhite: true,
@@ -412,7 +408,7 @@ const analyzeImageColors = async (
       }
     } else {
       console.log(
-        "[ColorExtraction] No valid pixels found, using default blue",
+        "[ColorExtraction] No valid pixels found, using default blue"
       );
     }
 
@@ -457,54 +453,28 @@ const generateColorsFromAnalysis = (analysis: {
   saturation: number;
   lightness: number;
 }): string[] => {
-  console.log("[ColorExtraction] Generating colors from analysis:", {
-    isBlackAndWhite: analysis.isBlackAndWhite,
-    isDark: analysis.isDark,
-    isLight: analysis.isLight,
-    dominantHue: analysis.dominantHue,
-    saturation: Math.round(analysis.saturation * 100),
-    lightness: Math.round(analysis.lightness * 100),
-  });
-
   if (analysis.isBlackAndWhite) {
-    const colors = [
-      "#2a2a2a", // Very dark gray primary
-      "#555555", // Medium gray secondary
-      "#808080", // True gray accent
-    ];
-    console.log("[ColorExtraction] Generated grayscale colors:", colors);
-    return colors;
+    return ["#374151", "#6b7280", "#9ca3af"]; // Better grayscale
   } else if (analysis.isDark) {
-    const colors = [
-      "#1a1a1a", // Very dark gray primary
-      "#404040", // Dark gray secondary
-      "#666666", // Medium gray accent
+    // Use actual dominant color instead of grays
+    return [
+      `hsl(${analysis.dominantHue}, ${Math.round(analysis.saturation * 80)}%, ${Math.round(analysis.lightness * 40)}%)`,
+      `hsl(${analysis.dominantHue}, ${Math.round(analysis.saturation * 60)}%, ${Math.round(analysis.lightness * 60)}%)`,
+      `hsl(${analysis.dominantHue}, ${Math.round(analysis.saturation * 70)}%, ${Math.round(analysis.lightness * 80)}%)`,
     ];
-    console.log("[ColorExtraction] Generated dark colors:", colors);
-    return colors;
   } else if (analysis.isLight) {
-    const colors = [
-      "#f5f5f5", // Very light gray primary
-      "#d0d0d0", // Light gray secondary
-      "#b0b0b0", // Medium light gray accent
+    return [
+      `hsl(${analysis.dominantHue}, ${Math.round(analysis.saturation * 60)}%, ${Math.round(analysis.lightness * 90)}%)`,
+      `hsl(${analysis.dominantHue}, ${Math.round(analysis.saturation * 50)}%, ${Math.round(analysis.lightness * 75)}%)`,
+      `hsl(${analysis.dominantHue}, ${Math.round(analysis.saturation * 40)}%, ${Math.round(analysis.lightness * 60)}%)`,
     ];
-    console.log("[ColorExtraction] Generated light colors:", colors);
-    return colors;
   } else {
-    // Colorful image
-    const colors = [
-      `hsl(${analysis.dominantHue}, ${Math.round(
-        analysis.saturation * 100,
-      )}%, ${Math.round(analysis.lightness * 100)}%)`,
-      `hsl(${(analysis.dominantHue + 60) % 360}, ${Math.round(
-        analysis.saturation * 80,
-      )}%, ${Math.round(analysis.lightness * 90)}%)`,
-      `hsl(${(analysis.dominantHue + 120) % 360}, ${Math.round(
-        analysis.saturation * 90,
-      )}%, ${Math.round(analysis.lightness * 110)}%)`,
+    // Colorful image - use complementary colors
+    return [
+      `hsl(${analysis.dominantHue}, ${Math.round(analysis.saturation * 100)}%, ${Math.round(analysis.lightness * 100)}%)`,
+      `hsl(${(analysis.dominantHue + 30) % 360}, ${Math.round(analysis.saturation * 80)}%, ${Math.round(analysis.lightness * 85)}%)`,
+      `hsl(${(analysis.dominantHue + 180) % 360}, ${Math.round(analysis.saturation * 90)}%, ${Math.round(analysis.lightness * 70)}%)`,
     ];
-    console.log("[ColorExtraction] Generated colorful HSL colors:", colors);
-    return colors;
   }
 };
 
@@ -532,7 +502,7 @@ const extractColorsFromUrl = async (imageUrl: string): Promise<string[]> => {
 const sampleColorsFromImage = (
   imageUrl: string,
   isLight: boolean,
-  isDark: boolean,
+  isDark: boolean
 ): string[] => {
   console.log("[ColorExtraction] Analyzing image characteristics:", {
     isLight,

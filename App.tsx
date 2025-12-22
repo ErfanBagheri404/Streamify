@@ -30,6 +30,7 @@ import HomeScreen from "./components/screens/HomeScreen";
 import ListsScreen from "./components/screens/ListsScreen";
 import SearchScreen from "./components/screens/SearchScreen";
 import LibraryScreen from "./components/screens/LibraryScreen";
+import { LikedSongsScreen } from "./components/screens/LikedSongsScreen";
 
 enableScreens();
 
@@ -213,7 +214,7 @@ function AppContent() {
 
   return (
     <PlayerProvider>
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, backgroundColor: "#000" }}>
         <StatusBar
           barStyle="light-content"
           backgroundColor="transparent"
@@ -223,10 +224,25 @@ function AppContent() {
           <Stack.Navigator
             id="MainStack"
             initialRouteName="Home"
-            screenOptions={{ headerShown: false }}
+            screenOptions={{
+              headerShown: false,
+              animation: "slide_from_right",
+              animationDuration: 200,
+            }}
           >
             <Stack.Screen name="Home" component={HomeTabs} />
             <Stack.Screen name="Lists" component={ListsScreen} />
+            <Stack.Screen
+              name="LikedSongs"
+              component={LikedSongsScreen}
+              options={{
+                animation: "slide_from_right",
+                animationDuration: 200,
+                gestureEnabled: true,
+                gestureDirection: "horizontal",
+                cardStyle: { backgroundColor: "#000" },
+              }}
+            />
           </Stack.Navigator>
         </NavigationContainer>
 
