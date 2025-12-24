@@ -541,7 +541,7 @@ export default function HomeScreen({ navigation }: any) {
 
       // Skip Spotify calls - show skeletons only
       console.log(
-        "[HomeScreen] Skipping Spotify calls – showing skeletons only"
+        "[HomeScreen] Skipping Spotify calls – showing skeletons only",
       );
 
       // Initialize all data arrays as empty to show skeletons
@@ -575,7 +575,7 @@ export default function HomeScreen({ navigation }: any) {
       setPlaylistItems([]);
     } finally {
       console.log(
-        "[HomeScreen] loadHomeData complete - skeletons should be visible"
+        "[HomeScreen] loadHomeData complete - skeletons should be visible",
       );
       // Keep loading false to allow skeleton display logic to work
       setLoading(false);
@@ -584,7 +584,7 @@ export default function HomeScreen({ navigation }: any) {
 
   useEffect(() => {
     console.log(
-      "[HomeScreen] useEffect -> calling loadHomeData with skipSpotify=true"
+      "[HomeScreen] useEffect -> calling loadHomeData with skipSpotify=true",
     );
     loadHomeData(true); // Always skip Spotify calls to show skeletons
   }, []);
@@ -615,7 +615,10 @@ export default function HomeScreen({ navigation }: any) {
 
   return (
     <SafeArea>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 80 }} // Ensure last items are accessible
+      >
         {/* Header with User Profile and Categories - Always show skeletons */}
         <ChipsContainer>
           <ProfileContainer>
@@ -636,42 +639,6 @@ export default function HomeScreen({ navigation }: any) {
             </ChipsContent>
           </ChipsScrollView>
         </ChipsContainer>
-
-        {/* Featured Playlists Carousel with Skeleton Loading */}
-        <Section>
-          <SectionHeader>
-            <SectionTitle>Featured Playlists</SectionTitle>
-            <SeeAllButton onPress={() => navigation.navigate("Playlists")}>
-              <SeeAllText>See all</SeeAllText>
-            </SeeAllButton>
-          </SectionHeader>
-          <FeaturedCarousel horizontal showsHorizontalScrollIndicator={false}>
-            {loading
-              ? // Show skeleton featured playlists while loading
-                Array.from({ length: 3 }, (_, i) => (
-                  <SkeletonFeaturedComponent key={i} />
-                ))
-              : // Show actual featured playlists when loaded
-                featuredPlaylists.map((playlist) => (
-                  <FeaturedCard
-                    key={playlist.id}
-                    onPress={() => handlePlayPlaylist(playlist)}
-                  >
-                    {playlist.images[0]?.url ? (
-                      <FeaturedImage source={{ uri: playlist.images[0].url }} />
-                    ) : (
-                      <CardImagePlaceholder />
-                    )}
-                    <FeaturedTitle numberOfLines={2}>
-                      {playlist.name}
-                    </FeaturedTitle>
-                    <FeaturedDescription numberOfLines={2}>
-                      {playlist.description}
-                    </FeaturedDescription>
-                  </FeaturedCard>
-                ))}
-          </FeaturedCarousel>
-        </Section>
 
         {/* Top 50 Global - Always show skeletons */}
         <Section>

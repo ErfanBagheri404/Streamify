@@ -5,29 +5,39 @@
     "scheme": "streamify",
     "sdkVersion": "54.0.0",
     "orientation": "portrait",
-    "platforms": [
-      "ios",
-      "android"
-    ],
+    "platforms": ["ios", "android"],
     "plugins": [
       "expo-font",
+      "expo-task-manager",
       [
         "expo-build-properties",
         {
           "android": {
-            "compileSdkVersion": 34
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "foregroundService": {
+              "serviceType": "mediaPlayback",
+              "notificationTitle": "Streamify is playing",
+              "notificationDescription": "Media playback service"
+            }
           }
         }
       ]
     ],
     "android": {
-      "package": "com.erfanbagheri.streamifymobile"
+      "package": "com.erfanbagheri.streamifymobile",
+      "permissions": [
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.WAKE_LOCK",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ]
     },
     "extra": {
       "eas": {
         "projectId": "f2a4600c-e6c6-46c1-ad8b-311d9c30d9d9"
       }
-      
     }
   }
 }

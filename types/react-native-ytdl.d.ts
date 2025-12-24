@@ -1,4 +1,4 @@
-declare module 'react-native-ytdl' {
+declare module "react-native-ytdl" {
   export interface YTDLVideoInfo {
     videoDetails: {
       videoId: string;

@@ -42,7 +42,7 @@ declare module "react-native" {
   export class AppRegistry {
     static registerComponent(
       appKey: string,
-      getComponent: () => React.ComponentType
+      getComponent: () => React.ComponentType,
     ): void;
     static runApplication(appKey: string, params: any): void;
   }

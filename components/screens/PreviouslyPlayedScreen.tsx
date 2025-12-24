@@ -3,14 +3,14 @@ import { SafeArea } from "../SafeArea";
 import { usePlayer } from "../../contexts/PlayerContext";
 import Playlist from "../Playlist";
 
-interface LikedSongsScreenProps {
+interface PreviouslyPlayedScreenProps {
   navigation: any;
 }
 
-export const LikedSongsScreen: React.FC<LikedSongsScreenProps> = ({
+export const PreviouslyPlayedScreen: React.FC<PreviouslyPlayedScreenProps> = ({
   navigation,
 }) => {
-  const { likedSongs } = usePlayer();
+  const { previouslyPlayedSongs } = usePlayer();
   const [isLoading, setIsLoading] = useState(true);
   const [isNavigatingBack, setIsNavigatingBack] = useState(false);
 
@@ -42,7 +42,7 @@ export const LikedSongsScreen: React.FC<LikedSongsScreenProps> = ({
     return (
       <SafeArea>
         <Playlist
-          title="Liked Songs"
+          title="Previously Played"
           subtitle="Loading..."
           songs={[]}
           onBack={handleGoBack}
@@ -56,16 +56,16 @@ export const LikedSongsScreen: React.FC<LikedSongsScreenProps> = ({
   return (
     <SafeArea>
       <Playlist
-        title="Liked Songs"
-        subtitle={`${likedSongs.length} songs`}
-        songs={likedSongs}
+        title="Previously Played"
+        subtitle={`${previouslyPlayedSongs.length} songs`}
+        songs={previouslyPlayedSongs}
         onBack={handleGoBack}
-        emptyMessage="No liked songs yet"
-        emptySubMessage="Like songs from the player to see them here"
-        emptyIcon="heart"
+        emptyMessage="No previously played songs"
+        emptySubMessage="Play some songs to see them here"
+        emptyIcon="time"
       />
     </SafeArea>
   );
 };
 
-export default LikedSongsScreen;
+export default PreviouslyPlayedScreen;

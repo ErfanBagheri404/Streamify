@@ -12,7 +12,7 @@ export interface ColorTheme {
 }
 
 export const extractColorsFromImage = async (
-  imageUrl: string
+  imageUrl: string,
 ): Promise<ColorTheme> => {
   try {
     console.log("[ColorExtraction] Starting extraction for:", imageUrl);
@@ -58,7 +58,7 @@ export const extractColorsFromImage = async (
         return theme;
       } else {
         console.log(
-          "[ColorExtraction] No colors extracted, using default theme"
+          "[ColorExtraction] No colors extracted, using default theme",
         );
       }
     }
@@ -89,7 +89,7 @@ const extractDominantColors = async (imageUrl: string): Promise<string[]> => {
       (Image as any).getSize(
         imageUrl,
         (width, height) => resolve({ width, height }),
-        (error) => reject(error)
+        (error) => reject(error),
       );
     });
 
@@ -108,12 +108,12 @@ const extractDominantColors = async (imageUrl: string): Promise<string[]> => {
     const resizedImage = await ImageManipulator.manipulateAsync(
       imageUrl,
       [{ resize: { width: analysisWidth, height: analysisHeight } }],
-      { format: ImageManipulator.SaveFormat.PNG, base64: true }
+      { format: ImageManipulator.SaveFormat.PNG, base64: true },
     );
 
     console.log(
       "[ColorExtraction] Image manipulation complete, base64 available:",
-      !!resizedImage.base64
+      !!resizedImage.base64,
     );
 
     if (!resizedImage.base64) {
@@ -124,7 +124,7 @@ const extractDominantColors = async (imageUrl: string): Promise<string[]> => {
     const colorAnalysis = await analyzeImageColors(
       resizedImage.base64,
       analysisWidth,
-      analysisHeight
+      analysisHeight,
     );
 
     console.log("[ColorExtraction] Color analysis result:", colorAnalysis);
@@ -145,7 +145,7 @@ const extractDominantColors = async (imageUrl: string): Promise<string[]> => {
 const analyzeImageColors = async (
   base64Data: string,
   width: number,
-  height: number
+  height: number,
 ): Promise<{
   isBlackAndWhite: boolean;
   isDark: boolean;
@@ -167,7 +167,7 @@ const analyzeImageColors = async (
     console.log("[ColorExtraction] Base64 data length:", b64.length);
     console.log(
       "[ColorExtraction] Base64 data preview:",
-      b64.substring(0, 50) + "..."
+      b64.substring(0, 50) + "...",
     );
 
     let rgba: Uint8Array;
@@ -176,7 +176,7 @@ const analyzeImageColors = async (
       const bytes = toByteArray(b64);
       console.log(
         "[ColorExtraction] Converted to bytes, length:",
-        bytes.length
+        bytes.length,
       );
 
       const decoded = UPNG.decode(bytes.buffer);
@@ -192,7 +192,7 @@ const analyzeImageColors = async (
         const frames = UPNG.toRGBA8(decoded);
         console.log(
           "[ColorExtraction] Converted to RGBA8, frames:",
-          frames.length
+          frames.length,
         );
         rgba = frames[0];
       } else if (decoded.data) {
@@ -287,10 +287,14 @@ const analyzeImageColors = async (
           : (maxVal - minVal) / (1 - Math.abs(2 * lightness - 1));
 
       // Skip colors that are too dark (< 10%) or too light (> 90%) - less restrictive
-      if (lightness < 0.05 || lightness > 0.95) return;
+      if (lightness < 0.05 || lightness > 0.95) {
+        return;
+      }
 
       // Skip very low saturation colors (grays) unless they're very frequent
-      if (saturation < 0.1 && count < validCount * 0.02) return;
+      if (saturation < 0.1 && count < validCount * 0.02) {
+        return;
+      }
 
       // Calculate visual importance score: combines frequency, saturation, and optimal lightness
       const frequencyScore = count / validCount; // 0-1, how frequent
@@ -329,7 +333,7 @@ const analyzeImageColors = async (
       // Fallback: if no good color was found (bestScore too low), use the most frequent one
       if (bestScore < 0.1) {
         console.log(
-          "[ColorExtraction] No visually prominent color found, falling back to most frequent"
+          "[ColorExtraction] No visually prominent color found, falling back to most frequent",
         );
         let maxCount = 0;
         colorHistogram.forEach((count, colorKey) => {
@@ -390,12 +394,12 @@ const analyzeImageColors = async (
           saturation: Math.round(saturation * 100),
           lightness: Math.round(lightness * 100),
           colorSpace: saturation < 0.12 ? "grayscale" : "colorful",
-        }
+        },
       );
 
       if (saturation < 0.12) {
         console.log(
-          "[ColorExtraction] Detected grayscale dominant color, forcing black and white theme"
+          "[ColorExtraction] Detected grayscale dominant color, forcing black and white theme",
         );
         return {
           isBlackAndWhite: true,
@@ -408,7 +412,7 @@ const analyzeImageColors = async (
       }
     } else {
       console.log(
-        "[ColorExtraction] No valid pixels found, using default blue"
+        "[ColorExtraction] No valid pixels found, using default blue",
       );
     }
 
@@ -502,7 +506,7 @@ const extractColorsFromUrl = async (imageUrl: string): Promise<string[]> => {
 const sampleColorsFromImage = (
   imageUrl: string,
   isLight: boolean,
-  isDark: boolean
+  isDark: boolean,
 ): string[] => {
   console.log("[ColorExtraction] Analyzing image characteristics:", {
     isLight,

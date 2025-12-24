@@ -1,6 +1,8 @@
-import React from "react";
-import { ScrollView } from "react-native";
+import React, { useState } from "react";
 import styled from "styled-components/native";
+import { SafeArea } from "../SafeArea";
+import { Ionicons } from "@expo/vector-icons";
+import { clearSoundCloudCache } from "../../modules/audioStreaming";
 
 const Screen = styled.View`
   flex: 1;
@@ -8,45 +10,49 @@ const Screen = styled.View`
 `;
 
 const Header = styled.View`
+  flex-direction: row;
+  align-items: center;
   padding: 16px;
   border-bottom-width: 1px;
   border-bottom-color: #262626;
+`;
+
+const BackButton = styled.TouchableOpacity`
+  padding: 8px;
+  margin-right: 16px;
 `;
 
 const HeaderTitle = styled.Text`
   color: #fff;
-  font-size: 24px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 700;
 `;
 
 const SettingsSection = styled.View`
-  padding: 16px;
-  border-bottom-width: 1px;
-  border-bottom-color: #262626;
+  margin-top: 24px;
 `;
 
 const SectionTitle = styled.Text`
   color: #a3a3a3;
   font-size: 14px;
-  margin-bottom: 12px;
-  text-transform: uppercase;
+  font-weight: 600;
+  margin-left: 16px;
+  margin-bottom: 8px;
 `;
 
 const SettingItem = styled.TouchableOpacity`
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 0;
+  padding: 16px;
+  background-color: #121212;
+  border-bottom-width: 1px;
+  border-bottom-color: #262626;
 `;
 
-const SettingLabel = styled.Text`
-  color: #fff;
-  font-size: 16px;
-`;
-
-const SettingValue = styled.Text`
-  color: #a3a3a3;
-  font-size: 14px;
+const SettingLeft = styled.View`
+  flex-direction: row;
+  align-items: center;
 `;
 
 const SettingIcon = styled.Text`
@@ -55,60 +61,94 @@ const SettingIcon = styled.Text`
   margin-right: 12px;
 `;
 
-const SettingLeft = styled.View`
-  flex-direction: row;
-  align-items: center;
+const SettingText = styled.Text`
+  color: #fff;
+  font-size: 16px;
 `;
 
-export default function SettingsScreen() {
-  const settings = [
-    {
-      title: "Account",
-      items: [
-        { label: "Profile", value: "John Smith", icon: "👤" },
-        { label: "Subscription", value: "Premium", icon: "💎" },
-      ],
-    },
-    {
-      title: "Preferences",
-      items: [
-        { label: "Audio Quality", value: "High", icon: "🎵" },
-        { label: "Downloads", value: "WiFi only", icon: "📥" },
-        { label: "Notifications", value: "Enabled", icon: "🔔" },
-      ],
-    },
-    {
-      title: "General",
-      items: [
-        { label: "Language", value: "English", icon: "🌐" },
-        { label: "Theme", value: "Dark", icon: "🎨" },
-        { label: "About", value: "Version 1.0.0", icon: "ℹ️" },
-      ],
-    },
-  ];
+const SettingDescription = styled.Text`
+  color: #a3a3a3;
+  font-size: 12px;
+  margin-top: 2px;
+`;
+
+const SettingContent = styled.View`
+  flex: 1;
+`;
+
+const ChevronIcon = styled.Text`
+  color: #a3a3a3;
+  font-size: 16px;
+`;
+
+export default function SettingsScreen({ navigation }: { navigation: any }) {
+  const [isClearingCache, setIsClearingCache] = useState(false);
+
+  const handleClearCache = async () => {
+    // For now, just clear cache without confirmation dialog
+    // TODO: Fix Alert import issue
+    setIsClearingCache(true);
+    try {
+      await clearSoundCloudCache();
+      console.log("Cache cleared successfully!");
+      // (Alert as any).alert("Success", "Cache cleared successfully!");
+    } catch (error) {
+      console.error("Failed to clear cache:", error);
+      // (Alert as any).alert("Error", "Failed to clear cache. Please try again.");
+    } finally {
+      setIsClearingCache(false);
+    }
+  };
 
   return (
-    <Screen>
-      <Header>
-        <HeaderTitle>Settings</HeaderTitle>
-      </Header>
+    <SafeArea>
+      <Screen>
+        <Header>
+          <BackButton onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </BackButton>
+          <HeaderTitle>Settings</HeaderTitle>
+        </Header>
 
-      <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-        {settings.map((section, sectionIndex) => (
-          <SettingsSection key={sectionIndex}>
-            <SectionTitle>{section.title}</SectionTitle>
-            {section.items.map((item, itemIndex) => (
-              <SettingItem key={itemIndex}>
-                <SettingLeft>
-                  <SettingIcon>{item.icon}</SettingIcon>
-                  <SettingLabel>{item.label}</SettingLabel>
-                </SettingLeft>
-                <SettingValue>{item.value}</SettingValue>
-              </SettingItem>
-            ))}
-          </SettingsSection>
-        ))}
-      </ScrollView>
-    </Screen>
+        <SettingsSection>
+          <SectionTitle>Storage</SectionTitle>
+          <SettingItem onPress={handleClearCache} disabled={isClearingCache}>
+            <SettingLeft>
+              <SettingIcon>
+                <Ionicons name="trash-outline" size={20} color="#a3a3a3" />
+              </SettingIcon>
+              <SettingContent>
+                <SettingText>Clear Cache</SettingText>
+                <SettingDescription>
+                  Remove all cached audio files
+                </SettingDescription>
+              </SettingContent>
+            </SettingLeft>
+            <ChevronIcon>
+              <Ionicons name="chevron-forward" size={16} color="#a3a3a3" />
+            </ChevronIcon>
+          </SettingItem>
+        </SettingsSection>
+
+        <SettingsSection>
+          <SectionTitle>About</SectionTitle>
+          <SettingItem>
+            <SettingLeft>
+              <SettingIcon>
+                <Ionicons
+                  name="information-circle-outline"
+                  size={20}
+                  color="#a3a3a3"
+                />
+              </SettingIcon>
+              <SettingContent>
+                <SettingText>App Version</SettingText>
+                <SettingDescription>1.0.0</SettingDescription>
+              </SettingContent>
+            </SettingLeft>
+          </SettingItem>
+        </SettingsSection>
+      </Screen>
+    </SafeArea>
   );
 }

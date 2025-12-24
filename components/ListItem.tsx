@@ -1,6 +1,6 @@
-import * as React from 'react';
-import { Image } from 'react-native';
-import styled from 'styled-components/native';
+import * as React from "react";
+import { Image } from "react-native";
+import styled from "styled-components/native";
 
 export type ListItemProps = {
   title: string;

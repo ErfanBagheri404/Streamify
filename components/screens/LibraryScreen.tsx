@@ -110,7 +110,7 @@ const LayoutIcon = styled.Text`
 
 const Grid = styled.ScrollView`
   flex: 1;
-  padding: 0 16px 16px 16px;
+  padding: 0 16px 80px 16px; /* Increased bottom padding for last items accessibility */
 `;
 
 const GridRow = styled.View`
@@ -192,14 +192,25 @@ const sampleCollections = [
     pinned: true,
     cover: null,
   },
+  {
+    id: "previously-played",
+    title: "Previously Played",
+    meta: "Playlist • 0 songs",
+    pinned: true,
+    cover: null,
+  },
 ];
 
 export default function LibraryScreen({ navigation }: { navigation: any }) {
   const [activeSection, setActiveSection] = React.useState("Playlists");
-  const { likedSongs } = usePlayer();
+  const { likedSongs, previouslyPlayedSongs } = usePlayer();
 
   const handleLikedSongsPress = () => {
     navigation.navigate("LikedSongs");
+  };
+
+  const handlePreviouslyPlayedPress = () => {
+    navigation.navigate("PreviouslyPlayed");
   };
 
   return (
@@ -211,6 +222,11 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             <HeaderTitle>Your Library</HeaderTitle>
           </HeaderLeft>
           <HeaderActions>
+            <HeaderIconButton onPress={() => navigation.navigate("Settings")}>
+              <HeaderIconText>
+                <FontAwesome6 name="gear" size={20} color="white" />
+              </HeaderIconText>
+            </HeaderIconButton>
             <HeaderIconButton>
               <HeaderIconText>
                 <Fontisto name="search" size={20} color="white" />
@@ -258,7 +274,11 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
               <CollectionCard
                 key={item.id}
                 onPress={
-                  item.id === "liked" ? handleLikedSongsPress : undefined
+                  item.id === "liked"
+                    ? handleLikedSongsPress
+                    : item.id === "previously-played"
+                      ? handlePreviouslyPlayedPress
+                      : undefined
                 }
               >
                 {item.id === "liked" ? (
@@ -271,11 +291,21 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                       <Entypo name="heart" size={42} color="white" />
                     </LikedCoverGradient>
                   </LikedCoverWrapper>
+                ) : item.id === "previously-played" ? (
+                  <LikedCoverWrapper>
+                    <LikedCoverGradient
+                      colors={["#1a1a1a", "#404040", "#525252"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Entypo name="back-in-time" size={42} color="white" />
+                    </LikedCoverGradient>
+                  </LikedCoverWrapper>
                 ) : (
                   <CollectionCover source={item.cover as any} />
                 )}
                 <CollectionTitle>{item.title}</CollectionTitle>
-                {item.id === "liked" ? (
+                {item.id === "liked" || item.id === "previously-played" ? (
                   <>
                     <PinRow>
                       <PinIcon>
@@ -283,7 +313,12 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                       </PinIcon>
                       <PinLabel>Playlist</PinLabel>
                       <PinDot>•</PinDot>
-                      <CollectionMeta>{likedSongs.length} songs</CollectionMeta>
+                      <CollectionMeta>
+                        {item.id === "liked"
+                          ? likedSongs.length
+                          : previouslyPlayedSongs.length}{" "}
+                        songs
+                      </CollectionMeta>
                     </PinRow>
                   </>
                 ) : (

@@ -21,14 +21,243 @@ export class AudioStreamManager {
   // SoundCloud stream cache (1MB pre-buffering)
   private soundCloudCache: Map<string, string> = new Map();
 
+  // Cache progress tracking to prevent regression
+  private cacheProgress: Map<
+    string,
+    {
+      percentage: number;
+      lastUpdate: number;
+      isDownloading: boolean;
+      downloadStartTime: number;
+      retryCount: number;
+      lastFileSize: number;
+      downloadedSize?: number;
+      downloadSpeed?: number;
+      originalStreamUrl?: string; // Store original URL for resume operations
+      estimatedTotalSize?: number; // Estimated total file size for accurate percentage
+      isFullyCached?: boolean; // Track if file is confirmed complete
+    }
+  > = new Map();
+
+  // Maximum retry attempts for failed downloads
+  private readonly MAX_RETRY_ATTEMPTS = 3;
+  private readonly RETRY_DELAY = 2000; // 2 seconds
+  private readonly PROGRESS_UPDATE_INTERVAL = 1000; // 1 second
+  private readonly MIN_PROGRESS_THRESHOLD = 0.5; // Minimum 0.5% progress per update
+
   // Hardcoded Client ID from your logs
   private readonly SOUNDCLOUD_CLIENT_ID = "gqKBMSuBw5rbN9rDRYPqKNvF17ovlObu";
+
+  // Helper method to update download progress with atomic updates
+  private updateDownloadProgress(
+    trackId: string,
+    downloadedMB: number,
+    speed: number
+  ): void {
+    const progress = this.cacheProgress.get(trackId);
+    if (progress) {
+      // Use atomic updateCacheProgress to prevent race conditions
+      this.updateCacheProgress(
+        trackId,
+        progress.percentage,
+        progress.lastFileSize,
+        {
+          downloadedSize: downloadedMB,
+          downloadSpeed: speed,
+          isDownloading: progress.isDownloading,
+          estimatedTotalSize: progress.estimatedTotalSize,
+          isFullyCached: progress.isFullyCached,
+          originalStreamUrl: progress.originalStreamUrl,
+        }
+      );
+    }
+  }
 
   constructor() {
     this.setupProxyRotation();
     this.setupFallbackStrategies();
     // Don't start health checks initially - they'll be started when needed
     // this.startInstanceHealthChecking();
+
+    // Initialize cache progress cleanup interval
+    this.startCacheProgressCleanup();
+  }
+
+  /**
+   * Safely update cache progress to prevent regression with atomic updates
+   */
+  private updateCacheProgress(
+    trackId: string,
+    newPercentage: number,
+    fileSize?: number,
+    options?: {
+      isDownloading?: boolean;
+      downloadedSize?: number;
+      downloadSpeed?: number;
+      estimatedTotalSize?: number;
+      isFullyCached?: boolean;
+      originalStreamUrl?: string;
+    }
+  ): boolean {
+    const now = Date.now();
+    const existingProgress = this.cacheProgress.get(trackId);
+
+    // Atomic update - lock the progress to prevent race conditions
+    if (existingProgress) {
+      // Check if this is a regression (but allow for file size recalculation)
+      const isSignificantRegression =
+        newPercentage < existingProgress.percentage - 5;
+      const isFileSizeUpdate =
+        options?.estimatedTotalSize &&
+        options.estimatedTotalSize !== existingProgress.estimatedTotalSize;
+
+      if (isSignificantRegression && !isFileSizeUpdate) {
+        console.warn(
+          `[CacheProgress] Preventing regression for ${trackId}: ${existingProgress.percentage}% -> ${newPercentage}%`
+        );
+        return false;
+      }
+
+      // Check if progress is significant enough (avoid tiny increments)
+      const timeSinceLastUpdate = now - existingProgress.lastUpdate;
+      const progressDelta = newPercentage - existingProgress.percentage;
+
+      if (
+        timeSinceLastUpdate < this.PROGRESS_UPDATE_INTERVAL &&
+        progressDelta < this.MIN_PROGRESS_THRESHOLD &&
+        !options?.isDownloading && // Always allow updates when download state changes
+        !options?.isFullyCached // Always allow completion updates
+      ) {
+        console.log(
+          `[CacheProgress] Skipping minor update for ${trackId}: ${progressDelta}% in ${timeSinceLastUpdate}ms`
+        );
+        return false;
+      }
+    }
+
+    // Atomic update - merge all changes at once
+    const updatedProgress = {
+      percentage: newPercentage,
+      lastUpdate: now,
+      isDownloading:
+        options?.isDownloading ?? existingProgress?.isDownloading ?? false,
+      downloadStartTime: existingProgress?.downloadStartTime || now,
+      retryCount: existingProgress?.retryCount || 0,
+      lastFileSize: fileSize ?? existingProgress?.lastFileSize ?? 0,
+      downloadedSize:
+        options?.downloadedSize ?? existingProgress?.downloadedSize,
+      downloadSpeed: options?.downloadSpeed ?? existingProgress?.downloadSpeed,
+      estimatedTotalSize:
+        options?.estimatedTotalSize ?? existingProgress?.estimatedTotalSize,
+      isFullyCached:
+        options?.isFullyCached ?? existingProgress?.isFullyCached ?? false,
+      originalStreamUrl:
+        options?.originalStreamUrl ?? existingProgress?.originalStreamUrl,
+    };
+
+    this.cacheProgress.set(trackId, updatedProgress);
+
+    console.log(
+      `[CacheProgress] Updated progress for ${trackId}: ${newPercentage}%${fileSize ? ` (${Math.round(fileSize * 100) / 100}MB)` : ""}${options?.downloadedSize ? ` downloaded: ${Math.round(options.downloadedSize * 100) / 100}MB` : ""}`
+    );
+    return true;
+  }
+
+  /**
+   * Mark download as started with proper state initialization
+   */
+  private markDownloadStarted(trackId: string, streamUrl?: string): void {
+    const now = Date.now();
+    const existingProgress = this.cacheProgress.get(trackId);
+
+    // Preserve existing progress but mark as downloading
+    const updatedProgress = {
+      percentage: existingProgress?.percentage || 0,
+      lastUpdate: now,
+      isDownloading: true,
+      downloadStartTime: existingProgress?.downloadStartTime || now,
+      retryCount: existingProgress?.retryCount || 0,
+      lastFileSize: existingProgress?.lastFileSize || 0,
+      downloadedSize: existingProgress?.downloadedSize || 0,
+      downloadSpeed: existingProgress?.downloadSpeed || 0,
+      estimatedTotalSize: existingProgress?.estimatedTotalSize || 0,
+      isFullyCached: false, // Reset when starting new download
+      originalStreamUrl: streamUrl || existingProgress?.originalStreamUrl,
+    };
+
+    this.cacheProgress.set(trackId, updatedProgress);
+    console.log(
+      `[CacheProgress] Download started for ${trackId}${streamUrl ? ` from: ${streamUrl.substring(0, 50)}...` : ""}`
+    );
+  }
+
+  /**
+   * Mark download as completed with proper state finalization
+   */
+  private markDownloadCompleted(trackId: string, fileSize: number): void {
+    const existingProgress = this.cacheProgress.get(trackId);
+    const now = Date.now();
+
+    const completedProgress = {
+      percentage: 100,
+      lastUpdate: now,
+      isDownloading: false,
+      downloadStartTime: existingProgress?.downloadStartTime || now,
+      retryCount: 0,
+      lastFileSize: fileSize,
+      downloadedSize: fileSize, // Set downloaded size to match file size
+      downloadSpeed: 0, // Reset speed on completion
+      estimatedTotalSize: fileSize, // Set estimated total to actual file size
+      isFullyCached: true, // Mark as fully cached
+      originalStreamUrl: existingProgress?.originalStreamUrl, // Preserve URL
+    };
+
+    this.cacheProgress.set(trackId, completedProgress);
+    console.log(
+      `[CacheProgress] Download completed for ${trackId}: ${Math.round(fileSize * 100) / 100}MB (took ${existingProgress ? Math.round((now - existingProgress.downloadStartTime) / 1000) : 0}s)`
+    );
+  }
+
+  /**
+   * Clean up stale cache progress entries
+   */
+  private startCacheProgressCleanup(): void {
+    setInterval(() => {
+      const now = Date.now();
+      const staleThreshold = 5 * 60 * 1000; // 5 minutes
+
+      for (const [trackId, progress] of this.cacheProgress.entries()) {
+        if (
+          !progress.isDownloading &&
+          now - progress.lastUpdate > staleThreshold
+        ) {
+          if (progress.originalStreamUrl) {
+            // Preserve original URL for resume operations, but reset other values
+            this.cacheProgress.set(trackId, {
+              percentage: 0,
+              lastFileSize: 0,
+              downloadedSize: 0,
+              downloadSpeed: 0,
+              isDownloading: false,
+              estimatedTotalSize: progress.estimatedTotalSize || 0,
+              isFullyCached: false,
+              originalStreamUrl: progress.originalStreamUrl,
+              lastUpdate: Date.now(),
+              retryCount: progress.retryCount || 0,
+              downloadStartTime: Date.now(),
+            });
+            console.log(
+              `[CacheProgress] Preserved URL in stale cleanup for ${trackId}`
+            );
+          } else {
+            this.cacheProgress.delete(trackId);
+            console.log(
+              `[CacheProgress] Cleaned up stale progress for ${trackId}`
+            );
+          }
+        }
+      }
+    }, 60000); // Run every minute
   }
 
   // Convert video stream to audio format by finding audio-only alternatives
@@ -85,7 +314,7 @@ export class AudioStreamManager {
       // Method 2: Try to modify the URL to get an audio-only version
       // Remove video-specific parameters and add audio-specific ones
       console.log(
-        `[AudioStreamManager] Trying URL modification for audio extraction`
+        "[AudioStreamManager] Trying URL modification for audio extraction"
       );
 
       try {
@@ -105,7 +334,7 @@ export class AudioStreamManager {
 
         const modifiedUrl = `${url.origin}${url.pathname}?${params.toString()}`;
 
-        console.log(`[AudioStreamManager] Testing modified URL`);
+        console.log("[AudioStreamManager] Testing modified URL");
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -122,17 +351,17 @@ export class AudioStreamManager {
         clearTimeout(timeoutId);
 
         if (testResponse.ok) {
-          console.log(`[AudioStreamManager] Found working modified audio URL`);
+          console.log("[AudioStreamManager] Found working modified audio URL");
           return modifiedUrl;
         }
       } catch (error) {
-        console.warn(`[AudioStreamManager] URL modification failed:`, error);
+        console.warn("[AudioStreamManager] URL modification failed:", error);
       }
 
       // Method 3: Last resort - return the original URL with audio extraction hint
       // The player will need to handle video streams that contain audio
       console.warn(
-        `[AudioStreamManager] All audio extraction methods failed, returning original stream URL with audio hint`
+        "[AudioStreamManager] All audio extraction methods failed, returning original stream URL with audio hint"
       );
 
       // Add a query parameter to indicate this is an audio extraction request
@@ -141,12 +370,12 @@ export class AudioStreamManager {
 
       // Log for debugging
       console.log(
-        `[AudioStreamManager] Returning URL with audio extraction hint`
+        "[AudioStreamManager] Returning URL with audio extraction hint"
       );
 
       return audioExtractionUrl;
     } catch (error) {
-      console.error(`[AudioStreamManager] Audio extraction failed:`, error);
+      console.error("[AudioStreamManager] Audio extraction failed:", error);
 
       // Even in case of error, return the original URL so playback can still work
       // The player might be able to handle the video stream directly
@@ -188,21 +417,655 @@ export class AudioStreamManager {
    * Check if a track has a full cached file available
    */
   public hasFullCachedFile(trackId: string): boolean {
-    return this.soundCloudCache.has(trackId + "_has_full");
+    // Check old format
+    if (this.soundCloudCache.has(trackId + "_has_full")) {
+      return true;
+    }
+
+    // Check new format - look for .full in the cached path
+    const cachedPath = this.soundCloudCache.get(trackId);
+    if (cachedPath && cachedPath.includes(".full")) {
+      return true;
+    }
+
+    return false;
   }
 
   /**
    * Get the best available cached file path for a track
    */
-  public getBestCachedFilePath(trackId: string): string | null {
-    // Check if we have a full file available
+  public async getBestCachedFilePath(trackId: string): Promise<string | null> {
+    console.log(`[Audio] Checking cache for track: ${trackId}`);
+
+    // First check in-memory cache for performance
     const fullFilePath = this.soundCloudCache.get(trackId + "_full");
+    console.log(`[Audio] Full file path (old format): ${fullFilePath}`);
+
     if (fullFilePath) {
-      return fullFilePath;
+      return `file://${fullFilePath}`;
     }
 
-    // Fall back to partial cache
-    return this.soundCloudCache.get(trackId) || null;
+    // Check if we have a full file in the new format (direct trackId)
+    const cachedPath = this.soundCloudCache.get(trackId);
+    console.log(`[Audio] Cached path: ${cachedPath}`);
+
+    if (cachedPath) {
+      // Check if this is a full file by looking at the path
+      if (cachedPath.includes(".full")) {
+        console.log(`[Audio] Found full cached file: ${cachedPath}`);
+        return `file://${cachedPath}`;
+      }
+      // This is a partial cache
+      console.log(`[Audio] Found partial cached file: ${cachedPath}`);
+      return `file://${cachedPath}`;
+    }
+
+    // If not in memory, scan filesystem for existing cache files
+    console.log(
+      `[Audio] Scanning filesystem for cache files for track: ${trackId}`
+    );
+
+    // Check SoundCloud cache directory
+    const soundCloudCacheDir = `${FileSystem.cacheDirectory}soundcloud-cache/`;
+
+    try {
+      // Check for any SoundCloud cache files with different extensions
+      const soundCloudExtensions = [
+        ".mp3",
+        ".mp3.full",
+        ".cache",
+        ".webm",
+        ".webm.full",
+      ];
+
+      for (const ext of soundCloudExtensions) {
+        const filePath = `${soundCloudCacheDir}${trackId}${ext}`;
+        const fileInfo = await FileSystem.getInfoAsync(filePath);
+
+        if (fileInfo.exists && fileInfo.size > 0) {
+          // Validate file integrity before using it
+          const isValid = await this.validateCachedFile(filePath);
+          if (isValid) {
+            console.log(
+              `[Audio] Found existing SoundCloud cache file: ${filePath}`
+            );
+            this.soundCloudCache.set(trackId + "_full", filePath);
+            this.soundCloudCache.set(trackId, filePath);
+            this.soundCloudCache.set(trackId + "_has_full", "true");
+            return `file://${filePath}`;
+          } else {
+            console.warn(
+              `[Audio] Found corrupted SoundCloud cache file, cleaning up: ${filePath}`
+            );
+            await FileSystem.deleteAsync(filePath, { idempotent: true });
+          }
+        }
+      }
+    } catch (error) {
+      console.log("[Audio] Error checking SoundCloud cache directory:", error);
+    }
+
+    // Check YouTube cache directory
+    const youtubeCacheDir = `${FileSystem.cacheDirectory}youtube-cache/`;
+
+    try {
+      // Check for any YouTube cache files with different extensions
+      const youtubeExtensions = [
+        ".cache",
+        ".webm",
+        ".webm.full",
+        ".mp3",
+        ".mp3.full",
+      ];
+
+      for (const ext of youtubeExtensions) {
+        const filePath = `${youtubeCacheDir}${trackId}${ext}`;
+        const fileInfo = await FileSystem.getInfoAsync(filePath);
+
+        if (fileInfo.exists && fileInfo.size > 0) {
+          // Validate file integrity before using it
+          const isValid = await this.validateCachedFile(filePath);
+          if (isValid) {
+            console.log(
+              `[Audio] Found existing YouTube cache file: ${filePath}`
+            );
+
+            // Mark as full if it has .full extension or is substantial
+            if (ext.includes(".full") || fileInfo.size > 5242880) {
+              // 5MB
+              this.soundCloudCache.set(trackId + "_full", filePath);
+              this.soundCloudCache.set(trackId + "_has_full", "true");
+            }
+
+            this.soundCloudCache.set(trackId, filePath);
+            return `file://${filePath}`;
+          } else {
+            console.warn(
+              `[Audio] Found corrupted YouTube cache file, cleaning up: ${filePath}`
+            );
+            await FileSystem.deleteAsync(filePath, { idempotent: true });
+          }
+        }
+      }
+    } catch (error) {
+      console.log("[Audio] Error checking YouTube cache directory:", error);
+    }
+
+    console.log(`[Audio] No cache files found for track: ${trackId}`);
+    return null;
+  }
+
+  /**
+   * Validate the integrity of a cached file
+   */
+  private async validateCachedFile(filePath: string): Promise<boolean> {
+    try {
+      const fileInfo = await FileSystem.getInfoAsync(filePath);
+
+      if (!fileInfo.exists || !fileInfo.size || fileInfo.size === 0) {
+        console.warn(
+          `[Audio] File validation failed: file doesn't exist or is empty`
+        );
+        return false;
+      }
+
+      // Check minimum file size (10KB for meaningful audio data)
+      if (fileInfo.size < 10240) {
+        console.warn(
+          `[Audio] File validation failed: file too small (${fileInfo.size} bytes)`
+        );
+        return false;
+      }
+
+      // Check if file can be read (basic corruption check)
+      try {
+        const testRead = await FileSystem.readAsStringAsync(filePath, {
+          encoding: FileSystem.EncodingType.Base64,
+          length: 1024, // Read first 1KB to test file integrity
+        });
+
+        if (!testRead || testRead.length === 0) {
+          console.warn(
+            `[Audio] File validation failed: cannot read file content`
+          );
+          return false;
+        }
+      } catch (readError) {
+        console.warn(`[Audio] File validation failed: read error`, readError);
+        return false;
+      }
+
+      console.log(`[Audio] File validation passed for: ${filePath}`);
+      return true;
+    } catch (error) {
+      console.warn(`[Audio] File validation error:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Clean up partial/incomplete cached files
+   */
+  private async cleanupPartialCache(trackId: string): Promise<void> {
+    try {
+      console.log(`[Audio] Cleaning up partial cache for track: ${trackId}`);
+
+      const cacheDir = FileSystem.cacheDirectory + "audio_cache/";
+      const possibleFiles = [
+        cacheDir + trackId + ".mp3",
+        cacheDir + trackId + ".mp3.full",
+        cacheDir + trackId + ".mp3.chunks",
+        cacheDir + trackId + ".mp3.chunks.current",
+      ];
+
+      for (const filePath of possibleFiles) {
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(filePath);
+          if (fileInfo.exists) {
+            await FileSystem.deleteAsync(filePath, { idempotent: true });
+            console.log(`[Audio] Cleaned up partial file: ${filePath}`);
+          }
+        } catch (cleanupError) {
+          console.warn(
+            `[Audio] Failed to clean up file ${filePath}:`,
+            cleanupError
+          );
+        }
+      }
+
+      // Preserve essential information for resume operations
+      const existingProgress = this.cacheProgress.get(trackId);
+      if (existingProgress?.originalStreamUrl) {
+        // Keep minimal progress with original URL for resume capability
+        this.cacheProgress.set(trackId, {
+          percentage: 0,
+          lastFileSize: 0,
+          downloadedSize: 0,
+          downloadSpeed: 0,
+          isDownloading: false,
+          estimatedTotalSize: existingProgress.estimatedTotalSize || 0,
+          isFullyCached: false,
+          originalStreamUrl: existingProgress.originalStreamUrl,
+          lastUpdate: Date.now(),
+          retryCount: existingProgress.retryCount || 0,
+          downloadStartTime: Date.now(),
+        });
+        console.log(
+          `[Audio] Preserved original URL for track: ${trackId} during cleanup`
+        );
+      } else {
+        // Clear cache progress for this track if no URL to preserve
+        this.cacheProgress.delete(trackId);
+      }
+
+      console.log(
+        `[Audio] Partial cache cleanup completed for track: ${trackId}`
+      );
+    } catch (error) {
+      console.warn(
+        `[Audio] Error during partial cache cleanup for ${trackId}:`,
+        error
+      );
+    }
+  }
+
+  /**
+   * Estimate total file size based on current downloaded size
+   * Uses conservative estimates to prevent percentage drops
+   */
+  private estimateTotalFileSize(fileSize: number): number {
+    let estimatedTotalSize: number;
+
+    if (fileSize >= 10485760) {
+      // 10MB+ - likely complete or near-complete, but cap at 12MB
+      estimatedTotalSize = Math.min(fileSize * 1.2, 12582912); // 20% buffer, max 12MB
+    } else if (fileSize >= 7340032) {
+      // 7-10MB - estimate 10-12MB total with buffer
+      estimatedTotalSize = Math.max(10485760, fileSize * 1.3); // Min 10MB, 30% buffer
+    } else if (fileSize >= 5242880) {
+      // 5-7MB - estimate 8-10MB total with buffer
+      estimatedTotalSize = Math.max(8388608, fileSize * 1.4); // Min 8MB, 40% buffer
+    } else if (fileSize >= 3145728) {
+      // 3-5MB - estimate 6-8MB total with buffer
+      estimatedTotalSize = Math.max(6291456, fileSize * 1.8); // Min 6MB, 80% buffer
+    } else if (fileSize >= 2097152) {
+      // 2-3MB - estimate 4-6MB total with buffer
+      estimatedTotalSize = Math.max(4194304, fileSize * 2.0); // Min 4MB, 100% buffer
+    } else if (fileSize >= 1048576) {
+      // 1-2MB - estimate 3-4MB total with buffer
+      estimatedTotalSize = Math.max(3145728, fileSize * 2.5); // Min 3MB, 150% buffer
+    } else {
+      // Less than 1MB - estimate 2-4MB total with buffer
+      estimatedTotalSize = Math.max(2097152, fileSize * 4.0); // Min 2MB, 300% buffer
+    }
+
+    console.log(
+      `[Audio] Estimated total size: ${Math.round((estimatedTotalSize / 1024 / 1024) * 100) / 100}MB for current size: ${Math.round((fileSize / 1024 / 1024) * 100) / 100}MB`
+    );
+
+    return estimatedTotalSize;
+  }
+
+  /**
+   * Get cache information for a track with improved state consistency
+   */
+  public async getCacheInfo(trackId: string): Promise<{
+    percentage: number;
+    fileSize: number;
+    totalFileSize?: number;
+    isFullyCached: boolean;
+    isDownloading?: boolean;
+    downloadSpeed?: number;
+    retryCount?: number;
+  }> {
+    try {
+      console.log(`[Audio] === getCacheInfo START for ${trackId} ===`);
+
+      // Check if we have any cached progress for this track (even completed downloads)
+      const activeProgress = this.cacheProgress.get(trackId);
+      console.log(`[Audio] Active progress found:`, !!activeProgress);
+      if (activeProgress) {
+        console.log(`[Audio] Progress details:`, {
+          percentage: activeProgress.percentage,
+          downloadedSize: activeProgress.downloadedSize ?? 0,
+          isDownloading: activeProgress.isDownloading,
+          lastFileSize: activeProgress.lastFileSize,
+          isFullyCached: activeProgress.isFullyCached ?? false,
+          estimatedTotalSize: activeProgress.estimatedTotalSize ?? 0,
+          originalStreamUrl: activeProgress.originalStreamUrl ?? "none",
+        });
+
+        // If we have a completed download (100%) and confirmed fully cached, return that immediately
+        if (
+          activeProgress.percentage === 100 &&
+          !activeProgress.isDownloading &&
+          activeProgress.isFullyCached
+        ) {
+          console.log(
+            `[Audio] Track ${trackId} is fully cached (100% confirmed)`
+          );
+          const result = {
+            percentage: 100,
+            fileSize:
+              activeProgress.downloadedSize || activeProgress.lastFileSize || 0,
+            isFullyCached: true,
+            isDownloading: false,
+            downloadSpeed: 0,
+            retryCount: 0,
+          };
+          console.log(
+            `[Audio] === getCacheInfo END (100% cached) for ${trackId} ===`,
+            result
+          );
+          return result;
+        }
+
+        // If actively downloading, return current progress with consistency checks
+        if (activeProgress.isDownloading) {
+          // Ensure percentage doesn't decrease during active download
+          const safePercentage = Math.max(
+            activeProgress.percentage,
+            activeProgress.lastFileSize > 0 ? 1 : 0
+          );
+          const result = {
+            percentage: safePercentage,
+            fileSize:
+              activeProgress.downloadedSize || activeProgress.lastFileSize || 0,
+            isFullyCached: false,
+            isDownloading: true,
+            downloadSpeed: activeProgress.downloadSpeed || 0,
+            retryCount: activeProgress.retryCount || 0,
+          };
+          console.log(
+            `[Audio] === getCacheInfo END (downloading) for ${trackId} ===`,
+            result
+          );
+          return result;
+        }
+
+        // If we have substantial progress but not downloading, use stored state
+        if (activeProgress.percentage > 0) {
+          const result = {
+            percentage: activeProgress.percentage,
+            fileSize:
+              activeProgress.downloadedSize || activeProgress.lastFileSize || 0,
+            isFullyCached: activeProgress.isFullyCached || false,
+            isDownloading: false,
+            downloadSpeed: 0,
+            retryCount: activeProgress.retryCount || 0,
+          };
+          console.log(
+            `[Audio] === getCacheInfo END (stored progress) for ${trackId} ===`,
+            result
+          );
+          return result;
+        }
+      }
+
+      // Check if we have any cached file
+      const cachedFilePath = await this.getBestCachedFilePath(trackId);
+      console.log(`[Audio] Best cached file path: ${cachedFilePath}`);
+
+      if (!cachedFilePath) {
+        console.log(`[Audio] No cached file found for track: ${trackId}`);
+        const result = { percentage: 0, fileSize: 0, isFullyCached: false };
+        console.log(
+          `[Audio] === getCacheInfo END (no file) for ${trackId} ===`,
+          result
+        );
+        return result;
+      }
+
+      // Get file info - remove file:// prefix for FileSystem.getInfoAsync
+      const filePath = cachedFilePath.replace("file://", "");
+      console.log(`[Audio] Getting file info for path: ${filePath}`);
+      const fileInfo = await FileSystem.getInfoAsync(filePath);
+      console.log("[Audio] File info:", fileInfo);
+
+      if (!fileInfo || !fileInfo.exists) {
+        console.log(`[Audio] Cached file not found: ${filePath}`);
+        const result = { percentage: 0, fileSize: 0, isFullyCached: false };
+        console.log(
+          `[Audio] === getCacheInfo END (file missing) for ${trackId} ===`,
+          result
+        );
+        return result;
+      }
+
+      // Check if it's fully cached or has substantial cache
+      const isFullyCached = this.hasFullCachedFile(trackId);
+      const hasSubstantialCache = this.soundCloudCache.has(
+        trackId + "_substantial"
+      );
+      const fileSize = fileInfo.size || 0;
+
+      console.log(
+        `[Audio] Cache status for ${trackId}: fullyCached=${isFullyCached}, substantial=${hasSubstantialCache}, size=${fileSize} bytes`
+      );
+
+      // For very small files (< 10KB), consider them as not meaningfully cached
+      const minFileSize = 10240; // 10KB minimum
+      if (fileSize < minFileSize) {
+        console.log(
+          `[Audio] File too small to be considered cached: ${fileSize} bytes (min: ${minFileSize})`
+        );
+        const result = {
+          percentage: 0,
+          fileSize: Math.round((fileSize / 1024 / 1024) * 100) / 100,
+          isFullyCached: false,
+        };
+        console.log(
+          `[Audio] === getCacheInfo END (too small) for ${trackId} ===`,
+          result
+        );
+        return result;
+      }
+
+      // Calculate percentage based on file size with improved algorithm
+      let percentage: number;
+      let displayFileSize: number;
+      let estimatedTotalSize: number;
+
+      if (isFullyCached) {
+        percentage = 100;
+        displayFileSize = Math.round((fileSize / 1024 / 1024) * 10) / 10;
+        estimatedTotalSize = fileSize;
+      } else {
+        // Use more accurate estimation based on actual file patterns
+        // and any stored estimated total size
+        const storedEstimatedSize = activeProgress?.estimatedTotalSize;
+
+        if (storedEstimatedSize && storedEstimatedSize > fileSize) {
+          // Use stored estimate if available and larger than current file
+          estimatedTotalSize = storedEstimatedSize;
+          console.log(
+            `[Audio] Using stored estimated size: ${Math.round((estimatedTotalSize / 1024 / 1024) * 100) / 100}MB`
+          );
+        } else {
+          // Dynamic estimation based on file size patterns
+          // Use more conservative estimates to prevent percentage drops
+          if (fileSize >= 10485760) {
+            // 10MB+ - likely complete or near-complete, but cap at 12MB
+            estimatedTotalSize = Math.min(fileSize * 1.2, 12582912); // 20% buffer, max 12MB
+            console.log(
+              `[Audio] Large file estimation: ${Math.round((estimatedTotalSize / 1024 / 1024) * 100) / 100}MB (20% buffer)`
+            );
+          } else if (fileSize >= 7340032) {
+            // 7-10MB - estimate 10-12MB total with buffer
+            estimatedTotalSize = Math.max(10485760, fileSize * 1.3); // Min 10MB, 30% buffer
+            console.log(
+              `[Audio] Medium-large file estimation: ${Math.round((estimatedTotalSize / 1024 / 1024) * 100) / 100}MB (30% buffer)`
+            );
+          } else if (fileSize >= 5242880) {
+            // 5-7MB - estimate 8-10MB total with buffer
+            estimatedTotalSize = Math.max(8388608, fileSize * 1.4); // Min 8MB, 40% buffer
+            console.log(
+              `[Audio] Medium file estimation: ${Math.round((estimatedTotalSize / 1024 / 1024) * 100) / 100}MB (40% buffer)`
+            );
+          } else if (fileSize >= 3145728) {
+            // 3-5MB - estimate 6-8MB total with buffer (this is our current case)
+            estimatedTotalSize = Math.max(6291456, fileSize * 1.8); // Min 6MB, 80% buffer
+            console.log(
+              `[Audio] Small-medium file estimation: ${Math.round((estimatedTotalSize / 1024 / 1024) * 100) / 100}MB (80% buffer)`
+            );
+          } else if (fileSize >= 2097152) {
+            // 2-3MB - estimate 4-6MB total with buffer
+            estimatedTotalSize = Math.max(4194304, fileSize * 2.0); // Min 4MB, 100% buffer
+            console.log(
+              `[Audio] Small file estimation: ${Math.round((estimatedTotalSize / 1024 / 1024) * 100) / 100}MB (100% buffer)`
+            );
+          } else {
+            // Less than 2MB - use conservative 4MB estimate
+            estimatedTotalSize = 4194304; // 4MB
+            console.log(
+              `[Audio] Very small file estimation: ${Math.round((estimatedTotalSize / 1024 / 1024) * 100) / 100}MB (fixed)`
+            );
+          }
+        }
+
+        // Calculate percentage with better accuracy and stability
+        const rawPercentage = (fileSize / estimatedTotalSize) * 100;
+
+        // Apply stability rules to prevent percentage drops
+        const existingPercentage = activeProgress?.percentage || 0;
+        let stablePercentage = Math.min(98, Math.round(rawPercentage));
+
+        // Never allow percentage to decrease significantly (more than 5%)
+        if (stablePercentage < existingPercentage - 5) {
+          console.log(
+            `[Audio] Preventing percentage drop: ${existingPercentage}% -> ${stablePercentage}%`
+          );
+          stablePercentage = Math.max(stablePercentage, existingPercentage - 2); // Allow max 2% drop
+        }
+
+        // If we're close to the estimated total, boost the estimate
+        if (stablePercentage > 85 && fileSize > 0) {
+          const newEstimatedTotal = Math.max(
+            estimatedTotalSize,
+            fileSize * 1.1
+          );
+          if (newEstimatedTotal > estimatedTotalSize) {
+            estimatedTotalSize = newEstimatedTotal;
+            console.log(
+              `[Audio] Boosting estimated total to prevent premature 100%: ${Math.round((estimatedTotalSize / 1024 / 1024) * 100) / 100}MB`
+            );
+            // Recalculate percentage with new estimate
+            const newRawPercentage = (fileSize / estimatedTotalSize) * 100;
+            stablePercentage = Math.min(98, Math.round(newRawPercentage));
+          }
+        }
+
+        percentage = stablePercentage;
+
+        // Boost percentage for substantial cache but cap at 95%
+        if (hasSubstantialCache && percentage < 90) {
+          percentage = Math.min(95, percentage + 5);
+          console.log(
+            `[Audio] Boosting cache percentage for substantial cache: ${percentage}%`
+          );
+        }
+
+        displayFileSize = Math.round((fileSize / 1024 / 1024) * 100) / 100;
+      }
+
+      // Update the cache progress with calculated values for consistency
+      if (activeProgress) {
+        this.updateCacheProgress(trackId, percentage, displayFileSize, {
+          estimatedTotalSize,
+          isFullyCached: isFullyCached,
+        });
+      }
+
+      console.log(
+        `[Audio] Cache info for ${trackId}: ${percentage}% (${fileSize} bytes, ${isFullyCached ? "full" : "partial"})`
+      );
+      console.log(
+        `[Audio] Cache info details: percentage=${percentage}, displayFileSize=${displayFileSize}MB, isFullyCached=${isFullyCached}, estimatedTotal=${Math.round((estimatedTotalSize / 1024 / 1024) * 100) / 100}MB`
+      );
+
+      const result = {
+        percentage: percentage,
+        fileSize: displayFileSize,
+        totalFileSize:
+          Math.round((estimatedTotalSize / 1024 / 1024) * 100) / 100,
+        isFullyCached,
+        isDownloading: false,
+        downloadSpeed: 0,
+        retryCount: 0,
+      };
+      console.log(`[Audio] === getCacheInfo END for ${trackId} ===`, result);
+      return result;
+    } catch (error) {
+      console.error(
+        `[Audio] Error getting cache info for track ${trackId}:`,
+        error
+      );
+      return {
+        percentage: 0,
+        fileSize: 0,
+        totalFileSize: 0,
+        isFullyCached: false,
+      };
+    }
+  }
+
+  /**
+   * Get the original streaming URL for a track from cache progress
+   * This is used for resume operations when cache gets stuck
+   */
+  public getOriginalStreamUrl(trackId: string): string | null {
+    const progress = this.cacheProgress.get(trackId);
+    return progress?.originalStreamUrl || null;
+  }
+
+  /**
+   * Check if a specific playback position (in milliseconds) is likely to be cached
+   * This estimates based on file size and typical audio bitrates
+   */
+  public async isPositionCached(
+    trackId: string,
+    positionMs: number
+  ): Promise<{ isCached: boolean; estimatedCacheEndMs: number }> {
+    try {
+      const cacheInfo = await this.getCacheInfo(trackId);
+
+      if (cacheInfo.isFullyCached) {
+        return { isCached: true, estimatedCacheEndMs: Number.MAX_SAFE_INTEGER };
+      }
+
+      if (cacheInfo.percentage === 0) {
+        return { isCached: false, estimatedCacheEndMs: 0 };
+      }
+
+      // Estimate total duration based on typical audio file sizes
+      // Assuming average bitrate of 128kbps (16KB/s) for streaming audio
+      const averageBitrate = 128000; // 128 kbps in bits per second
+      const bytesPerSecond = averageBitrate / 8; // 16 KB/s
+
+      // Convert file size to estimated duration
+      const actualFileSizeBytes = cacheInfo.fileSize * 1024 * 1024; // Convert MB back to bytes
+      const estimatedCacheDurationMs =
+        (actualFileSizeBytes / bytesPerSecond) * 1000;
+
+      // Add a 5-second buffer to account for variations
+      const bufferMs = 5000;
+      const estimatedCacheEndMs = estimatedCacheDurationMs + bufferMs;
+
+      console.log(
+        `[Audio] Position check for ${trackId}: position=${positionMs}ms, cached=${estimatedCacheEndMs}ms, fileSize=${cacheInfo.fileSize}MB`
+      );
+
+      return {
+        isCached: positionMs <= estimatedCacheEndMs,
+        estimatedCacheEndMs: Math.round(estimatedCacheEndMs),
+      };
+    } catch (error) {
+      console.error(
+        `[Audio] Error checking position cache for track ${trackId}:`,
+        error
+      );
+      return { isCached: false, estimatedCacheEndMs: 0 };
+    }
   }
 
   /**
@@ -226,7 +1089,7 @@ export class AudioStreamManager {
       }
     } else {
       // Clear all cached tracks
-      for (const [id, filePath] of this.soundCloudCache.entries()) {
+      for (const [id, filePath] of Array.from(this.soundCloudCache.entries())) {
         try {
           await FileSystem.deleteAsync(filePath, { idempotent: true });
         } catch (error) {
@@ -238,6 +1101,57 @@ export class AudioStreamManager {
       }
       this.soundCloudCache.clear();
       console.log("[Audio] Cleared all SoundCloud cache");
+    }
+  }
+
+  /**
+   * Cache the first megabyte of a YouTube stream for pre-buffering
+   * This downloads the first chunk in the background and returns the cached file path when ready
+   * The cache is used to reduce initial buffering time and improve playback quality
+   */
+  private async cacheYouTubeStream(
+    streamUrl: string,
+    trackId: string,
+    controller: AbortController
+  ): Promise<string> {
+    // Check if we already have this track cached
+    if (this.soundCloudCache.has(trackId)) {
+      const cachedPath = this.soundCloudCache.get(trackId);
+      console.log(
+        `[Audio] Using existing cached file for YouTube track: ${trackId}`
+      );
+      console.log(`[Audio] YouTube cached path: ${cachedPath}`);
+      // Return the cached path with file:// prefix
+      return `file://${cachedPath}`;
+    }
+
+    console.log(
+      `[Audio] Waiting for YouTube cache completion for track: ${trackId}`
+    );
+
+    try {
+      // Wait for cache completion before returning
+      const cachedPath = await this.cacheYouTubeStreamAsync(
+        streamUrl,
+        trackId,
+        controller
+      );
+
+      if (cachedPath.startsWith("file://")) {
+        console.log(
+          `[Audio] YouTube caching completed successfully for track: ${trackId}`
+        );
+        return cachedPath;
+      } else {
+        console.log(
+          `[Audio] YouTube caching failed for track: ${trackId}, falling back to stream URL`
+        );
+        return streamUrl;
+      }
+    } catch (error) {
+      console.log(`[Audio] YouTube caching error for track ${trackId}:`, error);
+      // If caching fails completely, return the original stream URL as fallback
+      return streamUrl;
     }
   }
 
@@ -255,50 +1169,35 @@ export class AudioStreamManager {
     if (this.soundCloudCache.has(trackId)) {
       const cachedPath = this.soundCloudCache.get(trackId);
       console.log(`[Audio] Using existing cached file for track: ${trackId}`);
-      // The cached path already includes file:// prefix, return it directly
-      return cachedPath;
+      console.log(`[Audio] Cached path: ${cachedPath}`);
+      // Return the cached path with file:// prefix
+      return `file://${cachedPath}`;
     }
 
-    // Start background caching with a timeout to wait for quick cache completion
-    const cachePromise = this.cacheSoundCloudStreamAsync(
-      streamUrl,
-      trackId,
-      controller
+    // Always wait for cache completion before playing
+    console.log(
+      `[Audio] Waiting for SoundCloud cache completion for track: ${trackId}`
     );
 
-    // Wait for cache to complete, but with a short timeout to avoid blocking playback
-    const cacheTimeoutPromise = new Promise<string>((resolve) => {
-      setTimeout(() => {
-        // If cache is ready, use it, otherwise fall back to original URL
-        if (this.soundCloudCache.has(trackId)) {
-          const cachedPath = this.soundCloudCache.get(trackId)!;
-          console.log(
-            `[Audio] Cache ready quickly, using cached file for track: ${trackId}`
-          );
-          // The cached path already includes file:// prefix, return it directly
-          resolve(cachedPath);
-        } else {
-          console.log(
-            `[Audio] Cache not ready quickly, using original stream for track: ${trackId}`
-          );
-          resolve(streamUrl);
-        }
-      }, 2000); // Wait up to 2 seconds for cache to be ready
-    });
+    try {
+      const cachedFilePath = await this.cacheSoundCloudStreamAsync(
+        streamUrl,
+        trackId,
+        controller
+      );
 
-    // Race between cache completion and timeout
-    const result = await Promise.race([
-      cachePromise.then((cachedFilePath) => {
-        console.log(
-          `[Audio] Cache completed, using cached file: ${cachedFilePath}`
-        );
-        // The cached file path already includes file:// prefix, return it directly
-        return cachedFilePath;
-      }),
-      cacheTimeoutPromise,
-    ]);
-
-    return result;
+      console.log(
+        `[Audio] SoundCloud cache completed, using cached file: ${cachedFilePath}`
+      );
+      return cachedFilePath;
+    } catch (error) {
+      console.log(
+        `[Audio] SoundCloud caching failed for track ${trackId}:`,
+        error
+      );
+      // If caching fails completely, return the original stream URL as fallback
+      return streamUrl;
+    }
   }
 
   /**
@@ -312,6 +1211,18 @@ export class AudioStreamManager {
     controller: AbortController
   ): Promise<void> {
     try {
+      // Check if already downloading to prevent concurrent downloads
+      const existingProgress = this.cacheProgress.get(trackId);
+      if (existingProgress?.isDownloading) {
+        console.log(
+          `[Audio] Download already in progress for track: ${trackId}`
+        );
+        return;
+      }
+
+      // Mark download as started with URL persistence
+      this.markDownloadStarted(trackId, streamUrl);
+
       console.log(`[Audio] Starting full track download for track: ${trackId}`);
 
       // First, let's try to get the full track by downloading without range header
@@ -336,23 +1247,57 @@ export class AudioStreamManager {
           `[Audio] Full track download completed for track: ${trackId}`
         );
 
-        // Replace the partial cache with the full file for future plays
-        this.soundCloudCache.set(trackId + "_full", cacheFilePath + ".full");
-
-        // Also update the main cache entry to point to the full file
-        // This ensures subsequent plays use the complete file
+        // Check if the full download is actually significantly larger than the partial cache
         const fullFileInfo = await FileSystem.getInfoAsync(
           cacheFilePath + ".full"
         );
-        if (fullFileInfo.exists && fullFileInfo.size > 1048576) {
-          // Only replace if full file is actually larger
+        const partialFileInfo = await FileSystem.getInfoAsync(cacheFilePath);
+
+        const fullSize = fullFileInfo.exists ? fullFileInfo.size : 0;
+        const partialSize = partialFileInfo.exists ? partialFileInfo.size : 0;
+
+        console.log(
+          `[Audio] Full file size: ${fullSize} bytes, Partial file size: ${partialSize} bytes`
+        );
+
+        // Only consider it a successful full download if it's significantly larger
+        // or if we got a 200 status (indicating complete file)
+        const isSignificantlyLarger = fullSize > partialSize + 1048576; // At least 1MB larger
+        const isCompleteDownload =
+          fullDownloadResult.status === 200 || isSignificantlyLarger;
+
+        if (fullFileInfo.exists && fullSize > 3145728 && isCompleteDownload) {
+          // At least 3MB and complete
           console.log(
             `[Audio] Replacing partial cache with full file for track: ${trackId}`
           );
-          this.soundCloudCache.set(trackId, cacheFilePath + ".full");
 
-          // Also update the cache to mark this track as having a full file available
+          // Replace the partial cache with the full file for future plays
+          this.soundCloudCache.set(trackId + "_full", cacheFilePath + ".full");
+          this.soundCloudCache.set(trackId, cacheFilePath + ".full");
           this.soundCloudCache.set(trackId + "_has_full", "true");
+
+          // Mark download as completed
+          this.markDownloadCompleted(trackId, fullSize / (1024 * 1024)); // Convert to MB
+
+          console.log(
+            `[Audio] Full file cache updated for track: ${trackId} (${fullSize} bytes)`
+          );
+        } else {
+          console.log(
+            `[Audio] Full download not significantly larger, keeping partial cache for track: ${trackId}`
+          );
+          // Clean up the failed full download
+          try {
+            await FileSystem.deleteAsync(cacheFilePath + ".full", {
+              idempotent: true,
+            });
+          } catch (cleanupError) {
+            console.warn(
+              "[Audio] Failed to clean up partial full download:",
+              cleanupError
+            );
+          }
         }
       } else {
         // If full download fails, try downloading the rest in chunks
@@ -371,7 +1316,66 @@ export class AudioStreamManager {
         `[Audio] Full track download failed for track ${trackId}:`,
         error
       );
+
+      // Mark download as failed and check retry logic
+      const progress = this.cacheProgress.get(trackId);
+      if (progress && progress.retryCount < this.MAX_RETRY_ATTEMPTS) {
+        console.log(
+          `[Audio] Retrying download for track ${trackId} (attempt ${progress.retryCount + 1}/${this.MAX_RETRY_ATTEMPTS})`
+        );
+
+        // Increment retry count
+        this.cacheProgress.set(trackId, {
+          ...progress,
+          retryCount: progress.retryCount + 1,
+          lastUpdate: Date.now(),
+        });
+
+        // Wait before retry
+        await new Promise((resolve) => setTimeout(resolve, this.RETRY_DELAY));
+
+        // Retry the download
+        await this.downloadFullTrackInBackground(
+          streamUrl,
+          cacheFilePath,
+          trackId,
+          controller
+        );
+      } else {
+        // Mark download as failed
+        if (progress) {
+          this.cacheProgress.set(trackId, {
+            ...progress,
+            isDownloading: false,
+            lastUpdate: Date.now(),
+          });
+        }
+        console.error(
+          `[Audio] Download failed permanently for track ${trackId} after ${progress?.retryCount || 0} attempts`
+        );
+
+        // If full download fails, try downloading the rest in chunks
+        console.log(
+          `[Audio] Full download failed, trying chunked download for track: ${trackId}`
+        );
+        await this.downloadTrackInChunks(
+          streamUrl,
+          cacheFilePath,
+          trackId,
+          controller
+        );
+      }
       // Don't throw - this is background optimization
+    } finally {
+      // Always mark download as not in progress when done
+      const progress = this.cacheProgress.get(trackId);
+      if (progress) {
+        this.cacheProgress.set(trackId, {
+          ...progress,
+          isDownloading: false,
+          lastUpdate: Date.now(),
+        });
+      }
     }
   }
 
@@ -401,6 +1405,13 @@ export class AudioStreamManager {
         from: cacheFilePath,
         to: tempFilePath,
       });
+
+      // Mark download as started with initial progress and URL persistence
+      this.markDownloadStarted(trackId, streamUrl);
+      this.updateDownloadProgress(trackId, totalDownloaded / (1024 * 1024), 0); // 5MB initial
+
+      let lastProgressUpdate = Date.now();
+      const progressUpdateInterval = 1000; // Update progress every 1 second
 
       while (!controller.signal.aborted) {
         const endPosition = currentPosition + chunkSize - 1;
@@ -453,6 +1464,17 @@ export class AudioStreamManager {
               `[Audio] Downloaded chunk, total: ${totalDownloaded} bytes`
             );
 
+            // Update progress every second to avoid too frequent updates
+            const now = Date.now();
+            if (now - lastProgressUpdate >= progressUpdateInterval) {
+              this.updateDownloadProgress(
+                trackId,
+                totalDownloaded / (1024 * 1024),
+                0
+              );
+              lastProgressUpdate = now;
+            }
+
             // If we got less data than requested, we might be at the end
             if (chunkSizeDownloaded < chunkSize) {
               console.log(
@@ -482,6 +1504,9 @@ export class AudioStreamManager {
         }
       }
 
+      // Final progress update
+      this.updateDownloadProgress(trackId, totalDownloaded / (1024 * 1024), 0);
+
       // Replace the original cache with our enhanced file
       if (totalDownloaded > 5242880) {
         console.log(
@@ -491,6 +1516,19 @@ export class AudioStreamManager {
           from: tempFilePath,
           to: cacheFilePath,
         });
+
+        // If we downloaded significantly more than the initial 5MB,
+        // mark this as having a substantial cache
+        if (totalDownloaded > 7340032) {
+          // More than 7MB total
+          console.log(
+            `[Audio] Marking track as having substantial cache for track: ${trackId}`
+          );
+          this.soundCloudCache.set(trackId + "_substantial", "true");
+        }
+
+        // Mark download as completed
+        this.markDownloadCompleted(trackId, totalDownloaded / (1024 * 1024));
 
         // Clean up temp files
         try {
@@ -506,7 +1544,376 @@ export class AudioStreamManager {
         `[Audio] Chunked download failed for track ${trackId}:`,
         error
       );
-      // Don't throw - this is background optimization
+
+      // Check if we should retry
+      const progress = this.cacheProgress.get(trackId);
+      if (progress && progress.retryCount < this.MAX_RETRY_ATTEMPTS) {
+        console.log(
+          `[Audio] Retrying chunked download for track ${trackId} (attempt ${progress.retryCount + 1}/${this.MAX_RETRY_ATTEMPTS})`
+        );
+
+        // Increment retry count and wait before retry
+        this.cacheProgress.set(trackId, {
+          ...progress,
+          retryCount: progress.retryCount + 1,
+          lastUpdate: Date.now(),
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, this.RETRY_DELAY));
+
+        // Retry the chunked download
+        await this.downloadTrackInChunks(
+          streamUrl,
+          cacheFilePath,
+          trackId,
+          controller
+        );
+      } else {
+        // Mark download as failed
+        if (progress) {
+          this.cacheProgress.set(trackId, {
+            ...progress,
+            isDownloading: false,
+            lastUpdate: Date.now(),
+          });
+        }
+        console.error(
+          `[Audio] Chunked download failed permanently for track ${trackId} after ${progress?.retryCount || 0} attempts`
+        );
+      }
+    } finally {
+      // Always mark download as not in progress when done
+      const progress = this.cacheProgress.get(trackId);
+      if (progress) {
+        this.cacheProgress.set(trackId, {
+          ...progress,
+          isDownloading: false,
+          lastUpdate: Date.now(),
+        });
+      }
+    }
+  }
+
+  /**
+   * Background caching of YouTube stream - doesn't block playback
+   */
+  private async cacheYouTubeStreamAsync(
+    streamUrl: string,
+    trackId: string,
+    controller: AbortController
+  ): Promise<string> {
+    // Check if we already have this track cached
+    if (this.soundCloudCache.has(trackId)) {
+      console.log(`[Audio] Background cache hit for YouTube track: ${trackId}`);
+      const cachedPath = this.soundCloudCache.get(trackId)!;
+      return `file://${cachedPath}`;
+    }
+
+    console.log(
+      `[Audio] Background caching first 5MB of YouTube stream for track: ${trackId}`
+    );
+
+    try {
+      // Create cache directory if it doesn't exist
+      const cacheDir = `${FileSystem.cacheDirectory}youtube-cache/`;
+      console.log(`[Audio] Creating YouTube cache directory: ${cacheDir}`);
+      try {
+        await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
+      } catch (mkdirError: any) {
+        console.warn("[Audio] Could not create cache directory:", mkdirError);
+        console.warn("[Audio] Continuing with existing directory or fallback");
+        // Don't return here - the directory might already exist
+      }
+
+      // Test if we can write to the directory
+      const testFile = `${cacheDir}test.txt`;
+      try {
+        await FileSystem.writeAsStringAsync(testFile, "test");
+        await FileSystem.deleteAsync(testFile, { idempotent: true });
+        console.log("[Audio] Cache directory is writable");
+      } catch (writeError: any) {
+        console.error("[Audio] Cache directory is not writable:", writeError);
+        console.error("[Audio] Error details:", {
+          message: writeError.message,
+          code: writeError.code,
+          directory: cacheDir,
+          fileSystem: FileSystem.cacheDirectory,
+        });
+        // Continue without caching - return original stream URL
+        console.log(
+          "[Audio] Continuing without caching due to directory issues"
+        );
+        return streamUrl;
+      }
+
+      const cacheFilePath = `${cacheDir}${trackId}.cache`;
+
+      // Mark download as started with URL persistence for YouTube tracks
+      this.markDownloadStarted(trackId, streamUrl);
+
+      // Check if we have a full file available first
+      const fullFilePath = cacheFilePath + ".full";
+      const fullFileInfo = await FileSystem.getInfoAsync(fullFilePath);
+      if (fullFileInfo.exists && fullFileInfo.size > 5242880) {
+        console.log(
+          `[Audio] Using existing full cached file for YouTube track: ${trackId}`
+        );
+        this.soundCloudCache.set(trackId, fullFilePath);
+        // Update progress to reflect completed state
+        this.updateCacheProgress(
+          trackId,
+          100,
+          fullFileInfo.size / (1024 * 1024),
+          {
+            isFullyCached: true,
+          }
+        );
+        return `file://${fullFilePath}`;
+      }
+
+      // Check if partial file exists
+      const partialFileInfo = await FileSystem.getInfoAsync(cacheFilePath);
+      if (partialFileInfo.exists) {
+        console.log(
+          `[Audio] Using existing partial cached file for YouTube track: ${trackId}`
+        );
+        this.soundCloudCache.set(trackId, cacheFilePath);
+        // Update progress to reflect partial state
+        const estimatedTotal = this.estimateTotalFileSize(partialFileInfo.size);
+        const percentage = Math.min(
+          95,
+          Math.round((partialFileInfo.size / estimatedTotal) * 100)
+        );
+        this.updateCacheProgress(
+          trackId,
+          percentage,
+          partialFileInfo.size / (1024 * 1024)
+        );
+        return `file://${cacheFilePath}`;
+      }
+
+      // Download the first 5MB (5 * 1024 * 1024 bytes) of the stream
+      console.log(
+        `[Audio] Downloading partial cache for YouTube track: ${trackId}`
+      );
+
+      // Check if stream URL is valid
+      if (!streamUrl) {
+        console.log(`[Audio] Invalid stream URL, skipping cache: ${streamUrl}`);
+        return streamUrl;
+      }
+
+      // Try without Range header first (YouTube often blocks range requests)
+      let downloadResult;
+      try {
+        console.log(
+          `[Audio] Attempting direct download from: ${streamUrl.substring(0, 50)}...`
+        );
+        downloadResult = await FileSystem.downloadAsync(
+          streamUrl,
+          cacheFilePath,
+          {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+              Referer: "https://www.youtube.com/",
+              Origin: "https://www.youtube.com/",
+            },
+            sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+          }
+        );
+        console.log(
+          `[Audio] Direct download completed with status: ${downloadResult.status}`
+        );
+      } catch (downloadError) {
+        console.log(
+          "[Audio] Direct download failed, trying with range header:",
+          downloadError
+        );
+        // Fallback to range request
+        try {
+          downloadResult = await FileSystem.downloadAsync(
+            streamUrl,
+            cacheFilePath,
+            {
+              headers: {
+                Range: "bytes=0-5242879", // Request first 5MB
+                "User-Agent":
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                Referer: "https://www.youtube.com/",
+                Origin: "https://www.youtube.com/",
+              },
+              sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+            }
+          );
+          console.log(
+            `[Audio] Range download completed with status: ${downloadResult.status}`
+          );
+        } catch (rangeError) {
+          console.error("[Audio] Range download also failed:", rangeError);
+          // If both fail, return original URL
+          return streamUrl;
+        }
+      }
+
+      if (downloadResult.status !== 200 && downloadResult.status !== 206) {
+        console.log(
+          `[Audio] Download failed with status: ${downloadResult.status}`
+        );
+        console.log(`[Audio] Response headers:`, downloadResult.headers);
+        throw new Error(
+          `Failed to download YouTube stream chunk: ${downloadResult.status} - ${downloadResult.headers?.["content-type"] || "unknown content type"}`
+        );
+      }
+
+      // Check if file was actually created
+      const downloadedFileInfo = await FileSystem.getInfoAsync(cacheFilePath);
+      console.log(`[Audio] Downloaded file info:`, downloadedFileInfo);
+
+      console.log(
+        `[Audio] Successfully cached YouTube stream ${downloadResult.headers?.["content-length"] || "unknown size"} bytes for track: ${trackId}`
+      );
+
+      // Store in cache
+      this.soundCloudCache.set(trackId, cacheFilePath);
+      console.log(`[Audio] Stored cache file path: ${cacheFilePath}`);
+
+      // Continue downloading the rest of the file in the background
+      this.downloadFullTrackInBackground(
+        streamUrl,
+        cacheFilePath,
+        trackId,
+        controller
+      );
+
+      console.log(
+        `[Audio] YouTube background caching completed for track: ${trackId}`
+      );
+
+      // Return the cached file path so the player uses the local file
+      const resultPath = `file://${cacheFilePath}`;
+      console.log(`[Audio] Returning cached file path: ${resultPath}`);
+      return resultPath;
+    } catch (error) {
+      console.log(
+        `[Audio] YouTube background caching failed: ${
+          error instanceof Error ? error.message : error
+        }`
+      );
+      console.log(
+        `[Audio] YouTube stream URL: ${streamUrl.substring(0, 100)}...`
+      );
+
+      // Try to get more error details
+      if (error instanceof Error) {
+        console.log(`[Audio] Error stack: ${error.stack}`);
+      }
+
+      // Log the error but don't fail - YouTube URLs expire quickly
+      // We'll try again on the next playback attempt
+      console.log(
+        `[Audio] YouTube caching failed for ${trackId}, will retry next time`
+      );
+
+      // Return the original stream URL as fallback (don't cache on failure)
+      return streamUrl;
+    }
+  }
+
+  /**
+   * Post-playback YouTube caching - cache after successful playback
+   * This is more reliable since we have a working URL
+   */
+  public async cacheYouTubeStreamPostPlayback(
+    streamUrl: string,
+    trackId: string
+  ): Promise<void> {
+    // Skip if already cached
+    if (this.soundCloudCache.has(trackId)) {
+      console.log(`[Audio] YouTube track already cached: ${trackId}`);
+      return;
+    }
+
+    console.log(
+      `[Audio] Post-playback caching YouTube stream for track: ${trackId}`
+    );
+
+    try {
+      const cacheDir = `${FileSystem.cacheDirectory}youtube-cache/`;
+      await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
+
+      const cacheFilePath = `${cacheDir}${trackId}.webm`;
+      const fullFilePath = cacheFilePath + ".full";
+
+      // Check if we already have a full file
+      const fullFileInfo = await FileSystem.getInfoAsync(fullFilePath);
+      if (fullFileInfo.exists && fullFileInfo.size > 5242880) {
+        console.log(
+          `[Audio] YouTube full cached file already exists for: ${trackId}`
+        );
+        this.soundCloudCache.set(trackId, fullFilePath);
+        return;
+      }
+
+      // Create a new controller for this download
+      const controller = new AbortController();
+
+      // Download the stream with a longer timeout since it's post-playback
+      const downloadResult = await FileSystem.downloadAsync(
+        streamUrl,
+        cacheFilePath,
+        {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          },
+        }
+      );
+
+      if (downloadResult.status === 200) {
+        console.log(
+          `[Audio] YouTube stream downloaded successfully for: ${trackId}`
+        );
+
+        // Check file size
+        const fileInfo = await FileSystem.getInfoAsync(cacheFilePath);
+        if (fileInfo.exists && fileInfo.size > 0) {
+          console.log(
+            `[Audio] YouTube cached file size: ${fileInfo.size} bytes`
+          );
+
+          // If file is large enough, mark it as full
+          if (fileInfo.size > 5242880) {
+            // 5MB
+            await FileSystem.moveAsync({
+              from: cacheFilePath,
+              to: fullFilePath,
+            });
+            this.soundCloudCache.set(trackId, fullFilePath);
+            console.log(`[Audio] YouTube full cached file saved: ${trackId}`);
+          } else {
+            this.soundCloudCache.set(trackId, cacheFilePath);
+            console.log(
+              `[Audio] YouTube partial cached file saved: ${trackId}`
+            );
+          }
+        }
+      } else {
+        console.log(
+          `[Audio] YouTube download failed with status: ${downloadResult.status}`
+        );
+        // Clean up partial file
+        try {
+          await FileSystem.deleteAsync(cacheFilePath);
+        } catch (cleanupError) {
+          console.log(
+            `[Audio] Failed to cleanup partial file: ${cleanupError}`
+          );
+        }
+      }
+    } catch (error) {
+      console.log(`[Audio] Post-playback YouTube caching failed: ${error}`);
+      // Don't throw - this is background caching
     }
   }
 
@@ -522,7 +1929,7 @@ export class AudioStreamManager {
     if (this.soundCloudCache.has(trackId)) {
       console.log(`[Audio] Background cache hit for track: ${trackId}`);
       const cachedPath = this.soundCloudCache.get(trackId)!;
-      return cachedPath;
+      return `file://${cachedPath}`;
     }
 
     console.log(
@@ -532,7 +1939,41 @@ export class AudioStreamManager {
     try {
       // Create cache directory if it doesn't exist
       const cacheDir = `${FileSystem.cacheDirectory}soundcloud-cache/`;
-      await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
+      console.log(`[Audio] Creating SoundCloud cache directory: ${cacheDir}`);
+      try {
+        await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
+      } catch (mkdirError: any) {
+        console.warn(
+          "[Audio] Could not create SoundCloud cache directory:",
+          mkdirError
+        );
+        console.warn("[Audio] Continuing with existing directory or fallback");
+        // Don't return here - the directory might already exist
+      }
+
+      // Test if we can write to the directory
+      const testFile = `${cacheDir}test.txt`;
+      try {
+        await FileSystem.writeAsStringAsync(testFile, "test");
+        await FileSystem.deleteAsync(testFile, { idempotent: true });
+        console.log("[Audio] SoundCloud cache directory is writable");
+      } catch (writeError: any) {
+        console.error(
+          "[Audio] SoundCloud cache directory is not writable:",
+          writeError
+        );
+        console.error("[Audio] Error details:", {
+          message: writeError.message,
+          code: writeError.code,
+          directory: cacheDir,
+          fileSystem: FileSystem.cacheDirectory,
+        });
+        // Continue without caching - return original stream URL
+        console.log(
+          "[Audio] Continuing without SoundCloud caching due to directory issues"
+        );
+        return streamUrl;
+      }
 
       const cacheFilePath = `${cacheDir}${trackId}.mp3`;
 
@@ -544,7 +1985,7 @@ export class AudioStreamManager {
           `[Audio] Using existing full cached file for track: ${trackId}`
         );
         this.soundCloudCache.set(trackId, fullFilePath);
-        return fullFilePath; // Return the full cached file path
+        return `file://${fullFilePath}`; // Return the full cached file path
       }
 
       // Check if partial file exists
@@ -554,11 +1995,12 @@ export class AudioStreamManager {
           `[Audio] Using existing partial cached file for track: ${trackId}`
         );
         this.soundCloudCache.set(trackId, cacheFilePath);
-        return cacheFilePath; // Return the cached file path
+        return `file://${cacheFilePath}`; // Return the cached file path
       }
 
       // Download the first 5MB (5 * 1024 * 1024 bytes) of the stream
       // This is larger than the original 1MB to prevent early cutouts
+      console.log(`[Audio] Downloading partial cache for track: ${trackId}`);
       const downloadResult = await FileSystem.downloadAsync(
         streamUrl,
         cacheFilePath,
@@ -598,7 +2040,7 @@ export class AudioStreamManager {
       console.log(`[Audio] Background caching completed for track: ${trackId}`);
 
       // Return the cached file path so the player uses the local file
-      return cacheFilePath;
+      return `file://${cacheFilePath}`;
     } catch (error) {
       console.log(
         `[Audio] Background caching failed: ${
@@ -664,6 +2106,9 @@ export class AudioStreamManager {
       return prefetched;
     }
 
+    // Always ensure caching before playing
+    onStatusUpdate?.("Ensuring audio is cached before playback...");
+
     // --- SOUNDCLOUD HANDLING (with fallbacks) ---
     if (source === "soundcloud") {
       onStatusUpdate?.("Using SoundCloud strategy (with fallbacks)");
@@ -682,6 +2127,24 @@ export class AudioStreamManager {
 
         if (soundCloudUrl) {
           console.log("[Audio] SoundCloud strategy succeeded!");
+          console.log(`[Audio] SoundCloud URL result: ${soundCloudUrl}`);
+          console.log(
+            `[Audio] Is cached file: ${soundCloudUrl.startsWith("file://")}`
+          );
+
+          // Ensure we have a cached file before returning
+          if (!soundCloudUrl.startsWith("file://")) {
+            onStatusUpdate?.("Caching SoundCloud audio...");
+            const controller = new AbortController();
+            const cachedUrl = await this.cacheSoundCloudStream(
+              soundCloudUrl,
+              videoId,
+              controller
+            );
+            console.log(`[Audio] SoundCloud cached result: ${cachedUrl}`);
+            return cachedUrl;
+          }
+
           return soundCloudUrl;
         }
       } catch (error) {
@@ -748,6 +2211,34 @@ export class AudioStreamManager {
       successfulResults.sort((a, b) => a.latency - b.latency);
       const fastest = successfulResults[0];
       onStatusUpdate?.(`Fastest: ${fastest.strategy} (${fastest.latency}ms)`);
+
+      // Apply caching based on the strategy type
+      if (
+        fastest.strategy.includes("YouTube") ||
+        fastest.strategy.includes("Invidious") ||
+        fastest.strategy.includes("Piped")
+      ) {
+        // For YouTube strategies, ensure caching is complete before returning
+        try {
+          onStatusUpdate?.("Caching audio before playback...");
+          const controller = new AbortController();
+          const cachedUrl = await this.cacheYouTubeStream(
+            fastest.url,
+            videoId,
+            controller
+          );
+          console.log(
+            `[Audio] YouTube caching completed for ${videoId}: ${cachedUrl !== fastest.url ? "cached" : "original"}`
+          );
+          return cachedUrl;
+        } catch (cacheError) {
+          console.log(
+            `[Audio] YouTube caching failed, using original URL: ${cacheError}`
+          );
+          return fastest.url;
+        }
+      }
+
       return fastest.url;
     }
 
@@ -769,6 +2260,34 @@ export class AudioStreamManager {
         const url = await strategy(videoId);
         if (url) {
           onStatusUpdate?.(`Success with ${strategyName}`);
+
+          // Apply caching based on the strategy type
+          if (
+            strategyName.includes("YouTube") ||
+            strategyName.includes("Invidious") ||
+            strategyName.includes("Piped")
+          ) {
+            // For YouTube strategies, ensure caching is complete before returning
+            try {
+              onStatusUpdate?.("Caching audio before playback...");
+              const controller = new AbortController();
+              const cachedUrl = await this.cacheYouTubeStream(
+                url,
+                videoId,
+                controller
+              );
+              console.log(
+                `[Audio] YouTube caching completed for ${videoId}: ${cachedUrl !== url ? "cached" : "original"}`
+              );
+              return cachedUrl;
+            } catch (cacheError) {
+              console.log(
+                `[Audio] YouTube caching failed, using original URL: ${cacheError}`
+              );
+              return url;
+            }
+          }
+
           return url;
         }
       } catch (error) {
@@ -893,15 +2412,15 @@ export class AudioStreamManager {
 
         // Handle specific HTTP error codes
         if (response.status === 429) {
-          throw new Error(`Rate limited (429): Too many requests`);
+          throw new Error("Rate limited (429): Too many requests");
         } else if (response.status === 503) {
           throw new Error(
-            `Service unavailable (503): Instance may be overloaded`
+            "Service unavailable (503): Instance may be overloaded"
           );
         } else if (response.status === 502) {
-          throw new Error(`Bad gateway (502): Instance proxy error`);
+          throw new Error("Bad gateway (502): Instance proxy error");
         } else if (response.status === 404) {
-          throw new Error(`Not found (404): Resource not available`);
+          throw new Error("Not found (404): Resource not available");
         } else if (response.status >= 500) {
           throw new Error(
             `Server error (${response.status}): Instance may be down`
@@ -1302,9 +2821,14 @@ export class AudioStreamManager {
             audioUrl = `${instance}${audioUrl}`;
           }
           console.log(
-            `[AudioStreamManager] Found audio via Invidious adaptiveFormats`
+            "[AudioStreamManager] Found audio via Invidious adaptiveFormats"
           );
-          return audioUrl;
+          // Cache the YouTube stream and return cached file path
+          return this.cacheYouTubeStream(
+            audioUrl,
+            videoId,
+            new AbortController()
+          );
         }
       }
 
@@ -1324,8 +2848,13 @@ export class AudioStreamManager {
           if (audioUrl.startsWith("/")) {
             audioUrl = `${instance}${audioUrl}`;
           }
-          console.log(`[AudioStreamManager] Found audio via formatStreams`);
-          return audioUrl;
+          console.log("[AudioStreamManager] Found audio via formatStreams");
+          // Cache the YouTube stream and return cached file path
+          return this.cacheYouTubeStream(
+            audioUrl,
+            videoId,
+            new AbortController()
+          );
         }
 
         // If no audio-only streams, try video streams that contain audio (muxed)
@@ -1350,9 +2879,14 @@ export class AudioStreamManager {
             audioUrl = `${instance}${audioUrl}`;
           }
           console.log(
-            `[AudioStreamManager] Found video stream with audio via formatStreams`
+            "[AudioStreamManager] Found video stream with audio via formatStreams"
           );
-          return audioUrl;
+          // Cache the YouTube stream and return cached file path
+          return this.cacheYouTubeStream(
+            audioUrl,
+            videoId,
+            new AbortController()
+          );
         }
 
         // Last resort: any video stream (can be extracted for audio)
@@ -1371,9 +2905,14 @@ export class AudioStreamManager {
             audioUrl = `${instance}${audioUrl}`;
           }
           console.log(
-            `[AudioStreamManager] Using video stream for audio extraction via formatStreams`
+            "[AudioStreamManager] Using video stream for audio extraction via formatStreams"
           );
-          return audioUrl;
+          // Cache the YouTube stream and return cached file path
+          return this.cacheYouTubeStream(
+            audioUrl,
+            videoId,
+            new AbortController()
+          );
         }
       }
 
@@ -1385,9 +2924,14 @@ export class AudioStreamManager {
           audioUrl = `${instance}${audioUrl}`;
         }
         console.log(
-          `[AudioStreamManager] Found direct audio URL via Invidious`
+          "[AudioStreamManager] Found direct audio URL via Invidious"
         );
-        return audioUrl;
+        // Cache the YouTube stream and return cached file path
+        return this.cacheYouTubeStream(
+          audioUrl,
+          videoId,
+          new AbortController()
+        );
       }
 
       // If we have a video stream URL, convert it to MP3 format
@@ -1402,7 +2946,7 @@ export class AudioStreamManager {
 
           // Convert video stream to MP3 format using a conversion service
           console.log(
-            `[AudioStreamManager] Converting video stream to MP3 format`
+            "[AudioStreamManager] Converting video stream to MP3 format"
           );
           return await this.convertStreamToMP3(streamUrl, videoId);
         }
@@ -1410,7 +2954,7 @@ export class AudioStreamManager {
 
       throw new Error("No audio formats found in response");
     } catch (error) {
-      console.warn(`Invidious failed:`, error);
+      console.warn("Invidious failed:", error);
       throw error;
     }
   }
@@ -2175,10 +3719,194 @@ export class AudioStreamManager {
 
   // Cleanup method
 
+  /**
+   * Resume cache download from a specific position
+   * This is used when cache gets stuck or needs to continue from partial download
+   */
+  public async resumeCacheDownload(
+    streamUrl: string,
+    cacheFilePath: string,
+    trackId: string,
+    startPosition: number,
+    controller: AbortController,
+    onProgress?: (percentage: number) => void
+  ): Promise<void> {
+    try {
+      console.log(
+        `[Audio] Resuming cache download from position ${startPosition} for track: ${trackId}`
+      );
+
+      // Mark download as started to indicate active resume operation
+      this.markDownloadStarted(trackId, streamUrl);
+
+      // Try to download the rest of the file starting from the current position
+      const resumeResult = await FileSystem.downloadAsync(
+        streamUrl,
+        cacheFilePath + ".resume",
+        {
+          headers: {
+            Range: `bytes=${startPosition}-`,
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            Referer: "https://www.youtube.com/",
+            Origin: "https://www.youtube.com/",
+          },
+          sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+        }
+      );
+
+      if (resumeResult.status === 200 || resumeResult.status === 206) {
+        console.log(`[Audio] Resume download successful for track: ${trackId}`);
+
+        // Check if the resume file exists and has content
+        const resumeFileInfo = await FileSystem.getInfoAsync(
+          cacheFilePath + ".resume"
+        );
+        if (!resumeFileInfo.exists || resumeFileInfo.size === 0) {
+          console.warn(
+            `[Audio] Resume file is empty or doesn't exist for track: ${trackId}`
+          );
+          // Clean up resume file if it exists
+          await FileSystem.deleteAsync(cacheFilePath + ".resume", {
+            idempotent: true,
+          });
+          return;
+        }
+
+        try {
+          // Append the resumed content to the existing file
+          const resumedContent = await FileSystem.readAsStringAsync(
+            cacheFilePath + ".resume",
+            { encoding: FileSystem.EncodingType.Base64 }
+          );
+
+          const existingContent = await FileSystem.readAsStringAsync(
+            cacheFilePath,
+            { encoding: FileSystem.EncodingType.Base64 }
+          );
+
+          // Combine the contents
+          await FileSystem.writeAsStringAsync(
+            cacheFilePath,
+            existingContent + resumedContent,
+            { encoding: FileSystem.EncodingType.Base64 }
+          );
+        } catch (base64Error) {
+          console.error(
+            `[Audio] Base64 encoding error during resume for track: ${trackId}`,
+            base64Error
+          );
+          // Fallback: Use binary-safe file copying
+          try {
+            console.log(`[Audio] Attempting binary-safe file combination`);
+
+            // Use copyAsync to append files safely
+            const tempCombinedPath = cacheFilePath + ".combined";
+
+            // First copy the existing file to temp location
+            await FileSystem.copyAsync({
+              from: cacheFilePath,
+              to: tempCombinedPath,
+            });
+
+            // Then append the resume content using UTF8 encoding (safer than base64)
+            const existingContent = await FileSystem.readAsStringAsync(
+              tempCombinedPath,
+              { encoding: FileSystem.EncodingType.UTF8 }
+            );
+            const resumeContent = await FileSystem.readAsStringAsync(
+              cacheFilePath + ".resume",
+              { encoding: FileSystem.EncodingType.UTF8 }
+            );
+
+            await FileSystem.writeAsStringAsync(
+              tempCombinedPath,
+              existingContent + resumeContent,
+              { encoding: FileSystem.EncodingType.UTF8 }
+            );
+
+            // Replace the original file with the combined one
+            await FileSystem.copyAsync({
+              from: tempCombinedPath,
+              to: cacheFilePath,
+            });
+
+            // Clean up temp files
+            await FileSystem.deleteAsync(tempCombinedPath, {
+              idempotent: true,
+            });
+
+            console.log(`[Audio] Successfully combined cache files using UTF8`);
+          } catch (utf8Error) {
+            console.error(`[Audio] UTF8 combination failed:`, utf8Error);
+            // Final fallback: just replace the original file with the resumed one
+            try {
+              await FileSystem.copyAsync({
+                from: cacheFilePath + ".resume",
+                to: cacheFilePath,
+              });
+              console.log(
+                `[Audio] Fallback: Replaced cache file with resumed content`
+              );
+            } catch (finalError) {
+              console.error(`[Audio] Final fallback failed:`, finalError);
+              throw finalError;
+            }
+          }
+        }
+
+        // Clean up resume file
+        await FileSystem.deleteAsync(cacheFilePath + ".resume", {
+          idempotent: true,
+        });
+
+        console.log(`[Audio] Cache resumed and combined for track: ${trackId}`);
+
+        // Report updated progress
+        // Add a small delay to ensure filesystem has updated the file size
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const updatedCacheInfo = await this.getCacheInfo(trackId);
+        onProgress?.(updatedCacheInfo.percentage);
+        console.log(
+          `[Audio] Updated cache progress after resume: ${updatedCacheInfo.percentage}%`
+        );
+
+        // Mark download as completed
+        this.markDownloadCompleted(trackId, updatedCacheInfo.fileSize);
+      } else {
+        console.log(
+          `[Audio] Resume download failed with status: ${resumeResult.status}`
+        );
+      }
+    } catch (error) {
+      console.error(
+        `[Audio] Failed to resume cache download for track ${trackId}:`,
+        error
+      );
+      // Clean up resume file on error
+      try {
+        await FileSystem.deleteAsync(cacheFilePath + ".resume", {
+          idempotent: true,
+        });
+      } catch (cleanupError) {
+        // Ignore cleanup errors
+      }
+      // Mark download as not downloading on error so monitoring can continue
+      const existingProgress = this.cacheProgress.get(trackId);
+      if (existingProgress) {
+        this.cacheProgress.set(trackId, {
+          ...existingProgress,
+          isDownloading: false,
+          lastUpdate: Date.now(),
+        });
+      }
+    }
+  }
+
   // Cleanup method
   public async cleanup() {
     // Clean up SoundCloud cached files to prevent storage leaks
-    for (const filePath of this.soundCloudCache.values()) {
+    for (const filePath of Array.from(this.soundCloudCache.values())) {
       try {
         await FileSystem.deleteAsync(filePath, { idempotent: true });
       } catch (error) {
@@ -2220,6 +3948,199 @@ export async function prefetchAudioStreamQueue(
   videoIds: string[]
 ): Promise<void> {
   return AudioStreamManager.getInstance().prefetchQueueItems(videoIds);
+}
+
+/**
+ * Monitor cache progress during playback and resume if stuck
+ * This function checks if cache percentage is not increasing and resumes download
+ */
+export async function monitorAndResumeCache(
+  trackId: string,
+  currentAudioUrl: string,
+  onProgress?: (percentage: number) => void
+): Promise<void> {
+  const manager = AudioStreamManager.getInstance();
+  let lastPercentage = 0;
+  let stuckCount = 0;
+  const maxStuckCount = 3; // Consider stuck after 3 checks with no progress
+
+  // Get the original streaming URL from cache progress for resume operations
+  const getOriginalStreamUrl = (): string | null => {
+    return manager.getOriginalStreamUrl(trackId);
+  };
+
+  const checkCacheProgress = async () => {
+    try {
+      const cacheInfo = await manager.getCacheInfo(trackId);
+      const currentPercentage = cacheInfo.percentage;
+
+      console.log(
+        `[CacheMonitor] Track ${trackId}: ${currentPercentage}% cached`
+      );
+      onProgress?.(currentPercentage);
+
+      // If there's no active progress but we have substantial partial cache (>=30%), try to resume
+      if (
+        currentPercentage >= 30 &&
+        currentPercentage < 98 &&
+        cacheInfo.isDownloading === false
+      ) {
+        console.log(
+          `[CacheMonitor] Found substantial partial cache (${currentPercentage}%) but no active download, attempting resume for track: ${trackId}`
+        );
+
+        const originalStreamUrl = getOriginalStreamUrl();
+        if (originalStreamUrl) {
+          // Check if we have any cached file to resume from
+          const cachedFilePath = await manager.getBestCachedFilePath(trackId);
+          if (cachedFilePath) {
+            const filePath = cachedFilePath.replace("file://", "");
+            const fileInfo = await FileSystem.getInfoAsync(filePath);
+            const currentSize = fileInfo.exists ? fileInfo.size : 0;
+
+            if (currentSize > 0) {
+              console.log(
+                `[CacheMonitor] Found existing cache file (${currentSize} bytes), resuming download`
+              );
+
+              // Resume downloading from the current position
+              const resumeController = new AbortController();
+              await manager.resumeCacheDownload(
+                originalStreamUrl,
+                filePath,
+                trackId,
+                currentSize,
+                resumeController,
+                onProgress
+              );
+              return; // Exit early after resuming
+            }
+          }
+        }
+      }
+
+      // If there's no active progress but we have a cached URL, try to resume
+      if (currentPercentage === 0 && cacheInfo.isDownloading === false) {
+        const originalStreamUrl = getOriginalStreamUrl();
+        if (originalStreamUrl) {
+          console.log(
+            `[CacheMonitor] Found cached URL but no active progress, attempting resume for track: ${trackId}`
+          );
+
+          // Check if we have any cached file to resume from
+          const cachedFilePath = await manager.getBestCachedFilePath(trackId);
+          if (cachedFilePath) {
+            const filePath = cachedFilePath.replace("file://", "");
+            const fileInfo = await FileSystem.getInfoAsync(filePath);
+            const currentSize = fileInfo.exists ? fileInfo.size : 0;
+
+            if (currentSize > 0) {
+              console.log(
+                `[CacheMonitor] Found existing cache file (${currentSize} bytes), resuming download`
+              );
+
+              // Resume downloading from the current position
+              const resumeController = new AbortController();
+              await manager.resumeCacheDownload(
+                originalStreamUrl,
+                filePath,
+                trackId,
+                currentSize,
+                resumeController,
+                onProgress
+              );
+              return; // Exit early after resuming
+            }
+          }
+        }
+      }
+
+      // Check if percentage is stuck (allow for small variations due to rounding)
+      if (
+        Math.abs(currentPercentage - lastPercentage) < 1 &&
+        currentPercentage < 98
+      ) {
+        stuckCount++;
+        console.log(
+          `[CacheMonitor] Cache appears stuck (${stuckCount}/3) for track: ${trackId}, last: ${lastPercentage}, current: ${currentPercentage}`
+        );
+
+        if (stuckCount >= maxStuckCount) {
+          console.log(
+            `[CacheMonitor] Resuming stuck cache for track: ${trackId}`
+          );
+
+          // Resume the cache download from the last position
+          const cachedFilePath = await manager.getBestCachedFilePath(trackId);
+          if (cachedFilePath) {
+            const filePath = cachedFilePath.replace("file://", "");
+            const fileInfo = await FileSystem.getInfoAsync(filePath);
+            const currentSize = fileInfo.exists ? fileInfo.size : 0;
+
+            console.log(
+              `[CacheMonitor] Current file size: ${currentSize} bytes`
+            );
+
+            // Get the original streaming URL from cache progress
+            const originalStreamUrl = getOriginalStreamUrl();
+
+            if (originalStreamUrl) {
+              // Create a new controller for the resume operation
+              const resumeController = new AbortController();
+
+              // Resume downloading from the current position
+              await manager.resumeCacheDownload(
+                originalStreamUrl,
+                filePath,
+                trackId,
+                currentSize,
+                resumeController,
+                onProgress
+              );
+
+              stuckCount = 0; // Reset stuck counter after resuming
+            } else {
+              console.warn(
+                `[CacheMonitor] Cannot resume cache - no original streaming URL available for track: ${trackId}`
+              );
+            }
+          } else {
+            console.warn(
+              `[CacheMonitor] No cached file path found for track: ${trackId}`
+            );
+          }
+        }
+      } else {
+        stuckCount = 0; // Reset if progress is detected
+        console.log(
+          `[CacheMonitor] Progress detected: ${lastPercentage}% -> ${currentPercentage}%`
+        );
+      }
+
+      lastPercentage = currentPercentage;
+
+      // Continue monitoring if not fully cached (increased threshold to 98%)
+      if (currentPercentage < 98) {
+        setTimeout(checkCacheProgress, 3000); // Check every 3 seconds (reduced from 5)
+      } else {
+        console.log(
+          `[CacheMonitor] Cache nearly complete (${currentPercentage}%), stopping monitoring`
+        );
+      }
+    } catch (error) {
+      console.error(
+        `[CacheMonitor] Error monitoring cache for track ${trackId}:`,
+        error
+      );
+      // Continue monitoring even after errors
+      if (lastPercentage < 98) {
+        setTimeout(checkCacheProgress, 5000);
+      }
+    }
+  };
+
+  // Start monitoring
+  checkCacheProgress();
 }
 
 export async function cleanupAudioStreamManager(): Promise<void> {

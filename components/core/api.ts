@@ -27,13 +27,13 @@ export async function fetchStreamFromInvidious(id: string, api: string) {
 
 export async function getStreamData(
   id: string,
-  prefer: 'piped' | 'invidious' = 'piped',
+  prefer: "piped" | "invidious" = "piped",
 ) {
-  const src = prefer === 'piped' ? API.piped : API.invidious;
+  const src = prefer === "piped" ? API.piped : API.invidious;
   const list = src.filter(Boolean);
   for (const base of list) {
     try {
-      return prefer === 'piped'
+      return prefer === "piped"
         ? await fetchStreamFromPiped(id, base)
         : await fetchStreamFromInvidious(id, base);
     } catch (e) {
@@ -41,15 +41,15 @@ export async function getStreamData(
     }
   }
   // fallback to other source
-  const alt = prefer === 'piped' ? API.invidious : API.piped;
+  const alt = prefer === "piped" ? API.invidious : API.piped;
   for (const base of alt.filter(Boolean)) {
     try {
-      return prefer === 'piped'
+      return prefer === "piped"
         ? await fetchStreamFromInvidious(id, base)
         : await fetchStreamFromPiped(id, base);
     } catch (e) {}
   }
-  throw new Error('No sources available');
+  throw new Error("No sources available");
 }
 
 export function getBestAudioUrl(piped: Piped) {

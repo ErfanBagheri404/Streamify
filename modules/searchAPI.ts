@@ -11,18 +11,19 @@ export interface SearchResult {
   views?: string;
   img?: string;
   thumbnailUrl?: string;
-  source?: "youtube" | "soundcloud";
+  source?: "youtube" | "soundcloud" | "jiosaavn";
+  type?: "song" | "album" | "artist" | "unknown";
+  albumId?: string | null;
+  albumName?: string | null;
+  albumUrl?: string | null;
+  albumYear?: string | null;
 }
 
 // --- CONSTANTS ---
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
-export const PIPED_INSTANCES = [
-
-  "https://api.piped.private.coffee",
-  
-];
+export const PIPED_INSTANCES = ["https://api.piped.private.coffee"];
 
 const INVIDIOUS_INSTANCES = [
   "https://inv.nadeko.net/api/v1",
@@ -104,17 +105,32 @@ const fetchWithFallbacks = async (
 export const searchAPI = {
   getSuggestions: async (
     query: string,
-    source: "youtube" | "soundcloud" | "spotify" = "youtube"
+    source: "youtube" | "soundcloud" | "spotify" | "jiosaavn" = "youtube"
   ): Promise<string[]> => {
     if (!query.trim()) {
       return [];
     }
+
+    // Enhanced multilingual support for suggestions
+    const isMultilingual = /[^\u0000-\u007F]/.test(query);
+    if (isMultilingual) {
+      console.log(
+        `[API] Detected multilingual query for suggestions: "${query}"`
+      );
+    }
+
     if (source === "soundcloud") {
       return await searchAPI.getSoundCloudSuggestions(query);
+    }
+    if (source === "jiosaavn") {
+      // For JioSaavn, return simple suggestions based on the query
+      const terms = ["song", "remix", "live", "official"];
+      return [query, ...terms.map((term) => `${query} ${term}`)].slice(0, 5);
     }
     if (source === "spotify") {
       return await searchAPI.getSpotifySuggestions(query);
     }
+
     const endpoint = `/suggestions?query=${encodeURIComponent(query)}`;
     const data = await fetchWithFallbacks(PIPED_INSTANCES, endpoint);
     let suggestions: string[] = [];
@@ -224,13 +240,435 @@ export const searchAPI = {
     }
   },
 
+  // --- JIOSAAVN SEARCH ---
+  searchWithJioSaavn: async (query: string) => {
+    console.log(`[API] Starting JioSaavn search for: "${query}"`);
+
+    try {
+      const searchUrl = `https://lowkey-backend.vercel.app/api/search?query=${encodeURIComponent(query)}`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+      const response = await fetch(searchUrl, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": USER_AGENT,
+          Accept: "application/json",
+        },
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (!data || !data.success || !data.data) {
+        throw new Error("Invalid response format");
+      }
+
+      // Extract all sections from the response
+      const topQuery = data.data.topQuery?.results || [];
+      const songs = data.data.songs?.results || [];
+      const albums = data.data.albums?.results || [];
+      const artists = data.data.artists?.results || [];
+
+      // Enhanced artist filtering: only include artists that match the search query
+      const filteredArtists = artists.filter((artist: any) => {
+        const artistName = artist.title || "";
+        const queryLower = query.toLowerCase().trim();
+        const artistNameLower = artistName.toLowerCase().trim();
+
+        // For individual artist searches, be more strict - exclude collaborations
+        const isSearchingForIndividualArtist =
+          !query.includes("&") && !query.toLowerCase().includes(" and ");
+
+        if (isSearchingForIndividualArtist) {
+          // Skip collaboration artists entirely
+          if (
+            artistNameLower.includes("&") ||
+            artistNameLower.includes(" and ") ||
+            artistNameLower.includes(" feat ") ||
+            artistNameLower.includes(" ft ")
+          ) {
+            return false;
+          }
+          // For individual searches, require closer match (exact or very close)
+          return (
+            artistNameLower === queryLower ||
+            artistNameLower.includes(queryLower)
+          );
+        }
+
+        // For collaboration searches, allow broader matching
+        return (
+          artistNameLower.includes(queryLower) ||
+          queryLower.includes(artistNameLower)
+        );
+      });
+
+      console.log(
+        `[API] Filtered ${artists.length} artists to ${filteredArtists.length} relevant artists`
+      );
+
+      console.log(
+        `[API] 🟢 JioSaavn Success: Found ${songs.length} songs, ${albums.length} albums, ${artists.length} artists, ${topQuery.length} top queries`
+      );
+
+      // Format all results to match SearchResult interface
+      const topQueryResults: SearchResult[] = [];
+      const songsResults: SearchResult[] = [];
+      const albumsResults: SearchResult[] = [];
+      const artistsResults: SearchResult[] = [];
+
+      const isSearchingForIndividualArtist =
+        !query.includes("&") && !query.toLowerCase().includes(" and ");
+
+      // Process top query results
+      topQuery.forEach((item: any) => {
+        const thumbnailUrl =
+          item.image?.find((img: any) => img.quality === "500x500")?.url ||
+          item.image?.find((img: any) => img.quality === "150x150")?.url ||
+          item.image?.[0]?.url ||
+          "";
+
+        topQueryResults.push({
+          id: String(item.id),
+          title: item.title || "Unknown Title",
+          author: item.description || "Unknown",
+          duration: "0",
+          views: "0",
+          uploaded: "",
+          thumbnailUrl: thumbnailUrl,
+          img: thumbnailUrl,
+          href: item.url || "",
+          source: "jiosaavn",
+          type: item.type || "unknown",
+        });
+      });
+
+      // Process song results - filter out collaboration songs when searching for individual artists
+      songs.forEach((song: any) => {
+        const songTitle =
+          song.name || song.title || song.song || "Unknown Title";
+        const songArtists =
+          song.primaryArtists || song.singers || "Unknown Artist";
+
+        // Skip collaboration songs if user is searching for individual artist
+        if (
+          isSearchingForIndividualArtist &&
+          (songArtists.includes("&") ||
+            songArtists.toLowerCase().includes(" and "))
+        ) {
+          return; // Skip this song
+        }
+
+        const thumbnailUrl =
+          song.image?.find((img: any) => img.quality === "500x500")?.url ||
+          song.image?.find((img: any) => img.quality === "150x150")?.url ||
+          song.image?.[0]?.url ||
+          "";
+
+        songsResults.push({
+          id: String(song.id),
+          title: songTitle,
+          author: songArtists,
+          duration: song.duration ? String(song.duration) : "0",
+          views: "0",
+          uploaded: "",
+          thumbnailUrl: thumbnailUrl,
+          img: thumbnailUrl,
+          href: song.url || "",
+          source: "jiosaavn",
+          albumId: song.album?.id || null,
+          albumName: song.album?.name || null,
+          albumUrl: song.album?.url || null,
+        });
+      });
+
+      // Process album results
+      albums.forEach((album: any) => {
+        const thumbnailUrl =
+          album.image?.find((img: any) => img.quality === "500x500")?.url ||
+          album.image?.find((img: any) => img.quality === "150x150")?.url ||
+          album.image?.[0]?.url ||
+          "";
+
+        albumsResults.push({
+          id: String(album.id),
+          title: album.title || "Unknown Album",
+          author: album.artist || "Unknown Artist",
+          duration: "0",
+          views: "0",
+          uploaded: album.year || "",
+          thumbnailUrl: thumbnailUrl,
+          img: thumbnailUrl,
+          href: album.url || "",
+          source: "jiosaavn",
+          type: "album",
+          albumYear: album.year || null,
+        });
+      });
+
+      // Process artist results - filter out collaborations when searching for individual artists
+      filteredArtists.forEach((artist: any) => {
+        const artistName = artist.title || "Unknown Artist";
+
+        // Skip collaboration artists if user is searching for individual artist
+        if (
+          isSearchingForIndividualArtist &&
+          (artistName.includes("&") ||
+            artistName.toLowerCase().includes(" and "))
+        ) {
+          return; // Skip this artist
+        }
+
+        const thumbnailUrl =
+          artist.image?.find((img: any) => img.quality === "500x500")?.url ||
+          artist.image?.find((img: any) => img.quality === "150x150")?.url ||
+          artist.image?.[0]?.url ||
+          "";
+
+        artistsResults.push({
+          id: String(artist.id),
+          title: artistName,
+          author: artist.description || "Artist",
+          duration: "0",
+          views: "0",
+          uploaded: "",
+          thumbnailUrl: thumbnailUrl,
+          img: thumbnailUrl,
+          href: artist.url || "",
+          source: "jiosaavn",
+          type: "artist",
+        });
+      });
+
+      // Check for exact artist matches in the filtered artists
+      const exactArtistMatches = artistsResults.filter(
+        (item) => item.title.toLowerCase().trim() === query.toLowerCase().trim()
+      );
+
+      // Build final result array in the correct order: Top Results (with artist first if exact match), Songs, Albums
+      let finalResults: SearchResult[] = [];
+
+      // Add top query results first
+      if (topQueryResults.length > 0) {
+        finalResults = [...finalResults, ...topQueryResults];
+      }
+
+      // Add exact artist matches at the top if they exist
+      if (exactArtistMatches.length > 0) {
+        finalResults = [...finalResults, ...exactArtistMatches];
+      }
+
+      // Add songs
+      if (songsResults.length > 0) {
+        finalResults = [...finalResults, ...songsResults];
+      }
+
+      // Add albums
+      if (albumsResults.length > 0) {
+        finalResults = [...finalResults, ...albumsResults];
+      }
+
+      // Add remaining artists (non-exact matches)
+      const remainingArtists = artistsResults.filter(
+        (item) => item.title.toLowerCase().trim() !== query.toLowerCase().trim()
+      );
+      if (remainingArtists.length > 0) {
+        finalResults = [...finalResults, ...remainingArtists];
+      }
+
+      console.log(`[API] Final JioSaavn results: ${finalResults.length} total`);
+      return finalResults;
+    } catch (e: any) {
+      console.warn(`[API] 🔴 JioSaavn Error: ${e.message}`);
+      return [];
+    }
+  },
+
+  // --- JIOSAAVN SONG DETAILS ---
+  getJioSaavnSongDetails: async (songId: string) => {
+    console.log(`[API] Fetching JioSaavn song details for: "${songId}"`);
+
+    try {
+      const detailsUrl = `https://lowkey-backend.vercel.app/api/songs/${songId}`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+      const response = await fetch(detailsUrl, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": USER_AGENT,
+          Accept: "application/json",
+        },
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (
+        !data ||
+        !data.success ||
+        !data.data ||
+        !Array.isArray(data.data) ||
+        data.data.length === 0
+      ) {
+        throw new Error("Invalid response format");
+      }
+
+      const song = data.data[0];
+
+      console.log(`[API] 🟢 JioSaavn Song Details Success: ${song.name}`);
+
+      // Get the best quality audio URL (prefer 320kbps, fallback to lower quality)
+      const audioUrl =
+        song.downloadUrl?.find((dl: any) => dl.quality === "320kbps")?.url ||
+        song.downloadUrl?.find((dl: any) => dl.quality === "160kbps")?.url ||
+        song.downloadUrl?.find((dl: any) => dl.quality === "96kbps")?.url ||
+        song.downloadUrl?.[0]?.url ||
+        "";
+
+      // Get the best quality thumbnail
+      const thumbnailUrl =
+        song.image?.find((img: any) => img.quality === "500x500")?.url ||
+        song.image?.find((img: any) => img.quality === "150x150")?.url ||
+        song.image?.[0]?.url ||
+        "";
+
+      return {
+        id: String(song.id),
+        title: song.name || song.title || song.song || "Unknown Title",
+        artist:
+          song.artists?.primary?.map((artist: any) => artist.name).join(", ") ||
+          "Unknown Artist",
+        duration: song.duration || 0,
+        thumbnail: thumbnailUrl,
+        audioUrl: audioUrl,
+        album: song.album?.name || "",
+        year: song.year || "",
+        language: song.language || "",
+        hasLyrics: song.hasLyrics || false,
+        explicitContent: song.explicitContent || false,
+      };
+    } catch (e: any) {
+      console.warn(`[API] 🔴 JioSaavn Song Details Error: ${e.message}`);
+      return null;
+    }
+  },
+
+  // --- JIOSAAVN ALBUM DETAILS ---
+  getJioSaavnAlbumDetails: async (albumId: string, albumName: string) => {
+    console.log(
+      `[API] Fetching JioSaavn album details for: "${albumName}" (ID: ${albumId})`
+    );
+
+    try {
+      // Use the search endpoint to find songs by album name
+      const searchUrl = `https://lowkey-backend.vercel.app/api/search/songs?query=${encodeURIComponent(albumName)}`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+      const response = await fetch(searchUrl, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": USER_AGENT,
+          Accept: "application/json",
+        },
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (!data || !data.success || !data.data || !data.data.results) {
+        throw new Error("Invalid response format");
+      }
+
+      // Filter songs that belong to the specified album
+      const albumSongs = data.data.results.filter(
+        (song: any) => song.album && song.album.id === albumId
+      );
+
+      if (albumSongs.length === 0) {
+        throw new Error("No songs found for this album");
+      }
+
+      console.log(
+        `[API] 🟢 JioSaavn Album Details Success: Found ${albumSongs.length} songs for "${albumName}"`
+      );
+
+      // Return album details in the expected format
+      return {
+        id: albumId,
+        name: albumName,
+        year: albumSongs[0].year || "",
+        image: albumSongs[0].image || [],
+        songs: albumSongs,
+        artists:
+          albumSongs[0].artists?.primary
+            ?.map((artist: any) => artist.name)
+            .join(", ") || "",
+        language: albumSongs[0].language || "",
+      };
+    } catch (e: any) {
+      console.warn(`[API] 🔴 JioSaavn Album Details Error: ${e.message}`);
+      return null;
+    }
+  },
+
   searchWithPiped: async (query: string, filter: string) => {
     console.log(`[API] Searching Piped: "${query}"`);
+
+    // Enhanced multilingual search - preserve original query but also try transliterated version
+    const searchQueries = [query];
+
+    // Check if query contains non-Latin characters and add transliterated version
+    if (/[^\u0000-\u007F]/.test(query)) {
+      // For now, just use the original query as-is since Piped/YouTube handles multilingual search well
+      // In future, we could add transliteration libraries here
+      console.log(`[API] Detected non-Latin characters in query: "${query}"`);
+    }
+
     const filterParam = filter === "" ? "all" : filter;
+
+    // Try the primary query first
     const endpoint = `/search?q=${encodeURIComponent(
       query
     )}&filter=${filterParam}`;
     const data = await fetchWithFallbacks(PIPED_INSTANCES, endpoint);
+
+    // If no results and we have multilingual query, try with relaxed search terms
+    if (
+      (!data || !Array.isArray(data.items) || data.items.length === 0) &&
+      /[^\u0000-\u007F]/.test(query)
+    ) {
+      console.log(
+        "[API] No results for multilingual query, trying broader search"
+      );
+      const broadEndpoint = `/search?q=${encodeURIComponent(query)}&filter=all`;
+      const broadData = await fetchWithFallbacks(
+        PIPED_INSTANCES,
+        broadEndpoint
+      );
+      return broadData && Array.isArray(broadData.items) ? broadData.items : [];
+    }
+
     return data && Array.isArray(data.items) ? data.items : [];
   },
 
@@ -247,6 +685,14 @@ export const searchAPI = {
   // --- SOUNDCLOUD SEARCH WITH PROXY API ---
   searchWithSoundCloud: async (query: string) => {
     console.log(`[API] Starting SoundCloud search for: "${query}"`);
+
+    // Enhanced multilingual support for SoundCloud
+    const isMultilingual = /[^\u0000-\u007F]/.test(query);
+    if (isMultilingual) {
+      console.log(
+        `[API] Detected multilingual query for SoundCloud: "${query}"`
+      );
+    }
 
     // Use SoundCloud proxy API
     try {
