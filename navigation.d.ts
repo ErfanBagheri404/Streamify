@@ -1,5 +1,5 @@
-declare module '@react-navigation/bottom-tabs' {
-  import * as React from 'react';
+declare module "@react-navigation/bottom-tabs" {
+  import * as React from "react";
 
   export interface BottomTabNavigationOptions {
     id?: string;
@@ -10,8 +10,8 @@ declare module '@react-navigation/bottom-tabs' {
   export function createBottomTabNavigator(): any;
 }
 
-declare module '@react-navigation/native-stack' {
-  import * as React from 'react';
+declare module "@react-navigation/native-stack" {
+  import * as React from "react";
 
   export interface NativeStackNavigationOptions {
     id?: string;

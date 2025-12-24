@@ -4,6 +4,8 @@ import {
   TouchableOpacity,
   View,
   TouchableWithoutFeedback,
+  Platform,
+  ScrollView,
 } from "react-native";
 import styled from "styled-components/native";
 import StreamItem from "../StreamItem";
@@ -31,7 +33,7 @@ const SearchInput = styled.TextInput`
 
 const ResultsContainer = styled.ScrollView`
   flex: 1;
-  margin-bottom:110px;
+  padding: 10px 0px 0px 10px;
 `;
 
 const NoResultsText = styled.Text`
@@ -46,12 +48,6 @@ const LoadingText = styled.Text`
   text-align: center;
   margin-top: 32px;
   font-size: 16px;
-`;
-
-// --- NEW: Source Filter Styles (Pill Shape) ---
-const SourceContainer = styled.View`
-  flex-direction: row;
-  padding: 0 16px 12px 16px;
 `;
 
 const SourceButton = styled.TouchableOpacity<{
@@ -96,7 +92,21 @@ const FilterButton = styled.TouchableOpacity<{ active?: boolean }>`
 const FilterButtonText = styled.Text<{ active?: boolean }>`
   color: ${(p) => (p.active ? "#000" : "#fff")}; /* High contrast */
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
+  text-transform: uppercase;
+`;
+
+// --- SECTION STYLES ---
+const SectionContainer = styled.View`
+  margin-bottom: 16px;
+`;
+
+const SectionTitle = styled.Text`
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  margin-left: 16px;
+  margin-bottom: 8px;
 `;
 
 const SuggestionsOverlay = styled.View`
@@ -130,7 +140,7 @@ const SuggestionIcon = styled.Text`
   font-size: 14px;
 `;
 
-type SourceType = "youtube" | "soundcloud" | "spotify";
+type SourceType = "youtube" | "soundcloud" | "spotify" | "jiosaavn";
 
 // --- Interfaces ---
 
@@ -145,13 +155,18 @@ interface SearchResult {
   views?: string;
   img?: string;
   thumbnailUrl?: string;
-  source?: "youtube" | "soundcloud";
+  source?: "youtube" | "soundcloud" | "jiosaavn";
+  type?: "song" | "album" | "artist" | "unknown";
+  albumId?: string;
+  albumName?: string;
+  albumYear?: string;
 }
 
 const sourceFilters: { id: SourceType; label: string; color: string }[] = [
   { id: "youtube", label: "YouTube", color: "#ff0000" }, // YouTube Red
   { id: "soundcloud", label: "SoundCloud", color: "#ff7700" }, // SC Orange
   { id: "spotify", label: "Spotify", color: "#1db954" }, // Spotify Green
+  { id: "jiosaavn", label: "JioSaavn", color: "#1fa18a" }, // JioSaavn Orange
 ];
 
 const searchFilters = [
@@ -165,6 +180,13 @@ const searchFilters = [
 // --- Main Component ---
 
 export default function SearchScreen({ navigation }: any) {
+  // Enable layout animations
+  useEffect(() => {
+    if (Platform.OS === "android") {
+      // Layout animation is enabled by default in modern React Native
+    }
+  }, []);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -212,7 +234,14 @@ export default function SearchScreen({ navigation }: any) {
     return unsubscribe;
   }, [navigation, searchResults.length, searchQuery]);
 
-  // State for Filters
+  // State for source filters with reordering
+  const [sourceFilters, setSourceFilters] = useState([
+    { id: "youtube" as SourceType, label: "YouTube", color: "#ff0000" },
+    { id: "soundcloud" as SourceType, label: "SoundCloud", color: "#ff7700" },
+    { id: "spotify" as SourceType, label: "Spotify", color: "#1db954" },
+    { id: "jiosaavn" as SourceType, label: "JioSaavn", color: "#1fa18a" },
+  ]);
+
   const [selectedSource, setSelectedSource] = useState<SourceType>("youtube");
   const [selectedFilter, setSelectedFilter] = useState("");
 
@@ -238,8 +267,12 @@ export default function SearchScreen({ navigation }: any) {
     return `${(n / 1000000000).toFixed(1).replace(".0", "")}B`;
   }
 
-  const formatDuration = (seconds: number): string => {
+  const formatDuration = (seconds: number, source?: string): string => {
     if (seconds === 0) {
+      // Don't show LIVE for JioSaavn when duration is 0
+      if (source === "jiosaavn") {
+        return "";
+      }
       return "LIVE";
     }
     const hours = Math.floor(seconds / 3600);
@@ -297,6 +330,9 @@ export default function SearchScreen({ navigation }: any) {
         if (selectedSource === "soundcloud") {
           // SoundCloud Search
           results = await searchAPI.searchWithSoundCloud(queryToUse);
+        } else if (selectedSource === "jiosaavn") {
+          // JioSaavn Search
+          results = await searchAPI.searchWithJioSaavn(queryToUse);
         } else if (selectedSource === "spotify") {
           // Placeholder for Spotify
           console.log("Spotify search not implemented yet");
@@ -312,9 +348,10 @@ export default function SearchScreen({ navigation }: any) {
         // Common formatter (only format if not already formatted)
         let formattedResults = results;
 
-        // Only format if results are not already formatted (SoundCloud results are pre-formatted)
+        // Only format if results are not already formatted (SoundCloud and JioSaavn results are pre-formatted)
         if (
           selectedSource !== "soundcloud" &&
+          selectedSource !== "jiosaavn" &&
           results.length > 0 &&
           !results[0].source
         ) {
@@ -410,6 +447,103 @@ export default function SearchScreen({ navigation }: any) {
     }, 1000); // 1 second delay for search
   };
 
+  const handleSourceSelect = useCallback((sourceId: SourceType) => {
+    console.log(`[Search] Source selected: ${sourceId}`);
+
+    // Configure layout animation for smooth reordering
+    // Layout animation is handled by React Native's built-in animations
+
+    // Reorder sources - move selected to first position
+    setSourceFilters((prevFilters) => {
+      const selectedFilter = prevFilters.find((f) => f.id === sourceId);
+      if (!selectedFilter) return prevFilters;
+
+      const otherFilters = prevFilters.filter((f) => f.id !== sourceId);
+      return [selectedFilter, ...otherFilters];
+    });
+
+    setSelectedSource(sourceId);
+  }, []);
+
+  // Handle JioSaavn album songs - open album playlist
+  const handleJioSaavnAlbumSong = useCallback(
+    async (item: any) => {
+      if (!item.albumId || !item.albumName) {
+        console.log(
+          `[Search] JioSaavn song has no album info, playing directly: ${item.title}`
+        );
+        return false; // Play directly
+      }
+
+      console.log(
+        `[Search] Opening JioSaavn album playlist: ${item.albumName} (${item.albumId})`
+      );
+
+      try {
+        // Fetch album details to get all songs
+        const { searchAPI } = await import("../../modules/searchAPI");
+        const albumDetails = await searchAPI.getJioSaavnAlbumDetails(
+          item.albumId,
+          item.albumName
+        );
+
+        if (
+          albumDetails &&
+          albumDetails.songs &&
+          albumDetails.songs.length > 0
+        ) {
+          console.log(
+            `[Search] Found ${albumDetails.songs.length} songs in album`
+          );
+
+          // Create playlist from album songs
+          const albumPlaylist = albumDetails.songs.map((song: any) => ({
+            id: String(song.id),
+            title: song.name || song.title || song.song || "Unknown Title",
+            artist:
+              song.artists?.primary
+                ?.map((artist: any) => artist.name)
+                .join(", ") ||
+              song.singers ||
+              "Unknown Artist",
+            duration: song.duration || 0,
+            thumbnail:
+              song.image?.find((img: any) => img.quality === "500x500")?.url ||
+              song.image?.[0]?.url ||
+              "",
+            source: "jiosaavn",
+            _isJioSaavn: true,
+            albumId: item.albumId,
+            albumName: item.albumName,
+          }));
+
+          // Find the index of the selected song in the album
+          const selectedIndex = albumPlaylist.findIndex(
+            (song: any) => song.id === item.id
+          );
+
+          // Open the album playlist without auto-playing
+          console.log(
+            `[Search] Opening album playlist at index ${selectedIndex}`
+          );
+          navigation.navigate("PlayerScreen", {
+            playlist: albumPlaylist,
+            currentIndex: selectedIndex,
+            autoPlay: false, // Don't auto-play, just show the playlist
+            highlightTrack: item.id, // Highlight the selected track
+          });
+
+          return true; // Album playlist opened
+        }
+      } catch (error) {
+        console.error(`[Search] Error opening JioSaavn album:`, error);
+      }
+
+      return false; // Fallback to direct play
+    },
+    [navigation]
+  );
+
   const onSuggestionPress = (item: string) => {
     setSearchQuery(item);
     setShowSuggestions(false);
@@ -445,23 +579,41 @@ export default function SearchScreen({ navigation }: any) {
         </Header>
 
         {/* 1. Source Selectors (YouTube / SoundCloud / Spotify) */}
-        <SourceContainer>
-          {sourceFilters.map((source) => (
-            <SourceButton
-              key={source.id}
-              active={selectedSource === source.id}
-              color={source.color}
-              onPress={() => setSelectedSource(source.id)}
-            >
-              <SourceButtonText active={selectedSource === source.id}>
-                {source.label}
-              </SourceButtonText>
-            </SourceButton>
-          ))}
-        </SourceContainer>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ maxHeight: 52 }} // Button height (36px) + padding (8px top + 8px bottom)
+          contentContainerStyle={{ paddingHorizontal: 16 }}
+        >
+          <View style={{ flexDirection: "row" }}>
+            {sourceFilters.map((source) => (
+              <SourceButton
+                key={source.id}
+                active={selectedSource === source.id}
+                color={source.color}
+                onPress={() => {
+                  // Disable Spotify for now
+                  if (source.id === "spotify") {
+                    console.log("[Search] Spotify is currently disabled");
+                    return;
+                  }
+                  handleSourceSelect(source.id);
+                }}
+                disabled={source.id === "spotify"}
+                style={{
+                  opacity: source.id === "spotify" ? 0.5 : 1,
+                }}
+              >
+                <SourceButtonText active={selectedSource === source.id}>
+                  {source.label}
+                </SourceButtonText>
+              </SourceButton>
+            ))}
+          </View>
+        </ScrollView>
 
-        {/* 2. Sub-Filters (Only for YouTube currently) */}
-        {selectedSource === "youtube" && (
+        {/* 2. Sub-Filters (Only for YouTube currently) - COMMENTED OUT FOR NOW */}
+        {/* {selectedSource === "youtube" && (
           <FilterContainer
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -479,7 +631,7 @@ export default function SearchScreen({ navigation }: any) {
               </FilterButton>
             ))}
           </FilterContainer>
-        )}
+        )} */}
 
         {/* Suggestions Dropdown */}
         {showSuggestions && suggestions.length > 0 && (
@@ -499,7 +651,7 @@ export default function SearchScreen({ navigation }: any) {
         {/* Results List */}
         <ResultsContainer
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 20 }}
+          contentContainerStyle={{ paddingBottom: 120 }} // Increased padding for last items accessibility
         >
           {isLoading && <LoadingText>Searching...</LoadingText>}
 
@@ -509,55 +661,344 @@ export default function SearchScreen({ navigation }: any) {
             </NoResultsText>
           )}
 
-          {!isLoading &&
-            searchResults.map((item, index) => (
-              <TouchableOpacity
-                key={`${item.source || "yt"}-${item.id}`}
-                onPress={async () => {
-                  // Play track using player context instead of navigation
-                  console.log(
-                    `[Search] Playing track: ${item.title} (${item.id})`
-                  );
-
-                  // Format track data for player context
-                  const track = {
-                    id: item.id,
+          {!isLoading && searchResults.length > 0 && (
+            <>
+              {/* Debug: Show what we found */}
+              {(() => {
+                console.log(
+                  `[Search] Search results:`,
+                  searchResults.map((item) => ({
                     title: item.title,
-                    artist: item.author,
-                    duration: parseInt(item.duration) || 0,
-                    thumbnail: item.thumbnailUrl || item.img,
-                    audioUrl: undefined, // Will be fetched by player context
-                    source: item.source || "youtube",
-                    _isSoundCloud: item.source === "soundcloud",
-                  };
+                    type: item.type,
+                    source: item.source,
+                    albumId: item.albumId,
+                    id: item.id,
+                  }))
+                );
+                return null;
+              })()}
 
-                  await playTrack(
-                    track,
-                    searchResults.map((result: any) => ({
-                      id: result.id,
-                      title: result.title,
-                      artist: result.author,
-                      duration: parseInt(result.duration) || 0,
-                      thumbnail: result.thumbnailUrl || result.img,
-                      audioUrl: undefined,
-                      source: result.source || "youtube",
-                      _isSoundCloud: result.source === "soundcloud",
-                    })),
-                    index
-                  );
-                }}
-              >
-                <StreamItem
-                  id={item.id}
-                  title={item.title}
-                  author={item.author}
-                  duration={formatDuration(parseInt(item.duration) || 0)}
-                  views={item.views}
-                  uploaded={item.uploaded}
-                  thumbnailUrl={item.thumbnailUrl}
-                />
-              </TouchableOpacity>
-            ))}
+              {/* Group results by type while maintaining API order within each section */}
+
+              {/* Top Query Results */}
+              {searchResults.filter((item) => item.type === "unknown").length >
+                0 && (
+                <SectionContainer>
+                  <SectionTitle>Top Result</SectionTitle>
+                  {searchResults
+                    .filter((item) => item.type === "unknown")
+                    .map((item, index) => (
+                      <TouchableOpacity
+                        key={`top-${item.source || "yt"}-${item.id}`}
+                        onPress={async () => {
+                          // Play track using player context
+                          const track = {
+                            id: item.id,
+                            title: item.title,
+                            artist: item.author,
+                            duration: parseInt(item.duration) || 0,
+                            thumbnail: item.thumbnailUrl || item.img,
+                            audioUrl: undefined,
+                            source: item.source || "youtube",
+                            _isSoundCloud: item.source === "soundcloud",
+                            _isJioSaavn: item.source === "jiosaavn",
+                          };
+
+                          await playTrack(
+                            track,
+                            searchResults.map((result: any) => ({
+                              id: result.id,
+                              title: result.title,
+                              artist: result.author,
+                              duration: parseInt(result.duration) || 0,
+                              thumbnail: result.thumbnailUrl || result.img,
+                              audioUrl: undefined,
+                              source: result.source || "youtube",
+                              _isSoundCloud: result.source === "soundcloud",
+                              _isJioSaavn: result.source === "jiosaavn",
+                            })),
+                            searchResults.indexOf(item)
+                          );
+                        }}
+                      >
+                        <StreamItem
+                          id={item.id}
+                          title={item.title}
+                          author={item.author}
+                          duration={formatDuration(
+                            parseInt(item.duration) || 0,
+                            item.source
+                          )}
+                          views={
+                            item.source === "jiosaavn" ? undefined : item.views
+                          }
+                          uploaded={item.uploaded}
+                          thumbnailUrl={item.thumbnailUrl}
+                          isAlbum={!!item.albumId}
+                          albumYear={item.albumYear}
+                          source={item.source}
+                        />
+                      </TouchableOpacity>
+                    ))}
+                </SectionContainer>
+              )}
+
+              {/* Artists Section - Show exact matches first, then others */}
+              {searchResults.filter((item) => item.type === "artist").length >
+                0 && (
+                <SectionContainer>
+                  <SectionTitle>Artists</SectionTitle>
+                  {searchResults
+                    .filter((item) => {
+                      // Additional filtering for collaborations
+                      if (item.type !== "artist") return false;
+
+                      // Skip collaboration artists for individual searches
+                      const isSearchingForIndividualArtist =
+                        !searchQuery.includes("&") &&
+                        !searchQuery.toLowerCase().includes(" and ");
+
+                      if (isSearchingForIndividualArtist) {
+                        const artistName = item.title.toLowerCase().trim();
+                        if (
+                          artistName.includes("&") ||
+                          artistName.includes(" and ") ||
+                          artistName.includes(" feat ") ||
+                          artistName.includes(" ft ")
+                        ) {
+                          return false; // Skip collaboration artists
+                        }
+                      }
+
+                      return true;
+                    })
+                    .filter((item) => item.type === "artist")
+                    .sort((a, b) => {
+                      // Prioritize exact matches
+                      const queryLower = searchQuery.toLowerCase().trim();
+                      const aIsExact =
+                        a.title.toLowerCase().trim() === queryLower;
+                      const bIsExact =
+                        b.title.toLowerCase().trim() === queryLower;
+
+                      if (aIsExact && !bIsExact) return -1;
+                      if (!aIsExact && bIsExact) return 1;
+                      return 0;
+                    })
+                    .map((item, index) => (
+                      <TouchableOpacity
+                        key={`artist-${item.source || "yt"}-${item.id}`}
+                        onPress={async () => {
+                          // Play track using player context
+                          const track = {
+                            id: item.id,
+                            title: item.title,
+                            artist: item.author,
+                            duration: parseInt(item.duration) || 0,
+                            thumbnail: item.thumbnailUrl || item.img,
+                            audioUrl: undefined,
+                            source: item.source || "youtube",
+                            _isSoundCloud: item.source === "soundcloud",
+                            _isJioSaavn: item.source === "jiosaavn",
+                          };
+
+                          await playTrack(
+                            track,
+                            searchResults.map((result: any) => ({
+                              id: result.id,
+                              title: result.title,
+                              artist: result.author,
+                              duration: parseInt(result.duration) || 0,
+                              thumbnail: result.thumbnailUrl || result.img,
+                              audioUrl: undefined,
+                              source: result.source || "youtube",
+                              _isSoundCloud: result.source === "soundcloud",
+                              _isJioSaavn: result.source === "jiosaavn",
+                            })),
+                            searchResults.indexOf(item)
+                          );
+                        }}
+                      >
+                        <StreamItem
+                          id={item.id}
+                          title={item.title}
+                          author={item.author}
+                          duration={formatDuration(
+                            parseInt(item.duration) || 0,
+                            item.source
+                          )}
+                          views={
+                            item.source === "jiosaavn" ? undefined : item.views
+                          }
+                          uploaded={item.uploaded}
+                          thumbnailUrl={item.thumbnailUrl}
+                          isAlbum={false}
+                          albumYear={item.albumYear}
+                          source={item.source}
+                        />
+                      </TouchableOpacity>
+                    ))}
+                </SectionContainer>
+              )}
+
+              {/* Albums Section */}
+              {searchResults.filter((item) => item.type === "album").length >
+                0 && (
+                <SectionContainer>
+                  <SectionTitle>Albums</SectionTitle>
+                  {searchResults
+                    .filter((item) => item.type === "album")
+                    .map((item, index) => (
+                      <TouchableOpacity
+                        key={`album-${item.source || "yt"}-${item.id}`}
+                        onPress={async () => {
+                          // Navigate to album playlist screen
+                          if (item.source === "jiosaavn") {
+                            console.log(
+                              `[Search] Opening album playlist: ${item.title} (ID: ${item.id}, Artist: ${item.author})`
+                            );
+                            navigation.navigate("AlbumPlaylist", {
+                              albumId: item.id,
+                              albumName: item.title,
+                              albumArtist: item.author,
+                              source: item.source,
+                            });
+                          } else {
+                            console.log(
+                              `[Search] Album ${item.title} is not JioSaavn, skipping navigation`
+                            );
+                          }
+                        }}
+                      >
+                        <StreamItem
+                          id={item.id}
+                          title={item.title}
+                          author={item.author}
+                          duration={formatDuration(
+                            parseInt(item.duration) || 0,
+                            item.source
+                          )}
+                          views={
+                            item.source === "jiosaavn" ? undefined : item.views
+                          }
+                          uploaded={item.uploaded}
+                          thumbnailUrl={item.thumbnailUrl}
+                          isAlbum={true}
+                          albumYear={item.albumYear}
+                          source={item.source}
+                        />
+                      </TouchableOpacity>
+                    ))}
+                </SectionContainer>
+              )}
+
+              {/* Songs Section */}
+              {searchResults.filter(
+                (item) => !item.type || item.type === "song"
+              ).length > 0 && (
+                <SectionContainer>
+                  <SectionTitle>Songs</SectionTitle>
+                  {searchResults
+                    .filter((item) => {
+                      // Filter songs by type first
+                      if (item.type && item.type !== "song") return false;
+                      if (item.type === undefined && item.type !== undefined)
+                        return false;
+
+                      // Skip collaboration songs for individual artist searches
+                      const isSearchingForIndividualArtist =
+                        !searchQuery.includes("&") &&
+                        !searchQuery.toLowerCase().includes(" and ");
+
+                      if (isSearchingForIndividualArtist && item.author) {
+                        const artistName = item.author.toLowerCase().trim();
+                        if (
+                          artistName.includes("&") ||
+                          artistName.includes(" and ") ||
+                          artistName.includes(" feat ") ||
+                          artistName.includes(" ft ")
+                        ) {
+                          return false; // Skip collaboration songs
+                        }
+                      }
+
+                      return true;
+                    })
+                    .filter((item) => !item.type || item.type === "song")
+                    .map((item, index) => (
+                      <TouchableOpacity
+                        key={`song-${item.source || "yt"}-${item.id}`}
+                        onPress={async () => {
+                          // Handle JioSaavn album songs
+                          if (item.source === "jiosaavn" && item.albumId) {
+                            console.log(
+                              `[Search] Checking JioSaavn song for album: ${item.title}`
+                            );
+                            const albumOpened =
+                              await handleJioSaavnAlbumSong(item);
+                            if (albumOpened) {
+                              return; // Album playlist opened, don't play directly
+                            }
+                          }
+
+                          // Play track using player context
+                          console.log(
+                            `[Search] Playing track: ${item.title} (${item.id})`
+                          );
+
+                          // Format track data for player context
+                          const track = {
+                            id: item.id,
+                            title: item.title,
+                            artist: item.author,
+                            duration: parseInt(item.duration) || 0,
+                            thumbnail: item.thumbnailUrl || item.img,
+                            audioUrl: undefined,
+                            source: item.source || "youtube",
+                            _isSoundCloud: item.source === "soundcloud",
+                            _isJioSaavn: item.source === "jiosaavn",
+                          };
+
+                          await playTrack(
+                            track,
+                            searchResults.map((result: any) => ({
+                              id: result.id,
+                              title: result.title,
+                              artist: result.author,
+                              duration: parseInt(result.duration) || 0,
+                              thumbnail: result.thumbnailUrl || result.img,
+                              audioUrl: undefined,
+                              source: result.source || "youtube",
+                              _isSoundCloud: result.source === "soundcloud",
+                              _isJioSaavn: result.source === "jiosaavn",
+                            })),
+                            searchResults.indexOf(item)
+                          );
+                        }}
+                      >
+                        <StreamItem
+                          id={item.id}
+                          title={item.title}
+                          author={item.author}
+                          duration={formatDuration(
+                            parseInt(item.duration) || 0,
+                            item.source
+                          )}
+                          views={
+                            item.source === "jiosaavn" ? undefined : item.views
+                          }
+                          uploaded={item.uploaded}
+                          thumbnailUrl={item.thumbnailUrl}
+                          isAlbum={!!item.albumId}
+                          albumYear={item.albumYear}
+                          source={item.source}
+                        />
+                      </TouchableOpacity>
+                    ))}
+                </SectionContainer>
+              )}
+            </>
+          )}
         </ResultsContainer>
       </SafeArea>
     </TouchableWithoutFeedback>

@@ -39,6 +39,7 @@ export default function ListsScreen() {
           renderItem={({ item }: { item: (typeof data)[0] }) => (
             <ListItem {...item} />
           )}
+          contentContainerStyle={{ paddingBottom: 80 }} // Ensure last items are accessible
         />
       </Content>
     </Screen>

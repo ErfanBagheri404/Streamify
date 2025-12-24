@@ -31,6 +31,9 @@ import ListsScreen from "./components/screens/ListsScreen";
 import SearchScreen from "./components/screens/SearchScreen";
 import LibraryScreen from "./components/screens/LibraryScreen";
 import { LikedSongsScreen } from "./components/screens/LikedSongsScreen";
+import { PreviouslyPlayedScreen } from "./components/screens/PreviouslyPlayedScreen";
+import { AlbumPlaylistScreen } from "./components/screens/AlbumPlaylistScreen";
+import SettingsScreen from "./components/screens/SettingsScreen";
 
 enableScreens();
 
@@ -235,6 +238,39 @@ function AppContent() {
             <Stack.Screen
               name="LikedSongs"
               component={LikedSongsScreen}
+              options={{
+                animation: "slide_from_right",
+                animationDuration: 200,
+                gestureEnabled: true,
+                gestureDirection: "horizontal",
+                cardStyle: { backgroundColor: "#000" },
+              }}
+            />
+            <Stack.Screen
+              name="PreviouslyPlayed"
+              component={PreviouslyPlayedScreen}
+              options={{
+                animation: "slide_from_right",
+                animationDuration: 200,
+                gestureEnabled: true,
+                gestureDirection: "horizontal",
+                cardStyle: { backgroundColor: "#000" },
+              }}
+            />
+            <Stack.Screen
+              name="Settings"
+              component={SettingsScreen}
+              options={{
+                animation: "slide_from_right",
+                animationDuration: 200,
+                gestureEnabled: true,
+                gestureDirection: "horizontal",
+                cardStyle: { backgroundColor: "#000" },
+              }}
+            />
+            <Stack.Screen
+              name="AlbumPlaylist"
+              component={AlbumPlaylistScreen}
               options={{
                 animation: "slide_from_right",
                 animationDuration: 200,

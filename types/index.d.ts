@@ -37,18 +37,18 @@ declare global {
       type: string;
     }[];
     audioStreams: AudioStream[];
-    subtitles: Record<'url' | 'name', string>[];
+    subtitles: Record<"url" | "name", string>[];
   };
 
   type Invidious = {
     adaptiveFormats: Record<
-      | 'type'
-      | 'bitrate'
-      | 'encoding'
-      | 'clen'
-      | 'url'
-      | 'resolution'
-      | 'quality',
+      | "type"
+      | "bitrate"
+      | "encoding"
+      | "clen"
+      | "url"
+      | "resolution"
+      | "quality",
       string
     >[];
     recommendedVideos: {
@@ -59,7 +59,7 @@ declare global {
       videoId: string;
     }[];
     title: string;
-    captions: Record<'url' | 'label', string>[];
+    captions: Record<"url" | "label", string>[];
     author: string;
     lengthSeconds: number;
     authorUrl: string;
