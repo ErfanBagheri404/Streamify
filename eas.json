@@ -17,9 +17,15 @@
     "production-apk": {
       "android": {
         "buildType": "apk",
-        "gradleCommand": ":app:assembleRelease"
+        "gradleCommand": ":app:assembleRelease",
+        "ndk": {
+          "abiFilters": ["armeabi-v7a", "arm64-v8a", "x86", "x86_64"]
+        }
       },
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "NODE_ENV": "production"
+      }
     }
   },
   "submit": {

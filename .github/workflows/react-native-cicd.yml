@@ -15,7 +15,7 @@ on:
         type: choice
         description: "Build type to run"
         options:
-          - prod-apk   # <-- changed from 'dev'
+          - prod-apk # <-- changed from 'dev'
           - all
 
 env:
@@ -100,7 +100,23 @@ jobs:
         if: github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push'
         run: |
           export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
-          eas build --platform android --profile production --local --non-interactive --output=./app-prod.apk
+          # Clean build to avoid cached issues
+          rm -rf android/app/build
+          # Verify the build configuration
+          echo "Checking build configuration..."
+          cat android/app/build.gradle | grep -A 10 -B 5 "buildTypes"
+          # Build with explicit APK profile
+          eas build --platform android --profile production-apk --local --non-interactive --output=./app-prod.apk
+          # Verify the APK was created and is valid
+          if [ -f ./app-prod.apk ]; then
+            echo "APK file created successfully"
+            ls -la ./app-prod.apk
+            # Basic APK validation
+            unzip -t ./app-prod.apk > /dev/null && echo "APK structure is valid" || echo "WARNING: APK structure validation failed"
+          else
+            echo "ERROR: APK file was not created"
+            exit 1
+          fi
         env:
           NODE_ENV: production
 
