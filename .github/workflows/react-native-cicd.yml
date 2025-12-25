@@ -94,6 +94,14 @@ jobs:
           fi
 
       # ----------------------------------------------------------
+      #  PREBUILD - Generate native Android files
+      # ----------------------------------------------------------
+      - name: 🏗 Run Prebuild (Generate Android files)
+        run: |
+          echo "Running prebuild to generate Android directory..."
+          npx expo prebuild --platform android --clean
+
+      # ----------------------------------------------------------
       #  PRODUCTION build (standalone, offline, no Metro required)
       # ----------------------------------------------------------
       - name: 📱 Build Production APK
@@ -102,9 +110,6 @@ jobs:
           export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
           # Clean build to avoid cached issues
           rm -rf android/app/build
-          # Verify the build configuration
-          echo "Checking build configuration..."
-          cat android/app/build.gradle | grep -A 10 -B 5 "buildTypes"
           # Build with explicit APK profile
           eas build --platform android --profile production-apk --local --non-interactive --output=./app-prod.apk
           # Verify the APK was created and is valid
