@@ -1,142 +1,154 @@
-  name: React Native CI/CD
+name: React Native CI/CD
 
-  on:
-    push:
-      branches: [main, master]
-      paths-ignore:
-        - "**.md"
-        - "LICENSE"
-        - "docs/**"
-    pull_request:
-      branches: [main, master]
-    workflow_dispatch:
-      inputs:
-        buildType:
-          type: choice
-          description: "Build type to run"
-          options:
-            - prod-apk # <-- changed from 'dev'
-            - all
+on:
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+      - "docs/**"
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      buildType:
+        type: choice
+        description: "Build type to run"
+        options:
+          - prod-apk # <-- changed from 'dev'
+          - all
 
-  env:
-    EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-    NODE_OPTIONS: --openssl-legacy-provider
+env:
+  EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+  NODE_OPTIONS: --openssl-legacy-provider
 
-  jobs:
-    check-skip:
-      runs-on: ubuntu-latest
-      if: "!contains(github.event.head_commit.message, '[skip ci]')"
-      steps:
-        - name: Skip CI check
-          run: echo "Proceeding with workflow"
+jobs:
+  check-skip:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    steps:
+      - name: Skip CI check
+        run: echo "Proceeding with workflow"
 
-    build-and-deploy:
-      needs: check-skip
-      if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) || github.event_name == 'workflow_dispatch'
-      runs-on: ubuntu-latest
-      steps:
-        - name: 🏗 Checkout repository
-          uses: actions/checkout@v4
+  build-and-deploy:
+    needs: check-skip
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🏗 Checkout repository
+        uses: actions/checkout@v4
 
-        - name: 🏗 Setup Node.js
-          uses: actions/setup-node@v4
-          with:
-            node-version: "20"
-            cache: "npm"
+      - name: 🏗 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
 
-        - name: 📦 Install dependencies
-          run: |
-            npm ci --include=dev
-            npm install -g eas-cli@latest
+      - name: 📦 Install dependencies
+        run: |
+          npm ci --include=dev
+          npm install -g eas-cli@latest
 
-        - name: 📱 Setup EAS build cache
-          uses: actions/cache@v3
-          with:
-            path: ~/.eas-build-local
-            key: ${{ runner.os }}-eas-build-local-${{ hashFiles('**/package.json') }}
-            restore-keys: |
-              ${{ runner.os }}-eas-build-local-
+      - name: 📱 Setup EAS build cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.eas-build-local
+          key: ${{ runner.os }}-eas-build-local-${{ hashFiles('**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-eas-build-local-
 
-        - name: 🔄 Verify EAS CLI installation
-          run: |
-            echo "EAS CLI version:"
-            eas --version
+      - name: 🔄 Verify EAS CLI installation
+        run: |
+          echo "EAS CLI version:"
+          eas --version
 
-        - name: 📋 Fix package.json main entry
-          run: |
-            if ! command -v jq &> /dev/null; then
-              sudo apt-get update && sudo apt-get install -y jq
-            fi
-            cp package.json package.json.bak
-            jq '.main = "node_modules/expo/AppEntry.js"' package.json > package.json.tmp && mv package.json.tmp package.json
-            cat package.json | grep "main"
+      - name: 📋 Fix package.json main entry
+        run: |
+          if ! command -v jq &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+          cp package.json package.json.bak
+          jq '.main = "node_modules/expo/AppEntry.js"' package.json > package.json.tmp && mv package.json.tmp package.json
+          cat package.json | grep "main"
 
-        - name: 📋 Update metro.config.js for SVG support
-          run: |
-            if [ -f ./metro.config.js ]; then
-              cp ./metro.config.js ./metro.config.js.backup
-              cat > ./metro.config.js << 'EOFMARKER'
-            /* eslint-disable @typescript-eslint/no-var-requires */
-            const { getDefaultConfig } = require('expo/metro-config');
-            const config = getDefaultConfig(__dirname);
-            const { transformer, resolver } = config;
-            config.transformer = {
-              ...transformer,
-              babelTransformerPath: require.resolve('react-native-svg-transformer/expo'),
-            };
-            config.resolver = {
-              ...resolver,
-              assetExts: resolver.assetExts.filter(ext => ext !== 'svg'),
-              sourceExts: [...resolver.sourceExts, 'svg'],
-            };
-            module.exports = config;
-            EOFMARKER
-            fi
+      - name: 📋 Update metro.config.js for SVG support
+        run: |
+          if [ -f ./metro.config.js ]; then
+            cp ./metro.config.js ./metro.config.js.backup
+            cat > ./metro.config.js << 'EOFMARKER'
+          /* eslint-disable @typescript-eslint/no-var-requires */
+          const { getDefaultConfig } = require('expo/metro-config');
+          const config = getDefaultConfig(__dirname);
+          const { transformer, resolver } = config;
+          config.transformer = {
+            ...transformer,
+            babelTransformerPath: require.resolve('react-native-svg-transformer/expo'),
+          };
+          config.resolver = {
+            ...resolver,
+            assetExts: resolver.assetExts.filter(ext => ext !== 'svg'),
+            sourceExts: [...resolver.sourceExts, 'svg'],
+          };
+          module.exports = config;
+          EOFMARKER
+          fi
 
-        # ----------------------------------------------------------
-        #  PREBUILD - Generate native Android files
-        # ----------------------------------------------------------
-        - name: 🏗 Run Prebuild (Generate Android files)
-          run: |
-            echo "Running prebuild to generate Android directory..."
-            npx expo prebuild --platform android --clean
+      # ----------------------------------------------------------
+      #  PREBUILD - Generate native Android files
+      # ----------------------------------------------------------
+      - name: 🏗 Run Prebuild (Generate Android files)
+        run: |
+          echo "Running prebuild to generate Android directory..."
+          npx expo prebuild --platform android --clean
 
-        # ----------------------------------------------------------
-        #  PRODUCTION build (standalone, offline, no Metro required)
-        # ----------------------------------------------------------
-        - name: 📱 Build Production APK
-          if: github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push'
-          run: |
-            export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
-            rm -rf android/app/build
-            eas build --platform android --profile production-apk --local --non-interactive --output=./app-prod.apk
-            if [ -f ./app-prod.apk ]; then
-              echo "APK file created successfully"
-              ls -la ./app-prod.apk
-              unzip -t ./app-prod.apk > /dev/null && echo "APK structure is valid" || echo "WARNING: APK structure validation failed"
-            else
-              echo "ERROR: APK file was not created"
-              exit 1
-            fi
-          env:
-            NODE_ENV: production
-            # Add this block
-            ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-            ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-            ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      # ----------------------------------------------------------
+      #  PRODUCTION build (standalone, offline, no Metro required)
+      # ----------------------------------------------------------
+      - name: 📱 Build Production APK
+        if: github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push'
+        run: |
+          export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
+           
+           # Check if Android credentials are available
+           if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ] && [ -n "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" ] && [ -n "${{ secrets.ANDROID_KEY_ALIAS }}" ] && [ -n "${{ secrets.ANDROID_KEY_PASSWORD }}" ]; then
+             echo "Setting up Android credentials for production build..."
+             mkdir -p credentials/android
+             echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > credentials/android/keystore.jks
+             eas credentials:configure-android --local --keystore-path credentials/android/keystore.jks --keystore-password "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" --key-alias "${{ secrets.ANDROID_KEY_ALIAS }}" --key-password "${{ secrets.ANDROID_KEY_PASSWORD }}"
+             BUILD_PROFILE="production-apk"
+             OUTPUT_FILE="./app-prod.apk"
+           else
+             echo "No Android credentials found, building debug APK instead..."
+             BUILD_PROFILE="debug-apk"
+             OUTPUT_FILE="./app-debug.apk"
+           fi
+           
+           rm -rf android/app/build
+           eas build --platform android --profile $BUILD_PROFILE --local --non-interactive --output=$OUTPUT_FILE
+           if [ -f $OUTPUT_FILE ]; then
+             echo "APK file created successfully"
+             ls -la $OUTPUT_FILE
+             unzip -t $OUTPUT_FILE > /dev/null && echo "APK structure is valid" || echo "WARNING: APK structure validation failed"
+           else
+             echo "ERROR: APK file was not created"
+             exit 1
+           fi
+        env:
+          NODE_ENV: production
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
+      - name: 🔍 Print Gradle log (if failed)
+        if: failure()
+        run: |
+          LOG=$(ls -t ./logs/*.log 2>/dev/null | head -n1)
+          if [ -f "$LOG" ]; then cat "$LOG"; else echo "No gradle log found"; fi
 
-
-        - name: 🔍 Print Gradle log (if failed)
-          if: failure()
-          run: |
-            LOG=$(ls -t ./logs/*.log 2>/dev/null | head -n1)
-            if [ -f "$LOG" ]; then cat "$LOG"; else echo "No gradle log found"; fi
-
-        - name: 📦 Upload production APK
-          if: always()
-          uses: actions/upload-artifact@v4
-          with:
-            name: app-prod-apk
-            path: ./app-prod.apk
-            retention-days: 7
+      - name: 📦 Upload production APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-prod-apk
+          path: ./app-*.apk
+          retention-days: 7

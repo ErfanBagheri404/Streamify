@@ -14,25 +14,29 @@
     "production": {
       "autoIncrement": true
     },
-        "production-apk": {
+    "production-apk": {
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease",
-        "image": "latest",
-        "credentials": {
-          "keystorePath": "credentials/android/keystore.jks",
-          "keystorePassword": "$ANDROID_KEYSTORE_PASSWORD",
-          "keyAlias": "$ANDROID_KEY_ALIAS",
-          "keyPassword": "$ANDROID_KEY_PASSWORD"
-        }
+        "image": "latest"
       },
       "distribution": "internal",
       "env": {
         "NODE_ENV": "production",
         "EXPO_ANDROID_ABI_FILTERS": "armeabi-v7a,arm64-v8a,x86,x86_64"
       }
+    },
+    "debug-apk": {
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug",
+        "image": "latest"
+      },
+      "distribution": "internal",
+      "env": {
+        "NODE_ENV": "development"
+      }
     }
-
   },
   "submit": {
     "production": {}
