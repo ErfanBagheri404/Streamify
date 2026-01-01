@@ -105,48 +105,30 @@ jobs:
       #  PRODUCTION build (standalone, offline, no Metro required)
       # ----------------------------------------------------------
 
-
-      - name: 🔐 Check Android secrets
-        run: |
-          [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ] && echo "✅ Keystore present" || echo "❌ Keystore missing"
-          [ -n "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" ] && echo "✅ Store pwd present" || echo "❌ Store pwd missing"
-          [ -n "${{ secrets.ANDROID_KEY_ALIAS }}" ] && echo "✅ Alias present" || echo "❌ Alias missing"
-          [ -n "${{ secrets.ANDROID_KEY_PASSWORD }}" ] && echo "✅ Key pwd present" || echo "❌ Key pwd missing"
-
       - name: 📱 Build Production APK
         if: github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push'
         run: |
           export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
            
-           # Check if Android credentials are available
-           if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ] && [ -n "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" ] && [ -n "${{ secrets.ANDROID_KEY_ALIAS }}" ] && [ -n "${{ secrets.ANDROID_KEY_PASSWORD }}" ]; then
-             echo "Setting up Android credentials for production build..."
-             mkdir -p credentials/android
-             echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > credentials/android/keystore.jks
-             eas credentials:configure-android --local --keystore-path credentials/android/keystore.jks --keystore-password "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" --key-alias "${{ secrets.ANDROID_KEY_ALIAS }}" --key-password "${{ secrets.ANDROID_KEY_PASSWORD }}"
-             BUILD_PROFILE="production-apk"
-             OUTPUT_FILE="./app-prod.apk"
-           else
-             echo "No Android credentials found, building debug APK instead..."
-             BUILD_PROFILE="debug-apk"
-             OUTPUT_FILE="./app-debug.apk"
-           fi
+           # Use EAS cloud build for production APK (works on all platforms)
+           echo "Building production APK using EAS cloud build..."
+           eas build --platform android --profile production-apk --non-interactive --wait
            
-           rm -rf android/app/build
-           eas build --platform android --profile $BUILD_PROFILE --local --non-interactive --output=$OUTPUT_FILE
-           if [ -f $OUTPUT_FILE ]; then
+           # Download the built APK
+           echo "Downloading production APK..."
+           BUILD_ID=$(eas build:list --platform android --profile production-apk --limit 1 --json | jq -r '.[0].id')
+           eas build:download --build-id $BUILD_ID --output ./app-prod.apk
+           
+           if [ -f "./app-prod.apk" ]; then
              echo "APK file created successfully"
-             ls -la $OUTPUT_FILE
-             unzip -t $OUTPUT_FILE > /dev/null && echo "APK structure is valid" || echo "WARNING: APK structure validation failed"
+             ls -la ./app-prod.apk
+             unzip -t ./app-prod.apk > /dev/null && echo "APK structure is valid" || echo "WARNING: APK structure validation failed"
            else
              echo "ERROR: APK file was not created"
              exit 1
            fi
         env:
           NODE_ENV: production
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       - name: 🔍 Print Gradle log (if failed)
         if: failure()
