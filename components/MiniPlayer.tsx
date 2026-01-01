@@ -1,13 +1,12 @@
 import * as React from "react";
-import { TouchableOpacity, View, Image, Text, StyleSheet } from "react-native";
+import { TouchableOpacity, ActivityIndicator } from "react-native";
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
 import { usePlayer } from "../contexts/PlayerContext";
-import { formatDuration } from "../utils/formatters";
 
-const MiniPlayerContainer = styled.View`
+const MiniPlayerContainer = styled.View<{ bottomPosition: number }>`
   position: absolute;
-  bottom: 65px;
+  bottom: ${(props) => props.bottomPosition}px;
   align-self: center; /* keeps it centered */
   left: 12px;
   right: 12px;
@@ -72,18 +71,56 @@ const PlaceholderThumbnail = styled.View`
 
 interface MiniPlayerProps {
   onExpand: () => void;
+  currentScreen?: string;
 }
 
-export const MiniPlayer: React.FC<MiniPlayerProps> = ({ onExpand }) => {
+export const MiniPlayer: React.FC<MiniPlayerProps> = ({
+  onExpand,
+  currentScreen,
+}) => {
   const {
     currentTrack,
     isPlaying,
     isLoading,
+    isTransitioning,
     colorTheme,
     playPause,
     nextTrack,
     previousTrack,
   } = usePlayer();
+
+  // Set bottom position: 65px when not on playlist screen, 15px when on playlist screen
+  const playlistScreens = ["AlbumPlaylist", "LikedSongs", "PreviouslyPlayed"];
+  const targetBottomPosition = playlistScreens.includes(currentScreen)
+    ? 15
+    : 65;
+  // Use state to create smooth animation
+  const [currentBottomPosition, setCurrentBottomPosition] =
+    React.useState(targetBottomPosition);
+
+  React.useEffect(() => {
+    // Create smooth animation by gradually changing the position
+    const startPosition = currentBottomPosition;
+    const endPosition = targetBottomPosition;
+    const duration = 200; // 200ms
+    const steps = 20; // 20 steps for smooth animation
+    const stepDuration = duration / steps;
+    const positionChange = (endPosition - startPosition) / steps;
+
+    let currentStep = 0;
+    const interval = setInterval(() => {
+      currentStep++;
+      const newPosition = startPosition + positionChange * currentStep;
+      setCurrentBottomPosition(newPosition);
+
+      if (currentStep >= steps) {
+        clearInterval(interval);
+        setCurrentBottomPosition(endPosition); // Ensure we end at exact position
+      }
+    }, stepDuration);
+
+    return () => clearInterval(interval);
+  }, [targetBottomPosition]);
 
   if (!currentTrack) {
     return null;
@@ -103,6 +140,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({ onExpand }) => {
 
   return (
     <MiniPlayerContainer
+      bottomPosition={currentBottomPosition}
       style={{
         backgroundColor: colorTheme.background,
         borderTopColor: colorTheme.text + "20" /* 12% opacity */,
@@ -146,12 +184,19 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({ onExpand }) => {
           <Ionicons name="play-back" size={20} color={colorTheme.text} />
         </ControlButton>
 
-        <ControlButton onPress={handlePlayPause}>
-          <Ionicons
-            name={isPlaying ? "pause" : "play"}
-            size={24}
-            color={colorTheme.text}
-          />
+        <ControlButton
+          onPress={handlePlayPause}
+          disabled={isLoading || isTransitioning}
+        >
+          {isLoading || isTransitioning ? (
+            <ActivityIndicator size="small" color={colorTheme.text} />
+          ) : (
+            <Ionicons
+              name={isPlaying ? "pause" : "play"}
+              size={24}
+              color={colorTheme.text}
+            />
+          )}
         </ControlButton>
 
         <ControlButton onPress={handleNext}>

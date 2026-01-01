@@ -5,270 +5,47 @@ import StreamItem from "../StreamItem";
 import { SafeArea } from "../SafeArea";
 import { LinearGradient } from "expo-linear-gradient";
 import { usePlayer } from "../../contexts/PlayerContext";
-// import spotifyService from "../../services/spotifyService"; // Commented out - using skeletons only
-// Skeleton loading components
-const SkeletonContainer = styled.View`
-  border-radius: 8px;
-  overflow: hidden;
-`;
 
-const SkeletonShimmer = styled.View`
-  width: 100%;
-  height: 100%;
-  background-color: #2a2a2a;
-  position: relative;
-  overflow: hidden;
-`;
+// API endpoints for your Lowkey Backend
+const CATEGORY_APIS = {
+  indie: "https://lowkey-backend.vercel.app/api/search/playlists?query=indie",
+  edm: "https://lowkey-backend.vercel.app/api/search/playlists?query=edm",
+  metal: "https://lowkey-backend.vercel.app/api/search/playlists?query=metal",
+  punk: "https://lowkey-backend.vercel.app/api/search/playlists?query=punk",
+  party: "https://lowkey-backend.vercel.app/api/search/playlists?query=party",
+  jazz: "https://lowkey-backend.vercel.app/api/search/playlists?query=jazz",
+  love: "https://lowkey-backend.vercel.app/api/search/playlists?query=love",
+  rap: "https://lowkey-backend.vercel.app/api/search/playlists?query=rap",
+  workout:
+    "https://lowkey-backend.vercel.app/api/search/playlists?query=workout",
+  pop: "https://lowkey-backend.vercel.app/api/search/playlists?query=pop",
+  hiphop: "https://lowkey-backend.vercel.app/api/search/playlists?query=hiphop",
+  rock: "https://lowkey-backend.vercel.app/api/search/playlists?query=rock",
+  melody: "https://lowkey-backend.vercel.app/api/search/playlists?query=melody",
+  lofi: "https://lowkey-backend.vercel.app/api/search/playlists?query=lofi",
+  chill: "https://lowkey-backend.vercel.app/api/search/playlists?query=chill",
+  focus: "https://lowkey-backend.vercel.app/api/search/playlists?query=focus",
+  instrumental:
+    "https://lowkey-backend.vercel.app/api/search/playlists?query=instrumental",
+  folk: "https://lowkey-backend.vercel.app/api/search/playlists?query=folk",
+  devotional:
+    "https://lowkey-backend.vercel.app/api/search/playlists?query=devotional",
+  ambient:
+    "https://lowkey-backend.vercel.app/api/search/playlists?query=ambient",
+  sleep: "https://lowkey-backend.vercel.app/api/search/playlists?query=sleep",
+  soul: "https://lowkey-backend.vercel.app/api/search/playlists?query=soul",
+};
 
-const SkeletonShimmerOverlay = styled.View`
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    to right,
-    transparent 0%,
-    rgba(255, 255, 255, 0.1) 50%,
-    transparent 100%
-  );
-`;
+// Featured playlist IDs
+const FEATURED_PLAYLIST_IDS = [
+  "1265154514",
+  "1223482895",
+  "2252904",
+  "158206266",
+  "1210453303",
+];
 
-const SkeletonCard = styled.View`
-  width: 120px;
-  margin-right: 12px;
-`;
-
-const SkeletonCardImage = styled(SkeletonContainer)`
-  width: 120px;
-  height: 120px;
-  margin-bottom: 8px;
-`;
-
-const SkeletonCardTitle = styled(SkeletonContainer)`
-  width: 100%;
-  height: 16px;
-  margin-bottom: 4px;
-`;
-
-const SkeletonCardMeta = styled(SkeletonContainer)`
-  width: 80%;
-  height: 14px;
-`;
-
-const SkeletonText = styled(SkeletonContainer)`
-  height: 20px;
-  margin-bottom: 8px;
-`;
-
-const SkeletonSectionHeader = styled.View`
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 16px;
-  margin-bottom: 16px;
-`;
-
-const SkeletonTitle = styled(SkeletonContainer)`
-  width: 120px;
-  height: 24px;
-`;
-
-const SkeletonSeeAll = styled(SkeletonContainer)`
-  width: 60px;
-  height: 16px;
-`;
-
-// Skeleton card component
-const SkeletonCardComponent = () => (
-  <SkeletonCard>
-    <SkeletonCardImage>
-      <SkeletonShimmer />
-    </SkeletonCardImage>
-    <SkeletonCardTitle>
-      <SkeletonShimmer />
-    </SkeletonCardTitle>
-    <SkeletonCardMeta>
-      <SkeletonShimmer />
-    </SkeletonCardMeta>
-  </SkeletonCard>
-);
-
-// Skeleton collection card component
-const SkeletonCollectionComponent = () => (
-  <SkeletonCollectionCard>
-    <SkeletonCollectionTitle>
-      <SkeletonShimmer />
-    </SkeletonCollectionTitle>
-    <SkeletonCollectionSub>
-      <SkeletonShimmer />
-    </SkeletonCollectionSub>
-    <SkeletonCollectionImage>
-      <SkeletonShimmer />
-    </SkeletonCollectionImage>
-  </SkeletonCollectionCard>
-);
-
-// Skeleton for StreamItem-style cards
-const SkeletonStreamItem = styled.View`
-  flex-direction: row;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom-width: 1px;
-  border-bottom-color: #2a2a2a;
-`;
-
-const SkeletonStreamItemImage = styled(SkeletonContainer)`
-  width: 60px;
-  height: 60px;
-  border-radius: 8px;
-  margin-right: 12px;
-`;
-
-const SkeletonStreamItemContent = styled.View`
-  flex: 1;
-`;
-
-const SkeletonStreamItemTitle = styled(SkeletonContainer)`
-  width: 150px;
-  height: 18px;
-  margin-bottom: 6px;
-`;
-
-const SkeletonStreamItemMeta = styled(SkeletonContainer)`
-  width: 100px;
-  height: 14px;
-  margin-bottom: 4px;
-`;
-
-const SkeletonStreamItemSmall = styled(SkeletonContainer)`
-  width: 80px;
-  height: 12px;
-`;
-
-// Skeleton StreamItem component
-const SkeletonStreamItemComponent = () => (
-  <SkeletonStreamItem>
-    <SkeletonStreamItemImage>
-      <SkeletonShimmer />
-    </SkeletonStreamItemImage>
-    <SkeletonStreamItemContent>
-      <SkeletonStreamItemTitle>
-        <SkeletonShimmer />
-      </SkeletonStreamItemTitle>
-      <SkeletonStreamItemMeta>
-        <SkeletonShimmer />
-      </SkeletonStreamItemMeta>
-      <SkeletonStreamItemSmall>
-        <SkeletonShimmer />
-      </SkeletonStreamItemSmall>
-    </SkeletonStreamItemContent>
-  </SkeletonStreamItem>
-);
-
-// Skeleton for featured playlist cards
-const SkeletonFeaturedCard = styled.View`
-  margin-right: 15px;
-  width: 160px;
-  height: 100%;
-  position: relative;
-  overflow: hidden;
-`;
-
-const SkeletonFeaturedImage = styled(SkeletonContainer)`
-  width: 160px;
-  height: 160px;
-  border-radius: 12px;
-  margin-bottom: 12px;
-`;
-
-const SkeletonFeaturedTitle = styled(SkeletonContainer)`
-  width: 80%;
-  height: 16px;
-  margin-bottom: 4px;
-`;
-
-const SkeletonFeaturedDescription = styled(SkeletonContainer)`
-  width: 60%;
-  height: 12px;
-`;
-
-// Skeleton featured playlist component
-const SkeletonFeaturedComponent = () => (
-  <SkeletonFeaturedCard>
-    <SkeletonFeaturedImage>
-      <SkeletonShimmer />
-    </SkeletonFeaturedImage>
-    <SkeletonFeaturedTitle>
-      <SkeletonShimmer />
-    </SkeletonFeaturedTitle>
-    <SkeletonFeaturedDescription>
-      <SkeletonShimmer />
-    </SkeletonFeaturedDescription>
-  </SkeletonFeaturedCard>
-);
-
-// Skeleton section for horizontal card lists
-const SkeletonHorizontalSection = ({ count = 6 }) => (
-  <Section>
-    <SkeletonSectionHeader>
-      <SkeletonTitle>
-        <SkeletonShimmer />
-      </SkeletonTitle>
-      <SkeletonSeeAll>
-        <SkeletonShimmer />
-      </SkeletonSeeAll>
-    </SkeletonSectionHeader>
-    <Horizontal horizontal showsHorizontalScrollIndicator={false}>
-      {Array.from({ length: count }, (_, i) => (
-        <SkeletonCardComponent key={i} />
-      ))}
-    </Horizontal>
-  </Section>
-);
-
-// Skeleton for text chips
-const SkeletonChip = styled(SkeletonContainer)`
-  width: 80px;
-  height: 32px;
-  border-radius: 16px;
-  margin-right: 8px;
-`;
-
-// Skeleton for collection cards
-const SkeletonCollectionCard = styled.View`
-  background-color: #1a1a1a;
-  border-radius: 12px;
-  padding: 16px;
-  margin-right: 12px;
-  width: 200px;
-  height: 120px;
-  position: relative;
-  overflow: hidden;
-`;
-
-const SkeletonCollectionTitle = styled(SkeletonContainer)`
-  width: 120px;
-  height: 20px;
-  margin-bottom: 8px;
-`;
-
-const SkeletonCollectionSub = styled(SkeletonContainer)`
-  width: 80px;
-  height: 16px;
-  margin-bottom: 16px;
-`;
-
-const SkeletonCollectionImage = styled(SkeletonContainer)`
-  width: 60px;
-  height: 60px;
-  border-radius: 8px;
-  position: absolute;
-  bottom: 16px;
-  right: 16px;
-`;
-
-// Existing styled components from original HomeScreen
+// Existing styled components
 const Section = styled.View`
   margin-top: 24px;
 `;
@@ -285,17 +62,21 @@ const ChipsContainer = styled.View`
   padding: 16px 0;
 `;
 
-const ProfileContainer = styled.View`
+const ProfileContainer = styled(LinearGradient).attrs({
+  colors: ["rgba(0, 0, 0, 1)", "rgba(0, 0, 0, 0.3)", "rgba(0, 0, 0, 0.0)"],
+  start: { x: 0, y: 0 },
+  end: { x: 1, y: 0 },
+})`
   width: 30px;
   height: 30px;
   border-radius: 20px;
   margin-left: 16px;
   margin-right: 10px;
   shadow-color: #000;
-  shadow-offset: 3px 3px; /* right 3, down 3 */
+  shadow-offset: 3px 3px;
   shadow-opacity: 0.4;
   shadow-radius: 6px;
-  elevation: 8; /* Android */
+  elevation: 8;
 `;
 
 const UserProfileImage = styled.Image`
@@ -327,7 +108,6 @@ const ChipText = styled.Text<{ active?: boolean }>`
   font-size: 14px;
 `;
 
-// New styled components for enhanced sections
 const SectionHeader = styled.View`
   flex-direction: row;
   justify-content: space-between;
@@ -340,13 +120,6 @@ const SectionTitle = styled.Text`
   color: #fff;
   font-size: 18px;
   font-weight: 600;
-`;
-
-const SeeAllButton = styled.TouchableOpacity``;
-
-const SeeAllText = styled.Text`
-  color: #a3e635;
-  font-size: 14px;
 `;
 
 const HorizontalScroll = styled.ScrollView`
@@ -364,13 +137,6 @@ const CardImage = styled.Image`
   border-radius: 12px;
 `;
 
-const CardImagePlaceholder = styled.View`
-  width: 160px;
-  height: 160px;
-  border-radius: 12px;
-  background-color: #262626;
-`;
-
 const CardTitle = styled.Text`
   color: #fff;
   margin-top: 8px;
@@ -382,53 +148,6 @@ const CardMeta = styled.Text`
   color: #a3a3a3;
   font-size: 12px;
   margin-top: 2px;
-`;
-
-const FeaturedCarousel = styled.ScrollView`
-  padding: 0 16px;
-`;
-
-const FeaturedCard = styled.TouchableOpacity`
-  width: 280px;
-  margin-right: 16px;
-`;
-
-const FeaturedImage = styled.Image`
-  width: 280px;
-  height: 160px;
-  border-radius: 16px;
-`;
-
-const FeaturedTitle = styled.Text`
-  color: #fff;
-  margin-top: 12px;
-  font-size: 16px;
-  font-weight: 600;
-`;
-
-const FeaturedDescription = styled.Text`
-  color: #a3a3a3;
-  font-size: 12px;
-  margin-top: 4px;
-`;
-
-const MoodChipContainer = styled.View`
-  flex-direction: row;
-  padding: 0 16px;
-  flex-wrap: wrap;
-`;
-
-const MoodChip = styled.TouchableOpacity`
-  padding: 8px 16px;
-  border-radius: 20px;
-  background-color: #262626;
-  margin-right: 8px;
-  margin-bottom: 8px;
-`;
-
-const MoodChipText = styled.Text`
-  color: #fff;
-  font-size: 14px;
 `;
 
 const Row = styled.View`
@@ -447,7 +166,7 @@ const Title = styled.Text`
 const SubtitleBtn = styled.TouchableOpacity``;
 
 const SubtitleText = styled.Text`
-  color: #a3a3a3;
+  color: #a3e635;
 `;
 
 const Horizontal = styled.ScrollView`
@@ -487,23 +206,12 @@ const Arrow = styled.Text`
   margin-top: 8px;
 `;
 
-const CollectionImagePlaceholder = styled.View`
-  width: 64px;
-  height: 64px;
-  border-radius: 8px;
-  background-color: #262626;
-  margin-left: 12px;
-`;
-
-const PlaylistSection = styled.View`
-  margin-top: 24px;
-`;
-
 const LoadingContainer = styled.View`
   flex: 1;
   justify-content: center;
   align-items: center;
   background-color: #000;
+  padding: 40px 0;
 `;
 
 const ErrorText = styled.Text`
@@ -512,81 +220,124 @@ const ErrorText = styled.Text`
   padding: 20px;
 `;
 
+interface Playlist {
+  id: string;
+  name: string;
+  type: string;
+  image: Array<{
+    quality: string;
+    url: string;
+  }>;
+  url: string;
+  songCount: number;
+  language: string;
+  explicitContent: boolean;
+}
+
 export default function HomeScreen({ navigation }: any) {
   const { playTrack } = usePlayer();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [useStaticContent, setUseStaticContent] = useState(false);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([
+    "all",
+  ]);
+  const [categoryData, setCategoryData] = useState<{
+    [key: string]: Playlist[];
+  }>({});
+  const [featuredPlaylists, setFeaturedPlaylists] = useState<Playlist[]>([]);
+  const [loadingFeatured, setLoadingFeatured] = useState(true);
 
-  // Data states for Spotify sections
-  const [top50Global, setTop50Global] = useState<any[]>([]);
-  const [viral50Global, setViral50Global] = useState<any[]>([]);
-  const [bestPopPlaylist, setBestPopPlaylist] = useState<any[]>([]);
-  const [newReleases, setNewReleases] = useState<any[]>([]);
-  const [moodCategories, setMoodCategories] = useState<any[]>([]);
-  const [featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
-  const [radioRecommendations, setRadioRecommendations] = useState<any[]>([]);
-  const [artistTopTracks, setArtistTopTracks] = useState<any[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
-  const [collections, setCollections] = useState<any[]>([]);
-  const [playlistItems, setPlaylistItems] = useState<any[]>([]);
-
-  // Popular songs function removed - skeletons will be shown instead
-
-  const loadHomeData = async (skipSpotify = true) => {
+  // Filter out Hindi/Indian playlists
+  // Fetch playlist data for a specific category
+  const fetchCategoryPlaylists = async (category: string) => {
     try {
-      console.log("[HomeScreen] loadHomeData start - Spotify service disabled");
-      setLoading(true);
-      setError(null);
-
-      // Skip Spotify calls - show skeletons only
-      console.log(
-        "[HomeScreen] Skipping Spotify calls – showing skeletons only",
+      const response = await fetch(
+        CATEGORY_APIS[category as keyof typeof CATEGORY_APIS],
       );
+      const data = await response.json();
 
-      // Initialize all data arrays as empty to show skeletons
-      setTop50Global([]);
-      setViral50Global([]);
-      setBestPopPlaylist([]);
-      setNewReleases([]);
-      setMoodCategories([]);
-      setFeaturedPlaylists([]);
-      setRadioRecommendations([]);
-      setArtistTopTracks([]);
-      setCategories([]);
-      setCollections([]);
-      setPlaylistItems([]);
-
-      // Keep loading state true to show skeletons
-      // This will be handled by the component's loading logic
-    } catch (err) {
-      console.error("[HomeScreen] Error in loadHomeData:", err);
-      // Even on error, keep skeletons showing
-      setTop50Global([]);
-      setViral50Global([]);
-      setBestPopPlaylist([]);
-      setNewReleases([]);
-      setMoodCategories([]);
-      setFeaturedPlaylists([]);
-      setRadioRecommendations([]);
-      setArtistTopTracks([]);
-      setCategories([]);
-      setCollections([]);
-      setPlaylistItems([]);
-    } finally {
-      console.log(
-        "[HomeScreen] loadHomeData complete - skeletons should be visible",
-      );
-      // Keep loading false to allow skeleton display logic to work
-      setLoading(false);
+      if (data.success && data.data?.results) {
+        const playlists = data.data.results.slice(0, 6);
+        setCategoryData((prev) => ({ ...prev, [category]: playlists }));
+      }
+    } catch (error) {
+      console.error(`Failed to fetch ${category} playlists:`, error);
     }
   };
 
+  // Fetch featured playlists
+  const fetchFeaturedPlaylists = async () => {
+    try {
+      setLoadingFeatured(true);
+      const featuredData: Playlist[] = [];
+
+      for (const playlistId of FEATURED_PLAYLIST_IDS) {
+        try {
+          const response = await fetch(
+            `https://lowkey-backend.vercel.app/api/playlists?id=${playlistId}`,
+          );
+          const data = await response.json();
+          if (data.success && data.data) {
+            featuredData.push(data.data);
+          }
+        } catch (error) {
+          console.error(
+            `Failed to fetch featured playlist ${playlistId}:`,
+            error,
+          );
+        }
+      }
+
+      setFeaturedPlaylists(featuredData);
+    } catch (error) {
+      console.error("Failed to fetch featured playlists:", error);
+    } finally {
+      setLoadingFeatured(false);
+    }
+  };
+
+  // Toggle category selection
+  const toggleCategory = (category: string) => {
+    setSelectedCategories((prev) => {
+      // Handle "All" button logic
+      if (category === "all") {
+        return ["all"];
+      }
+
+      // If "All" is currently selected, switch to only the new category
+      if (prev.includes("all")) {
+        fetchCategoryPlaylists(category);
+        return [category];
+      }
+
+      // Handle normal category toggling
+      const newCategories = prev.includes(category)
+        ? prev.filter((c) => c !== category)
+        : [...prev, category];
+
+      // Fetch data for newly selected categories
+      if (!prev.includes(category)) {
+        fetchCategoryPlaylists(category);
+      }
+
+      // If no categories selected, default to "All"
+      return newCategories.length === 0 ? ["all"] : newCategories;
+    });
+  };
+
+  // Load initial data
   useEffect(() => {
-    console.log(
-      "[HomeScreen] useEffect -> calling loadHomeData with skipSpotify=true",
-    );
-    loadHomeData(true); // Always skip Spotify calls to show skeletons
+    fetchFeaturedPlaylists();
+    // Load initial categories
+    if (selectedCategories.includes("all")) {
+      // Load all categories when "All" is selected
+      Object.keys(CATEGORY_APIS).forEach((category) => {
+        fetchCategoryPlaylists(category);
+      });
+    } else {
+      // Load only selected categories
+      selectedCategories.forEach((category) => {
+        fetchCategoryPlaylists(category);
+      });
+    }
   }, []);
 
   const handlePlayTrack = (track: any) => {
@@ -602,24 +353,40 @@ export default function HomeScreen({ navigation }: any) {
     }
   };
 
-  const handlePlayPlaylist = (playlist: any) => {
+  const handlePlayPlaylist = (playlist: Playlist) => {
     if (playlist && playlist.id) {
       console.log("Playing playlist:", playlist.name);
-      // Navigate to playlist screen or load playlist tracks
+      navigation.navigate("Playlist", {
+        playlistId: playlist.id,
+        playlistName: playlist.name,
+      });
     }
   };
 
-  // Remove full-page loading - show skeletons per section instead
+  const getPlaylistImageSource = (playlist: Playlist) => {
+    const highQualityImage = playlist.image.find(
+      (img) => img.quality === "500x500",
+    );
+    const imageUrl = highQualityImage?.url || playlist.image[0]?.url;
 
-  // Removed error handling - skeletons will be shown for all loading states
+    // Return the image URL as URI or fallback image source
+    if (imageUrl) {
+      return { uri: imageUrl };
+    }
+    return require("../../assets/logo192.png");
+  };
+
+  const formatSongCount = (count: number) => {
+    if (count >= 1000) {
+      return `${(count / 1000).toFixed(1)}k songs`;
+    }
+    return `${count} songs`;
+  };
 
   return (
     <SafeArea>
-      <ScrollView 
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 80 }} // Ensure last items are accessible
-      >
-        {/* Header with User Profile and Categories - Always show skeletons */}
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Header with Category Chips */}
         <ChipsContainer>
           <ProfileContainer>
             <UserProfileImage source={require("../../assets/logo192.png")} />
@@ -630,227 +397,97 @@ export default function HomeScreen({ navigation }: any) {
             bounces={false}
           >
             <ChipsContent>
-              {/* Always show skeleton chips */}
-              {Array.from({ length: 8 }, (_, i) => (
-                <SkeletonChip key={i}>
-                  <SkeletonShimmer />
-                </SkeletonChip>
+              {/* All Button */}
+              <Chip
+                key="all"
+                active={selectedCategories.includes("all")}
+                onPress={() => toggleCategory("all")}
+              >
+                <ChipText active={selectedCategories.includes("all")}>
+                  All
+                </ChipText>
+              </Chip>
+              {Object.keys(CATEGORY_APIS).map((category) => (
+                <Chip
+                  key={category}
+                  active={selectedCategories.includes(category)}
+                  onPress={() => toggleCategory(category)}
+                >
+                  <ChipText active={selectedCategories.includes(category)}>
+                    {category.charAt(0).toUpperCase() + category.slice(1)}
+                  </ChipText>
+                </Chip>
               ))}
             </ChipsContent>
           </ChipsScrollView>
         </ChipsContainer>
-
-        {/* Top 50 Global - Always show skeletons */}
+        {/* Featured Playlists */}
         <Section>
           <SectionHeader>
-            <SectionTitle>🌍 Top 50 Global</SectionTitle>
-            <SeeAllButton onPress={() => navigation.navigate("Charts")}>
-              <SeeAllText>See all</SeeAllText>
-            </SeeAllButton>
+            <SectionTitle>Featured Playlists</SectionTitle>
           </SectionHeader>
-          <HorizontalScroll horizontal showsHorizontalScrollIndicator={false}>
-            {/* Always show skeleton cards */}
-            {Array.from({ length: 6 }, (_, i) => (
-              <SkeletonCardComponent key={i} />
-            ))}
-          </HorizontalScroll>
+          {loadingFeatured ? (
+            <LoadingContainer>
+              <ActivityIndicator color="#a3e635" size="large" />
+            </LoadingContainer>
+          ) : (
+            <HorizontalScroll horizontal showsHorizontalScrollIndicator={false}>
+              {featuredPlaylists.map((playlist) => (
+                <Card
+                  key={playlist.id}
+                  onPress={() => handlePlayPlaylist(playlist)}
+                >
+                  <CardImage source={getPlaylistImageSource(playlist)} />
+                  <CardTitle numberOfLines={2}>{playlist.name}</CardTitle>
+                  <CardMeta>
+                    {formatSongCount(playlist.songCount)} • {playlist.language}
+                  </CardMeta>
+                </Card>
+              ))}
+            </HorizontalScroll>
+          )}
         </Section>
-
-        {/* Viral 50 Global - Always show skeletons */}
-        <Section>
-          <SectionHeader>
-            <SectionTitle>🔥 Viral 50 Global</SectionTitle>
-            <SeeAllButton onPress={() => navigation.navigate("Trending")}>
-              <SeeAllText>See all</SeeAllText>
-            </SeeAllButton>
-          </SectionHeader>
-          <HorizontalScroll horizontal showsHorizontalScrollIndicator={false}>
-            {/* Always show skeleton cards */}
-            {Array.from({ length: 6 }, (_, i) => (
-              <SkeletonCardComponent key={i} />
-            ))}
-          </HorizontalScroll>
-        </Section>
-
-        {/* Best Pop 2025 - Always show skeletons */}
-        <Section>
-          <SectionHeader>
-            <SectionTitle>🎵 Best Pop 2025</SectionTitle>
-            <SeeAllButton onPress={() => navigation.navigate("Pop")}>
-              <SeeAllText>See all</SeeAllText>
-            </SeeAllButton>
-          </SectionHeader>
-          <HorizontalScroll horizontal showsHorizontalScrollIndicator={false}>
-            {/* Always show skeleton cards */}
-            {Array.from({ length: 6 }, (_, i) => (
-              <SkeletonCardComponent key={i} />
-            ))}
-          </HorizontalScroll>
-        </Section>
-
-        {/* New Releases Friday - Always show skeletons */}
-        <Section>
-          <SectionHeader>
-            <SectionTitle>🆕 New Releases Friday</SectionTitle>
-            <SeeAllButton onPress={() => navigation.navigate("NewReleases")}>
-              <SeeAllText>See all</SeeAllText>
-            </SeeAllButton>
-          </SectionHeader>
-          <HorizontalScroll horizontal showsHorizontalScrollIndicator={false}>
-            {/* Always show skeleton cards */}
-            {Array.from({ length: 6 }, (_, i) => (
-              <SkeletonCardComponent key={i} />
-            ))}
-          </HorizontalScroll>
-        </Section>
-
-        {/* Mood Filters - Always show skeletons */}
-        <Section>
-          <SectionHeader>
-            <SectionTitle>🎭 Browse by Mood</SectionTitle>
-            <SeeAllButton onPress={() => navigation.navigate("Moods")}>
-              <SeeAllText>See all</SeeAllText>
-            </SeeAllButton>
-          </SectionHeader>
-          <MoodChipContainer>
-            {/* Always show skeleton chips */}
-            {Array.from({ length: 8 }, (_, i) => (
-              <SkeletonChip key={i}>
-                <SkeletonShimmer />
-              </SkeletonChip>
-            ))}
-          </MoodChipContainer>
-        </Section>
-
-        {/* Radio-Style Recommendations - Always show skeletons */}
-        <Section>
-          <SectionHeader>
-            <SectionTitle>📻 Energy Boost Radio</SectionTitle>
-            <SeeAllButton onPress={() => navigation.navigate("Radio")}>
-              <SeeAllText>See all</SeeAllText>
-            </SeeAllButton>
-          </SectionHeader>
-          <HorizontalScroll horizontal showsHorizontalScrollIndicator={false}>
-            {/* Always show skeleton cards */}
-            {Array.from({ length: 6 }, (_, i) => (
-              <SkeletonCardComponent key={i} />
-            ))}
-          </HorizontalScroll>
-        </Section>
-
-        {/* Top 10 Tracks - The Weeknd - Always show skeletons */}
-        <Section>
-          <SectionHeader>
-            <SectionTitle>🎤 The Weeknd's Top Hits</SectionTitle>
-            <SeeAllButton onPress={() => navigation.navigate("Artist")}>
-              <SeeAllText>See all</SeeAllText>
-            </SeeAllButton>
-          </SectionHeader>
-          <HorizontalScroll horizontal showsHorizontalScrollIndicator={false}>
-            {/* Always show skeleton cards */}
-            {Array.from({ length: 6 }, (_, i) => (
-              <SkeletonCardComponent key={i} />
-            ))}
-          </HorizontalScroll>
-        </Section>
-
-        {/* Popular Songs - Always show skeletons */}
-        <Section>
-          <Row>
-            <Title>Popular Songs</Title>
-            <SubtitleBtn onPress={() => {}}>
-              <SubtitleText>See all</SubtitleText>
-            </SubtitleBtn>
-          </Row>
-          <Horizontal horizontal showsHorizontalScrollIndicator={false}>
-            {/* Always show skeleton cards */}
-            {Array.from({ length: 6 }, (_, i) => (
-              <SkeletonCardComponent key={i} />
-            ))}
-          </Horizontal>
-        </Section>
-
-        {/* Top 50 Global Tracks - Always show skeletons */}
-        <Section>
-          <Row>
-            <Title>Top 50 Global</Title>
-            <SubtitleBtn onPress={() => navigation.navigate("Top50")}>
-              <SubtitleText>See all</SubtitleText>
-            </SubtitleBtn>
-          </Row>
-          <Horizontal horizontal showsHorizontalScrollIndicator={false}>
-            {/* Always show skeleton cards */}
-            {Array.from({ length: 6 }, (_, i) => (
-              <SkeletonCardComponent key={i} />
-            ))}
-          </Horizontal>
-        </Section>
-
-        {/* Radio Recommendations in Card Format - Always show skeletons */}
-        <Section>
-          <Row>
-            <Title>Energy Boost Radio</Title>
-            <SubtitleBtn onPress={() => navigation.navigate("Radio")}>
-              <SubtitleText>See all</SubtitleText>
-            </SubtitleBtn>
-          </Row>
-          <Horizontal horizontal showsHorizontalScrollIndicator={false}>
-            {/* Always show skeleton cards */}
-            {Array.from({ length: 6 }, (_, i) => (
-              <SkeletonCardComponent key={i} />
-            ))}
-          </Horizontal>
-        </Section>
-
-        {/* New Releases in Card Format - Always show skeletons */}
-        <Section>
-          <Row>
-            <Title>New Releases</Title>
-            <SubtitleBtn onPress={() => navigation.navigate("NewReleases")}>
-              <SubtitleText>See all</SubtitleText>
-            </SubtitleBtn>
-          </Row>
-          <Horizontal horizontal showsHorizontalScrollIndicator={false}>
-            {/* Always show skeleton cards */}
-            {Array.from({ length: 6 }, (_, i) => (
-              <SkeletonCardComponent key={i} />
-            ))}
-          </Horizontal>
-        </Section>
-
-        {/* Playlist Section - Always show skeletons */}
-        <PlaylistSection>
-          <Row>
-            <Title>Playlist</Title>
-            <SubtitleBtn onPress={() => navigation.navigate("Lists")}>
-              <SubtitleText>See all</SubtitleText>
-            </SubtitleBtn>
-          </Row>
-          {/* Always show skeleton StreamItems */}
-          {Array.from({ length: 4 }, (_, i) => (
-            <SkeletonStreamItemComponent key={i} />
-          ))}
-        </PlaylistSection>
-
-        {/* New Collection - Always show skeletons */}
-        <Section>
-          <Label
-            style={{
-              marginBottom: 12,
-              color: "#fff",
-              fontSize: 18,
-              fontWeight: "600",
-            }}
-          >
-            New Collection
-          </Label>
-          <CollectionWrap>
-            {/* Always show skeleton collection cards */}
-            {Array.from({ length: 3 }, (_, i) => (
-              <SkeletonCollectionComponent key={i} />
-            ))}
-          </CollectionWrap>
-        </Section>
+        {/* Selected Category Playlists */}
+        {(selectedCategories.includes("all")
+          ? Object.keys(CATEGORY_APIS)
+          : selectedCategories
+        ).map((category) => {
+          const playlists = categoryData[category] || [];
+          return (
+            <Section key={category}>
+              <SectionHeader>
+                <SectionTitle>
+                  {category.charAt(0).toUpperCase() + category.slice(1)}{" "}
+                  Playlists
+                </SectionTitle>
+              </SectionHeader>
+              {playlists.length === 0 ? (
+                <LoadingContainer>
+                  <ActivityIndicator color="#a3e635" size="large" />
+                </LoadingContainer>
+              ) : (
+                <HorizontalScroll
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                >
+                  {playlists.map((playlist) => (
+                    <Card
+                      key={playlist.id}
+                      onPress={() => handlePlayPlaylist(playlist)}
+                    >
+                      <CardImage source={getPlaylistImageSource(playlist)} />
+                      <CardTitle numberOfLines={2}>{playlist.name}</CardTitle>
+                      <CardMeta>
+                        {formatSongCount(playlist.songCount)} •{" "}
+                        {playlist.language}
+                      </CardMeta>
+                    </Card>
+                  ))}
+                </HorizontalScroll>
+              )}
+            </Section>
+          );
+        })}
       </ScrollView>
     </SafeArea>
   );

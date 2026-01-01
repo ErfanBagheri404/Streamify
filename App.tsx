@@ -33,6 +33,7 @@ import LibraryScreen from "./components/screens/LibraryScreen";
 import { LikedSongsScreen } from "./components/screens/LikedSongsScreen";
 import { PreviouslyPlayedScreen } from "./components/screens/PreviouslyPlayedScreen";
 import { AlbumPlaylistScreen } from "./components/screens/AlbumPlaylistScreen";
+import ArtistScreen from "./components/screens/ArtistScreen";
 import SettingsScreen from "./components/screens/SettingsScreen";
 
 enableScreens();
@@ -215,6 +216,43 @@ function AppContent() {
     setShowFullPlayer(false);
   };
 
+  // Track current screen name for MiniPlayer positioning
+  const [currentScreen, setCurrentScreen] = React.useState<string>("Home");
+
+  React.useEffect(() => {
+    console.log("[App] Current screen updated:", currentScreen);
+  }, [currentScreen]);
+
+  // Check initial navigation state
+  React.useEffect(() => {
+    console.log("[App] Component mounted, checking initial state");
+  }, []);
+
+  const getCurrentScreenName = (state: any): string => {
+    if (!state || !state.routes || state.routes.length === 0) {
+      return "Home";
+    }
+
+    let currentRoute = state.routes[state.index];
+
+    // Handle nested navigators (like tab navigators inside stack navigators)
+    while (
+      currentRoute.state &&
+      currentRoute.state.routes &&
+      currentRoute.state.routes.length > 0
+    ) {
+      currentRoute = currentRoute.state.routes[currentRoute.state.index];
+    }
+
+    return currentRoute.name || "Home";
+  };
+
+  const handleNavigationStateChange = (state: any) => {
+    const screenName = getCurrentScreenName(state);
+    console.log("[App] Detected screen name:", screenName);
+    setCurrentScreen(screenName);
+  };
+
   return (
     <PlayerProvider>
       <View style={{ flex: 1, backgroundColor: "#000" }}>
@@ -223,7 +261,7 @@ function AppContent() {
           backgroundColor="transparent"
           translucent={true}
         />
-        <NavigationContainer>
+        <NavigationContainer onStateChange={handleNavigationStateChange}>
           <Stack.Navigator
             id="MainStack"
             initialRouteName="Home"
@@ -269,6 +307,17 @@ function AppContent() {
               }}
             />
             <Stack.Screen
+              name="Artist"
+              component={ArtistScreen}
+              options={{
+                animation: "slide_from_right",
+                animationDuration: 200,
+                gestureEnabled: true,
+                gestureDirection: "horizontal",
+                cardStyle: { backgroundColor: "#000" },
+              }}
+            />
+            <Stack.Screen
               name="AlbumPlaylist"
               component={AlbumPlaylistScreen}
               options={{
@@ -283,7 +332,10 @@ function AppContent() {
         </NavigationContainer>
 
         {/* Persistent Player Components */}
-        <MiniPlayer onExpand={handleExpandPlayer} />
+        <MiniPlayer
+          onExpand={handleExpandPlayer}
+          currentScreen={currentScreen}
+        />
         <FullPlayerModal visible={showFullPlayer} onClose={handleClosePlayer} />
       </View>
     </PlayerProvider>

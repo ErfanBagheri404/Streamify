@@ -1,5 +1,34 @@
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
+import { toByteArray, fromByteArray } from "base64-js";
+
+// Cache directory configuration
+const CACHE_CONFIG = {
+  // Try these directories in order of preference
+  cacheDirs: [
+    () => `${FileSystem.cacheDirectory}youtube-cache/`,
+    () => `${FileSystem.cacheDirectory}audio-cache/`,
+    () => `${FileSystem.documentDirectory}audio-cache/`,
+  ],
+  getBestCacheDir: async function (): Promise<string | null> {
+    for (const dirFunc of this.cacheDirs) {
+      const dir = dirFunc();
+      try {
+        // Test if we can create and write to this directory
+        await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+        const testFile = `${dir}.writetest_${Date.now()}`;
+        await FileSystem.writeAsStringAsync(testFile, "test");
+        await FileSystem.deleteAsync(testFile, { idempotent: true });
+        console.log(`[Audio] Using cache directory: ${dir}`);
+        return dir;
+      } catch (error) {
+        console.warn(`[Audio] Cache directory not available: ${dir}`, error);
+        continue;
+      }
+    }
+    return null;
+  },
+};
 
 // Audio streaming with multiple fallback strategies and ytify v8 concepts
 export class AudioStreamManager {
@@ -20,6 +49,12 @@ export class AudioStreamManager {
 
   // SoundCloud stream cache (1MB pre-buffering)
   private soundCloudCache: Map<string, string> = new Map();
+
+  // Generic track cache for all track types (YouTube, SoundCloud, etc.)
+  private trackCache: Map<string, string> = new Map();
+
+  // Cache directory path (determined at runtime)
+  private cacheDirectory: string | null = null;
 
   // Cache progress tracking to prevent regression
   private cacheProgress: Map<
@@ -47,6 +82,16 @@ export class AudioStreamManager {
 
   // Hardcoded Client ID from your logs
   private readonly SOUNDCLOUD_CLIENT_ID = "gqKBMSuBw5rbN9rDRYPqKNvF17ovlObu";
+
+  // Fallback client IDs for when the primary one fails
+  private readonly FALLBACK_SOUNDCLOUD_CLIENT_IDS = [
+    "gqKBMSuBw5rbN9rDRYPqKNvF17ovlObu",
+    "iZIs9mchVcX5lhVRyQGGAYlNPVldzAoX",
+    "W0KE1gQE6g2Qlx6WfB6Q2WfB6Q2WfB6Q",
+    "gKzE4W8FNPVldzAoXiZIs9mchVcX5lhV",
+    "fDoItIDGPGBYQK0R7hgmy7vLqNYnZOLM",
+  ];
+  private currentClientIdIndex = 0;
 
   // Helper method to update download progress with atomic updates
   private updateDownloadProgress(
@@ -81,6 +126,37 @@ export class AudioStreamManager {
 
     // Initialize cache progress cleanup interval
     this.startCacheProgressCleanup();
+
+    // Initialize cache directory
+    this.initializeCacheDirectory();
+  }
+
+  /**
+   * Initialize the best available cache directory
+   */
+  private async initializeCacheDirectory(): Promise<void> {
+    console.log("[Audio] Initializing cache directory...");
+    this.cacheDirectory = await CACHE_CONFIG.getBestCacheDir();
+
+    if (this.cacheDirectory) {
+      console.log(
+        `[Audio] Successfully initialized cache directory: ${this.cacheDirectory}`
+      );
+    } else {
+      console.warn(
+        "[Audio] No writable cache directory available, caching will be disabled"
+      );
+    }
+  }
+
+  /**
+   * Get the current cache directory, initializing if necessary
+   */
+  private async getCacheDirectory(): Promise<string | null> {
+    if (this.cacheDirectory === null) {
+      await this.initializeCacheDirectory();
+    }
+    return this.cacheDirectory;
   }
 
   /**
@@ -226,7 +302,8 @@ export class AudioStreamManager {
       const now = Date.now();
       const staleThreshold = 5 * 60 * 1000; // 5 minutes
 
-      for (const [trackId, progress] of this.cacheProgress.entries()) {
+      for (const entry of Array.from(this.cacheProgress.entries())) {
+        const [trackId, progress] = entry;
         if (
           !progress.isDownloading &&
           now - progress.lastUpdate > staleThreshold
@@ -437,27 +514,76 @@ export class AudioStreamManager {
   public async getBestCachedFilePath(trackId: string): Promise<string | null> {
     console.log(`[Audio] Checking cache for track: ${trackId}`);
 
-    // First check in-memory cache for performance
-    const fullFilePath = this.soundCloudCache.get(trackId + "_full");
-    console.log(`[Audio] Full file path (old format): ${fullFilePath}`);
+    // First check generic track cache (for all track types)
+    const genericCachedPath = this.trackCache.get(trackId);
+    if (genericCachedPath) {
+      // Verify the cached path actually exists before returning it
+      const cachedFileInfo = await FileSystem.getInfoAsync(genericCachedPath);
+      if (cachedFileInfo.exists) {
+        return genericCachedPath.startsWith("file://")
+          ? genericCachedPath
+          : `file://${genericCachedPath}`;
+      } else {
+        console.log(
+          `[Audio] Generic cached file doesn't exist, removing from cache: ${genericCachedPath}`
+        );
+        this.trackCache.delete(trackId);
+      }
+    }
 
+    // Then check SoundCloud-specific cache for backward compatibility
+    const fullFilePath = this.soundCloudCache.get(trackId + "_full");
     if (fullFilePath) {
-      return `file://${fullFilePath}`;
+      // Return the path without adding file:// prefix if it already has it
+      return fullFilePath.startsWith("file://")
+        ? fullFilePath
+        : `file://${fullFilePath}`;
     }
 
     // Check if we have a full file in the new format (direct trackId)
     const cachedPath = this.soundCloudCache.get(trackId);
-    console.log(`[Audio] Cached path: ${cachedPath}`);
-
     if (cachedPath) {
-      // Check if this is a full file by looking at the path
-      if (cachedPath.includes(".full")) {
-        console.log(`[Audio] Found full cached file: ${cachedPath}`);
-        return `file://${cachedPath}`;
+      // Verify the cached path actually exists before returning it
+      const cachedFileInfo = await FileSystem.getInfoAsync(cachedPath);
+      if (!cachedFileInfo.exists) {
+        console.log(
+          `[Audio] Cached file doesn't exist, removing from cache: ${cachedPath}`
+        );
+        this.soundCloudCache.delete(trackId);
+        // Continue to filesystem scan below
+      } else {
+        // Check if this is a full file by looking at the path
+        if (cachedPath.includes(".full")) {
+          // console.log(`[Audio] Found full cached file: ${cachedPath}`);
+          // Return the path without adding file:// prefix if it already has it
+          return cachedPath.startsWith("file://")
+            ? cachedPath
+            : `file://${cachedPath}`;
+        }
+        // This is a partial cache
+        // console.log(`[Audio] Found partial cached file: ${cachedPath}`);
+        // Return the path without adding file:// prefix if it already has it
+        return cachedPath.startsWith("file://")
+          ? cachedPath
+          : `file://${cachedPath}`;
       }
-      // This is a partial cache
-      console.log(`[Audio] Found partial cached file: ${cachedPath}`);
-      return `file://${cachedPath}`;
+    }
+
+    // Check for full file indicator in generic track cache
+    const fullCachedPath = this.trackCache.get(trackId + "_full");
+    if (fullCachedPath) {
+      const cachedFileInfo = await FileSystem.getInfoAsync(fullCachedPath);
+      if (cachedFileInfo.exists) {
+        return fullCachedPath.startsWith("file://")
+          ? fullCachedPath
+          : `file://${fullCachedPath}`;
+      } else {
+        console.log(
+          `[Audio] Full cached file doesn't exist, removing from cache: ${fullCachedPath}`
+        );
+        this.trackCache.delete(trackId + "_full");
+        this.trackCache.delete(trackId);
+      }
     }
 
     // If not in memory, scan filesystem for existing cache files
@@ -465,8 +591,15 @@ export class AudioStreamManager {
       `[Audio] Scanning filesystem for cache files for track: ${trackId}`
     );
 
+    // Get the best available cache directory
+    const cacheDir = await this.getCacheDirectory();
+    if (!cacheDir) {
+      console.warn("[Audio] No cache directory available for SoundCloud scan");
+      return null;
+    }
+
     // Check SoundCloud cache directory
-    const soundCloudCacheDir = `${FileSystem.cacheDirectory}soundcloud-cache/`;
+    const soundCloudCacheDir = `${cacheDir}soundcloud-cache/`;
 
     try {
       // Check for any SoundCloud cache files with different extensions
@@ -492,7 +625,10 @@ export class AudioStreamManager {
             this.soundCloudCache.set(trackId + "_full", filePath);
             this.soundCloudCache.set(trackId, filePath);
             this.soundCloudCache.set(trackId + "_has_full", "true");
-            return `file://${filePath}`;
+            // Return the path without adding file:// prefix if it already has it
+            return filePath.startsWith("file://")
+              ? filePath
+              : `file://${filePath}`;
           } else {
             console.warn(
               `[Audio] Found corrupted SoundCloud cache file, cleaning up: ${filePath}`
@@ -502,11 +638,17 @@ export class AudioStreamManager {
         }
       }
     } catch (error) {
-      console.log("[Audio] Error checking SoundCloud cache directory:", error);
+      // Error checking SoundCloud cache directory
     }
 
-    // Check YouTube cache directory
-    const youtubeCacheDir = `${FileSystem.cacheDirectory}youtube-cache/`;
+    // Get the best available cache directory
+    const youtubeCacheDir = await this.getCacheDirectory();
+    if (!youtubeCacheDir) {
+      console.warn(
+        "[Audio] No cache directory available, skipping filesystem scan"
+      );
+      return null;
+    }
 
     try {
       // Check for any YouTube cache files with different extensions
@@ -538,7 +680,10 @@ export class AudioStreamManager {
             }
 
             this.soundCloudCache.set(trackId, filePath);
-            return `file://${filePath}`;
+            // Return the path without adding file:// prefix if it already has it
+            return filePath.startsWith("file://")
+              ? filePath
+              : `file://${filePath}`;
           } else {
             console.warn(
               `[Audio] Found corrupted YouTube cache file, cleaning up: ${filePath}`
@@ -556,6 +701,148 @@ export class AudioStreamManager {
   }
 
   /**
+   * Try different SoundCloud client IDs when the current one fails
+   */
+  private async tryAlternativeClientIds(
+    baseUrl: string,
+    trackData: any,
+    controller: AbortController
+  ): Promise<string> {
+    const originalIndex = this.currentClientIdIndex;
+
+    for (let i = 0; i < this.FALLBACK_SOUNDCLOUD_CLIENT_IDS.length; i++) {
+      const clientIdIndex =
+        (originalIndex + i + 1) % this.FALLBACK_SOUNDCLOUD_CLIENT_IDS.length;
+      const clientId = this.FALLBACK_SOUNDCLOUD_CLIENT_IDS[clientIdIndex];
+
+      try {
+        // Create URL with alternative client ID
+        const altUrl = new URL(baseUrl);
+        altUrl.searchParams.set("client_id", clientId);
+
+        const response = await fetch(this.getCorsProxyUrl(altUrl.toString()), {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          },
+          signal: controller.signal,
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.url) {
+            this.currentClientIdIndex = clientIdIndex; // Update current index for future use
+            return data.url;
+          }
+        }
+      } catch (error) {
+        // Alternative client ID failed
+        continue;
+      }
+    }
+
+    throw new Error("All SoundCloud client IDs failed");
+  }
+
+  /**
+   * Validate that an audio stream URL is accessible and in a supported format
+   */
+  private async validateAudioStream(url: string): Promise<{
+    isValid: boolean;
+    contentType?: string;
+    contentLength?: number;
+    error?: string;
+  }> {
+    try {
+      console.log(
+        `[Audio] Validating audio stream: ${url.substring(0, 100)}...`
+      );
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
+      const response = await fetch(url, {
+        method: "HEAD", // Use HEAD to avoid downloading the entire file
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          Range: "bytes=0-1023", // Request first 1KB to test accessibility
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        return {
+          isValid: false,
+          error: `HTTP ${response.status}: ${response.statusText}`,
+        };
+      }
+
+      const contentType = response.headers.get("content-type") || "";
+      const contentLength = parseInt(
+        response.headers.get("content-length") || "0"
+      );
+
+      // Check if content type is supported by Expo AV
+      const supportedTypes = [
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/mp4",
+        "audio/wav",
+        "audio/ogg",
+        "audio/webm",
+        "audio/aac",
+        "audio/x-m4a",
+        "application/octet-stream", // Sometimes used for audio files
+      ];
+
+      const isSupportedType = supportedTypes.some(
+        (type) =>
+          contentType.toLowerCase().includes(type) ||
+          url.toLowerCase().includes(type.replace("audio/", ""))
+      );
+
+      if (!isSupportedType && contentType && !contentType.includes("audio")) {
+        console.warn(`[Audio] Unsupported content type: ${contentType}`);
+        return {
+          isValid: false,
+          contentType,
+          contentLength,
+          error: `Unsupported content type: ${contentType}`,
+        };
+      }
+
+      // Check if file size is reasonable (at least 10KB for audio)
+      if (contentLength > 0 && contentLength < 10240) {
+        return {
+          isValid: false,
+          contentType,
+          contentLength,
+          error: "File too small to be valid audio",
+        };
+      }
+
+      console.log(
+        `[Audio] Stream validation successful: ${contentType}, ${contentLength} bytes`
+      );
+      return {
+        isValid: true,
+        contentType,
+        contentLength,
+      };
+    } catch (error) {
+      console.error("[Audio] Stream validation failed:", error);
+      return {
+        isValid: false,
+        error:
+          error instanceof Error ? error.message : "Unknown validation error",
+      };
+    }
+  }
+
+  /**
    * Validate the integrity of a cached file
    */
   private async validateCachedFile(filePath: string): Promise<boolean> {
@@ -564,7 +851,7 @@ export class AudioStreamManager {
 
       if (!fileInfo.exists || !fileInfo.size || fileInfo.size === 0) {
         console.warn(
-          `[Audio] File validation failed: file doesn't exist or is empty`
+          "[Audio] File validation failed: file doesn't exist or is empty"
         );
         return false;
       }
@@ -586,19 +873,19 @@ export class AudioStreamManager {
 
         if (!testRead || testRead.length === 0) {
           console.warn(
-            `[Audio] File validation failed: cannot read file content`
+            "[Audio] File validation failed: cannot read file content"
           );
           return false;
         }
       } catch (readError) {
-        console.warn(`[Audio] File validation failed: read error`, readError);
+        console.warn("[Audio] File validation failed: read error", readError);
         return false;
       }
 
       console.log(`[Audio] File validation passed for: ${filePath}`);
       return true;
     } catch (error) {
-      console.warn(`[Audio] File validation error:`, error);
+      console.warn("[Audio] File validation error:", error);
       return false;
     }
   }
@@ -610,12 +897,19 @@ export class AudioStreamManager {
     try {
       console.log(`[Audio] Cleaning up partial cache for track: ${trackId}`);
 
-      const cacheDir = FileSystem.cacheDirectory + "audio_cache/";
+      // Get the best available cache directory
+      const cacheDir = await this.getCacheDirectory();
+      if (!cacheDir) {
+        console.warn("[Audio] No cache directory available for cleanup");
+        return;
+      }
+
+      const audioCacheDir = cacheDir + "audio_cache/";
       const possibleFiles = [
-        cacheDir + trackId + ".mp3",
-        cacheDir + trackId + ".mp3.full",
-        cacheDir + trackId + ".mp3.chunks",
-        cacheDir + trackId + ".mp3.chunks.current",
+        audioCacheDir + trackId + ".mp3",
+        audioCacheDir + trackId + ".mp3.full",
+        audioCacheDir + trackId + ".mp3.chunks",
+        audioCacheDir + trackId + ".mp3.chunks.current",
       ];
 
       for (const filePath of possibleFiles) {
@@ -723,18 +1017,8 @@ export class AudioStreamManager {
 
       // Check if we have any cached progress for this track (even completed downloads)
       const activeProgress = this.cacheProgress.get(trackId);
-      console.log(`[Audio] Active progress found:`, !!activeProgress);
+      console.log("[Audio] Active progress found:", !!activeProgress);
       if (activeProgress) {
-        console.log(`[Audio] Progress details:`, {
-          percentage: activeProgress.percentage,
-          downloadedSize: activeProgress.downloadedSize ?? 0,
-          isDownloading: activeProgress.isDownloading,
-          lastFileSize: activeProgress.lastFileSize,
-          isFullyCached: activeProgress.isFullyCached ?? false,
-          estimatedTotalSize: activeProgress.estimatedTotalSize ?? 0,
-          originalStreamUrl: activeProgress.originalStreamUrl ?? "none",
-        });
-
         // If we have a completed download (100%) and confirmed fully cached, return that immediately
         if (
           activeProgress.percentage === 100 &&
@@ -804,7 +1088,7 @@ export class AudioStreamManager {
 
       // Check if we have any cached file
       const cachedFilePath = await this.getBestCachedFilePath(trackId);
-      console.log(`[Audio] Best cached file path: ${cachedFilePath}`);
+      // console.log(`[Audio] Best cached file path: ${cachedFilePath}`);
 
       if (!cachedFilePath) {
         console.log(`[Audio] No cached file found for track: ${trackId}`);
@@ -818,12 +1102,23 @@ export class AudioStreamManager {
 
       // Get file info - remove file:// prefix for FileSystem.getInfoAsync
       const filePath = cachedFilePath.replace("file://", "");
-      console.log(`[Audio] Getting file info for path: ${filePath}`);
-      const fileInfo = await FileSystem.getInfoAsync(filePath);
-      console.log("[Audio] File info:", fileInfo);
+      // console.log(`[Audio] Getting file info for path: ${filePath}`);
+      let fileInfo = await FileSystem.getInfoAsync(filePath);
+      // console.log("[Audio] File info:", fileInfo);
+
+      // If file doesn't exist, try with the full path including file://
+      if (!fileInfo || !fileInfo.exists) {
+        console.log(
+          `[Audio] Cached file not found at: ${filePath}, trying with file:// prefix`
+        );
+        fileInfo = await FileSystem.getInfoAsync(cachedFilePath);
+        // console.log("[Audio] File info (with file://):", fileInfo);
+      }
 
       if (!fileInfo || !fileInfo.exists) {
-        console.log(`[Audio] Cached file not found: ${filePath}`);
+        console.log(
+          `[Audio] Cached file not found: ${filePath} or ${cachedFilePath}`
+        );
         const result = { percentage: 0, fileSize: 0, isFullyCached: false };
         console.log(
           `[Audio] === getCacheInfo END (file missing) for ${trackId} ===`,
@@ -1079,7 +1374,6 @@ export class AudioStreamManager {
           // Delete the cached file
           await FileSystem.deleteAsync(cachedFilePath, { idempotent: true });
           this.soundCloudCache.delete(trackId);
-          console.log(`[Audio] Cleared SoundCloud cache for track: ${trackId}`);
         } catch (error) {
           console.warn(
             `[Audio] Failed to delete cached file for track ${trackId}:`,
@@ -1100,21 +1394,67 @@ export class AudioStreamManager {
         }
       }
       this.soundCloudCache.clear();
-      console.log("[Audio] Cleared all SoundCloud cache");
     }
   }
 
   /**
-   * Cache the first megabyte of a YouTube stream for pre-buffering
-   * This downloads the first chunk in the background and returns the cached file path when ready
-   * The cache is used to reduce initial buffering time and improve playback quality
+   * Clear cached track for a specific track or all tracks (generic cache for all track types)
+   */
+  public async clearTrackCache(trackId?: string) {
+    if (trackId) {
+      const cachedFilePath = this.trackCache.get(trackId);
+      if (cachedFilePath) {
+        try {
+          // Delete the cached file
+          await FileSystem.deleteAsync(cachedFilePath, { idempotent: true });
+          this.trackCache.delete(trackId);
+        } catch (error) {
+          console.warn(
+            `[Audio] Failed to delete cached file for track ${trackId}:`,
+            error
+          );
+        }
+      }
+    } else {
+      // Clear all cached tracks
+      for (const [id, filePath] of Array.from(this.trackCache.entries())) {
+        try {
+          await FileSystem.deleteAsync(filePath, { idempotent: true });
+        } catch (error) {
+          console.warn(
+            `[Audio] Failed to delete cached file for track ${id}:`,
+            error
+          );
+        }
+      }
+      this.trackCache.clear();
+    }
+  }
+
+  /**
+   * Progressive YouTube caching - returns stream URL immediately and caches in background
+   * This allows immediate playback while caching happens asynchronously
+   * The player will switch to cached file once enough data is available
    */
   private async cacheYouTubeStream(
     streamUrl: string,
     trackId: string,
     controller: AbortController
   ): Promise<string> {
-    // Check if we already have this track cached
+    // Check if we already have this track cached (use generic track cache)
+    if (this.trackCache.has(trackId)) {
+      const cachedPath = this.trackCache.get(trackId);
+      console.log(
+        `[Audio] Using existing cached file for YouTube track: ${trackId}`
+      );
+      console.log(`[Audio] YouTube cached path: ${cachedPath}`);
+      // Return the cached path with file:// prefix
+      return cachedPath.startsWith("file://")
+        ? cachedPath
+        : `file://${cachedPath}`;
+    }
+
+    // Fallback to SoundCloud cache for backward compatibility
     if (this.soundCloudCache.has(trackId)) {
       const cachedPath = this.soundCloudCache.get(trackId);
       console.log(
@@ -1122,37 +1462,30 @@ export class AudioStreamManager {
       );
       console.log(`[Audio] YouTube cached path: ${cachedPath}`);
       // Return the cached path with file:// prefix
-      return `file://${cachedPath}`;
+      return cachedPath.startsWith("file://")
+        ? cachedPath
+        : `file://${cachedPath}`;
     }
 
     console.log(
-      `[Audio] Waiting for YouTube cache completion for track: ${trackId}`
+      `[Audio] Starting progressive YouTube caching for track: ${trackId}`
     );
 
-    try {
-      // Wait for cache completion before returning
-      const cachedPath = await this.cacheYouTubeStreamAsync(
-        streamUrl,
-        trackId,
-        controller
-      );
-
-      if (cachedPath.startsWith("file://")) {
-        console.log(
-          `[Audio] YouTube caching completed successfully for track: ${trackId}`
+    // Start background caching immediately without waiting
+    this.startProgressiveYouTubeCache(streamUrl, trackId, controller).catch(
+      (error) => {
+        console.error(
+          `[Audio] Progressive YouTube cache failed for ${trackId}:`,
+          error
         );
-        return cachedPath;
-      } else {
-        console.log(
-          `[Audio] YouTube caching failed for track: ${trackId}, falling back to stream URL`
-        );
-        return streamUrl;
       }
-    } catch (error) {
-      console.log(`[Audio] YouTube caching error for track ${trackId}:`, error);
-      // If caching fails completely, return the original stream URL as fallback
-      return streamUrl;
-    }
+    );
+
+    // Return the stream URL immediately for instant playback
+    console.log(
+      `[Audio] Returning stream URL immediately for track: ${trackId} (caching in background)`
+    );
+    return streamUrl;
   }
 
   /**
@@ -1168,33 +1501,19 @@ export class AudioStreamManager {
     // Check if we already have this track cached
     if (this.soundCloudCache.has(trackId)) {
       const cachedPath = this.soundCloudCache.get(trackId);
-      console.log(`[Audio] Using existing cached file for track: ${trackId}`);
-      console.log(`[Audio] Cached path: ${cachedPath}`);
       // Return the cached path with file:// prefix
       return `file://${cachedPath}`;
     }
 
     // Always wait for cache completion before playing
-    console.log(
-      `[Audio] Waiting for SoundCloud cache completion for track: ${trackId}`
-    );
-
     try {
       const cachedFilePath = await this.cacheSoundCloudStreamAsync(
         streamUrl,
         trackId,
         controller
       );
-
-      console.log(
-        `[Audio] SoundCloud cache completed, using cached file: ${cachedFilePath}`
-      );
       return cachedFilePath;
     } catch (error) {
-      console.log(
-        `[Audio] SoundCloud caching failed for track ${trackId}:`,
-        error
-      );
       // If caching fails completely, return the original stream URL as fallback
       return streamUrl;
     }
@@ -1225,11 +1544,17 @@ export class AudioStreamManager {
 
       console.log(`[Audio] Starting full track download for track: ${trackId}`);
 
+      // Ensure proper file:// prefix for the full file path
+      const fullFilePath = cacheFilePath + ".full";
+      const properFullFilePath = fullFilePath.startsWith("file://")
+        ? fullFilePath
+        : `file://${fullFilePath}`;
+
       // First, let's try to get the full track by downloading without range header
       // This will give us the complete file
       const fullDownloadResult = await FileSystem.downloadAsync(
         streamUrl,
-        cacheFilePath + ".full",
+        properFullFilePath,
         {
           headers: {
             "User-Agent":
@@ -1248,9 +1573,7 @@ export class AudioStreamManager {
         );
 
         // Check if the full download is actually significantly larger than the partial cache
-        const fullFileInfo = await FileSystem.getInfoAsync(
-          cacheFilePath + ".full"
-        );
+        const fullFileInfo = await FileSystem.getInfoAsync(properFullFilePath);
         const partialFileInfo = await FileSystem.getInfoAsync(cacheFilePath);
 
         const fullSize = fullFileInfo.exists ? fullFileInfo.size : 0;
@@ -1272,10 +1595,10 @@ export class AudioStreamManager {
             `[Audio] Replacing partial cache with full file for track: ${trackId}`
           );
 
-          // Replace the partial cache with the full file for future plays
-          this.soundCloudCache.set(trackId + "_full", cacheFilePath + ".full");
-          this.soundCloudCache.set(trackId, cacheFilePath + ".full");
-          this.soundCloudCache.set(trackId + "_has_full", "true");
+          // Replace the partial cache with the full file for future plays (use generic track cache)
+          this.trackCache.set(trackId + "_full", properFullFilePath);
+          this.trackCache.set(trackId, properFullFilePath);
+          this.trackCache.set(trackId + "_has_full", "true");
 
           // Mark download as completed
           this.markDownloadCompleted(trackId, fullSize / (1024 * 1024)); // Convert to MB
@@ -1289,7 +1612,7 @@ export class AudioStreamManager {
           );
           // Clean up the failed full download
           try {
-            await FileSystem.deleteAsync(cacheFilePath + ".full", {
+            await FileSystem.deleteAsync(properFullFilePath, {
               idempotent: true,
             });
           } catch (cleanupError) {
@@ -1392,23 +1715,40 @@ export class AudioStreamManager {
     try {
       console.log(`[Audio] Starting chunked download for track: ${trackId}`);
 
-      // Start from 5MB (where initial cache left off)
-      let currentPosition = 5242880;
+      // Check if we have existing cache to determine starting position
+      const cacheFileInfo = await FileSystem.getInfoAsync(cacheFilePath);
+      const startFrom5MB = cacheFileInfo.exists;
+
+      // Start from 5MB if we have existing cache, otherwise start from beginning
+      let currentPosition = startFrom5MB ? 5242880 : 0;
       const chunkSize = 2 * 1024 * 1024; // 2MB chunks
-      let totalDownloaded = 5242880; // We already have first 5MB
+      let totalDownloaded = startFrom5MB ? 5242880 : 0; // We already have first 5MB if resuming
 
       // Create a temporary file for the chunks
       const tempFilePath = cacheFilePath + ".chunks";
 
-      // Copy existing cache to temp file
-      await FileSystem.copyAsync({
-        from: cacheFilePath,
-        to: tempFilePath,
-      });
+      // Check if cache file exists, if not create empty temp file
+      if (cacheFileInfo.exists) {
+        // Copy existing cache to temp file
+        await FileSystem.copyAsync({
+          from: cacheFilePath,
+          to: tempFilePath,
+        });
+        console.log(
+          `[Audio] Copied existing cache (${totalDownloaded} bytes) to temp file`
+        );
+      } else {
+        // Create empty temp file for fresh download
+        await FileSystem.writeAsStringAsync(tempFilePath, "", {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        totalDownloaded = 0; // Reset since we're starting fresh
+        console.log("[Audio] Created empty temp file for fresh download");
+      }
 
       // Mark download as started with initial progress and URL persistence
       this.markDownloadStarted(trackId, streamUrl);
-      this.updateDownloadProgress(trackId, totalDownloaded / (1024 * 1024), 0); // 5MB initial
+      this.updateDownloadProgress(trackId, totalDownloaded / (1024 * 1024), 0);
 
       let lastProgressUpdate = Date.now();
       const progressUpdateInterval = 1000; // Update progress every 1 second
@@ -1447,11 +1787,19 @@ export class AudioStreamManager {
               { encoding: FileSystem.EncodingType.Base64 }
             );
 
-            await FileSystem.writeAsStringAsync(
-              tempFilePath,
-              existingContent + chunkContent,
-              { encoding: FileSystem.EncodingType.Base64 }
+            // Decode both base64 strings to binary, concatenate, then re-encode
+            const existingBinary = toByteArray(existingContent);
+            const chunkBinary = toByteArray(chunkContent);
+            const combinedBinary = new Uint8Array(
+              existingBinary.length + chunkBinary.length
             );
+            combinedBinary.set(existingBinary);
+            combinedBinary.set(chunkBinary, existingBinary.length);
+            const combinedBase64 = fromByteArray(combinedBinary);
+
+            await FileSystem.writeAsStringAsync(tempFilePath, combinedBase64, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
 
             const chunkSizeDownloaded = chunkResult.headers?.["content-length"]
               ? parseInt(chunkResult.headers["content-length"])
@@ -1524,7 +1872,7 @@ export class AudioStreamManager {
           console.log(
             `[Audio] Marking track as having substantial cache for track: ${trackId}`
           );
-          this.soundCloudCache.set(trackId + "_substantial", "true");
+          this.trackCache.set(trackId + "_substantial", "true");
         }
 
         // Mark download as completed
@@ -1595,6 +1943,160 @@ export class AudioStreamManager {
   }
 
   /**
+   * Progressive YouTube caching - starts background download without blocking playback
+   * This method downloads the first chunk quickly and continues downloading in background
+   */
+  public async startProgressiveYouTubeCache(
+    streamUrl: string,
+    trackId: string,
+    controller: AbortController
+  ): Promise<void> {
+    console.log(
+      `[Audio] Starting progressive cache for YouTube track: ${trackId}`
+    );
+    console.log(
+      `[Audio] Stream URL: ${streamUrl ? "present" : "missing"}, Controller: ${controller ? "present" : "missing"}`
+    );
+
+    // Start with a small initial chunk for quick startup
+    const initialChunkSize = 256 * 1024; // 256KB for very fast startup
+
+    try {
+      // First, try to download a small initial chunk quickly
+      const cacheDir = await this.getCacheDirectory();
+      console.log(`[Audio] Got cache directory: ${cacheDir}`);
+      if (!cacheDir) {
+        console.warn(
+          "[Audio] No cache directory available for progressive caching"
+        );
+        return;
+      }
+
+      const cacheFilePath = `${cacheDir}${trackId}.cache`;
+      console.log(`[Audio] Cache file path: ${cacheFilePath}`);
+      const properCacheFilePath = cacheFilePath.startsWith("file://")
+        ? cacheFilePath
+        : `file://${cacheFilePath}`;
+
+      // Mark download as started
+      this.markDownloadStarted(trackId, streamUrl);
+
+      // Try to download initial chunk with range request
+      let initialChunkDownloaded = false;
+      let initialResult: any = null;
+      try {
+        console.log(
+          `[Audio] Downloading initial ${initialChunkSize} bytes for quick startup`
+        );
+        console.log(`[Audio] Download URL: ${streamUrl.substring(0, 100)}...`);
+        console.log(`[Audio] Target cache file: ${properCacheFilePath}`);
+
+        initialResult = await FileSystem.downloadAsync(
+          streamUrl,
+          properCacheFilePath,
+          {
+            headers: {
+              Range: `bytes=0-${initialChunkSize - 1}`,
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+              Referer: "https://www.youtube.com/",
+              Origin: "https://www.youtube.com/",
+            },
+            sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+          }
+        );
+
+        console.log(
+          `[Audio] Initial download result status: ${initialResult.status}`
+        );
+        console.log(
+          `[Audio] Initial download result headers:`,
+          initialResult.headers
+        );
+
+        if (initialResult.status === 200 || initialResult.status === 206) {
+          initialChunkDownloaded = true;
+          const fileInfo = await FileSystem.getInfoAsync(properCacheFilePath);
+          if (fileInfo.exists) {
+            console.log(
+              `[Audio] Initial chunk downloaded: ${fileInfo.size} bytes (status: ${initialResult.status})`
+            );
+
+            // Store in cache immediately so player can use it
+            this.trackCache.set(trackId, properCacheFilePath);
+
+            // Update progress
+            this.updateCacheProgress(
+              trackId,
+              10, // 10% progress for initial chunk
+              fileInfo.size / (1024 * 1024),
+              {
+                isDownloading: true,
+                estimatedTotalSize: this.estimateTotalFileSize(fileInfo.size),
+              }
+            );
+          } else {
+            console.warn("[Audio] File info not available for initial chunk");
+          }
+
+          console.log(
+            "[Audio] Initial chunk cached, player can start immediately"
+          );
+        } else {
+          console.log(
+            `[Audio] Initial chunk download unexpected status: ${initialResult.status}`
+          );
+        }
+      } catch (initialError) {
+        console.log(
+          "[Audio] Initial chunk download failed, will try full download:"
+        );
+        console.log(
+          `[Audio] Error details:`,
+          initialError instanceof Error
+            ? {
+                message: initialError.message,
+                stack: initialError.stack,
+                name: initialError.name,
+              }
+            : initialError
+        );
+        console.log(
+          `[Audio] Initial download status: ${initialResult?.status || "unknown"}`
+        );
+        console.log(
+          `[Audio] Initial download headers:`,
+          initialResult?.headers || "no headers"
+        );
+      }
+
+      // Continue with the full caching process in background
+      this.cacheYouTubeStreamAsync(streamUrl, trackId, controller).catch(
+        (error) => {
+          console.error(
+            `[Audio] Background caching failed for ${trackId}:`,
+            error
+          );
+        }
+      );
+    } catch (error) {
+      console.error(
+        `[Audio] Progressive caching setup failed for ${trackId}:`,
+        error
+      );
+      // Fallback to regular background caching
+      this.cacheYouTubeStreamAsync(streamUrl, trackId, controller).catch(
+        (bgError) => {
+          console.error(
+            `[Audio] Fallback background caching failed for ${trackId}:`,
+            bgError
+          );
+        }
+      );
+    }
+  }
+
+  /**
    * Background caching of YouTube stream - doesn't block playback
    */
   private async cacheYouTubeStreamAsync(
@@ -1603,9 +2105,9 @@ export class AudioStreamManager {
     controller: AbortController
   ): Promise<string> {
     // Check if we already have this track cached
-    if (this.soundCloudCache.has(trackId)) {
+    if (this.trackCache.has(trackId)) {
       console.log(`[Audio] Background cache hit for YouTube track: ${trackId}`);
-      const cachedPath = this.soundCloudCache.get(trackId)!;
+      const cachedPath = this.trackCache.get(trackId)!;
       return `file://${cachedPath}`;
     }
 
@@ -1613,17 +2115,18 @@ export class AudioStreamManager {
       `[Audio] Background caching first 5MB of YouTube stream for track: ${trackId}`
     );
 
+    // Get the best available cache directory
+    const cacheDir = await this.getCacheDirectory();
+    if (!cacheDir) {
+      console.warn(
+        "[Audio] No cache directory available, skipping background caching"
+      );
+      return;
+    }
+
     try {
-      // Create cache directory if it doesn't exist
-      const cacheDir = `${FileSystem.cacheDirectory}youtube-cache/`;
-      console.log(`[Audio] Creating YouTube cache directory: ${cacheDir}`);
-      try {
-        await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
-      } catch (mkdirError: any) {
-        console.warn("[Audio] Could not create cache directory:", mkdirError);
-        console.warn("[Audio] Continuing with existing directory or fallback");
-        // Don't return here - the directory might already exist
-      }
+      console.log(`[Audio] Using cache directory: ${cacheDir}`);
+      // Directory is already tested and created by getCacheDirectory()
 
       // Test if we can write to the directory
       const testFile = `${cacheDir}test.txt`;
@@ -1647,18 +2150,25 @@ export class AudioStreamManager {
       }
 
       const cacheFilePath = `${cacheDir}${trackId}.cache`;
+      const properCacheFilePath = cacheFilePath.startsWith("file://")
+        ? cacheFilePath
+        : `file://${cacheFilePath}`;
 
       // Mark download as started with URL persistence for YouTube tracks
       this.markDownloadStarted(trackId, streamUrl);
 
       // Check if we have a full file available first
       const fullFilePath = cacheFilePath + ".full";
-      const fullFileInfo = await FileSystem.getInfoAsync(fullFilePath);
-      if (fullFileInfo.exists && fullFileInfo.size > 5242880) {
+      const properFullFilePath = fullFilePath.startsWith("file://")
+        ? fullFilePath
+        : `file://${fullFilePath}`;
+      const fullFileInfo = await FileSystem.getInfoAsync(properFullFilePath);
+      if (fullFileInfo.exists && fullFileInfo.size > 1048576) {
+        // Reduced from 5MB to 1MB
         console.log(
           `[Audio] Using existing full cached file for YouTube track: ${trackId}`
         );
-        this.soundCloudCache.set(trackId, fullFilePath);
+        this.trackCache.set(trackId, properFullFilePath);
         // Update progress to reflect completed state
         this.updateCacheProgress(
           trackId,
@@ -1668,16 +2178,17 @@ export class AudioStreamManager {
             isFullyCached: true,
           }
         );
-        return `file://${fullFilePath}`;
+        return properFullFilePath;
       }
 
       // Check if partial file exists
-      const partialFileInfo = await FileSystem.getInfoAsync(cacheFilePath);
+      const partialFileInfo =
+        await FileSystem.getInfoAsync(properCacheFilePath);
       if (partialFileInfo.exists) {
         console.log(
           `[Audio] Using existing partial cached file for YouTube track: ${trackId}`
         );
-        this.soundCloudCache.set(trackId, cacheFilePath);
+        this.trackCache.set(trackId, properCacheFilePath);
         // Update progress to reflect partial state
         const estimatedTotal = this.estimateTotalFileSize(partialFileInfo.size);
         const percentage = Math.min(
@@ -1689,10 +2200,10 @@ export class AudioStreamManager {
           percentage,
           partialFileInfo.size / (1024 * 1024)
         );
-        return `file://${cacheFilePath}`;
+        return properCacheFilePath;
       }
 
-      // Download the first 5MB (5 * 1024 * 1024 bytes) of the stream
+      // Download the first 1MB (1 * 1024 * 1024 bytes) of the stream - REDUCED for faster startup
       console.log(
         `[Audio] Downloading partial cache for YouTube track: ${trackId}`
       );
@@ -1711,7 +2222,7 @@ export class AudioStreamManager {
         );
         downloadResult = await FileSystem.downloadAsync(
           streamUrl,
-          cacheFilePath,
+          properCacheFilePath,
           {
             headers: {
               "User-Agent":
@@ -1734,10 +2245,10 @@ export class AudioStreamManager {
         try {
           downloadResult = await FileSystem.downloadAsync(
             streamUrl,
-            cacheFilePath,
+            properCacheFilePath,
             {
               headers: {
-                Range: "bytes=0-5242879", // Request first 5MB
+                Range: "bytes=0-1048575", // Request first 1MB - REDUCED for faster startup
                 "User-Agent":
                   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
                 Referer: "https://www.youtube.com/",
@@ -1760,28 +2271,33 @@ export class AudioStreamManager {
         console.log(
           `[Audio] Download failed with status: ${downloadResult.status}`
         );
-        console.log(`[Audio] Response headers:`, downloadResult.headers);
+        console.log("[Audio] Response headers:", downloadResult.headers);
         throw new Error(
           `Failed to download YouTube stream chunk: ${downloadResult.status} - ${downloadResult.headers?.["content-type"] || "unknown content type"}`
         );
       }
 
       // Check if file was actually created
-      const downloadedFileInfo = await FileSystem.getInfoAsync(cacheFilePath);
-      console.log(`[Audio] Downloaded file info:`, downloadedFileInfo);
+      const downloadedFileInfo =
+        await FileSystem.getInfoAsync(properCacheFilePath);
+      console.log("[Audio] Downloaded file info:", downloadedFileInfo);
 
       console.log(
         `[Audio] Successfully cached YouTube stream ${downloadResult.headers?.["content-length"] || "unknown size"} bytes for track: ${trackId}`
       );
 
-      // Store in cache
-      this.soundCloudCache.set(trackId, cacheFilePath);
-      console.log(`[Audio] Stored cache file path: ${cacheFilePath}`);
+      // Store in cache (use generic track cache for YouTube tracks)
+      this.trackCache.set(trackId, properCacheFilePath);
+      console.log(`[Audio] Stored cache file path: ${properCacheFilePath}`);
+
+      // Verify the file was actually created and is accessible
+      // const verifyFileInfo = await FileSystem.getInfoAsync(cacheFilePath);
+      // console.log(`[Audio] Verification - File info after caching:`, verifyFileInfo);
 
       // Continue downloading the rest of the file in the background
       this.downloadFullTrackInBackground(
         streamUrl,
-        cacheFilePath,
+        properCacheFilePath,
         trackId,
         controller
       );
@@ -1791,9 +2307,8 @@ export class AudioStreamManager {
       );
 
       // Return the cached file path so the player uses the local file
-      const resultPath = `file://${cacheFilePath}`;
-      console.log(`[Audio] Returning cached file path: ${resultPath}`);
-      return resultPath;
+      console.log(`[Audio] Returning cached file path: ${properCacheFilePath}`);
+      return properCacheFilePath;
     } catch (error) {
       console.log(
         `[Audio] YouTube background caching failed: ${
@@ -1815,8 +2330,11 @@ export class AudioStreamManager {
         `[Audio] YouTube caching failed for ${trackId}, will retry next time`
       );
 
-      // Return the original stream URL as fallback (don't cache on failure)
-      return streamUrl;
+      // Don't return the original stream URL since it's likely a blocked GoogleVideo URL
+      // Instead, throw an error so the caller can try alternative approaches
+      throw new Error(
+        `YouTube caching failed: ${error instanceof Error ? error.message : "Unknown error"}. The GoogleVideo CDN URL appears to be blocked.`
+      );
     }
   }
 
@@ -1838,16 +2356,26 @@ export class AudioStreamManager {
       `[Audio] Post-playback caching YouTube stream for track: ${trackId}`
     );
 
+    // Get the best available cache directory
+    const cacheDir = await this.getCacheDirectory();
+    if (!cacheDir) {
+      console.warn(
+        "[Audio] No cache directory available, skipping post-playback caching"
+      );
+      return;
+    }
+
     try {
-      const cacheDir = `${FileSystem.cacheDirectory}youtube-cache/`;
-      await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
+      console.log(`[Audio] Using cache directory: ${cacheDir}`);
+      // Directory is already tested and created by getCacheDirectory()
 
       const cacheFilePath = `${cacheDir}${trackId}.webm`;
       const fullFilePath = cacheFilePath + ".full";
 
       // Check if we already have a full file
       const fullFileInfo = await FileSystem.getInfoAsync(fullFilePath);
-      if (fullFileInfo.exists && fullFileInfo.size > 5242880) {
+      if (fullFileInfo.exists && fullFileInfo.size > 1048576) {
+        // Reduced from 5MB to 1MB
         console.log(
           `[Audio] YouTube full cached file already exists for: ${trackId}`
         );
@@ -1883,16 +2411,16 @@ export class AudioStreamManager {
           );
 
           // If file is large enough, mark it as full
-          if (fileInfo.size > 5242880) {
-            // 5MB
+          if (fileInfo.size > 1048576) {
+            // 1MB - Reduced from 5MB for faster startup
             await FileSystem.moveAsync({
               from: cacheFilePath,
               to: fullFilePath,
             });
-            this.soundCloudCache.set(trackId, fullFilePath);
+            this.trackCache.set(trackId, fullFilePath);
             console.log(`[Audio] YouTube full cached file saved: ${trackId}`);
           } else {
-            this.soundCloudCache.set(trackId, cacheFilePath);
+            this.trackCache.set(trackId, cacheFilePath);
             console.log(
               `[Audio] YouTube partial cached file saved: ${trackId}`
             );
@@ -1927,51 +2455,30 @@ export class AudioStreamManager {
   ): Promise<string> {
     // Check if we already have this track cached
     if (this.soundCloudCache.has(trackId)) {
-      console.log(`[Audio] Background cache hit for track: ${trackId}`);
       const cachedPath = this.soundCloudCache.get(trackId)!;
       return `file://${cachedPath}`;
     }
 
-    console.log(
-      `[Audio] Background caching first 5MB of SoundCloud stream for track: ${trackId}`
-    );
+    // Get the best available cache directory
+    const cacheDir = await this.getCacheDirectory();
+    if (!cacheDir) {
+      console.warn(
+        "[Audio] No cache directory available, returning original stream URL"
+      );
+      return streamUrl;
+    }
 
     try {
-      // Create cache directory if it doesn't exist
-      const cacheDir = `${FileSystem.cacheDirectory}soundcloud-cache/`;
-      console.log(`[Audio] Creating SoundCloud cache directory: ${cacheDir}`);
-      try {
-        await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
-      } catch (mkdirError: any) {
-        console.warn(
-          "[Audio] Could not create SoundCloud cache directory:",
-          mkdirError
-        );
-        console.warn("[Audio] Continuing with existing directory or fallback");
-        // Don't return here - the directory might already exist
-      }
+      console.log(`[Audio] Using cache directory: ${cacheDir}`);
+      // Directory is already tested and created by getCacheDirectory()
 
       // Test if we can write to the directory
       const testFile = `${cacheDir}test.txt`;
       try {
         await FileSystem.writeAsStringAsync(testFile, "test");
         await FileSystem.deleteAsync(testFile, { idempotent: true });
-        console.log("[Audio] SoundCloud cache directory is writable");
       } catch (writeError: any) {
-        console.error(
-          "[Audio] SoundCloud cache directory is not writable:",
-          writeError
-        );
-        console.error("[Audio] Error details:", {
-          message: writeError.message,
-          code: writeError.code,
-          directory: cacheDir,
-          fileSystem: FileSystem.cacheDirectory,
-        });
-        // Continue without caching - return original stream URL
-        console.log(
-          "[Audio] Continuing without SoundCloud caching due to directory issues"
-        );
+        // SoundCloud cache directory is not writable, continuing without caching
         return streamUrl;
       }
 
@@ -1981,9 +2488,6 @@ export class AudioStreamManager {
       const fullFilePath = cacheFilePath + ".full";
       const fullFileInfo = await FileSystem.getInfoAsync(fullFilePath);
       if (fullFileInfo.exists && fullFileInfo.size > 5242880) {
-        console.log(
-          `[Audio] Using existing full cached file for track: ${trackId}`
-        );
         this.soundCloudCache.set(trackId, fullFilePath);
         return `file://${fullFilePath}`; // Return the full cached file path
       }
@@ -1991,10 +2495,7 @@ export class AudioStreamManager {
       // Check if partial file exists
       const fileInfo = await FileSystem.getInfoAsync(cacheFilePath);
       if (fileInfo.exists) {
-        console.log(
-          `[Audio] Using existing partial cached file for track: ${trackId}`
-        );
-        this.soundCloudCache.set(trackId, cacheFilePath);
+        this.trackCache.set(trackId, cacheFilePath);
         return `file://${cacheFilePath}`; // Return the cached file path
       }
 
@@ -2020,14 +2521,8 @@ export class AudioStreamManager {
         );
       }
 
-      console.log(
-        `[Audio] Successfully cached ${
-          downloadResult.headers?.["content-length"] || "unknown size"
-        } bytes for track: ${trackId}`
-      );
-
-      // Store in cache
-      this.soundCloudCache.set(trackId, cacheFilePath);
+      // Store in cache (use generic track cache for YouTube tracks)
+      this.trackCache.set(trackId, cacheFilePath);
 
       // Continue downloading the rest of the file in the background for better playback
       this.downloadFullTrackInBackground(
@@ -2037,19 +2532,320 @@ export class AudioStreamManager {
         controller
       );
 
-      console.log(`[Audio] Background caching completed for track: ${trackId}`);
-
       // Return the cached file path so the player uses the local file
       return `file://${cacheFilePath}`;
     } catch (error) {
-      console.log(
-        `[Audio] Background caching failed: ${
-          error instanceof Error ? error.message : error
-        }`
-      );
       // Don't throw - this is background caching, failures shouldn't affect playback
       // Return the original stream URL as fallback
       return streamUrl;
+    }
+  }
+
+  /**
+   * Cache a specific portion of a YouTube stream starting from a seek position
+   * This is useful for caching from the current playback position
+   */
+  public async cacheYouTubeStreamFromPosition(
+    streamUrl: string,
+    trackId: string,
+    startPosition: number, // Position in seconds
+    controller: AbortController
+  ): Promise<string> {
+    console.log(
+      `[Audio] Caching YouTube stream from position ${startPosition}s for track: ${trackId}`
+    );
+
+    // Check if we already have this track cached
+    if (this.soundCloudCache.has(trackId)) {
+      const cachedPath = this.soundCloudCache.get(trackId);
+      console.log(
+        `[Audio] Using existing cached file for YouTube track: ${trackId}`
+      );
+      return `file://${cachedPath}`;
+    }
+
+    // Estimate byte position based on bitrate (128kbps average for audio)
+    const averageBitrate = 128000; // 128 kbps
+    const startByte = Math.floor((startPosition * averageBitrate) / 8);
+    const chunkSize = 512 * 1024; // 512KB chunks for smooth playback
+
+    try {
+      const cacheDir = await this.getCacheDirectory();
+      if (!cacheDir) {
+        console.warn(
+          "[Audio] No cache directory available for position-based caching"
+        );
+        return streamUrl;
+      }
+
+      const cacheFilePath = `${cacheDir}${trackId}.cache`;
+
+      // Mark download as started
+      this.markDownloadStarted(trackId, streamUrl);
+
+      // Download chunk starting from the calculated position
+      console.log(
+        `[Audio] Downloading chunk from byte ${startByte} for track: ${trackId}`
+      );
+
+      const downloadResult = await FileSystem.downloadAsync(
+        streamUrl,
+        cacheFilePath,
+        {
+          headers: {
+            Range: `bytes=${startByte}-${startByte + chunkSize - 1}`,
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            Referer: "https://www.youtube.com/",
+            Origin: "https://www.youtube.com/",
+          },
+          sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+        }
+      );
+
+      if (downloadResult.status === 206) {
+        const fileInfo = await FileSystem.getInfoAsync(cacheFilePath);
+        if (fileInfo.exists) {
+          console.log(
+            `[Audio] Position-based chunk downloaded: ${fileInfo.size} bytes`
+          );
+
+          // Store in cache (use generic track cache for YouTube tracks)
+          this.trackCache.set(trackId, cacheFilePath);
+
+          // Update progress
+          this.updateCacheProgress(
+            trackId,
+            15, // 15% progress for position-based chunk
+            fileInfo.size / (1024 * 1024),
+            {
+              isDownloading: true,
+              estimatedTotalSize: this.estimateTotalFileSize(fileInfo.size),
+            }
+          );
+        } else {
+          console.warn(
+            "[Audio] File info not available for position-based chunk"
+          );
+        }
+
+        // Continue downloading the rest in background
+        this.downloadFullTrackInBackground(
+          streamUrl,
+          cacheFilePath,
+          trackId,
+          controller
+        );
+
+        return `file://${cacheFilePath}`;
+      } else {
+        console.log(
+          `[Audio] Position-based download failed with status: ${downloadResult.status}`
+        );
+        return streamUrl;
+      }
+    } catch (error) {
+      console.error(
+        `[Audio] Position-based caching failed for ${trackId}:`,
+        error
+      );
+      return streamUrl;
+    }
+  }
+
+  /**
+   * Continue caching a track in the background while it's playing
+   * This method downloads the rest of the track incrementally
+   */
+  public async continueCachingTrack(
+    streamUrl: string,
+    trackId: string,
+    controller: AbortController,
+    onProgress?: (percentage: number) => void
+  ): Promise<void> {
+    console.log(
+      `[Audio] Starting continuous background caching for track: ${trackId}`
+    );
+
+    try {
+      // Get current cache status
+      const cacheInfo = await this.getCacheInfo(trackId);
+
+      if (cacheInfo.isFullyCached) {
+        console.log(`[Audio] Track ${trackId} is already fully cached`);
+        return;
+      }
+
+      // Get the cache directory
+      const cacheDir = await this.getCacheDirectory();
+      if (!cacheDir) {
+        console.warn(
+          "[Audio] No cache directory available for continuous caching"
+        );
+        return;
+      }
+
+      const cacheFilePath = `${cacheDir}${trackId}.cache`;
+      const properCacheFilePath = cacheFilePath.startsWith("file://")
+        ? cacheFilePath
+        : `file://${cacheFilePath}`;
+
+      // Continue downloading in chunks until fully cached
+      let currentPosition = cacheInfo.fileSize * 1024 * 1024; // Convert MB to bytes
+      const chunkSize = 512 * 1024; // 512KB chunks
+      let consecutiveErrors = 0;
+      const maxErrors = 3;
+
+      while (
+        !controller.signal.aborted &&
+        !cacheInfo.isFullyCached &&
+        consecutiveErrors < maxErrors
+      ) {
+        try {
+          console.log(
+            `[Audio] Downloading chunk from position ${currentPosition} for ${trackId}`
+          );
+
+          // Download next chunk
+          const chunkFilePath = `${properCacheFilePath}.chunk_${currentPosition}`;
+          const chunkResult = await FileSystem.downloadAsync(
+            streamUrl,
+            chunkFilePath,
+            {
+              headers: {
+                Range: `bytes=${currentPosition}-${currentPosition + chunkSize - 1}`,
+                "User-Agent":
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                Referer: "https://www.youtube.com/",
+                Origin: "https://www.youtube.com/",
+              },
+              sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+            }
+          );
+
+          if (chunkResult.status === 206 || chunkResult.status === 200) {
+            // Append chunk to main file using binary-safe approach
+            try {
+              // Create a temporary combined file
+              const tempCombinedPath = `${properCacheFilePath}.combined`;
+
+              // First copy the existing file to temp location
+              await FileSystem.copyAsync({
+                from: properCacheFilePath,
+                to: tempCombinedPath,
+              });
+
+              // Read both files as Base64 and combine them
+              const existingContent = await FileSystem.readAsStringAsync(
+                tempCombinedPath,
+                { encoding: FileSystem.EncodingType.Base64 }
+              );
+              const chunkContent = await FileSystem.readAsStringAsync(
+                chunkFilePath,
+                { encoding: FileSystem.EncodingType.Base64 }
+              );
+
+              // Decode both base64 strings to binary, concatenate, then re-encode
+              const existingBinary = toByteArray(existingContent);
+              const chunkBinary = toByteArray(chunkContent);
+              const combinedBinary = new Uint8Array(
+                existingBinary.length + chunkBinary.length
+              );
+              combinedBinary.set(existingBinary);
+              combinedBinary.set(chunkBinary, existingBinary.length);
+              const combinedBase64 = fromByteArray(combinedBinary);
+
+              // Write combined content back
+              await FileSystem.writeAsStringAsync(
+                tempCombinedPath,
+                combinedBase64,
+                { encoding: FileSystem.EncodingType.Base64 }
+              );
+
+              // Replace the original file with the combined one
+              await FileSystem.copyAsync({
+                from: tempCombinedPath,
+                to: properCacheFilePath,
+              });
+
+              // Clean up temp files
+              await FileSystem.deleteAsync(tempCombinedPath, {
+                idempotent: true,
+              });
+
+              console.log("[Audio] Successfully appended chunk to cache file");
+            } catch (chunkCombineError) {
+              console.error(
+                "[Audio] Error combining chunk:",
+                chunkCombineError
+              );
+              // Fallback: just copy the chunk file to replace the original
+              try {
+                await FileSystem.copyAsync({
+                  from: chunkFilePath,
+                  to: properCacheFilePath,
+                });
+                console.log("[Audio] Fallback: Replaced cache file with chunk");
+              } catch (fallbackError) {
+                console.error("[Audio] Chunk fallback failed:", fallbackError);
+                throw fallbackError;
+              }
+            }
+
+            // Clean up chunk file
+            await FileSystem.deleteAsync(chunkFilePath, { idempotent: true });
+
+            // Update track cache with the combined file
+            this.trackCache.set(trackId, properCacheFilePath);
+
+            // Update position and check cache status
+            currentPosition += chunkSize;
+            consecutiveErrors = 0; // Reset error counter
+
+            // Update cache info
+            const updatedCacheInfo = await this.getCacheInfo(trackId);
+
+            console.log(
+              `[Audio] Chunk downloaded. Cache progress: ${updatedCacheInfo.percentage}%`
+            );
+            onProgress?.(updatedCacheInfo.percentage);
+
+            // Check if we're fully cached
+            if (updatedCacheInfo.percentage >= 98) {
+              console.log(`[Audio] Track ${trackId} is now fully cached!`);
+              this.markDownloadCompleted(trackId, updatedCacheInfo.fileSize);
+              break;
+            }
+
+            // Small delay between chunks to be gentle on the server
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          } else {
+            console.log(
+              `[Audio] Chunk download failed with status: ${chunkResult.status}`
+            );
+            consecutiveErrors++;
+
+            if (chunkResult.status === 416) {
+              // Range not satisfiable - might be end of file
+              console.log(`[Audio] Reached end of file for ${trackId}`);
+              break;
+            }
+          }
+        } catch (chunkError) {
+          console.error(
+            `[Audio] Error downloading chunk for ${trackId}:`,
+            chunkError
+          );
+          consecutiveErrors++;
+
+          // Wait a bit longer before retrying
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      }
+
+      console.log(`[Audio] Continuous caching completed for track: ${trackId}`);
+    } catch (error) {
+      console.error(`[Audio] Continuous caching failed for ${trackId}:`, error);
     }
   }
 
@@ -2061,24 +2857,23 @@ export class AudioStreamManager {
   }
 
   private setupFallbackStrategies() {
-    // Strategy 1: Local extraction server (if available)
-    // this.fallbackStrategies.push(this.tryLocalExtraction.bind(this));
-    // Strategy 2: SoundCloud API (high priority for music)
+    // Strategy 1: YouTube Omada (fastest for YouTube - added for priority)
+    this.fallbackStrategies.push(this.tryYouTubeOmada.bind(this));
+    // Strategy 2: Local extraction server (if available)
+    this.fallbackStrategies.push(this.tryLocalExtraction.bind(this));
+    // Strategy 3: SoundCloud API (high priority for music)
     // this.fallbackStrategies.push(this.trySoundCloud.bind(this));
-    // Strategy 3: JioSaavn API for music content
-    // this.fallbackStrategies.push(this.tryJioSaavn.bind(this));
     // Strategy 4: YouTube Music extraction
-    // this.fallbackStrategies.push(this.tryYouTubeMusic.bind(this));
+    this.fallbackStrategies.push(this.tryYouTubeMusic.bind(this));
     // Strategy 5: Spotify Web API (requires auth but has good coverage)
     // this.fallbackStrategies.push(this.trySpotifyWebApi.bind(this));
     // Strategy 6: Hyperpipe API
-    // this.fallbackStrategies.push(this.tryHyperpipe.bind(this));
-    // Strategy 7: Invidious instances (health-checked) - PRIMARY FOR YOUTUBE
-    this.fallbackStrategies.push(this.tryInvidious.bind(this));
-    // Strategy 8: Piped API (alternative to Invidious)
-    // this.fallbackStrategies.push(this.tryPiped.bind(this));
-    // Strategy 9: YouTube embed extraction (last resort)
-    // this.fallbackStrategies.push(this.tryYouTubeEmbed.bind(this));
+    this.fallbackStrategies.push(this.tryHyperpipe.bind(this));
+    // Strategy 7: Piped API (alternative to Invidious)
+    this.fallbackStrategies.push(this.tryPiped.bind(this));
+    // Strategy 8: YouTube embed extraction (last resort)
+    this.fallbackStrategies.push(this.tryYouTubeEmbed.bind(this));
+    // Note: YouTube Omada is handled exclusively in getAudioUrl for youtube/yt sources
   }
 
   async getAudioUrl(
@@ -2109,9 +2904,9 @@ export class AudioStreamManager {
     // Always ensure caching before playing
     onStatusUpdate?.("Ensuring audio is cached before playback...");
 
-    // --- SOUNDCLOUD HANDLING (with fallbacks) ---
+    // --- SOUNDCLOUD HANDLING (exclusive) ---
     if (source === "soundcloud") {
-      onStatusUpdate?.("Using SoundCloud strategy (with fallbacks)");
+      onStatusUpdate?.("Using SoundCloud strategy (exclusive)");
       console.log(
         `[AudioStreamManager] SoundCloud mode activated for: ${videoId}`
       );
@@ -2126,13 +2921,6 @@ export class AudioStreamManager {
         );
 
         if (soundCloudUrl) {
-          console.log("[Audio] SoundCloud strategy succeeded!");
-          console.log(`[Audio] SoundCloud URL result: ${soundCloudUrl}`);
-          console.log(
-            `[Audio] Is cached file: ${soundCloudUrl.startsWith("file://")}`
-          );
-
-          // Ensure we have a cached file before returning
           if (!soundCloudUrl.startsWith("file://")) {
             onStatusUpdate?.("Caching SoundCloud audio...");
             const controller = new AbortController();
@@ -2141,19 +2929,94 @@ export class AudioStreamManager {
               videoId,
               controller
             );
-            console.log(`[Audio] SoundCloud cached result: ${cachedUrl}`);
             return cachedUrl;
           }
 
           return soundCloudUrl;
+        } else {
+          throw new Error("SoundCloud extraction returned no URL");
         }
       } catch (error) {
         console.error(
-          "[Audio] SoundCloud strategy failed, will try fallback strategies:",
+          "[AudioStreamManager] SoundCloud extraction failed:",
           error
         );
-        // Don't throw immediately - allow fallback strategies to try
-        onStatusUpdate?.("SoundCloud failed, trying fallback strategies...");
+        throw new Error(
+          `SoundCloud playback failed: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
+        );
+      }
+    }
+
+    // --- YOUTUBE EXCLUSIVE HANDLING (only use YouTube Omada API) ---
+    if (source === "youtube" || source === "yt") {
+      onStatusUpdate?.("Using YouTube Omada API (exclusive)");
+      console.log(
+        `[AudioStreamManager] YouTube mode activated for: ${videoId}`
+      );
+      try {
+        console.log(
+          `[Audio] Attempting YouTube Omada extraction for track: ${videoId}`
+        );
+        const youtubeUrl = await this.tryYouTubeOmada(videoId);
+
+        if (youtubeUrl) {
+          console.log(
+            `[AudioStreamManager] YouTube Omada returned URL: ${youtubeUrl.substring(0, 100)}...`
+          );
+          // Cache the YouTube stream and return cached file path
+          onStatusUpdate?.("Caching YouTube audio...");
+          const controller = new AbortController();
+          const cachedUrl = await this.cacheYouTubeStream(
+            youtubeUrl,
+            videoId,
+            controller
+          );
+          return cachedUrl;
+        } else {
+          console.error("[AudioStreamManager] YouTube Omada returned no URL");
+          throw new Error("YouTube Omada extraction returned no URL");
+        }
+      } catch (error) {
+        // YouTube Omada strategy failed, do not try fallback strategies
+        console.error(
+          "[AudioStreamManager] YouTube Omada extraction failed:",
+          error
+        );
+        throw new Error(
+          `YouTube playback failed: ${error instanceof Error ? error.message : "Unknown error"}`
+        );
+      }
+    }
+
+    // --- JIOSAAVN HANDLING (exclusive - no fallbacks) ---
+    if (source === "jiosaavn") {
+      onStatusUpdate?.("Using JioSaavn strategy (exclusive)");
+      console.log(
+        `[AudioStreamManager] JioSaavn mode activated for: ${videoId}`
+      );
+      try {
+        console.log(
+          `[Audio] Attempting JioSaavn extraction for track: ${videoId}`
+        );
+        const jioSaavnUrl = await this.tryJioSaavn(videoId);
+
+        if (jioSaavnUrl) {
+          // JioSaavn URLs are typically direct streaming URLs, return as-is
+          return jioSaavnUrl;
+        } else {
+          throw new Error("JioSaavn extraction returned no URL");
+        }
+      } catch (error) {
+        // JioSaavn strategy failed, do not try fallback strategies
+        console.error(
+          "[AudioStreamManager] JioSaavn extraction failed:",
+          error
+        );
+        throw new Error(
+          `JioSaavn playback failed: ${error instanceof Error ? error.message : "Unknown error"}`
+        );
       }
     }
 
@@ -2179,7 +3042,7 @@ export class AudioStreamManager {
   ): Promise<string | null> {
     onStatusUpdate?.("Testing strategies concurrently...");
 
-    // Run first 3 strategies concurrently with timeout
+    // Run first 3 strategies concurrently with timeout - REDUCED to 3 seconds for faster response
     const concurrentPromises = this.fallbackStrategies
       .slice(0, 3)
       .map(async (strategy, index) => {
@@ -2189,7 +3052,7 @@ export class AudioStreamManager {
           const url = await Promise.race([
             strategy(videoId),
             new Promise<string>((_, reject) =>
-              setTimeout(() => reject(new Error("Timeout")), 8000)
+              setTimeout(() => reject(new Error("Timeout")), 3000)
             ),
           ]);
           const latency = Date.now() - startTime;
@@ -2216,7 +3079,10 @@ export class AudioStreamManager {
       if (
         fastest.strategy.includes("YouTube") ||
         fastest.strategy.includes("Invidious") ||
-        fastest.strategy.includes("Piped")
+        fastest.strategy.includes("Piped") ||
+        fastest.strategy.includes("Hyperpipe") ||
+        fastest.strategy.includes("YouTubeMusic") ||
+        fastest.strategy.includes("YouTubeEmbed")
       ) {
         // For YouTube strategies, ensure caching is complete before returning
         try {
@@ -2365,7 +3231,7 @@ export class AudioStreamManager {
           headers: {
             "User-Agent":
               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            Accept: "application/json, text/plain, */*",
+            Accept: "application/json, text/plain, * / *",
             "Accept-Language": "en-US,en;q=0.9",
             ...options.headers,
           },
@@ -2441,7 +3307,7 @@ export class AudioStreamManager {
             headers: {
               "User-Agent":
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-              Accept: "application/json, text/plain, */*",
+              Accept: "application/json, text/plain, *\/\/*",
               "Accept-Language": "en-US,en;q=0.9",
               ...options.headers,
             },
@@ -2641,7 +3507,7 @@ export class AudioStreamManager {
                 "User-Agent":
                   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
                 Accept:
-                  "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                  "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*\/\/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.9",
               },
             });
@@ -2700,7 +3566,7 @@ export class AudioStreamManager {
               headers: {
                 "User-Agent":
                   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                Accept: "application/json, text/javascript, */*; q=0.01",
+                Accept: "application/json, text/javascript, *\/\/*; q=0.01",
                 "X-Requested-With": "XMLHttpRequest",
               },
             });
@@ -2774,6 +3640,8 @@ export class AudioStreamManager {
     }
   }
 
+  // Commented out echostreamz method - using new YouTube endpoints instead
+  /*
   private async tryInvidious(videoId: string): Promise<string> {
     const instance = "https://echostreamz.com";
 
@@ -2785,7 +3653,7 @@ export class AudioStreamManager {
           headers: {
             "User-Agent":
               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            Accept: "application/json, text/plain, */*",
+            Accept: "application/json, text/plain, *\/\/*",
             "Accept-Language": "en-US,en;q=0.9",
           },
         },
@@ -2834,6 +3702,7 @@ export class AudioStreamManager {
 
       // Fallback to formatStreams if adaptiveFormats not available
       if (data.formatStreams) {
+        console.log("[YouTube Omada] Found formatStreams:", data.formatStreams.length, "streams");
         // First try to find audio-only streams
         const audioStreams = data.formatStreams
           .filter(
@@ -2841,6 +3710,15 @@ export class AudioStreamManager {
               f.type?.startsWith("audio/") || f.mimeType?.startsWith("audio/")
           )
           .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+
+        console.log("[YouTube Omada] Filtered audio streams from formatStreams:", audioStreams.length);
+        if (audioStreams.length > 0) {
+          console.log("[YouTube Omada] Best audio stream:", {
+            url: audioStreams[0].url?.substring(0, 100) + "...",
+            bitrate: audioStreams[0].bitrate,
+            type: audioStreams[0].type || audioStreams[0].mimeType
+          });
+        }
 
         if (audioStreams.length > 0 && audioStreams[0].url) {
           // Resolve relative URLs to full URLs
@@ -2955,6 +3833,262 @@ export class AudioStreamManager {
       throw new Error("No audio formats found in response");
     } catch (error) {
       console.warn("Invidious failed:", error);
+      throw error;
+    }
+  }
+  */
+
+  private async tryYouTubeOmada(videoId: string): Promise<string> {
+    const instance = "https://yt.omada.cafe";
+
+    try {
+      const requestUrl = `${instance}/api/v1/videos/${videoId}`;
+
+      // Use the new yt.omada.cafe endpoint for YouTube playback
+      const response = await this.fetchWithProxy(
+        requestUrl,
+        {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            Accept: "application/json, text/plain, *\/\/*",
+            "Accept-Language": "en-US,en;q=0.9",
+          },
+        },
+        2, // 2 retries
+        12000 // 12 second timeout
+      );
+
+      if (!response.ok) {
+        throw new Error(`YouTube Omada returned ${response.status}`);
+      }
+
+      // Check if response is HTML (blocked) instead of JSON
+      const contentType = response.headers.get("content-type");
+      if (!contentType?.includes("json")) {
+        throw new Error(
+          "YouTube Omada returned HTML instead of JSON (blocked)"
+        );
+      }
+
+      const data = await response.json();
+
+      // Check for adaptive formats (primary method)
+      if (data.adaptiveFormats) {
+        console.log(
+          "[YouTube Omada] Found adaptiveFormats:",
+          data.adaptiveFormats.length,
+          "formats"
+        );
+        const audioFormats = data.adaptiveFormats
+          .filter(
+            (f: any) =>
+              f.type?.startsWith("audio/") || f.mimeType?.startsWith("audio/")
+          )
+          .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+
+        console.log(
+          "[YouTube Omada] Filtered audio formats:",
+          audioFormats.length
+        );
+        if (audioFormats.length > 0) {
+          console.log("[YouTube Omada] Best audio format:", {
+            url: audioFormats[0].url?.substring(0, 100) + "...",
+            bitrate: audioFormats[0].bitrate,
+            type: audioFormats[0].type || audioFormats[0].mimeType,
+          });
+        }
+
+        // Try all available audio formats in order of quality
+        // **NEW APPROACH**: Return the first available URL immediately and let caching handle failures
+        for (let i = 0; i < audioFormats.length; i++) {
+          const audioFormat = audioFormats[i];
+          if (audioFormat.url) {
+            // Resolve relative URLs to full URLs
+            let audioUrl = audioFormat.url;
+            if (audioUrl.startsWith("/")) {
+              audioUrl = `${instance}${audioUrl}`;
+            }
+
+            // Check if this is a GoogleVideo URL that might need proxying
+            let useOmadaProxy = false;
+
+            if (audioUrl.includes("googlevideo.com")) {
+              // **SKIP HEAD TEST**: Immediately try Omada proxy for GoogleVideo URLs
+              const googlevideoMatch = audioUrl.match(
+                /googlevideo\.com\/videoplayback\?(.+)/
+              );
+              if (googlevideoMatch) {
+                const queryParams = googlevideoMatch[1];
+                audioUrl = `https://yt.omada.cafe/videoplayback?${queryParams}`;
+                useOmadaProxy = true;
+                console.log(
+                  `[YouTube Omada] Using Omada proxy for GoogleVideo URL (format ${i + 1}/${audioFormats.length}, bitrate: ${audioFormat.bitrate})`
+                );
+              }
+            }
+
+            console.log(
+              `[YouTube Omada] Attempting audio format ${i + 1}/${audioFormats.length} (bitrate: ${audioFormat.bitrate}, type: ${audioFormat.type || audioFormat.mimeType})`
+            );
+            console.log(
+              "[YouTube Omada] Audio URL:",
+              audioUrl.substring(0, 100) + "..."
+            );
+
+            // **RETURN IMMEDIATELY**: Don't test with HEAD, let the caching process handle failures
+            console.log(
+              "[AudioStreamManager] Found audio via YouTube Omada adaptiveFormats - returning immediately"
+            );
+            console.log(
+              `[YouTube Omada] Audio format ${i + 1} selected, starting playback immediately`
+            );
+            return audioUrl;
+          }
+        }
+
+        // If no audio formats worked, continue to formatStreams fallback
+        console.log(
+          "[YouTube Omada] All audio formats failed, trying formatStreams fallback"
+        );
+      }
+
+      // Fallback to formatStreams if adaptiveFormats not available
+      if (data.formatStreams) {
+        // First try to find audio-only streams
+        const audioStreams = data.formatStreams
+          .filter(
+            (f: any) =>
+              f.type?.startsWith("audio/") || f.mimeType?.startsWith("audio/")
+          )
+          .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+
+        // Try all audio streams
+        for (let i = 0; i < audioStreams.length; i++) {
+          const audioStream = audioStreams[i];
+          if (audioStream.url) {
+            // Resolve relative URLs to full URLs
+            let audioUrl = audioStream.url;
+            if (audioUrl.startsWith("/")) {
+              audioUrl = `${instance}${audioUrl}`;
+            }
+
+            // Check if this is a GoogleVideo URL that needs proxying through Omada
+            if (audioUrl.includes("googlevideo.com")) {
+              // Convert GoogleVideo URL to Omada proxy URL
+              const googlevideoMatch = audioUrl.match(
+                /googlevideo\.com\/videoplayback\?(.+)/
+              );
+              if (googlevideoMatch) {
+                const queryParams = googlevideoMatch[1];
+                audioUrl = `https://yt.omada.cafe/videoplayback?${queryParams}`;
+                console.log(
+                  "[YouTube Omada] Converting formatStreams GoogleVideo URL to Omada proxy"
+                );
+              }
+            }
+            console.log(
+              `[YouTube Omada] Attempting formatStreams audio ${i + 1}/${audioStreams.length} (bitrate: ${audioStream.bitrate}, type: ${audioStream.type || audioStream.mimeType})`
+            );
+
+            // **RETURN IMMEDIATELY**: Don't test with HEAD, let the caching process handle failures
+            console.log(
+              "[AudioStreamManager] Found audio via YouTube Omada formatStreams - returning immediately"
+            );
+            console.log(
+              `[YouTube Omada] formatStreams audio ${i + 1} selected, starting playback immediately`
+            );
+            return audioUrl;
+          }
+        }
+
+        console.log(
+          "[YouTube Omada] All formatStreams audio formats failed - trying video streams"
+        );
+      }
+
+      // Fallback: Try video streams and extract audio
+      if (data.formatStreams && data.formatStreams.length > 0) {
+        console.log(
+          "[YouTube Omada] Trying video streams for audio extraction"
+        );
+
+        // Try video streams sorted by quality (lower quality = smaller file = faster download)
+        const videoStreams = data.formatStreams
+          .filter(
+            (f: any) =>
+              !f.type?.startsWith("audio/") && !f.mimeType?.startsWith("audio/")
+          )
+          .sort((a: any, b: any) => (a.bitrate || 0) - (b.bitrate || 0)); // Lower bitrate first
+
+        for (let i = 0; i < videoStreams.length; i++) {
+          const videoStream = videoStreams[i];
+          if (videoStream.url) {
+            let videoUrl = videoStream.url;
+            if (videoUrl.startsWith("/")) {
+              videoUrl = `${instance}${videoUrl}`;
+            }
+
+            // Check if this is a GoogleVideo URL that needs proxying through Omada
+            if (videoUrl.includes("googlevideo.com")) {
+              // Convert GoogleVideo URL to Omada proxy URL
+              const googlevideoMatch = videoUrl.match(
+                /googlevideo\.com\/videoplayback\?(.+)/
+              );
+              if (googlevideoMatch) {
+                const queryParams = googlevideoMatch[1];
+                videoUrl = `https://yt.omada.cafe/videoplayback?${queryParams}`;
+                console.log(
+                  "[YouTube Omada] Converting video stream GoogleVideo URL to Omada proxy"
+                );
+              }
+            }
+            console.log(
+              `[YouTube Omada] Attempting video stream ${i + 1}/${videoStreams.length} (bitrate: ${videoStream.bitrate}, quality: ${videoStream.quality || "unknown"})`
+            );
+
+            // **SKIP HEAD TEST**: Immediately try to extract audio from video stream
+            console.log(
+              "[YouTube Omada] Attempting to extract audio from video stream immediately"
+            );
+
+            try {
+              // Try to convert video stream to audio-only
+              const audioUrl = await this.convertStreamToMP3(videoUrl, videoId);
+              if (audioUrl) {
+                console.log(
+                  "[YouTube Omada] Successfully extracted audio from video stream"
+                );
+                return audioUrl;
+              }
+            } catch (convertError) {
+              console.log(
+                `[YouTube Omada] Video stream ${i + 1} conversion failed:`,
+                convertError
+              );
+            }
+          }
+        }
+
+        console.log("[YouTube Omada] All video streams failed");
+      }
+
+      throw new Error(
+        "No working audio formats found in YouTube Omada response. All formats failed during conversion."
+      );
+    } catch (error) {
+      console.error("[YouTube Omada] Complete failure details:");
+      console.error(
+        "[YouTube Omada] Error type:",
+        error instanceof Error ? error.constructor.name : typeof error
+      );
+      console.error(
+        "[YouTube Omada] Error message:",
+        error instanceof Error ? error.message : String(error)
+      );
+      if (error instanceof Error && error.stack) {
+        console.error("[YouTube Omada] Stack trace:", error.stack);
+      }
       throw error;
     }
   }
@@ -3091,14 +4225,8 @@ export class AudioStreamManager {
         throw new Error("Not a SoundCloud track ID");
       }
 
-      console.log(`[Audio] Searching for SoundCloud track: ${trackId}`);
-
       // Strategy 1: Try to access the track directly via widget API
       try {
-        console.log(
-          `[Audio] Trying to access track ${trackId} directly via widget API`
-        );
-
         // Add retry logic for better reliability
         let retryCount = 0;
         const maxRetries = 3;
@@ -3106,11 +4234,9 @@ export class AudioStreamManager {
         while (retryCount < maxRetries) {
           try {
             const directUrl = `https://api-widget.soundcloud.com/resolve?url=https://api.soundcloud.com/tracks/${trackId}&client_id=${this.SOUNDCLOUD_CLIENT_ID}&format=json`;
-            console.log(`[Audio] Direct widget URL: ${directUrl}`);
 
             // Use CORS proxy for the API call
             const proxiedDirectUrl = this.getCorsProxyUrl(directUrl);
-            console.log(`[Audio] Using CORS proxy: ${proxiedDirectUrl}`);
 
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -3124,17 +4250,9 @@ export class AudioStreamManager {
             });
 
             clearTimeout(timeoutId);
-            console.log(
-              `[Audio] Direct widget response status: ${directResponse.status}`
-            );
 
             if (directResponse.ok) {
               const trackData = await directResponse.json();
-              console.log(
-                `[Audio] Successfully retrieved track: ${
-                  trackData.title || trackData.id
-                }`
-              );
 
               if (trackData && trackData.media?.transcodings?.length > 0) {
                 console.log(
@@ -3163,7 +4281,6 @@ export class AudioStreamManager {
               }`
             );
             if (retryCount < maxRetries) {
-              console.log(`[Audio] Retrying in ${retryCount * 1000}ms...`);
               await new Promise((resolve) =>
                 setTimeout(resolve, retryCount * 1000)
               );
@@ -3171,23 +4288,16 @@ export class AudioStreamManager {
           }
         }
       } catch (directError) {
-        console.log(
-          `[Audio] Direct widget strategy failed: ${
-            directError instanceof Error ? directError.message : directError
-          }`
-        );
+        // Direct widget strategy failed
       }
 
       // Strategy 2: Try using the SoundCloud widget API directly
       try {
-        console.log("[Audio] Trying widget API directly");
         // Use a proper SoundCloud URL format
         const widgetUrl = `https://api-widget.soundcloud.com/resolve?url=https://api.soundcloud.com/tracks/${trackId}&client_id=${this.SOUNDCLOUD_CLIENT_ID}&format=json`;
-        console.log(`[Audio] Widget URL: ${widgetUrl}`);
 
         // Use CORS proxy for the widget API call
         const proxiedWidgetUrl = this.getCorsProxyUrl(widgetUrl);
-        console.log(`[Audio] Using CORS proxy for widget: ${proxiedWidgetUrl}`);
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -3207,35 +4317,17 @@ export class AudioStreamManager {
 
         if (widgetResponse.ok) {
           const widgetData = await widgetResponse.json();
-          console.log(
-            "[Audio] Widget response data keys:",
-            Object.keys(widgetData)
-          );
           if (widgetData && widgetData.media && widgetData.media.transcodings) {
-            console.log(`[Audio] Found track via widget: ${widgetData.title}`);
             return await this.extractSoundCloudStream(widgetData, controller);
           } else if (widgetData && widgetData.id) {
-            console.log(
-              `[Audio] Found track via widget (no transcodings): ${
-                widgetData.title || widgetData.id
-              }`
-            );
             // Even if no transcodings, we can try to use this data
             return await this.extractSoundCloudStream(widgetData, controller);
           }
         } else {
-          console.log(
-            `[Audio] Widget API failed with status: ${widgetResponse.status}`
-          );
-          const errorText = await widgetResponse.text();
-          console.log(`[Audio] Widget API error: ${errorText}`);
+          // Widget API failed
         }
       } catch (widgetError) {
-        console.log(
-          `[Audio] Widget strategy failed: ${
-            widgetError instanceof Error ? widgetError.message : widgetError
-          }`
-        );
+        // Widget strategy failed
       }
 
       // Strategy 3: Search for the specific track by title and artist
@@ -3244,7 +4336,6 @@ export class AudioStreamManager {
           const searchQuery = [trackTitle, trackArtist]
             .filter(Boolean)
             .join(" ");
-          console.log(`[Audio] Searching for track: "${searchQuery}"`);
 
           const searchUrl = `https://proxy.searchsoundcloud.com/tracks?q=${encodeURIComponent(
             searchQuery
@@ -3263,17 +4354,9 @@ export class AudioStreamManager {
           });
 
           clearTimeout(timeoutId);
-          console.log(
-            `[Audio] Search response status: ${searchResponse.status}`
-          );
 
           if (searchResponse.ok) {
             const searchData = await searchResponse.json();
-            console.log(
-              `[Audio] Search found ${
-                searchData.collection?.length || 0
-              } tracks`
-            );
 
             if (searchData.collection && searchData.collection.length > 0) {
               // Look for exact match by track ID first
@@ -3282,7 +4365,6 @@ export class AudioStreamManager {
               );
 
               if (exactMatch) {
-                console.log(`[Audio] Found exact match: ${exactMatch.title}`);
                 return await this.extractSoundCloudStream(
                   exactMatch,
                   controller
@@ -3306,9 +4388,6 @@ export class AudioStreamManager {
               });
 
               if (titleMatch) {
-                console.log(
-                  `[Audio] Found title/artist match: ${titleMatch.title}`
-                );
                 return await this.extractSoundCloudStream(
                   titleMatch,
                   controller
@@ -3321,9 +4400,6 @@ export class AudioStreamManager {
               );
 
               if (availableTrack) {
-                console.log(
-                  `[Audio] Using first available track: ${availableTrack.title}`
-                );
                 return await this.extractSoundCloudStream(
                   availableTrack,
                   controller
@@ -3341,15 +4417,10 @@ export class AudioStreamManager {
       }
 
       // Strategy 4: Fallback - try to construct a direct stream URL
-      console.log("[Audio] Falling back to direct URL construction");
       const fallbackUrl = `https://api.soundcloud.com/tracks/${trackId}/stream?client_id=${this.SOUNDCLOUD_CLIENT_ID}`;
-      console.log(`[Audio] Fallback URL: ${fallbackUrl}`);
 
       // Test if this URL works using CORS proxy
       const proxiedFallbackUrl = this.getCorsProxyUrl(fallbackUrl);
-      console.log(
-        `[Audio] Using CORS proxy for fallback test: ${proxiedFallbackUrl}`
-      );
 
       try {
         const testResponse = await fetch(proxiedFallbackUrl, {
@@ -3361,15 +4432,10 @@ export class AudioStreamManager {
         });
 
         if (testResponse.ok) {
-          console.log("[Audio] Fallback URL is accessible");
           return fallbackUrl;
         }
       } catch (testError) {
-        console.log(
-          `[Audio] Fallback URL test failed: ${
-            testError instanceof Error ? testError.message : testError
-          }`
-        );
+        // Fallback URL test failed
       }
 
       throw new Error(`Track with ID ${trackId} not found or unavailable`);
@@ -3411,10 +4477,6 @@ export class AudioStreamManager {
       throw new Error("No suitable audio stream found");
     }
 
-    console.log(
-      `[Audio] Found transcoding: ${preferredTranscoding.preset} (${preferredTranscoding.format?.protocol})`
-    );
-
     const transcodingUrl = preferredTranscoding.url;
     const resolveUrl = new URL(transcodingUrl);
 
@@ -3429,7 +4491,6 @@ export class AudioStreamManager {
     }
 
     // Try to resolve the stream URL through the API using CORS proxy
-    console.log(`[Audio] Fetching stream URL from: ${resolveUrl.toString()}`);
     try {
       // Use CORS proxy to resolve the stream URL
       const proxyUrl = this.getCorsProxyUrl(resolveUrl.toString());
@@ -3444,14 +4505,31 @@ export class AudioStreamManager {
       if (streamResponse.ok) {
         const streamData = await streamResponse.json();
         if (streamData.url) {
-          console.log("[Audio] SoundCloud stream URL resolved successfully");
+          // Validate the stream URL before using it
+          const validation = await this.validateAudioStream(streamData.url);
+          if (!validation.isValid) {
+            throw new Error(`Invalid SoundCloud stream: ${validation.error}`);
+          }
+
+          console.log(
+            `[Audio] Stream validated: ${validation.contentType}, ${validation.contentLength} bytes`
+          );
 
           // For SoundCloud, we need to use the CORS proxy for the actual stream too
           // because the resolved URLs often have CORS restrictions
           const proxiedStreamUrl = this.getCorsProxyUrl(streamData.url);
-          console.log(
-            `[Audio] Using CORS proxy for stream: ${proxiedStreamUrl}`
-          );
+
+          // Validate the proxied URL as well
+          const proxiedValidation =
+            await this.validateAudioStream(proxiedStreamUrl);
+          if (!proxiedValidation.isValid) {
+            // Try without proxy if proxied version fails
+            return await this.cacheSoundCloudStream(
+              streamData.url,
+              trackData.id.toString(),
+              controller
+            );
+          }
 
           // Cache the first megabyte of the stream before returning
           return await this.cacheSoundCloudStream(
@@ -3459,24 +4537,60 @@ export class AudioStreamManager {
             trackData.id.toString(),
             controller
           );
+        } else {
+          // No URL in response, try alternative client IDs
+          try {
+            const altStreamUrl = await this.tryAlternativeClientIds(
+              resolveUrl.toString(),
+              trackData,
+              controller
+            );
+
+            if (altStreamUrl) {
+              return await this.cacheSoundCloudStream(
+                altStreamUrl,
+                trackData.id.toString(),
+                controller
+              );
+            }
+          } catch (altError) {
+            // All alternative client IDs failed
+          }
         }
       } else {
         console.warn(
           `[Audio] Failed to resolve stream. Status: ${streamResponse.status}`
         );
+
+        // Try alternative client IDs if primary failed
+        if (streamResponse.status === 401 || streamResponse.status === 403) {
+          try {
+            const altStreamUrl = await this.tryAlternativeClientIds(
+              resolveUrl.toString(),
+              trackData,
+              controller
+            );
+
+            if (altStreamUrl) {
+              return await this.cacheSoundCloudStream(
+                altStreamUrl,
+                trackData.id.toString(),
+                controller
+              );
+            }
+          } catch (altError) {
+            console.error(
+              "[Audio] All alternative client IDs failed after auth failure:",
+              altError
+            );
+          }
+        }
       }
     } catch (streamError) {
-      console.log(
-        `[Audio] Failed to fetch stream URL: ${
-          streamError instanceof Error ? streamError.message : streamError
-        }`
-      );
+      // Failed to fetch stream URL
     }
 
     // Fallback: Try using the widget API to get a working stream
-    console.log(
-      `[Audio] Trying widget API fallback for track: ${trackData.id}`
-    );
     try {
       const widgetUrl = `https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/${trackData.id}`;
       const proxyWidgetUrl = this.getCorsProxyUrl(widgetUrl);
@@ -3497,17 +4611,32 @@ export class AudioStreamManager {
           /\"(https?:\/\/[^\"]*\.mp3[^\"]*)\"/
         );
         if (streamUrlMatch) {
-          console.log(
-            `[Audio] Found stream URL in widget: ${streamUrlMatch[1]}`
-          );
+          // Validate the extracted URL
+          const validation = await this.validateAudioStream(streamUrlMatch[1]);
+          if (!validation.isValid) {
+            throw new Error(`Invalid widget stream: ${validation.error}`);
+          }
 
           // Use CORS proxy for the stream URL too
           const proxiedWidgetStreamUrl = this.getCorsProxyUrl(
             streamUrlMatch[1]
           );
-          console.log(
-            `[Audio] Using CORS proxy for widget stream: ${proxiedWidgetStreamUrl}`
+
+          // Validate the proxied URL
+          const proxiedValidation = await this.validateAudioStream(
+            proxiedWidgetStreamUrl
           );
+          if (!proxiedValidation.isValid) {
+            console.warn(
+              `[Audio] Proxied widget stream validation failed: ${proxiedValidation.error}`
+            );
+            // Try without proxy
+            return await this.cacheSoundCloudStream(
+              streamUrlMatch[1],
+              trackData.id.toString(),
+              controller
+            );
+          }
 
           // Cache the first megabyte of the stream before returning
           return await this.cacheSoundCloudStream(
@@ -3516,17 +4645,38 @@ export class AudioStreamManager {
             controller
           );
         }
+      } else if (
+        widgetResponse.status === 401 ||
+        widgetResponse.status === 403
+      ) {
+        // Try alternative client IDs for widget as well
+        try {
+          // Try to construct a direct API call with alternative client IDs
+          const altStreamUrl = await this.tryAlternativeClientIds(
+            `https://api.soundcloud.com/i1/tracks/${trackData.id}/streams`,
+            trackData,
+            controller
+          );
+
+          if (altStreamUrl) {
+            console.log(
+              "[Audio] Alternative client ID provided stream URL after widget auth failure"
+            );
+            return await this.cacheSoundCloudStream(
+              altStreamUrl,
+              trackData.id.toString(),
+              controller
+            );
+          }
+        } catch (altError) {
+          // Alternative client IDs failed after widget auth failure
+        }
       }
     } catch (widgetError) {
-      console.log(
-        `[Audio] Widget fallback failed: ${
-          widgetError instanceof Error ? widgetError.message : widgetError
-        }`
-      );
+      // Widget fallback failed
     }
 
     // Last resort: return the transcoding URL with CORS proxy
-    console.log("[Audio] Using transcoding URL with CORS proxy as last resort");
 
     // Cache the first megabyte of the stream before returning
     const proxiedUrl = this.getCorsProxyUrl(resolveUrl.toString());
@@ -3538,24 +4688,19 @@ export class AudioStreamManager {
   }
 
   private extractSoundCloudTrackId(videoId: string): string | null {
-    console.log(`[Audio] extractSoundCloudTrackId called with: ${videoId}`);
     // Check if this looks like a SoundCloud track ID (numeric)
     if (/^\d+$/.test(videoId)) {
-      console.log(`[Audio] Found numeric SoundCloud ID: ${videoId}`);
       return videoId;
     }
     // Check if this is a SoundCloud permalink URL and extract track ID
     const soundcloudMatch = videoId.match(/soundcloud\.com\/.*\/.*?(\d+)$/);
     if (soundcloudMatch) {
-      console.log(`[Audio] Found SoundCloud URL ID: ${soundcloudMatch[1]}`);
       return soundcloudMatch[1];
     }
-    console.log(`[Audio] No SoundCloud ID found in: ${videoId}`);
     return null;
   }
 
-  /*
-  // private async tryPiped(videoId: string): Promise<string> {
+  private async tryPiped(videoId: string): Promise<string> {
     try {
       const pipedInstances = [
         "https://pipedapi.kavin.rocks",
@@ -3603,7 +4748,6 @@ export class AudioStreamManager {
       );
     }
   }
-  */
 
   // Helper method to get video info with extended timeout
 
@@ -3633,7 +4777,7 @@ export class AudioStreamManager {
             headers: {
               "User-Agent":
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-              Accept: "application/json, text/html, */*",
+              Accept: "application/json, text/html, *\/\/*",
               "Accept-Language": "en-US,en;q=0.9",
             },
           });
@@ -3731,6 +4875,8 @@ export class AudioStreamManager {
     controller: AbortController,
     onProgress?: (percentage: number) => void
   ): Promise<void> {
+    let resumeFilePath: string;
+
     try {
       console.log(
         `[Audio] Resuming cache download from position ${startPosition} for track: ${trackId}`
@@ -3739,10 +4885,31 @@ export class AudioStreamManager {
       // Mark download as started to indicate active resume operation
       this.markDownloadStarted(trackId, streamUrl);
 
+      // Use our dynamic cache directory instead of extracting from the path
+      const cacheDir = await this.getCacheDirectory();
+      if (!cacheDir) {
+        console.warn(
+          "[Audio] No cache directory available, skipping resume download"
+        );
+        return;
+      }
+
+      console.log(`[Audio] Using cache directory for resume: ${cacheDir}`);
+      // Directory is already tested and created by getCacheDirectory()
+
+      // Ensure cacheFilePath is a proper file:// URI
+      const properCacheFilePath = cacheFilePath.startsWith("file://")
+        ? cacheFilePath
+        : `file://${cacheFilePath}`;
+
+      // Construct the resume file path using our dynamic cache directory
+      resumeFilePath = `${cacheDir}${trackId}.cache.resume`;
+      console.log(`[Audio] Resume download to: ${resumeFilePath}`);
+
       // Try to download the rest of the file starting from the current position
       const resumeResult = await FileSystem.downloadAsync(
         streamUrl,
-        cacheFilePath + ".resume",
+        resumeFilePath,
         {
           headers: {
             Range: `bytes=${startPosition}-`,
@@ -3759,104 +4926,103 @@ export class AudioStreamManager {
         console.log(`[Audio] Resume download successful for track: ${trackId}`);
 
         // Check if the resume file exists and has content
-        const resumeFileInfo = await FileSystem.getInfoAsync(
-          cacheFilePath + ".resume"
-        );
+        const resumeFileInfo = await FileSystem.getInfoAsync(resumeFilePath);
         if (!resumeFileInfo.exists || resumeFileInfo.size === 0) {
           console.warn(
             `[Audio] Resume file is empty or doesn't exist for track: ${trackId}`
           );
           // Clean up resume file if it exists
-          await FileSystem.deleteAsync(cacheFilePath + ".resume", {
+          await FileSystem.deleteAsync(resumeFilePath, {
             idempotent: true,
           });
           return;
         }
 
         try {
-          // Append the resumed content to the existing file
-          const resumedContent = await FileSystem.readAsStringAsync(
-            cacheFilePath + ".resume",
+          // Use a more robust approach: copy the resumed content directly
+          // without trying to read it as Base64/UTF8
+          console.log("[Audio] Attempting binary-safe file combination");
+
+          // Get file info for both files
+          const existingFileInfo =
+            await FileSystem.getInfoAsync(properCacheFilePath);
+          const resumeFileInfo = await FileSystem.getInfoAsync(resumeFilePath);
+
+          if (!existingFileInfo.exists || !resumeFileInfo.exists) {
+            console.warn(
+              "[Audio] One of the files doesn't exist for combination"
+            );
+            return;
+          }
+
+          // Create a temporary combined file
+          const tempCombinedPath = properCacheFilePath + ".combined";
+
+          // First copy the existing file to temp location
+          await FileSystem.copyAsync({
+            from: properCacheFilePath,
+            to: tempCombinedPath,
+          });
+
+          // Then append the resume content using binary-safe approach
+          // Read both files as binary arrays and combine them
+          const existingArray = await FileSystem.readAsStringAsync(
+            tempCombinedPath,
+            { encoding: FileSystem.EncodingType.Base64 }
+          );
+          const resumeArray = await FileSystem.readAsStringAsync(
+            resumeFilePath,
             { encoding: FileSystem.EncodingType.Base64 }
           );
 
-          const existingContent = await FileSystem.readAsStringAsync(
-            cacheFilePath,
-            { encoding: FileSystem.EncodingType.Base64 }
+          // Decode both base64 strings to binary, concatenate, then re-encode
+          const existingBinary = toByteArray(existingArray);
+          const resumeBinary = toByteArray(resumeArray);
+          const combinedBinary = new Uint8Array(
+            existingBinary.length + resumeBinary.length
           );
+          combinedBinary.set(existingBinary);
+          combinedBinary.set(resumeBinary, existingBinary.length);
+          const combinedBase64 = fromByteArray(combinedBinary);
 
-          // Combine the contents
+          // Combine and write back
           await FileSystem.writeAsStringAsync(
-            cacheFilePath,
-            existingContent + resumedContent,
+            tempCombinedPath,
+            combinedBase64,
             { encoding: FileSystem.EncodingType.Base64 }
           );
-        } catch (base64Error) {
-          console.error(
-            `[Audio] Base64 encoding error during resume for track: ${trackId}`,
-            base64Error
-          );
-          // Fallback: Use binary-safe file copying
+
+          // Replace the original file with the combined one
+          await FileSystem.copyAsync({
+            from: tempCombinedPath,
+            to: properCacheFilePath,
+          });
+
+          // Clean up temp files
+          await FileSystem.deleteAsync(tempCombinedPath, {
+            idempotent: true,
+          });
+
+          console.log("[Audio] Successfully combined cache files using Base64");
+        } catch (combinationError) {
+          console.error("[Audio] File combination failed:", combinationError);
+          // Final fallback: just replace the original file with the resumed one
           try {
-            console.log(`[Audio] Attempting binary-safe file combination`);
-
-            // Use copyAsync to append files safely
-            const tempCombinedPath = cacheFilePath + ".combined";
-
-            // First copy the existing file to temp location
             await FileSystem.copyAsync({
-              from: cacheFilePath,
-              to: tempCombinedPath,
+              from: resumeFilePath,
+              to: properCacheFilePath,
             });
-
-            // Then append the resume content using UTF8 encoding (safer than base64)
-            const existingContent = await FileSystem.readAsStringAsync(
-              tempCombinedPath,
-              { encoding: FileSystem.EncodingType.UTF8 }
+            console.log(
+              "[Audio] Fallback: Replaced cache file with resumed content"
             );
-            const resumeContent = await FileSystem.readAsStringAsync(
-              cacheFilePath + ".resume",
-              { encoding: FileSystem.EncodingType.UTF8 }
-            );
-
-            await FileSystem.writeAsStringAsync(
-              tempCombinedPath,
-              existingContent + resumeContent,
-              { encoding: FileSystem.EncodingType.UTF8 }
-            );
-
-            // Replace the original file with the combined one
-            await FileSystem.copyAsync({
-              from: tempCombinedPath,
-              to: cacheFilePath,
-            });
-
-            // Clean up temp files
-            await FileSystem.deleteAsync(tempCombinedPath, {
-              idempotent: true,
-            });
-
-            console.log(`[Audio] Successfully combined cache files using UTF8`);
-          } catch (utf8Error) {
-            console.error(`[Audio] UTF8 combination failed:`, utf8Error);
-            // Final fallback: just replace the original file with the resumed one
-            try {
-              await FileSystem.copyAsync({
-                from: cacheFilePath + ".resume",
-                to: cacheFilePath,
-              });
-              console.log(
-                `[Audio] Fallback: Replaced cache file with resumed content`
-              );
-            } catch (finalError) {
-              console.error(`[Audio] Final fallback failed:`, finalError);
-              throw finalError;
-            }
+          } catch (finalError) {
+            console.error("[Audio] Final fallback failed:", finalError);
+            throw finalError;
           }
         }
 
         // Clean up resume file
-        await FileSystem.deleteAsync(cacheFilePath + ".resume", {
+        await FileSystem.deleteAsync(resumeFilePath, {
           idempotent: true,
         });
 
@@ -3883,9 +5049,22 @@ export class AudioStreamManager {
         `[Audio] Failed to resume cache download for track ${trackId}:`,
         error
       );
+
+      // Check if it's a permission/writability error
+      if (
+        error?.toString().includes("isn't writable") ||
+        error?.toString().includes("Permission denied")
+      ) {
+        console.warn(
+          `[Audio] Cache directory not writable, skipping resume for track ${trackId}`
+        );
+        // Don't retry resume for permission errors - just continue with streaming
+        return;
+      }
+
       // Clean up resume file on error
       try {
-        await FileSystem.deleteAsync(cacheFilePath + ".resume", {
+        await FileSystem.deleteAsync(resumeFilePath, {
           idempotent: true,
         });
       } catch (cleanupError) {
@@ -3920,6 +5099,8 @@ export class AudioStreamManager {
   }
 }
 
+// Export the AudioStreamManager class and utility functions
+
 // Enhanced convenience functions with ytify v8 concepts
 export async function getAudioStreamUrl(
   videoId: string,
@@ -3950,6 +5131,49 @@ export async function prefetchAudioStreamQueue(
   return AudioStreamManager.getInstance().prefetchQueueItems(videoIds);
 }
 
+export async function startProgressiveYouTubeCache(
+  youtubeUrl: string,
+  trackId: string,
+  controller: AbortController
+): Promise<void> {
+  return AudioStreamManager.getInstance().startProgressiveYouTubeCache(
+    youtubeUrl,
+    trackId,
+    controller
+  );
+}
+
+export async function cacheYouTubeStreamFromPosition(
+  youtubeUrl: string,
+  trackId: string,
+  positionSeconds: number,
+  controller: AbortController
+): Promise<string> {
+  return AudioStreamManager.getInstance().cacheYouTubeStreamFromPosition(
+    youtubeUrl,
+    trackId,
+    positionSeconds,
+    controller
+  );
+}
+
+export async function continueCachingTrack(
+  streamUrl: string,
+  trackId: string,
+  controller: AbortController,
+  onProgress?: (percentage: number) => void
+): Promise<void> {
+  return AudioStreamManager.getInstance().continueCachingTrack(
+    streamUrl,
+    trackId,
+    controller,
+    onProgress
+  );
+}
+
+// Track active monitoring instances to prevent duplicates
+const activeMonitors = new Set<string>();
+
 /**
  * Monitor cache progress during playback and resume if stuck
  * This function checks if cache percentage is not increasing and resumes download
@@ -3959,6 +5183,21 @@ export async function monitorAndResumeCache(
   currentAudioUrl: string,
   onProgress?: (percentage: number) => void
 ): Promise<void> {
+  // Prevent multiple monitoring instances for the same track
+  console.log(
+    `[CacheMonitor] Checking if monitoring already active for track: ${trackId}, active tracks: ${Array.from(activeMonitors).join(", ")}`
+  );
+  if (activeMonitors.has(trackId)) {
+    console.log(
+      `[CacheMonitor] Monitoring already active for track: ${trackId}, skipping duplicate`
+    );
+    return;
+  }
+
+  activeMonitors.add(trackId);
+  console.log(
+    `[CacheMonitor] Starting monitoring for track: ${trackId}, total active: ${activeMonitors.size}`
+  );
   const manager = AudioStreamManager.getInstance();
   let lastPercentage = 0;
   let stuckCount = 0;
@@ -3974,9 +5213,9 @@ export async function monitorAndResumeCache(
       const cacheInfo = await manager.getCacheInfo(trackId);
       const currentPercentage = cacheInfo.percentage;
 
-      console.log(
-        `[CacheMonitor] Track ${trackId}: ${currentPercentage}% cached`
-      );
+      // console.log(
+      //   `[CacheMonitor] Track ${trackId}: ${currentPercentage}% cached`
+      // );
       onProgress?.(currentPercentage);
 
       // If there's no active progress but we have substantial partial cache (>=30%), try to resume
@@ -3999,21 +5238,43 @@ export async function monitorAndResumeCache(
             const currentSize = fileInfo.exists ? fileInfo.size : 0;
 
             if (currentSize > 0) {
-              console.log(
-                `[CacheMonitor] Found existing cache file (${currentSize} bytes), resuming download`
-              );
+              // console.log(
+              //   `[CacheMonitor] Found existing cache file (${currentSize} bytes), resuming download`
+              // );
 
               // Resume downloading from the current position
               const resumeController = new AbortController();
-              await manager.resumeCacheDownload(
-                originalStreamUrl,
-                filePath,
-                trackId,
-                currentSize,
-                resumeController,
-                onProgress
-              );
-              return; // Exit early after resuming
+              try {
+                await manager.resumeCacheDownload(
+                  originalStreamUrl,
+                  filePath,
+                  trackId,
+                  currentSize,
+                  resumeController,
+                  onProgress
+                );
+                activeMonitors.delete(trackId);
+                return; // Exit early only if resume succeeds
+              } catch (resumeError: any) {
+                console.error(
+                  `[CacheMonitor] Resume failed for track ${trackId}:`,
+                  resumeError
+                );
+
+                // If it's a permission/writability error, don't try to resume this track
+                if (
+                  resumeError?.toString().includes("isn't writable") ||
+                  resumeError?.toString().includes("Permission denied")
+                ) {
+                  console.warn(
+                    `[CacheMonitor] Cache directory not writable, skipping resume for track ${trackId}`
+                  );
+                  activeMonitors.delete(trackId);
+                  return; // Exit monitoring for this track
+                }
+
+                // For other errors, continue with normal flow (don't return)
+              }
             }
           }
         }
@@ -4035,21 +5296,42 @@ export async function monitorAndResumeCache(
             const currentSize = fileInfo.exists ? fileInfo.size : 0;
 
             if (currentSize > 0) {
-              console.log(
-                `[CacheMonitor] Found existing cache file (${currentSize} bytes), resuming download`
-              );
+              // console.log(
+              //   `[CacheMonitor] Found existing cache file (${currentSize} bytes), resuming download`
+              // );
 
               // Resume downloading from the current position
               const resumeController = new AbortController();
-              await manager.resumeCacheDownload(
-                originalStreamUrl,
-                filePath,
-                trackId,
-                currentSize,
-                resumeController,
-                onProgress
-              );
-              return; // Exit early after resuming
+              try {
+                await manager.resumeCacheDownload(
+                  originalStreamUrl,
+                  filePath,
+                  trackId,
+                  currentSize,
+                  resumeController,
+                  onProgress
+                );
+                return; // Exit early only if resume succeeds
+              } catch (resumeError: any) {
+                console.error(
+                  `[CacheMonitor] Resume failed for track ${trackId}:`,
+                  resumeError
+                );
+
+                // If it's a permission/writability error, don't try to resume this track
+                if (
+                  resumeError?.toString().includes("isn't writable") ||
+                  resumeError?.toString().includes("Permission denied")
+                ) {
+                  console.warn(
+                    `[CacheMonitor] Cache directory not writable, skipping resume for track ${trackId}`
+                  );
+                  activeMonitors.delete(trackId);
+                  return; // Exit monitoring for this track
+                }
+
+                // For other errors, continue with normal flow (don't return)
+              }
             }
           }
         }
@@ -4089,16 +5371,36 @@ export async function monitorAndResumeCache(
               const resumeController = new AbortController();
 
               // Resume downloading from the current position
-              await manager.resumeCacheDownload(
-                originalStreamUrl,
-                filePath,
-                trackId,
-                currentSize,
-                resumeController,
-                onProgress
-              );
+              try {
+                await manager.resumeCacheDownload(
+                  originalStreamUrl,
+                  filePath,
+                  trackId,
+                  currentSize,
+                  resumeController,
+                  onProgress
+                );
+                stuckCount = 0; // Reset stuck counter only if resume succeeds
+              } catch (resumeError: any) {
+                console.error(
+                  `[CacheMonitor] Resume failed for track ${trackId}:`,
+                  resumeError
+                );
 
-              stuckCount = 0; // Reset stuck counter after resuming
+                // If it's a permission/writability error, stop trying to resume this track
+                if (
+                  resumeError?.toString().includes("isn't writable") ||
+                  resumeError?.toString().includes("Permission denied")
+                ) {
+                  console.warn(
+                    `[CacheMonitor] Cache directory not writable, stopping resume attempts for track ${trackId}`
+                  );
+                  return; // Exit monitoring for this track
+                }
+
+                // For other errors, continue monitoring but don't reset stuckCount
+                // This prevents infinite retry loops
+              }
             } else {
               console.warn(
                 `[CacheMonitor] Cannot resume cache - no original streaming URL available for track: ${trackId}`
@@ -4126,6 +5428,8 @@ export async function monitorAndResumeCache(
         console.log(
           `[CacheMonitor] Cache nearly complete (${currentPercentage}%), stopping monitoring`
         );
+        // Clean up monitoring instance
+        activeMonitors.delete(trackId);
       }
     } catch (error) {
       console.error(
@@ -4153,4 +5457,8 @@ export async function cleanupAudioStreamManager(): Promise<void> {
  */
 export async function clearSoundCloudCache(trackId?: string): Promise<void> {
   await AudioStreamManager.getInstance().clearSoundCloudCache(trackId);
+}
+
+export async function clearTrackCache(trackId?: string): Promise<void> {
+  await AudioStreamManager.getInstance().clearTrackCache(trackId);
 }

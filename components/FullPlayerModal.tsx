@@ -1,16 +1,72 @@
+/********************************************************************
+ *  FullPlayerModal.tsx - Modern dark theme player with blurred background
+ *******************************************************************/
 import React, { useState, useEffect } from "react";
-import { Modal, TouchableOpacity, View, Text, Dimensions } from "react-native";
+import {
+  Modal,
+  TouchableOpacity,
+  Dimensions,
+  ActivityIndicator,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import Slider from "@react-native-community/slider";
 import { SliderProps } from "@react-native-community/slider";
 import styled from "styled-components/native";
-import { Ionicons } from "@expo/vector-icons";
+import { FontAwesome6, Ionicons } from "@expo/vector-icons";
 import { Entypo } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
+import { LinearGradient } from "expo-linear-gradient";
 import { usePlayer } from "../contexts/PlayerContext";
 import { formatTime } from "../utils/formatters";
 
-const { width, height } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
 
 const ModalContainer = styled.View`
+  flex: 1;
+  width: 100%;
+  height: 100%;
+`;
+
+const BackgroundContainer = styled.View`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+`;
+
+const BackgroundImage = styled.Image`
+  width: 100%;
+  height: 100%;
+  transform: scale(1.5);
+`;
+
+const BlurOverlay = styled(BlurView)`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+`;
+
+const DarkOverlay = styled.View`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+`;
+
+const GradientOverlay = styled(LinearGradient)`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+`;
+
+const SafeArea = styled(SafeAreaView)`
   flex: 1;
 `;
 
@@ -18,26 +74,32 @@ const Header = styled.View`
   flex-direction: row;
   justify-content: space-between;
   align-items: center;
-  padding: 16px;
+  margin: 16px 0px;
+  padding-horizontal: 28px;
 `;
 
-const HeaderButton = styled.TouchableOpacity`
-  padding: 8px;
+const BackButton = styled.TouchableOpacity`
+  flex-direction: row;
+  align-items: center;
 `;
 
-const Content = styled.View`
-  flex: 1;
-  padding: 32px 24px 0px 24px;
-  justify-content: space-between;
+const BackButtonText = styled.Text`
+  color: #fff;
+  font-size: 16px;
+  margin-left: 8px;
 `;
+
+const MoreButton = styled.TouchableOpacity``;
 
 const AlbumArtWrapper = styled.View`
   position: relative;
-  width: ${width - 48}px;
-  height: ${width - 48}px;
+  width: ${width - 56}px;
+  height: ${width - 56}px;
   border-radius: 12px;
   overflow: hidden;
-  background-color: #444; /* Debug background to see the wrapper */
+  margin-top: 20px;
+  margin-horizontal: 28px;
+  align-self: center;
 `;
 
 const AlbumArt = styled.Image`
@@ -55,13 +117,122 @@ const PlaceholderAlbumArt = styled.View`
   align-items: center;
 `;
 
-const TrackInfo = styled.View`
+const TrackRow = styled.View`
+  flex-direction: row;
   align-items: center;
   margin-top: 32px;
+  padding-horizontal: 28px;
 `;
 
-const AlbumArtContainer = styled.View`
-  align-self: center;
+const AddButton = styled.TouchableOpacity`
+  justify-content: center;
+  align-items: center;
+  padding-left: 40px;
+`;
+
+const TrackInfo = styled.View`
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1;
+`;
+
+const TrackTitle = styled.Text`
+  color: #fff;
+  font-size: 24px;
+  font-weight: 700;
+  text-align: left;
+  margin-right: 8px;
+`;
+
+const TrackArtist = styled.Text`
+  color: #999;
+  font-size: 18px;
+  text-align: left;
+  margin-top: 2px;
+`;
+
+const ProgressContainer = styled.View`
+  margin-top: 24px;
+  padding-horizontal: 28px;
+`;
+
+const ProgressBarContainer = styled.View`
+  width: 100%;
+  height: 4px;
+  justify-content: center;
+`;
+
+const ProgressSlider = React.forwardRef<Slider, SliderProps>((props, ref) => {
+  return (
+    <Slider
+      ref={ref}
+      {...props}
+      style={[{ width: "100%", height: 4 }, props.style]}
+    />
+  );
+});
+ProgressSlider.displayName = "ProgressSlider";
+
+const TimeContainer = styled.View`
+  flex-direction: row;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-horizontal: 0px;
+`;
+
+const TimeText = styled.Text`
+  color: #999;
+  font-size: 12px;
+`;
+
+const Controls = styled.View`
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  margin-top: 20px;
+  width: 100%;
+`;
+
+const ControlButton = styled.TouchableOpacity`
+  padding: 16px;
+  margin: 0 16px;
+`;
+
+const PlayPauseButton = styled.TouchableOpacity`
+  background-color: #fff;
+  border-radius: 32px;
+  padding: 16px;
+  margin: 0 24px;
+`;
+
+const LyricsCard = styled.View`
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 22px;
+  margin-top: 20px;
+  margin-horizontal: 28px;
+  backdrop-filter: blur(10px);
+`;
+
+const LyricsHeader = styled.View`
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+`;
+
+const LyricsTitle = styled.Text`
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+`;
+
+const LyricLine = styled.Text<{ isActive: boolean }>`
+  color: ${(props) => (props.isActive ? "#fff" : "#999")};
+  font-size: 14px;
+  margin-vertical: 4px;
+  opacity: ${(props) => (props.isActive ? 1 : 0.7)};
+  font-weight: ${(props) => (props.isActive ? "600" : "400")};
 `;
 
 const CacheOverlay = styled.View`
@@ -89,69 +260,27 @@ const CacheInfoRow = styled.Text`
   margin-vertical: 2px;
 `;
 
-const TrackTitle = styled.Text`
-  color: #fff;
-  font-size: 24px;
-  font-weight: 700;
-  text-align: center;
-  margin-bottom: 8px;
+const CacheTouchable = styled.TouchableOpacity`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 12px;
 `;
 
-const TrackArtist = styled.Text`
-  color: #999;
-  font-size: 18px;
-  text-align: center;
+const AlbumArtWithOpacity = styled(AlbumArt)<{ showCache: boolean }>`
+  opacity: ${(props) => (props.showCache ? 0.2 : 1)};
 `;
 
-const ProgressContainer = styled.View`
-  margin-top: 32px;
+const PlaceholderAlbumArtWithOpacity = styled(PlaceholderAlbumArt)<{
+  showCache: boolean;
+}>`
+  opacity: ${(props) => (props.showCache ? 0.2 : 1)};
 `;
 
-const ProgressBarContainer = styled.View`
-  width: 100%;
-  height: 4px;
-  justify-content: center;
-`;
-
-const ProgressSlider = React.forwardRef<any, SliderProps>((props, ref) => {
-  return (
-    <Slider
-      ref={ref}
-      {...props}
-      style={[{ width: "100%", height: 4 }, props.style]}
-    />
-  );
-});
-ProgressSlider.displayName = "ProgressSlider";
-
-const TimeContainer = styled.View`
-  flex-direction: row;
-  justify-content: space-between;
-  margin-top: 8px;
-`;
-
-const TimeText = styled.Text`
-  color: #999;
-  font-size: 12px;
-`;
-
-const Controls = styled.View`
-  flex-direction: row;
-  justify-content: center;
-  align-items: center;
-  margin-top: 32px;
-`;
-
-const ControlButton = styled.TouchableOpacity`
-  padding: 16px;
-  margin: 0 8px;
-`;
-
-const PlayPauseButton = styled.TouchableOpacity`
-  background-color: #fff;
-  border-radius: 32px;
-  padding: 16px;
-  margin: 0 16px;
+const Spacer = styled.View<{ size: number }>`
+  height: ${(props) => props.size}px;
 `;
 
 interface FullPlayerModalProps {
@@ -167,16 +296,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     currentTrack,
     isPlaying,
     isLoading,
+    isTransitioning,
     sound,
-    repeatMode,
-    isShuffled,
-    colorTheme,
     playPause,
     nextTrack,
     previousTrack,
     seekTo,
-    setRepeatMode,
-    toggleShuffle,
     toggleLikeSong,
     isSongLiked,
     getCacheInfo,
@@ -196,19 +321,43 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   } | null>(null);
   const [cacheRetryCount, setCacheRetryCount] = useState(0);
   const [showCacheSize, setShowCacheSize] = useState(false);
-  const [isHoldingCover, setIsHoldingCover] = useState(false);
+  const [currentLyricIndex, setCurrentLyricIndex] = useState(0);
 
-  // Debug log for cache info
+  // Sample lyrics data
+  const sampleLyrics = [
+    "Just a young gun with the quick fuse",
+    "I was uptight, wanna let loose",
+    "I was dreaming of bigger things",
+    "And wanna leave my own life behind",
+    "Not a yes sir, not a follower",
+    "Fit the box, fit the mold",
+    "Have a seat in the foyer, take a number",
+    "I was lightning before the thunder",
+    "Thunder, thunder",
+    "Thunder, thun-, thunder",
+    "Thun-thun-thunder, thunder, thunder",
+    "Thunder, thunder, thunder",
+    "Thunder, thun-, thunder",
+    "Thun-thun-thunder, thunder",
+  ];
+
+  // Simulate lyric progression
   useEffect(() => {
-    console.log("[FullPlayerModal] cacheInfo state:", cacheInfo);
-  }, [cacheInfo]);
+    if (isPlaying && currentTrack) {
+      const interval = setInterval(() => {
+        setCurrentLyricIndex((prev) => {
+          const newIndex = (prev + 1) % sampleLyrics.length;
+          return newIndex;
+        });
+      }, 3000); // Change lyric every 3 seconds
+
+      return () => clearInterval(interval);
+    }
+  }, [isPlaying, currentTrack, sampleLyrics.length]);
 
   // Update cache info when cacheProgress changes
   useEffect(() => {
     if (cacheProgress && currentTrack?.id === cacheProgress.trackId) {
-      console.log(
-        `[FullPlayerModal] Cache progress updated: ${cacheProgress.percentage}%`
-      );
       // Update cache info with the new percentage
       setCacheInfo((prev) =>
         prev
@@ -221,44 +370,33 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               fileSize: 0,
               totalFileSize: 0,
               isFullyCached: false,
-            }
+            },
       );
     }
-  }, [cacheProgress?.percentage, currentTrack?.id]);
+  }, [cacheProgress, currentTrack?.id]);
 
-  // Debug log for component render
-  useEffect(() => {
-    console.log(
-      "[FullPlayerModal] Component rendered, currentTrack:",
-      currentTrack?.id
-    );
-  }, [currentTrack?.id]);
-
+  // Track position and duration
   useEffect(() => {
     if (!sound || !currentTrack?.audioUrl) {
-      return; // Don't track position if no sound or track doesn't have audio
+      return;
     }
 
     const updatePosition = async () => {
       try {
-        if (!sound) {
-          return; // Don't try to get position if sound doesn't exist
-        }
         const status = await sound.getStatusAsync();
         if (status.isLoaded) {
           setCurrentPosition(status.positionMillis);
           setDuration(status.durationMillis || 0);
         }
       } catch (error) {
-        // Only log if it's not a "Player does not exist" error (which is expected)
         if (!error?.toString().includes("Player does not exist")) {
-          console.error("Error getting position:", error);
+          // Silently ignore player not existing errors
         }
       }
     };
 
     const interval = setInterval(updatePosition, 1000);
-    updatePosition(); // Initial update
+    updatePosition();
 
     return () => clearInterval(interval);
   }, [sound]);
@@ -272,58 +410,28 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
     const updateCacheInfo = async () => {
       try {
-        console.log(
-          "[FullPlayerModal] Getting cache info for track:",
-          currentTrack.id
-        );
         const info = await getCacheInfo(currentTrack.id);
-        console.log("[FullPlayerModal] Cache info result:", info);
         if (info) {
           setCacheInfo(info);
-          setCacheRetryCount(0); // Reset retry count on successful update
-        } else {
-          // If no cache info, retry a few times
-          if (cacheRetryCount < 3) {
-            setTimeout(() => {
-              setCacheRetryCount((prev) => prev + 1);
-            }, 1000);
-          }
         }
       } catch (error) {
-        console.error("[FullPlayerModal] Error getting cache info:", error);
+        // Silently ignore cache info errors
       }
     };
 
     updateCacheInfo();
-
-    // Update cache info every 5 seconds
-    const cacheInterval = setInterval(updateCacheInfo, 5000);
-
+    const cacheInterval = setInterval(updateCacheInfo, 10000); // Check every 10 seconds
     return () => clearInterval(cacheInterval);
-  }, [currentTrack?.audioUrl, currentTrack?.id, getCacheInfo, cacheRetryCount]);
+  }, [currentTrack?.audioUrl, currentTrack?.id, getCacheInfo]);
 
   const handleSeek = async (value: number) => {
     try {
       if (sound && currentTrack?.audioUrl) {
         await seekTo(value);
-        console.log(
-          `[FullPlayerModal] Seek successful, updating position to: ${value}`
-        );
-      } else {
-        console.warn("[FullPlayerModal] Cannot seek: Player not ready");
       }
-      // Update position visually even if seek fails
-      console.log(`[FullPlayerModal] Updating visual position to: ${value}`);
       setCurrentPosition(value);
     } catch (error) {
-      console.error("[FullPlayerModal] Error seeking:", error);
-      console.log(
-        "[FullPlayerModal] Seek failed - player no longer exists (expected during cleanup)"
-      );
-      // Update position visually even if seek fails
-      console.log(
-        `[FullPlayerModal] Updating visual position to: ${value} (after error)`
-      );
+      // Silently ignore seek errors
       setCurrentPosition(value);
     }
   };
@@ -340,25 +448,10 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     await previousTrack();
   };
 
-  const handleRepeat = () => {
-    const modes: ("off" | "one" | "all")[] = ["off", "one", "all"];
-    const currentIndex = modes.indexOf(repeatMode);
-    const nextMode = modes[(currentIndex + 1) % modes.length];
-    setRepeatMode(nextMode);
-  };
-
-  const handleShuffle = () => {
-    toggleShuffle();
-  };
-
   const handleLike = () => {
     if (currentTrack) {
       toggleLikeSong(currentTrack);
     }
-  };
-
-  const getRepeatIcon = () => {
-    return "repeat" as const;
   };
 
   if (!currentTrack) {
@@ -371,123 +464,113 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       animationType="slide"
       presentationStyle="fullScreen"
       onRequestClose={onClose}
+      statusBarTranslucent={true}
     >
-      <ModalContainer style={{ backgroundColor: colorTheme.background }}>
-        <Header>
-          <HeaderButton onPress={onClose}>
-            <Ionicons name="chevron-down" size={24} color={colorTheme.text} />
-          </HeaderButton>
-          <Text style={{ color: colorTheme.text, opacity: 0.7, fontSize: 14 }}>
-            NOW PLAYING
-          </Text>
-          <HeaderButton onPress={handleLike}>
-            <Entypo
-              name={isSongLiked(currentTrack.id) ? "heart" : "heart-outlined"}
-              size={24}
-              color={
-                isSongLiked(currentTrack.id)
-                  ? colorTheme.primary
-                  : colorTheme.text
-              }
-            />
-          </HeaderButton>
-        </Header>
+      <ModalContainer style={{ backgroundColor: "#000" }}>
+        <BackgroundContainer>
+          <BackgroundImage
+            source={{
+              uri:
+                currentTrack.thumbnail ||
+                "https://placehold.co/400x400/000000/ffffff?text=Music",
+            }}
+            resizeMode="cover"
+            blurRadius={2}
+          />
+          <BlurOverlay intensity={80} tint="dark" />
+          <DarkOverlay />
+          <GradientOverlay
+            colors={[
+              "rgba(0, 0, 0, 0.3)",
+              "rgba(0, 0, 0, 0.8)",
+              "rgba(0, 0, 0, 0.9)",
+            ]}
+            locations={[0, 0.7, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+          />
+        </BackgroundContainer>
+        <SafeArea edges={["top", "bottom"]}>
+          <Header>
+            <BackButton onPress={onClose}>
+              <Ionicons name="chevron-back" size={20} color="#fff" />
+              <BackButtonText>Back</BackButtonText>
+            </BackButton>
+            <MoreButton onPress={() => {}}>
+              <Ionicons name="ellipsis-vertical" size={20} color="#fff" />
+            </MoreButton>
+          </Header>
 
-        <Content>
-          <View>
-            <AlbumArtContainer>
-              {currentTrack.thumbnail ? (
-                <AlbumArtWrapper>
-                  <AlbumArt
-                    source={{ uri: currentTrack.thumbnail }}
-                    style={{ opacity: showCacheSize ? 0.2 : 1 }}
-                  />
-                  {cacheInfo && showCacheSize && (
-                    <CacheOverlay>
-                      <CacheInfoContainer>
+          {/* Content without ScrollView for full screen scrollability */}
+          <>
+            {currentTrack.thumbnail ? (
+              <AlbumArtWrapper>
+                <AlbumArtWithOpacity
+                  source={{ uri: currentTrack.thumbnail }}
+                  showCache={showCacheSize}
+                />
+                {cacheInfo && showCacheSize && (
+                  <CacheOverlay>
+                    <CacheInfoContainer>
+                      <CacheInfoRow>
+                        {cacheInfo.isFullyCached
+                          ? "Cached: 100%"
+                          : `Cached: ${Math.round(cacheInfo.percentage)}%`}
+                      </CacheInfoRow>
+                      {cacheInfo.fileSize > 0 && (
                         <CacheInfoRow>
-                          {cacheInfo.isFullyCached
-                            ? "Cached: 100%"
-                            : `Cached: ${Math.round(cacheInfo.percentage)}%`}
+                          {`Downloaded: ${cacheInfo.fileSize.toFixed(1)}MB`}
                         </CacheInfoRow>
-                        {cacheInfo.fileSize > 0 && (
-                          <CacheInfoRow>
-                            {`Downloaded: ${cacheInfo.fileSize.toFixed(1)}MB`}
-                          </CacheInfoRow>
-                        )}
-                        {cacheInfo.totalFileSize > 0 && (
-                          <CacheInfoRow>
-                            {`Total: ${cacheInfo.totalFileSize.toFixed(1)}MB`}
-                          </CacheInfoRow>
-                        )}
-
-                      </CacheInfoContainer>
-                    </CacheOverlay>
-                  )}
-                  <TouchableOpacity
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                    }}
-                    onPress={() => setShowCacheSize(!showCacheSize)}
-                    activeOpacity={1}
-                  />
-                </AlbumArtWrapper>
-              ) : (
-                <AlbumArtWrapper>
-                  <PlaceholderAlbumArt
-                    style={{ opacity: showCacheSize ? 0.2 : 1 }}
-                  >
-                    <Ionicons
-                      name="musical-notes"
-                      size={80}
-                      color={colorTheme.text + "66"} /* 40% opacity */
-                    />
-                  </PlaceholderAlbumArt>
-                  {cacheInfo && showCacheSize && (
-                    <CacheOverlay>
-                      <CacheInfoContainer>
+                      )}
+                      {cacheInfo.totalFileSize > 0 && (
                         <CacheInfoRow>
-                          {cacheInfo.isFullyCached
-                            ? "Cached: 100%"
-                            : `Cached: ${Math.round(cacheInfo.percentage)}%`}
+                          {`Total: ${cacheInfo.totalFileSize.toFixed(1)}MB`}
                         </CacheInfoRow>
-                        {cacheInfo.fileSize > 0 && (
-                          <CacheInfoRow>
-                            {`Downloaded: ${cacheInfo.fileSize.toFixed(1)}MB`}
-                          </CacheInfoRow>
-                        )}
-                      </CacheInfoContainer>
-                    </CacheOverlay>
-                  )}
-                  <TouchableOpacity
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                    }}
-                    onPress={() => setShowCacheSize(!showCacheSize)}
-                    activeOpacity={1}
-                  />
-                </AlbumArtWrapper>
-              )}
-            </AlbumArtContainer>
+                      )}
+                    </CacheInfoContainer>
+                  </CacheOverlay>
+                )}
+                <CacheTouchable
+                  onPress={() => setShowCacheSize(!showCacheSize)}
+                  activeOpacity={1}
+                />
+              </AlbumArtWrapper>
+            ) : (
+              <AlbumArtWrapper>
+                <PlaceholderAlbumArtWithOpacity showCache={showCacheSize}>
+                  <Ionicons name="musical-notes" size={80} color="#fff" />
+                </PlaceholderAlbumArtWithOpacity>
+                {cacheInfo && showCacheSize && (
+                  <CacheOverlay>
+                    <CacheInfoContainer>
+                      <CacheInfoRow>
+                        {cacheInfo.isFullyCached
+                          ? "Cached: 100%"
+                          : `Cached: ${Math.round(cacheInfo.percentage)}%`}
+                      </CacheInfoRow>
+                    </CacheInfoContainer>
+                  </CacheOverlay>
+                )}
+                <CacheTouchable
+                  onPress={() => setShowCacheSize(!showCacheSize)}
+                  activeOpacity={1}
+                />
+              </AlbumArtWrapper>
+            )}
 
-            <TrackInfo>
-              <TrackTitle numberOfLines={2} style={{ color: colorTheme.text }}>
-                {currentTrack.title}
-              </TrackTitle>
-              {currentTrack.artist && (
-                <TrackArtist style={{ color: colorTheme.text, opacity: 0.7 }}>
-                  {currentTrack.artist}
-                </TrackArtist>
-              )}
-            </TrackInfo>
+            <TrackRow>
+              <TrackInfo>
+                <TrackTitle>{currentTrack.title}</TrackTitle>
+                {currentTrack.artist && (
+                  <TrackArtist>{currentTrack.artist}</TrackArtist>
+                )}
+              </TrackInfo>
+              <AddButton onPress={() => {}}>
+                <FontAwesome6 name="add" size={20} color="white" />
+              </AddButton>
+            </TrackRow>
+
+            <Spacer size={32} />
 
             <ProgressContainer>
               <ProgressBarContainer>
@@ -496,64 +579,75 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   maximumValue={duration}
                   minimumValue={0}
                   onSlidingComplete={handleSeek}
-                  minimumTrackTintColor={colorTheme.primary}
-                  maximumTrackTintColor={
-                    colorTheme.text + "4D"
-                  } /* 30% opacity */
-                  thumbTintColor={colorTheme.primary}
+                  minimumTrackTintColor="#fff"
+                  maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
+                  thumbTintColor="#fff"
                 />
               </ProgressBarContainer>
               <TimeContainer>
-                <TimeText style={{ color: colorTheme.text, opacity: 0.7 }}>
-                  {formatTime(currentPosition)}
-                </TimeText>
-                <TimeText style={{ color: colorTheme.text, opacity: 0.7 }}>
-                  {formatTime(duration)}
-                </TimeText>
+                <TimeText>{formatTime(currentPosition)}</TimeText>
+                <TimeText>{formatTime(duration)}</TimeText>
               </TimeContainer>
             </ProgressContainer>
-          </View>
 
-          {/* Additional Controls Row */}
-          <Controls>
-            <ControlButton onPress={handleShuffle}>
-              <Ionicons
-                name="shuffle"
-                size={20}
-                color={isShuffled ? colorTheme.primary : colorTheme.text}
-              />
-            </ControlButton>
+            <Spacer size={32} />
 
-            <ControlButton onPress={handlePrevious}>
-              <Ionicons name="play-back" size={24} color={colorTheme.text} />
-            </ControlButton>
+            <Controls>
+              <ControlButton onPress={() => {}}>
+                <Ionicons name="share-outline" size={24} color="#fff" />
+              </ControlButton>
 
-            <PlayPauseButton
-              onPress={handlePlayPause}
-              style={{ backgroundColor: colorTheme.primary }}
-            >
-              <Ionicons
-                name={isPlaying ? "pause" : "play"}
-                size={24}
-                color={colorTheme.background}
-              />
-            </PlayPauseButton>
+              <ControlButton onPress={handlePrevious}>
+                <Ionicons name="play-back" size={24} color="#fff" />
+              </ControlButton>
 
-            <ControlButton onPress={handleNext}>
-              <Ionicons name="play-forward" size={24} color={colorTheme.text} />
-            </ControlButton>
+              <PlayPauseButton
+                onPress={handlePlayPause}
+                disabled={isLoading || isTransitioning}
+              >
+                {isLoading || isTransitioning ? (
+                  <ActivityIndicator size="small" color="#000" />
+                ) : (
+                  <Ionicons
+                    name={isPlaying ? "pause" : "play"}
+                    size={24}
+                    color="#000"
+                  />
+                )}
+              </PlayPauseButton>
 
-            <ControlButton onPress={handleRepeat}>
-              <Ionicons
-                name={getRepeatIcon()}
-                size={20}
-                color={
-                  repeatMode !== "off" ? colorTheme.primary : colorTheme.text
-                }
-              />
-            </ControlButton>
-          </Controls>
-        </Content>
+              <ControlButton onPress={handleNext}>
+                <Ionicons name="play-forward" size={24} color="#fff" />
+              </ControlButton>
+
+              <ControlButton onPress={handleLike}>
+                <Entypo
+                  name={
+                    isSongLiked(currentTrack.id) ? "heart" : "heart-outlined"
+                  }
+                  size={24}
+                  color={isSongLiked(currentTrack.id) ? "#ff4757" : "#fff"}
+                />
+              </ControlButton>
+            </Controls>
+
+            <Spacer size={24} />
+
+            <LyricsCard>
+              <LyricsHeader>
+                <LyricsTitle>Lyrics</LyricsTitle>
+                <Ionicons name="chevron-forward" size={16} color="#999" />
+              </LyricsHeader>
+              {sampleLyrics.slice(0, 5).map((line, index) => (
+                <LyricLine key={index} isActive={index === currentLyricIndex}>
+                  {line}
+                </LyricLine>
+              ))}
+            </LyricsCard>
+
+            <Spacer size={100} />
+          </>
+        </SafeArea>
       </ModalContainer>
     </Modal>
   );

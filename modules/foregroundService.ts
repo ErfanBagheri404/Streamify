@@ -39,7 +39,7 @@ export class ForegroundServiceManager {
     } catch (error) {
       console.error(
         "[ForegroundService] Failed to initialize foreground service:",
-        error
+        error,
       );
       throw error;
     }
@@ -61,7 +61,7 @@ export class ForegroundServiceManager {
           try {
             console.log(
               "[ForegroundService] Foreground service task executing",
-              data
+              data,
             );
 
             // Keep audio session active
@@ -76,13 +76,13 @@ export class ForegroundServiceManager {
             if (taskData && taskData.type === "update_notification") {
               await this.updateServiceNotification(
                 taskData.track,
-                taskData.isPlaying
+                taskData.isPlaying,
               );
             }
           } catch (error) {
             console.error("[ForegroundService] Task execution error:", error);
           }
-        }
+        },
       );
     }
 
@@ -94,7 +94,7 @@ export class ForegroundServiceManager {
    */
   public async startForegroundService(
     track: any,
-    isPlaying: boolean
+    isPlaying: boolean,
   ): Promise<void> {
     if (Platform.OS !== "android" || this.isServiceRunning) {
       return;
@@ -127,7 +127,7 @@ export class ForegroundServiceManager {
     } catch (error) {
       console.error(
         "[ForegroundService] Failed to start foreground service:",
-        error
+        error,
       );
       throw error;
     }
@@ -150,7 +150,7 @@ export class ForegroundServiceManager {
     } catch (error) {
       console.error(
         "[ForegroundService] Failed to stop foreground service:",
-        error
+        error,
       );
     }
   }
@@ -160,18 +160,18 @@ export class ForegroundServiceManager {
    */
   private async updateServiceNotification(
     track: any,
-    isPlaying: boolean
+    isPlaying: boolean,
   ): Promise<void> {
     try {
       // This will be handled by the media session manager
       // The foreground service just keeps the app alive
       console.log(
-        `[ForegroundService] Updating service notification: ${track?.title || "Unknown"} - ${isPlaying ? "Playing" : "Paused"}`
+        `[ForegroundService] Updating service notification: ${track?.title || "Unknown"} - ${isPlaying ? "Playing" : "Paused"}`,
       );
     } catch (error) {
       console.error(
         "[ForegroundService] Failed to update service notification:",
-        error
+        error,
       );
     }
   }
@@ -186,7 +186,7 @@ export class ForegroundServiceManager {
     } catch (error) {
       console.error(
         "[ForegroundService] Error keeping audio session active:",
-        error
+        error,
       );
     }
   }

@@ -44,7 +44,7 @@ class MediaSessionManager {
     try {
       // Configure notification handling - disabled since expo-notifications removed
       console.log(
-        "[MediaSession] Notification handling disabled - expo-notifications removed"
+        "[MediaSession] Notification handling disabled - expo-notifications removed",
       );
 
       // Configure audio session for media playback
@@ -55,7 +55,7 @@ class MediaSessionManager {
     } catch (error) {
       console.error(
         "[MediaSession] Failed to initialize media session:",
-        error
+        error,
       );
       throw error;
     }
@@ -98,7 +98,7 @@ class MediaSessionManager {
     try {
       // Update notification functionality removed since expo-notifications is uninstalled
       console.log(
-        "[MediaSession] Media session updated (notifications disabled)"
+        "[MediaSession] Media session updated (notifications disabled)",
       );
     } catch (error) {
       console.error("[MediaSession] Failed to update media session:", error);
@@ -110,7 +110,7 @@ class MediaSessionManager {
    * Update Android media session
    */
   private async updateAndroidMediaSession(
-    config: MediaSessionConfig
+    config: MediaSessionConfig,
   ): Promise<void> {
     if (Platform.OS !== "android") {
       return;
@@ -122,7 +122,7 @@ class MediaSessionManager {
     } catch (error) {
       console.error(
         "[MediaSession] Failed to update Android media session:",
-        error
+        error,
       );
       throw error;
     }
@@ -132,7 +132,7 @@ class MediaSessionManager {
    * Update iOS media session
    */
   private async updateIOSMediaSession(
-    config: MediaSessionConfig
+    config: MediaSessionConfig,
   ): Promise<void> {
     if (Platform.OS !== "ios") {
       return;
@@ -144,7 +144,7 @@ class MediaSessionManager {
     } catch (error) {
       console.error(
         "[MediaSession] Failed to update iOS media session:",
-        error
+        error,
       );
       throw error;
     }
@@ -168,10 +168,10 @@ class MediaSessionManager {
    */
   public async handleNotificationAction(
     action: string,
-    trackId?: string
+    trackId?: string,
   ): Promise<void> {
     console.log(
-      `[MediaSession] Notification action handling disabled: ${action} for track: ${trackId}`
+      `[MediaSession] Notification action handling disabled: ${action} for track: ${trackId}`,
     );
   }
 
@@ -183,7 +183,7 @@ class MediaSessionManager {
       // Notification functionality removed since expo-notifications is uninstalled
       this.currentConfig = null;
       console.log(
-        "[MediaSession] Media session stopped (notifications disabled)"
+        "[MediaSession] Media session stopped (notifications disabled)",
       );
     } catch (error) {
       console.error("[MediaSession] Failed to stop media session:", error);
