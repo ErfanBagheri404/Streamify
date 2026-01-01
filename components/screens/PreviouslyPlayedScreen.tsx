@@ -10,7 +10,11 @@ interface PreviouslyPlayedScreenProps {
 export const PreviouslyPlayedScreen: React.FC<PreviouslyPlayedScreenProps> = ({
   navigation,
 }) => {
+  console.log("[PreviouslyPlayedScreen] Component rendered");
   const { previouslyPlayedSongs } = usePlayer();
+
+  // Use library cover instead of album art for Previously Played
+  const albumArtUrl = ""; // Empty since we're using library cover
   const [isLoading, setIsLoading] = useState(true);
   const [isNavigatingBack, setIsNavigatingBack] = useState(false);
 
@@ -43,7 +47,8 @@ export const PreviouslyPlayedScreen: React.FC<PreviouslyPlayedScreenProps> = ({
       <SafeArea>
         <Playlist
           title="Previously Played"
-          subtitle="Loading..."
+          albumArtUrl={albumArtUrl}
+          libraryCover="previously-played"
           songs={[]}
           onBack={handleGoBack}
           emptyMessage="Loading..."
@@ -57,7 +62,9 @@ export const PreviouslyPlayedScreen: React.FC<PreviouslyPlayedScreenProps> = ({
     <SafeArea>
       <Playlist
         title="Previously Played"
-        subtitle={`${previouslyPlayedSongs.length} songs`}
+        artist={`${previouslyPlayedSongs.length} songs`}
+        albumArtUrl={albumArtUrl}
+        libraryCover="previously-played"
         songs={previouslyPlayedSongs}
         onBack={handleGoBack}
         emptyMessage="No previously played songs"

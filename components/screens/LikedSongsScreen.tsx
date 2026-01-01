@@ -10,7 +10,11 @@ interface LikedSongsScreenProps {
 export const LikedSongsScreen: React.FC<LikedSongsScreenProps> = ({
   navigation,
 }) => {
+  console.log("[LikedSongsScreen] Component rendered");
   const { likedSongs } = usePlayer();
+
+  // Use library cover instead of album art for Liked Songs
+  const albumArtUrl = ""; // Empty since we're using library cover
   const [isLoading, setIsLoading] = useState(true);
   const [isNavigatingBack, setIsNavigatingBack] = useState(false);
 
@@ -43,7 +47,8 @@ export const LikedSongsScreen: React.FC<LikedSongsScreenProps> = ({
       <SafeArea>
         <Playlist
           title="Liked Songs"
-          subtitle="Loading..."
+          albumArtUrl={albumArtUrl}
+          libraryCover="liked"
           songs={[]}
           onBack={handleGoBack}
           emptyMessage="Loading..."
@@ -57,7 +62,9 @@ export const LikedSongsScreen: React.FC<LikedSongsScreenProps> = ({
     <SafeArea>
       <Playlist
         title="Liked Songs"
-        subtitle={`${likedSongs.length} songs`}
+        artist={`${likedSongs.length} songs`}
+        albumArtUrl={albumArtUrl}
+        libraryCover="liked"
         songs={likedSongs}
         onBack={handleGoBack}
         emptyMessage="No liked songs yet"

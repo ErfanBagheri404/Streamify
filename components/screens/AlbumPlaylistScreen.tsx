@@ -12,11 +12,14 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
   navigation,
   route,
 }) => {
+  console.log("[AlbumPlaylistScreen] Component rendered");
   const { playTrack } = usePlayer();
   const [albumSongs, setAlbumSongs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [albumTitle, setAlbumTitle] = useState("");
   const [albumArtist, setAlbumArtist] = useState("");
+  const [albumArtUrl, setAlbumArtUrl] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   const {
     albumId,
@@ -25,7 +28,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
     source,
   } = route.params || {};
 
-  console.log(`[AlbumPlaylistScreen] Received params:`, {
+  console.log("[AlbumPlaylistScreen] Received params:", {
     albumId,
     albumName,
     routeArtist,
@@ -37,14 +40,15 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
   }, [albumId, albumName, source]);
 
   const loadAlbumSongs = async () => {
-    console.log(`[AlbumPlaylistScreen] Loading album songs for:`, {
+    console.log("[AlbumPlaylistScreen] Loading album songs for:", {
       albumId,
       albumName,
       source,
     });
 
     if (!albumId || !albumName) {
-      console.log(`[AlbumPlaylistScreen] Missing required params, aborting`);
+      console.log("[AlbumPlaylistScreen] Missing required params, aborting");
+      setErrorMessage("Missing album information");
       setIsLoading(false);
       return;
     }
@@ -53,11 +57,11 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       setIsLoading(true);
 
       if (source === "jiosaavn") {
-        console.log(`[AlbumPlaylistScreen] Fetching JioSaavn album details`);
+        console.log("[AlbumPlaylistScreen] Fetching JioSaavn album details");
         const { searchAPI } = await import("../../modules/searchAPI");
         const albumDetails = await searchAPI.getJioSaavnAlbumDetails(
           albumId,
-          albumName
+          albumName,
         );
 
         if (
@@ -66,7 +70,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           albumDetails.songs.length > 0
         ) {
           console.log(
-            `[AlbumPlaylistScreen] Found ${albumDetails.songs.length} songs in album`
+            `[AlbumPlaylistScreen] Found ${albumDetails.songs.length} songs in album`,
           );
           const songs = albumDetails.songs.map((song: any) => ({
             id: String(song.id),
@@ -92,6 +96,15 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           setAlbumSongs(songs);
           setAlbumTitle(albumName);
           setAlbumArtist(routeArtist || "Various Artists");
+
+          // Extract album art from the first song or album details
+          const albumArt =
+            albumDetails.image?.find((img: any) => img.quality === "500x500")
+              ?.url ||
+            albumDetails.image?.[0]?.url ||
+            songs[0]?.thumbnail ||
+            "";
+          setAlbumArtUrl(albumArt);
         }
       } else {
         // For other sources, we might need different API calls
@@ -105,6 +118,12 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       setAlbumSongs([]);
       setAlbumTitle(albumName);
       setAlbumArtist(routeArtist || "Unknown Artist");
+      setAlbumArtUrl(""); // Clear album art on error
+      setErrorMessage(
+        error instanceof Error
+          ? `Failed to load album: ${error.message}`
+          : "Failed to load album tracks. This album may not be available or the service is temporarily unavailable.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -126,7 +145,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       <SafeArea>
         <Playlist
           title={albumTitle || "Album"}
-          subtitle="Loading..."
+          albumArtUrl={albumArtUrl}
           songs={[]}
           onBack={handleGoBack}
           emptyMessage="Loading album..."
@@ -136,15 +155,29 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
     );
   }
 
+  if (errorMessage) {
+    return (
+      <SafeArea>
+        <Playlist
+          title={albumTitle || "Album"}
+          artist={albumArtist}
+          albumArtUrl={albumArtUrl}
+          songs={[]}
+          onBack={handleGoBack}
+          emptyMessage={errorMessage}
+          emptySubMessage="Try refreshing or check your internet connection"
+          emptyIcon="error-outline"
+        />
+      </SafeArea>
+    );
+  }
+
   return (
     <SafeArea>
       <Playlist
         title={albumTitle || "Album"}
-        subtitle={
-          albumArtist
-            ? `${albumArtist} • ${albumSongs.length} songs`
-            : `${albumSongs.length} songs`
-        }
+        artist={albumArtist}
+        albumArtUrl={albumArtUrl}
         songs={albumSongs}
         onBack={handleGoBack}
         onPlayAll={handlePlayAll}

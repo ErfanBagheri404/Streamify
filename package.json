@@ -31,6 +31,7 @@
     "expo": "~54.0.27",
     "expo-av": "~16.0.8",
     "expo-background-fetch": "^14.0.9",
+    "expo-blur": "^15.0.8",
     "expo-build-properties": "~1.0.10",
     "expo-constants": "^18.0.12",
     "expo-dev-client": "~6.0.20",

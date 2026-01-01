@@ -195,17 +195,6 @@ export default function SearchScreen({ navigation }: any) {
   const { playTrack } = usePlayer();
 
   useEffect(() => {
-    console.log(
-      `[Search] SearchScreen mounted/updated. Results: ${searchResults.length}, Query: "${searchQuery}"`
-    );
-    return () => {
-      console.log(
-        `[Search] SearchScreen cleanup. Previous results: ${searchResults.length}, Query: "${searchQuery}"`
-      );
-    };
-  }, [searchResults.length, searchQuery]);
-
-  useEffect(() => {
     return () => {
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
@@ -219,14 +208,8 @@ export default function SearchScreen({ navigation }: any) {
   // Restore search results when returning from PlayerScreen
   useEffect(() => {
     const unsubscribe = navigation.addListener("focus", () => {
-      console.log(
-        `[Search] Screen focused - preserving results: ${searchResults.length} items`
-      );
       // Don't clear results when returning from PlayerScreen
       if (searchResults.length === 0 && searchQuery.trim()) {
-        console.log(
-          `[Search] Results empty but query exists: "${searchQuery}", restoring search`
-        );
         handleSearch(searchQuery);
       }
     });
@@ -238,8 +221,8 @@ export default function SearchScreen({ navigation }: any) {
   const [sourceFilters, setSourceFilters] = useState([
     { id: "youtube" as SourceType, label: "YouTube", color: "#ff0000" },
     { id: "soundcloud" as SourceType, label: "SoundCloud", color: "#ff7700" },
-    { id: "spotify" as SourceType, label: "Spotify", color: "#1db954" },
     { id: "jiosaavn" as SourceType, label: "JioSaavn", color: "#1fa18a" },
+    { id: "spotify" as SourceType, label: "Spotify", color: "#1db954" },
   ]);
 
   const [selectedSource, setSelectedSource] = useState<SourceType>("youtube");
@@ -291,20 +274,13 @@ export default function SearchScreen({ navigation }: any) {
   const handleSearch = useCallback(
     async (manualQuery?: string) => {
       const queryToUse = manualQuery || searchQuery;
-      console.log(
-        `[Search] handleSearch called with query: "${queryToUse}" (manual: ${
-          manualQuery || "none"
-        })`
-      );
+
       if (!queryToUse.trim()) {
         return;
       }
 
       // Don't clear results if we're already showing results for the same query
       if (searchResults.length > 0 && searchQuery === queryToUse) {
-        console.log(
-          `[Search] Query unchanged (${queryToUse}), preserving existing results`
-        );
         return;
       }
 
@@ -314,14 +290,8 @@ export default function SearchScreen({ navigation }: any) {
 
       // Only clear results if we're actually changing the search query
       if (searchQuery !== queryToUse || searchResults.length === 0) {
-        console.log(
-          `[Search] Clearing results for new query: "${queryToUse}" (was: "${searchQuery}")`
-        );
         setSearchResults([]);
       } else {
-        console.log(
-          `[Search] Preserving existing results for same query: "${queryToUse}"`
-        );
       }
 
       try {
@@ -365,7 +335,7 @@ export default function SearchScreen({ navigation }: any) {
           // Remove YouTube-specific noise from upload string
           uploaded: r.uploaded?.replace(
             /(\[\d.\]+\['MKB'\]?)\s*views?\s*•?\s*/i,
-            ""
+            "",
           ),
         }));
 
@@ -377,7 +347,7 @@ export default function SearchScreen({ navigation }: any) {
         setIsLoading(false);
       }
     },
-    [searchQuery, selectedFilter, selectedSource]
+    [searchQuery, selectedFilter, selectedSource],
   );
 
   // Auto-trigger search when switching Sources/Filters if we have a query
@@ -393,9 +363,6 @@ export default function SearchScreen({ navigation }: any) {
   }, [selectedSource]);
 
   const handleTextChange = (text: string) => {
-    console.log(
-      `[Search] handleTextChange called with: "${text}" (current: "${searchQuery}")`
-    );
     setSearchQuery(text);
 
     // Clear existing timeouts
@@ -411,7 +378,6 @@ export default function SearchScreen({ navigation }: any) {
       setShowSuggestions(false);
       // Don't clear search results unless the text is completely empty
       if (text.length === 0 && searchResults.length > 0) {
-        console.log("[Search] Clearing search results due to empty query");
         setSearchResults([]);
       }
       return;
@@ -420,17 +386,11 @@ export default function SearchScreen({ navigation }: any) {
     // Debounce suggestions (400ms)
     typingTimeoutRef.current = setTimeout(async () => {
       try {
-        console.log(
-          `[Search] Getting suggestions for: "${text}" from ${selectedSource}`
-        );
         const newSuggestions = await searchAPI.getSuggestions(
           text,
-          selectedSource
+          selectedSource,
         );
-        console.log(
-          `[Search] Received ${newSuggestions.length} suggestions:`,
-          newSuggestions
-        );
+
         setSuggestions(newSuggestions.slice(0, 5));
         setShowSuggestions(true);
       } catch (e) {
@@ -441,22 +401,21 @@ export default function SearchScreen({ navigation }: any) {
     // Debounce search separately (1000ms - longer delay for actual search)
     searchTimeoutRef.current = setTimeout(() => {
       if (text.trim().length >= 2) {
-        console.log(`[Search] Auto-searching ${selectedSource} for: "${text}"`);
         handleSearch(text);
       }
     }, 1000); // 1 second delay for search
   };
 
   const handleSourceSelect = useCallback((sourceId: SourceType) => {
-    console.log(`[Search] Source selected: ${sourceId}`);
-
     // Configure layout animation for smooth reordering
     // Layout animation is handled by React Native's built-in animations
 
     // Reorder sources - move selected to first position
     setSourceFilters((prevFilters) => {
       const selectedFilter = prevFilters.find((f) => f.id === sourceId);
-      if (!selectedFilter) return prevFilters;
+      if (!selectedFilter) {
+        return prevFilters;
+      }
 
       const otherFilters = prevFilters.filter((f) => f.id !== sourceId);
       return [selectedFilter, ...otherFilters];
@@ -469,22 +428,15 @@ export default function SearchScreen({ navigation }: any) {
   const handleJioSaavnAlbumSong = useCallback(
     async (item: any) => {
       if (!item.albumId || !item.albumName) {
-        console.log(
-          `[Search] JioSaavn song has no album info, playing directly: ${item.title}`
-        );
         return false; // Play directly
       }
-
-      console.log(
-        `[Search] Opening JioSaavn album playlist: ${item.albumName} (${item.albumId})`
-      );
 
       try {
         // Fetch album details to get all songs
         const { searchAPI } = await import("../../modules/searchAPI");
         const albumDetails = await searchAPI.getJioSaavnAlbumDetails(
           item.albumId,
-          item.albumName
+          item.albumName,
         );
 
         if (
@@ -492,10 +444,6 @@ export default function SearchScreen({ navigation }: any) {
           albumDetails.songs &&
           albumDetails.songs.length > 0
         ) {
-          console.log(
-            `[Search] Found ${albumDetails.songs.length} songs in album`
-          );
-
           // Create playlist from album songs
           const albumPlaylist = albumDetails.songs.map((song: any) => ({
             id: String(song.id),
@@ -519,13 +467,11 @@ export default function SearchScreen({ navigation }: any) {
 
           // Find the index of the selected song in the album
           const selectedIndex = albumPlaylist.findIndex(
-            (song: any) => song.id === item.id
+            (song: any) => song.id === item.id,
           );
 
           // Open the album playlist without auto-playing
-          console.log(
-            `[Search] Opening album playlist at index ${selectedIndex}`
-          );
+
           navigation.navigate("PlayerScreen", {
             playlist: albumPlaylist,
             currentIndex: selectedIndex,
@@ -535,13 +481,11 @@ export default function SearchScreen({ navigation }: any) {
 
           return true; // Album playlist opened
         }
-      } catch (error) {
-        console.error(`[Search] Error opening JioSaavn album:`, error);
-      }
+      } catch (error) {}
 
       return false; // Fallback to direct play
     },
-    [navigation]
+    [navigation],
   );
 
   const onSuggestionPress = (item: string) => {
@@ -594,7 +538,6 @@ export default function SearchScreen({ navigation }: any) {
                 onPress={() => {
                   // Disable Spotify for now
                   if (source.id === "spotify") {
-                    console.log("[Search] Spotify is currently disabled");
                     return;
                   }
                   handleSourceSelect(source.id);
@@ -665,16 +608,6 @@ export default function SearchScreen({ navigation }: any) {
             <>
               {/* Debug: Show what we found */}
               {(() => {
-                console.log(
-                  `[Search] Search results:`,
-                  searchResults.map((item) => ({
-                    title: item.title,
-                    type: item.type,
-                    source: item.source,
-                    albumId: item.albumId,
-                    id: item.id,
-                  }))
-                );
                 return null;
               })()}
 
@@ -717,7 +650,7 @@ export default function SearchScreen({ navigation }: any) {
                               _isSoundCloud: result.source === "soundcloud",
                               _isJioSaavn: result.source === "jiosaavn",
                             })),
-                            searchResults.indexOf(item)
+                            searchResults.indexOf(item),
                           );
                         }}
                       >
@@ -727,7 +660,7 @@ export default function SearchScreen({ navigation }: any) {
                           author={item.author}
                           duration={formatDuration(
                             parseInt(item.duration) || 0,
-                            item.source
+                            item.source,
                           )}
                           views={
                             item.source === "jiosaavn" ? undefined : item.views
@@ -751,7 +684,9 @@ export default function SearchScreen({ navigation }: any) {
                   {searchResults
                     .filter((item) => {
                       // Additional filtering for collaborations
-                      if (item.type !== "artist") return false;
+                      if (item.type !== "artist") {
+                        return false;
+                      }
 
                       // Skip collaboration artists for individual searches
                       const isSearchingForIndividualArtist =
@@ -781,42 +716,24 @@ export default function SearchScreen({ navigation }: any) {
                       const bIsExact =
                         b.title.toLowerCase().trim() === queryLower;
 
-                      if (aIsExact && !bIsExact) return -1;
-                      if (!aIsExact && bIsExact) return 1;
+                      if (aIsExact && !bIsExact) {
+                        return -1;
+                      }
+                      if (!aIsExact && bIsExact) {
+                        return 1;
+                      }
                       return 0;
                     })
                     .map((item, index) => (
                       <TouchableOpacity
                         key={`artist-${item.source || "yt"}-${item.id}`}
-                        onPress={async () => {
-                          // Play track using player context
-                          const track = {
-                            id: item.id,
-                            title: item.title,
-                            artist: item.author,
-                            duration: parseInt(item.duration) || 0,
-                            thumbnail: item.thumbnailUrl || item.img,
-                            audioUrl: undefined,
-                            source: item.source || "youtube",
-                            _isSoundCloud: item.source === "soundcloud",
-                            _isJioSaavn: item.source === "jiosaavn",
-                          };
+                        onPress={() => {
+                          // Navigate to artist page
 
-                          await playTrack(
-                            track,
-                            searchResults.map((result: any) => ({
-                              id: result.id,
-                              title: result.title,
-                              artist: result.author,
-                              duration: parseInt(result.duration) || 0,
-                              thumbnail: result.thumbnailUrl || result.img,
-                              audioUrl: undefined,
-                              source: result.source || "youtube",
-                              _isSoundCloud: result.source === "soundcloud",
-                              _isJioSaavn: result.source === "jiosaavn",
-                            })),
-                            searchResults.indexOf(item)
-                          );
+                          navigation.navigate("Artist", {
+                            artistId: item.id,
+                            artistName: item.title,
+                          });
                         }}
                       >
                         <StreamItem
@@ -825,7 +742,7 @@ export default function SearchScreen({ navigation }: any) {
                           author={item.author}
                           duration={formatDuration(
                             parseInt(item.duration) || 0,
-                            item.source
+                            item.source,
                           )}
                           views={
                             item.source === "jiosaavn" ? undefined : item.views
@@ -854,9 +771,6 @@ export default function SearchScreen({ navigation }: any) {
                         onPress={async () => {
                           // Navigate to album playlist screen
                           if (item.source === "jiosaavn") {
-                            console.log(
-                              `[Search] Opening album playlist: ${item.title} (ID: ${item.id}, Artist: ${item.author})`
-                            );
                             navigation.navigate("AlbumPlaylist", {
                               albumId: item.id,
                               albumName: item.title,
@@ -864,9 +778,6 @@ export default function SearchScreen({ navigation }: any) {
                               source: item.source,
                             });
                           } else {
-                            console.log(
-                              `[Search] Album ${item.title} is not JioSaavn, skipping navigation`
-                            );
                           }
                         }}
                       >
@@ -876,7 +787,7 @@ export default function SearchScreen({ navigation }: any) {
                           author={item.author}
                           duration={formatDuration(
                             parseInt(item.duration) || 0,
-                            item.source
+                            item.source,
                           )}
                           views={
                             item.source === "jiosaavn" ? undefined : item.views
@@ -894,16 +805,19 @@ export default function SearchScreen({ navigation }: any) {
 
               {/* Songs Section */}
               {searchResults.filter(
-                (item) => !item.type || item.type === "song"
+                (item) => !item.type || item.type === "song",
               ).length > 0 && (
                 <SectionContainer>
                   <SectionTitle>Songs</SectionTitle>
                   {searchResults
                     .filter((item) => {
                       // Filter songs by type first
-                      if (item.type && item.type !== "song") return false;
-                      if (item.type === undefined && item.type !== undefined)
+                      if (item.type && item.type !== "song") {
                         return false;
+                      }
+                      if (item.type === undefined && item.type !== undefined) {
+                        return false;
+                      }
 
                       // Skip collaboration songs for individual artist searches
                       const isSearchingForIndividualArtist =
@@ -931,9 +845,6 @@ export default function SearchScreen({ navigation }: any) {
                         onPress={async () => {
                           // Handle JioSaavn album songs
                           if (item.source === "jiosaavn" && item.albumId) {
-                            console.log(
-                              `[Search] Checking JioSaavn song for album: ${item.title}`
-                            );
                             const albumOpened =
                               await handleJioSaavnAlbumSong(item);
                             if (albumOpened) {
@@ -942,9 +853,6 @@ export default function SearchScreen({ navigation }: any) {
                           }
 
                           // Play track using player context
-                          console.log(
-                            `[Search] Playing track: ${item.title} (${item.id})`
-                          );
 
                           // Format track data for player context
                           const track = {
@@ -972,7 +880,7 @@ export default function SearchScreen({ navigation }: any) {
                               _isSoundCloud: result.source === "soundcloud",
                               _isJioSaavn: result.source === "jiosaavn",
                             })),
-                            searchResults.indexOf(item)
+                            searchResults.indexOf(item),
                           );
                         }}
                       >
@@ -982,7 +890,7 @@ export default function SearchScreen({ navigation }: any) {
                           author={item.author}
                           duration={formatDuration(
                             parseInt(item.duration) || 0,
-                            item.source
+                            item.source,
                           )}
                           views={
                             item.source === "jiosaavn" ? undefined : item.views

@@ -15,6 +15,7 @@
           "android": {
             "compileSdkVersion": 35,
             "targetSdkVersion": 35,
+            "abiFilters": ["armeabi-v7a", "arm64-v8a", "x86", "x86_64"],
             "foregroundService": {
               "serviceType": "mediaPlayback",
               "notificationTitle": "Streamify is playing",
@@ -36,7 +37,7 @@
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FFFFFF"
+        "backgroundColor": "#000000"
       }
     },
     "extra": {
