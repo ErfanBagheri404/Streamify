@@ -104,6 +104,15 @@ jobs:
       # ----------------------------------------------------------
       #  PRODUCTION build (standalone, offline, no Metro required)
       # ----------------------------------------------------------
+
+
+      - name: 🔐 Check Android secrets
+        run: |
+          [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ] && echo "✅ Keystore present" || echo "❌ Keystore missing"
+          [ -n "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" ] && echo "✅ Store pwd present" || echo "❌ Store pwd missing"
+          [ -n "${{ secrets.ANDROID_KEY_ALIAS }}" ] && echo "✅ Alias present" || echo "❌ Alias missing"
+          [ -n "${{ secrets.ANDROID_KEY_PASSWORD }}" ] && echo "✅ Key pwd present" || echo "❌ Key pwd missing"
+
       - name: 📱 Build Production APK
         if: github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push'
         run: |
