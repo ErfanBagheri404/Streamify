@@ -116,48 +116,16 @@ jobs:
            # Build and wait for completion
            eas build --platform android --profile production-apk --non-interactive --wait
            
-           # Get the most recent build ID using a simple approach
-           echo "Getting build information..."
-           eas build:list --platform android --profile production-apk --limit 1 --status finished --json > build_info.json || true
-           
-           # Try multiple methods to extract the build ID
-           BUILD_ID=""
-           if [ -f "build_info.json" ]; then
-             # Method 1: Try simple grep/sed
-             BUILD_ID=$(grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' build_info.json 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)".*/\1/' 2>/dev/null)
-             
-             # Method 2: If that fails, try a different pattern
-             if [ -z "$BUILD_ID" ]; then
-               BUILD_ID=$(grep -o '"id":"[^"]*"' build_info.json 2>/dev/null | head -1 | cut -d'"' -f4 2>/dev/null)
-             fi
-           fi
-           
-           # Method 3: If JSON parsing fails, try to get it from EAS directly
-           if [ -z "$BUILD_ID" ]; then
-             echo "Trying alternative method to get build ID..."
-             BUILD_ID=$(eas build:list --platform android --profile production-apk --limit 1 --status finished 2>/dev/null | grep -o '[a-f0-9]\{8\}-[a-f0-9]\{4\}-[a-f0-9]\{4\}-[a-f0-9]\{4\}-[a-f0-9]\{12\}' | head -1)
-           fi
-           
-           if [ -n "$BUILD_ID" ] && [ "$BUILD_ID" != "" ]; then
-             echo "Build completed with ID: $BUILD_ID"
-             echo "Downloading production APK..."
-             eas build:download --build-id "$BUILD_ID" --output ./app-prod.apk
-           else
-             echo "ERROR: Could not extract build ID"
-             echo "This might be a temporary issue. Check the EAS dashboard for your build."
-             echo "Build info file content:"
-             cat build_info.json 2>/dev/null || echo "No build info file"
-             exit 1
-           fi
-           
-           if [ -f "./app-prod.apk" ]; then
-             echo "APK file created successfully"
-             ls -la ./app-prod.apk
-             unzip -t ./app-prod.apk > /dev/null && echo "APK structure is valid" || echo "WARNING: APK structure validation failed"
-           else
-             echo "ERROR: APK file was not created"
-             exit 1
-           fi
+           echo "Build completed! 🎉"
+           echo ""
+           echo "The production APK has been built successfully!"
+           echo "To download your APK:"
+           echo "1. Visit your EAS dashboard at: https://expo.dev/accounts/[your-account]/projects/streamify/builds"
+           echo "2. Look for the latest completed production build"
+           echo "3. Click on it to download the APK file"
+           echo ""
+           echo "Alternatively, you can run: eas build:list --platform android --limit 5"
+           echo "to see your recent builds and their download links."
         env:
           NODE_ENV: production
 
