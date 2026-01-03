@@ -15,7 +15,7 @@ const MiniPlayerContainer = styled.View<{ bottomPosition: number }>`
   height: 64px;
   flex-direction: row;
   align-items: center;
-  padding: 0 16px;
+  padding: 10px 10px;
   elevation: 10;
   shadow-color: #000;
   shadow-offset: 0px -2px;
@@ -51,6 +51,10 @@ const ControlsContainer = styled.View`
 const ControlButton = styled.TouchableOpacity`
   padding: 8px;
   margin-left: 8px;
+  width: 40px;
+  height: 40px;
+  justify-content: center;
+  align-items: center;
 `;
 
 const Thumbnail = styled.Image`
@@ -89,8 +93,13 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
     previousTrack,
   } = usePlayer();
 
-  // Set bottom position: 65px when not on playlist screen, 15px when on playlist screen
-  const playlistScreens = ["AlbumPlaylist", "LikedSongs", "PreviouslyPlayed"];
+  // Set bottom position: 65px when not on playlist screen, 15px when on playlist screen or artist screen
+  const playlistScreens = [
+    "AlbumPlaylist",
+    "LikedSongs",
+    "PreviouslyPlayed",
+    "Artist",
+  ];
   const targetBottomPosition = playlistScreens.includes(currentScreen)
     ? 15
     : 65;
@@ -189,7 +198,11 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
           disabled={isLoading || isTransitioning}
         >
           {isLoading || isTransitioning ? (
-            <ActivityIndicator size="small" color={colorTheme.text} />
+            <ActivityIndicator
+              size="small"
+              color={colorTheme.text}
+              style={{ width: 24, height: 24 }}
+            />
           ) : (
             <Ionicons
               name={isPlaying ? "pause" : "play"}

@@ -50,7 +50,7 @@ const HeaderContent = styled.View`
 
 const BackButton = styled.TouchableOpacity`
   position: absolute;
-  top: 50px;
+  top: 20px;
   left: 16px;
   width: 40px;
   height: 40px;
@@ -316,7 +316,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
       // Fetch artist info
       const artistResponse = await fetch(
-        `https://lowkey-backend.vercel.app/api/artists/${artistId}`,
+        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}`,
       );
       const artistInfo = await artistResponse.json();
       console.log("Artist info API response:", artistInfo);
@@ -329,7 +329,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
       // Fetch artist songs
       const songsResponse = await fetch(
-        `https://lowkey-backend.vercel.app/api/artists/${artistId}/songs?page=0`,
+        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}/songs?page=0`,
       );
       let songsData;
       try {
@@ -342,7 +342,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
       // Fetch artist albums
       const albumsResponse = await fetch(
-        `https://lowkey-backend.vercel.app/api/artists/${artistId}/albums?page=0`,
+        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}/albums?page=0`,
       );
       let albumsData;
       try {

@@ -5,7 +5,8 @@
     "scheme": "streamify",
     "sdkVersion": "54.0.0",
     "orientation": "portrait",
-    "platforms": ["ios", "android"],
+    "icon": "./assets/StreamifyLogo2.png",
+    "platforms": ["android"],
     "plugins": [
       "expo-font",
       "expo-task-manager",
@@ -36,7 +37,7 @@
       ],
       "versionCode": 1,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/StreamifyLogo2.png",
         "backgroundColor": "#000000"
       }
     },

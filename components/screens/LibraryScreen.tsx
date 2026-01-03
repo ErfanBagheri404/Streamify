@@ -218,7 +218,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       <Screen>
         <Header>
           <HeaderLeft>
-            <Avatar source={require("../../assets/logo512.png")} />
+            <Avatar source={require("../../assets/StreamifyLogo.png")} />
             <HeaderTitle>Your Library</HeaderTitle>
           </HeaderLeft>
           <HeaderActions>
