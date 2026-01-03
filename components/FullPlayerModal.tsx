@@ -124,7 +124,7 @@ const TrackRow = styled.View`
   padding-horizontal: 28px;
 `;
 
-const AddButton = styled.TouchableOpacity`
+const LikeButton = styled.TouchableOpacity`
   justify-content: center;
   align-items: center;
   padding-left: 40px;
@@ -190,12 +190,26 @@ const Controls = styled.View`
   justify-content: center;
   align-items: center;
   margin-top: 20px;
+  padding-horizontal: 28px;
   width: 100%;
 `;
 
 const ControlButton = styled.TouchableOpacity`
   padding: 16px;
   margin: 0 16px;
+  position: relative;
+`;
+
+const RepeatNumber = styled.Text`
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: bold;
+  color: #a3e635;
+  background-color: rgba(0, 0, 0, 0.7);
+  padding: 2px 4px;
+  border-radius: 4px;
 `;
 
 const PlayPauseButton = styled.TouchableOpacity`
@@ -203,6 +217,10 @@ const PlayPauseButton = styled.TouchableOpacity`
   border-radius: 32px;
   padding: 16px;
   margin: 0 24px;
+  width: 56px;
+  height: 56px;
+  justify-content: center;
+  align-items: center;
 `;
 
 const LyricsCard = styled.View`
@@ -294,6 +312,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 }) => {
   const {
     currentTrack,
+    playlist,
+    currentIndex,
     isPlaying,
     isLoading,
     isTransitioning,
@@ -306,6 +326,10 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     isSongLiked,
     getCacheInfo,
     cacheProgress,
+    repeatMode,
+    setRepeatMode,
+    isShuffled,
+    toggleShuffle,
   } = usePlayer();
 
   const [currentPosition, setCurrentPosition] = useState(0);
@@ -370,10 +394,16 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               fileSize: 0,
               totalFileSize: 0,
               isFullyCached: false,
-            },
+            }
       );
     }
   }, [cacheProgress, currentTrack?.id]);
+
+  // Reset position when track changes
+  useEffect(() => {
+    setCurrentPosition(0);
+    setDuration(0);
+  }, [currentTrack?.id]);
 
   // Track position and duration
   useEffect(() => {
@@ -399,7 +429,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     updatePosition();
 
     return () => clearInterval(interval);
-  }, [sound]);
+  }, [sound, currentTrack?.id]); // Reset when track changes
 
   // Cache info update effect
   useEffect(() => {
@@ -441,10 +471,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   };
 
   const handleNext = async () => {
+    console.log("[FullPlayerModal] Next button pressed");
     await nextTrack();
   };
 
   const handlePrevious = async () => {
+    console.log("[FullPlayerModal] Previous button pressed");
     await previousTrack();
   };
 
@@ -475,9 +507,9 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 "https://placehold.co/400x400/000000/ffffff?text=Music",
             }}
             resizeMode="cover"
-            blurRadius={2}
+            blurRadius={4}
           />
-          <BlurOverlay intensity={80} tint="dark" />
+          <BlurOverlay intensity={10} tint="dark" />
           <DarkOverlay />
           <GradientOverlay
             colors={[
@@ -565,9 +597,16 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   <TrackArtist>{currentTrack.artist}</TrackArtist>
                 )}
               </TrackInfo>
-              <AddButton onPress={() => {}}>
-                <FontAwesome6 name="add" size={20} color="white" />
-              </AddButton>
+
+              <LikeButton onPress={handleLike}>
+                <Entypo
+                  name={
+                    isSongLiked(currentTrack.id) ? "heart" : "heart-outlined"
+                  }
+                  size={24}
+                  color={isSongLiked(currentTrack.id) ? "#ff4757" : "#fff"}
+                />
+              </LikeButton>
             </TrackRow>
 
             <Spacer size={32} />
@@ -593,8 +632,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
             <Spacer size={32} />
 
             <Controls>
-              <ControlButton onPress={() => {}}>
-                <Ionicons name="share-outline" size={24} color="#fff" />
+              <ControlButton onPress={toggleShuffle}>
+                <Ionicons
+                  name="shuffle"
+                  size={24}
+                  color={isShuffled ? "#a3e635" : "#fff"}
+                />
               </ControlButton>
 
               <ControlButton onPress={handlePrevious}>
@@ -606,7 +649,11 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 disabled={isLoading || isTransitioning}
               >
                 {isLoading || isTransitioning ? (
-                  <ActivityIndicator size="small" color="#000" />
+                  <ActivityIndicator
+                    size="small"
+                    color="#000"
+                    style={{ width: 24, height: 24 }}
+                  />
                 ) : (
                   <Ionicons
                     name={isPlaying ? "pause" : "play"}
@@ -620,14 +667,24 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 <Ionicons name="play-forward" size={24} color="#fff" />
               </ControlButton>
 
-              <ControlButton onPress={handleLike}>
-                <Entypo
-                  name={
-                    isSongLiked(currentTrack.id) ? "heart" : "heart-outlined"
+              <ControlButton
+                onPress={() => {
+                  // Cycle through repeat modes: off -> all -> one -> off
+                  if (repeatMode === "off") {
+                    setRepeatMode("all");
+                  } else if (repeatMode === "all") {
+                    setRepeatMode("one");
+                  } else {
+                    setRepeatMode("off");
                   }
+                }}
+              >
+                <Ionicons
+                  name={repeatMode === "off" ? "repeat-outline" : "repeat"}
                   size={24}
-                  color={isSongLiked(currentTrack.id) ? "#ff4757" : "#fff"}
+                  color={repeatMode === "off" ? "#fff" : "#a3e635"}
                 />
+                {repeatMode === "one" && <RepeatNumber>1</RepeatNumber>}
               </ControlButton>
             </Controls>
 

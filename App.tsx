@@ -1,5 +1,5 @@
 import "react-native-gesture-handler";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts } from "expo-font";
+// import { LoadingScreen } from "./components/LoadingScreen";
 
 // Expo vector-icons
 import { Ionicons } from "@expo/vector-icons";
@@ -346,7 +347,15 @@ export default function App() {
   const [fontsLoaded] = useFonts({
     GoogleSansRegular: require("./assets/fonts/GoogleSansRegular.ttf"),
   });
+  // const [showLoadingScreen, setShowLoadingScreen] = useState(true);
+  // const [isLoadingComplete, setIsLoadingComplete] = useState(false);
 
+  // Handle loading screen completion
+  // const handleLoadingComplete = () => {
+  //   setIsLoadingComplete(true);
+  // };
+
+  // Apply font styles when fonts are loaded
   if (fontsLoaded) {
     const TextAny: any = Text;
     const TextInputAny: any = TextInput;
@@ -369,6 +378,28 @@ export default function App() {
     ].filter(Boolean);
   }
 
+  // Show loading screen initially
+  // if (showLoadingScreen && !isLoadingComplete) {
+  //   return (
+  //     <>
+  //       <StatusBar
+  //         barStyle="light-content"
+  //         backgroundColor="transparent"
+  //         translucent={true}
+  //       />
+  //       <LoadingScreen onLoadingComplete={handleLoadingComplete} />
+  //     </>
+  //   );
+  // }
+
+  // Hide loading screen after it's complete
+  // useEffect(() => {
+  //   if (isLoadingComplete) {
+  //     setShowLoadingScreen(false);
+  //   }
+  // }, [isLoadingComplete]);
+
+  // Show app content when fonts are loaded
   if (!fontsLoaded) {
     return null;
   }

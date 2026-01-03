@@ -8,32 +8,40 @@ import { usePlayer } from "../../contexts/PlayerContext";
 
 // API endpoints for your Lowkey Backend
 const CATEGORY_APIS = {
-  indie: "https://lowkey-backend.vercel.app/api/search/playlists?query=indie",
-  edm: "https://lowkey-backend.vercel.app/api/search/playlists?query=edm",
-  metal: "https://lowkey-backend.vercel.app/api/search/playlists?query=metal",
-  punk: "https://lowkey-backend.vercel.app/api/search/playlists?query=punk",
-  party: "https://lowkey-backend.vercel.app/api/search/playlists?query=party",
-  jazz: "https://lowkey-backend.vercel.app/api/search/playlists?query=jazz",
-  love: "https://lowkey-backend.vercel.app/api/search/playlists?query=love",
-  rap: "https://lowkey-backend.vercel.app/api/search/playlists?query=rap",
+  indie:
+    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=indie",
+  edm: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=edm",
+  metal:
+    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=metal",
+  punk: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=punk",
+  party:
+    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=party",
+  jazz: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=jazz",
+  love: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=love",
+  rap: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=rap",
   workout:
-    "https://lowkey-backend.vercel.app/api/search/playlists?query=workout",
-  pop: "https://lowkey-backend.vercel.app/api/search/playlists?query=pop",
-  hiphop: "https://lowkey-backend.vercel.app/api/search/playlists?query=hiphop",
-  rock: "https://lowkey-backend.vercel.app/api/search/playlists?query=rock",
-  melody: "https://lowkey-backend.vercel.app/api/search/playlists?query=melody",
-  lofi: "https://lowkey-backend.vercel.app/api/search/playlists?query=lofi",
-  chill: "https://lowkey-backend.vercel.app/api/search/playlists?query=chill",
-  focus: "https://lowkey-backend.vercel.app/api/search/playlists?query=focus",
+    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=workout",
+  pop: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=pop",
+  hiphop:
+    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=hiphop",
+  rock: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=rock",
+  melody:
+    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=melody",
+  lofi: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=lofi",
+  chill:
+    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=chill",
+  focus:
+    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=focus",
   instrumental:
-    "https://lowkey-backend.vercel.app/api/search/playlists?query=instrumental",
-  folk: "https://lowkey-backend.vercel.app/api/search/playlists?query=folk",
+    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=instrumental",
+  folk: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=folk",
   devotional:
-    "https://lowkey-backend.vercel.app/api/search/playlists?query=devotional",
+    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=devotional",
   ambient:
-    "https://lowkey-backend.vercel.app/api/search/playlists?query=ambient",
-  sleep: "https://lowkey-backend.vercel.app/api/search/playlists?query=sleep",
-  soul: "https://lowkey-backend.vercel.app/api/search/playlists?query=soul",
+    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=ambient",
+  sleep:
+    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=sleep",
+  soul: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=soul",
 };
 
 // Featured playlist IDs
@@ -67,9 +75,9 @@ const ProfileContainer = styled(LinearGradient).attrs({
   start: { x: 0, y: 0 },
   end: { x: 1, y: 0 },
 })`
-  width: 30px;
-  height: 30px;
-  border-radius: 20px;
+  width: 28px;
+  height: 28px;
+  border-radius: 16px;
   margin-left: 16px;
   margin-right: 10px;
   shadow-color: #000;
@@ -272,7 +280,7 @@ export default function HomeScreen({ navigation }: any) {
       for (const playlistId of FEATURED_PLAYLIST_IDS) {
         try {
           const response = await fetch(
-            `https://lowkey-backend.vercel.app/api/playlists?id=${playlistId}`,
+            `https://streamifyjiosaavn.vercel.app/api/playlists?id=${playlistId}`,
           );
           const data = await response.json();
           if (data.success && data.data) {
@@ -373,7 +381,7 @@ export default function HomeScreen({ navigation }: any) {
     if (imageUrl) {
       return { uri: imageUrl };
     }
-    return require("../../assets/logo192.png");
+    return require("../../assets/StreamifyLogo.png");
   };
 
   const formatSongCount = (count: number) => {
@@ -389,7 +397,9 @@ export default function HomeScreen({ navigation }: any) {
         {/* Header with Category Chips */}
         <ChipsContainer>
           <ProfileContainer>
-            <UserProfileImage source={require("../../assets/logo192.png")} />
+            <UserProfileImage
+              source={require("../../assets/StreamifyLogo.png")}
+            />
           </ProfileContainer>
           <ChipsScrollView
             horizontal

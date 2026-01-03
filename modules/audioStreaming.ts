@@ -93,6 +93,11 @@ export class AudioStreamManager {
   ];
   private currentClientIdIndex = 0;
 
+  private isRemoteUrl(url: string | null | undefined): boolean {
+    if (!url) return false;
+    return url.startsWith("http://") || url.startsWith("https://");
+  }
+
   // Helper method to update download progress with atomic updates
   private updateDownloadProgress(
     trackId: string,
@@ -1441,6 +1446,10 @@ export class AudioStreamManager {
     trackId: string,
     controller: AbortController
   ): Promise<string> {
+    if (!this.isRemoteUrl(streamUrl)) {
+      console.log("[Audio] Skipping YouTube caching for non-remote URL");
+      return streamUrl;
+    }
     // Check if we already have this track cached (use generic track cache)
     if (this.trackCache.has(trackId)) {
       const cachedPath = this.trackCache.get(trackId);
@@ -1498,6 +1507,10 @@ export class AudioStreamManager {
     trackId: string,
     controller: AbortController
   ): Promise<string> {
+    if (!this.isRemoteUrl(streamUrl)) {
+      console.log("[Audio] Skipping SoundCloud caching for non-remote URL");
+      return streamUrl;
+    }
     // Check if we already have this track cached
     if (this.soundCloudCache.has(trackId)) {
       const cachedPath = this.soundCloudCache.get(trackId);
@@ -1529,6 +1542,10 @@ export class AudioStreamManager {
     trackId: string,
     controller: AbortController
   ): Promise<void> {
+    if (!this.isRemoteUrl(streamUrl)) {
+      console.log("[Audio] Skipping full track download for non-remote URL");
+      return;
+    }
     try {
       // Check if already downloading to prevent concurrent downloads
       const existingProgress = this.cacheProgress.get(trackId);
@@ -1712,6 +1729,10 @@ export class AudioStreamManager {
     trackId: string,
     controller: AbortController
   ): Promise<void> {
+    if (!this.isRemoteUrl(streamUrl)) {
+      console.log("[Audio] Skipping chunked download for non-remote URL");
+      return;
+    }
     try {
       console.log(`[Audio] Starting chunked download for track: ${trackId}`);
 
@@ -1951,6 +1972,12 @@ export class AudioStreamManager {
     trackId: string,
     controller: AbortController
   ): Promise<void> {
+    if (!this.isRemoteUrl(streamUrl)) {
+      console.log(
+        "[Audio] Skipping progressive YouTube cache for non-remote URL"
+      );
+      return;
+    }
     console.log(
       `[Audio] Starting progressive cache for YouTube track: ${trackId}`
     );
@@ -2010,7 +2037,7 @@ export class AudioStreamManager {
           `[Audio] Initial download result status: ${initialResult.status}`
         );
         console.log(
-          `[Audio] Initial download result headers:`,
+          "[Audio] Initial download result headers:",
           initialResult.headers
         );
 
@@ -2052,7 +2079,7 @@ export class AudioStreamManager {
           "[Audio] Initial chunk download failed, will try full download:"
         );
         console.log(
-          `[Audio] Error details:`,
+          "[Audio] Error details:",
           initialError instanceof Error
             ? {
                 message: initialError.message,
@@ -2065,7 +2092,7 @@ export class AudioStreamManager {
           `[Audio] Initial download status: ${initialResult?.status || "unknown"}`
         );
         console.log(
-          `[Audio] Initial download headers:`,
+          "[Audio] Initial download headers:",
           initialResult?.headers || "no headers"
         );
       }
@@ -2104,6 +2131,12 @@ export class AudioStreamManager {
     trackId: string,
     controller: AbortController
   ): Promise<string> {
+    if (!this.isRemoteUrl(streamUrl)) {
+      console.log(
+        "[Audio] Skipping background YouTube cache for non-remote URL"
+      );
+      return streamUrl;
+    }
     // Check if we already have this track cached
     if (this.trackCache.has(trackId)) {
       console.log(`[Audio] Background cache hit for YouTube track: ${trackId}`);
@@ -2346,6 +2379,12 @@ export class AudioStreamManager {
     streamUrl: string,
     trackId: string
   ): Promise<void> {
+    if (!this.isRemoteUrl(streamUrl)) {
+      console.log(
+        "[Audio] Skipping post-playback YouTube cache for non-remote URL"
+      );
+      return;
+    }
     // Skip if already cached
     if (this.soundCloudCache.has(trackId)) {
       console.log(`[Audio] YouTube track already cached: ${trackId}`);
@@ -2453,6 +2492,12 @@ export class AudioStreamManager {
     trackId: string,
     controller: AbortController
   ): Promise<string> {
+    if (!this.isRemoteUrl(streamUrl)) {
+      console.log(
+        "[Audio] Skipping background SoundCloud cache for non-remote URL"
+      );
+      return streamUrl;
+    }
     // Check if we already have this track cached
     if (this.soundCloudCache.has(trackId)) {
       const cachedPath = this.soundCloudCache.get(trackId)!;

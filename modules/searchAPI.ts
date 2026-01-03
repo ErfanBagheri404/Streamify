@@ -244,7 +244,7 @@ export const searchAPI = {
     console.log(`[API] Starting JioSaavn search for: "${query}"`);
 
     try {
-      const searchUrl = `https://lowkey-backend.vercel.app/api/search?query=${encodeURIComponent(query)}`;
+      const searchUrl = `https://streamifyjiosaavn.vercel.app/api/search?query=${encodeURIComponent(query)}`;
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
@@ -515,7 +515,7 @@ export const searchAPI = {
     console.log(`[API] Fetching JioSaavn song details for: "${songId}"`);
 
     try {
-      const detailsUrl = `https://lowkey-backend.vercel.app/api/songs/${songId}`;
+      const detailsUrl = `https://streamifyjiosaavn.vercel.app/api/songs/${songId}`;
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
@@ -594,7 +594,7 @@ export const searchAPI = {
 
     try {
       // Strategy 1: Try direct album endpoint first
-      const albumUrl = `https://lowkey-backend.vercel.app/api/albums?id=${albumId}`;
+      const albumUrl = `https://streamifyjiosaavn.vercel.app/api/albums?id=${albumId}`;
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
@@ -657,7 +657,7 @@ export const searchAPI = {
 
       for (const query of searchQueries) {
         try {
-          const searchUrl = `https://lowkey-backend.vercel.app/api/search/songs?query=${encodeURIComponent(query)}`;
+          const searchUrl = `https://streamifyjiosaavn.vercel.app/api/search/songs?query=${encodeURIComponent(query)}`;
 
           const searchResponse = await fetch(searchUrl, {
             signal: controller.signal,
