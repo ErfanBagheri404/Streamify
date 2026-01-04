@@ -56,6 +56,8 @@ const DurationBadge = styled.View`
 const DurationText = styled.Text`
   color: #fff;
   font-size: 12px;
+  font-family: GoogleSansRegular;
+  line-height: 16px;
 `;
 
 const Content = styled.View`
@@ -65,6 +67,8 @@ const Content = styled.View`
 const Title = styled.Text`
   color: #ffffff;
   font-size: 14px;
+  font-family: GoogleSansRegular;
+  line-height: 18px;
 `;
 
 const MetaRow = styled.View`
@@ -76,11 +80,15 @@ const MetaRow = styled.View`
 const Author = styled.Text`
   color: #a3a3a3; /* neutral-400 */
   font-size: 12px;
+  font-family: GoogleSansRegular;
+  line-height: 16px;
 `;
 
 const SubMeta = styled.Text`
   color: #737373; /* neutral-500 */
   font-size: 12px;
+  font-family: GoogleSansRegular;
+  line-height: 16px;
 `;
 
 function StreamItem(props: StreamItemProps) {

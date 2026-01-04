@@ -23,6 +23,8 @@ const NavButton = styled.TouchableOpacity<{ active?: boolean }>`
 const NavIcon = styled.Text<{ active?: boolean }>`
   font-size: 24px;
   color: ${(p: { active?: boolean }) => (p.active ? "#000" : "#fff")};
+  font-family: GoogleSansRegular;
+  line-height: 24px;
 `;
 
 type BottomNavProps = {

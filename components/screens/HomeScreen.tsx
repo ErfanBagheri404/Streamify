@@ -58,12 +58,6 @@ const Section = styled.View`
   margin-top: 24px;
 `;
 
-const Label = styled.Text`
-  color: #d4d4d4;
-  margin-bottom: 8px;
-  padding: 0 16px;
-`;
-
 const ChipsContainer = styled.View`
   flex-direction: row;
   align-items: center;
@@ -114,6 +108,8 @@ const Chip = styled.TouchableOpacity<{ active?: boolean }>`
 const ChipText = styled.Text<{ active?: boolean }>`
   color: ${(p: { active?: boolean }) => (p.active ? "#000" : "#fff")};
   font-size: 14px;
+  font-family: GoogleSansMedium;
+  line-height: 18px;
 `;
 
 const SectionHeader = styled.View`
@@ -127,7 +123,8 @@ const SectionHeader = styled.View`
 const SectionTitle = styled.Text`
   color: #fff;
   font-size: 18px;
-  font-weight: 600;
+  font-family: GoogleSansSemiBold;
+  line-height: 22px;
 `;
 
 const HorizontalScroll = styled.ScrollView`
@@ -149,13 +146,16 @@ const CardTitle = styled.Text`
   color: #fff;
   margin-top: 8px;
   font-size: 14px;
-  font-weight: 500;
+  font-family: GoogleSansMedium;
+  line-height: 18px;
 `;
 
 const CardMeta = styled.Text`
   color: #a3a3a3;
   font-size: 12px;
   margin-top: 2px;
+  font-family: GoogleSansRegular;
+  line-height: 16px;
 `;
 
 const Row = styled.View`
@@ -168,13 +168,15 @@ const Row = styled.View`
 const Title = styled.Text`
   color: #fff;
   font-size: 18px;
-  font-weight: 600;
+  font-family: GoogleSansSemiBold;
+  line-height: 22px;
 `;
 
 const SubtitleBtn = styled.TouchableOpacity``;
 
 const SubtitleText = styled.Text`
   color: #a3e635;
+  font-family: GoogleSansRegular;
 `;
 
 const Horizontal = styled.ScrollView`
@@ -201,17 +203,22 @@ const CollectionInfo = styled.View`
 
 const CollectionTitle = styled.Text`
   color: #fff;
-  font-weight: 600;
+  font-family: GoogleSansSemiBold;
+  line-height: 20px;
 `;
 
 const CollectionSub = styled.Text`
   color: #a3a3a3;
   margin-top: 4px;
+  font-family: GoogleSansRegular;
+  line-height: 16px;
 `;
 
 const Arrow = styled.Text`
   color: #a3e635;
   margin-top: 8px;
+  font-family: GoogleSansMedium;
+  line-height: 16px;
 `;
 
 const LoadingContainer = styled.View`
@@ -226,6 +233,7 @@ const ErrorText = styled.Text`
   color: #ff4444;
   text-align: center;
   padding: 20px;
+  font-family: GoogleSansRegular;
 `;
 
 interface Playlist {
@@ -258,7 +266,7 @@ export default function HomeScreen({ navigation }: any) {
   const fetchCategoryPlaylists = async (category: string) => {
     try {
       const response = await fetch(
-        CATEGORY_APIS[category as keyof typeof CATEGORY_APIS],
+        CATEGORY_APIS[category as keyof typeof CATEGORY_APIS]
       );
       const data = await response.json();
 
@@ -280,7 +288,7 @@ export default function HomeScreen({ navigation }: any) {
       for (const playlistId of FEATURED_PLAYLIST_IDS) {
         try {
           const response = await fetch(
-            `https://streamifyjiosaavn.vercel.app/api/playlists?id=${playlistId}`,
+            `https://streamifyjiosaavn.vercel.app/api/playlists?id=${playlistId}`
           );
           const data = await response.json();
           if (data.success && data.data) {
@@ -289,7 +297,7 @@ export default function HomeScreen({ navigation }: any) {
         } catch (error) {
           console.error(
             `Failed to fetch featured playlist ${playlistId}:`,
-            error,
+            error
           );
         }
       }
@@ -373,7 +381,7 @@ export default function HomeScreen({ navigation }: any) {
 
   const getPlaylistImageSource = (playlist: Playlist) => {
     const highQualityImage = playlist.image.find(
-      (img) => img.quality === "500x500",
+      (img) => img.quality === "500x500"
     );
     const imageUrl = highQualityImage?.url || playlist.image[0]?.url;
 
