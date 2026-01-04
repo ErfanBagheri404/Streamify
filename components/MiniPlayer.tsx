@@ -32,14 +32,17 @@ const TrackInfo = styled.View`
 const TrackTitle = styled.Text`
   color: #fff;
   font-size: 14px;
-  font-weight: 600;
   number-of-lines: 1;
+  font-family: GoogleSansSemiBold;
+  line-height: 18px;
 `;
 
 const TrackArtist = styled.Text`
   color: #999;
   font-size: 12px;
   margin-top: 2px;
+  font-family: GoogleSansRegular;
+  line-height: 16px;
 `;
 
 const ControlsContainer = styled.View`

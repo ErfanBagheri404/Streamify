@@ -166,7 +166,13 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
             >
               <TabBarIcon name={iconName} color={color} size={24} />
               <Text
-                style={{ color, fontSize: 12, fontWeight: "600", marginTop: 2 }}
+                style={{
+                  color,
+                  fontSize: 12,
+                  lineHeight: 16,
+                  marginTop: 2,
+                  fontFamily: "GoogleSansSemiBold",
+                }}
               >
                 {label}
               </Text>
@@ -190,7 +196,8 @@ function HomeTabs() {
         tabBarInactiveTintColor: "#a3a3a3",
         tabBarLabelStyle: {
           fontSize: 12,
-          fontWeight: "600",
+          lineHeight: 16,
+          fontFamily: "GoogleSansSemiBold",
         },
       }}
     >
@@ -346,6 +353,9 @@ function AppContent() {
 export default function App() {
   const [fontsLoaded] = useFonts({
     GoogleSansRegular: require("./assets/fonts/GoogleSansRegular.ttf"),
+    GoogleSansMedium: require("./assets/fonts/GoogleSansMedium.ttf"),
+    GoogleSansSemiBold: require("./assets/fonts/GoogleSansSemiBold.ttf"),
+    GoogleSansBold: require("./assets/fonts/GoogleSansBold.ttf"),
   });
   // const [showLoadingScreen, setShowLoadingScreen] = useState(true);
   // const [isLoadingComplete, setIsLoadingComplete] = useState(false);
@@ -401,7 +411,7 @@ export default function App() {
 
   // Show app content when fonts are loaded
   if (!fontsLoaded) {
-    return null;
+    return <Text>LOADINGLOADINGLOADING</Text>;
   }
 
   return <AppContent />;

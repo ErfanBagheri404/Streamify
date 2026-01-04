@@ -64,14 +64,16 @@ const BackButton = styled.TouchableOpacity`
 const ArtistName = styled.Text`
   color: #fff;
   font-size: 64px;
-  font-weight: 700;
   margin-bottom: 8px;
+  font-family: GoogleSansBold;
+  line-height: 68px;
 `;
 
 const MonthlyListeners = styled.Text`
   color: #a3a3a3;
   font-size: 16px;
-  font-weight: 400;
+  font-family: GoogleSansRegular;
+  line-height: 20px;
 `;
 
 const ContentContainer = styled.View`
@@ -105,7 +107,8 @@ const FollowButton = styled.TouchableOpacity`
 const FollowButtonText = styled.Text`
   color: #fff;
   font-size: 16px;
-  font-weight: 500;
+  font-family: GoogleSansMedium;
+  line-height: 20px;
 `;
 
 const MoreOptionsButton = styled.TouchableOpacity`
@@ -141,8 +144,9 @@ const PopularSection = styled.View`
 const PopularTitle = styled.Text`
   color: #fff;
   font-size: 24px;
-  font-weight: 700;
   margin-bottom: 16px;
+  font-family: GoogleSansBold;
+  line-height: 28px;
 `;
 
 const SongItem = styled.TouchableOpacity`
@@ -175,13 +179,16 @@ const SongDetails = styled.View`
 const SongTitle = styled.Text`
   color: #fff;
   font-size: 16px;
-  font-weight: 400;
   margin-bottom: 4px;
+  font-family: GoogleSansRegular;
+  line-height: 20px;
 `;
 
 const PlayCount = styled.Text`
   color: #a3a3a3;
   font-size: 14px;
+  font-family: GoogleSansRegular;
+  line-height: 18px;
 `;
 
 const MoreOptionsIcon = styled.TouchableOpacity`
@@ -196,8 +203,9 @@ const AlbumsSection = styled.View`
 const AlbumsTitle = styled.Text`
   color: #fff;
   font-size: 24px;
-  font-weight: 700;
   margin-bottom: 16px;
+  font-family: GoogleSansBold;
+  line-height: 28px;
 `;
 
 const AlbumsGrid = styled.View`
@@ -221,14 +229,17 @@ const AlbumImage = styled.Image`
 const AlbumTitle = styled.Text`
   color: #fff;
   font-size: 14px;
-  font-weight: 500;
   margin-top: 8px;
+  font-family: GoogleSansMedium;
+  line-height: 18px;
 `;
 
 const AlbumYear = styled.Text`
   color: #a3a3a3;
   font-size: 12px;
   margin-top: 2px;
+  font-family: GoogleSansRegular;
+  line-height: 16px;
 `;
 
 const LoadingContainer = styled.View`
@@ -251,6 +262,8 @@ const ErrorText = styled.Text`
   font-size: 16px;
   text-align: center;
   margin-bottom: 16px;
+  font-family: GoogleSansRegular;
+  line-height: 20px;
 `;
 
 const RetryButton = styled.TouchableOpacity`
@@ -262,7 +275,8 @@ const RetryButton = styled.TouchableOpacity`
 const RetryButtonText = styled.Text`
   color: #fff;
   font-size: 16px;
-  font-weight: 600;
+  font-family: GoogleSansSemiBold;
+  line-height: 20px;
 `;
 
 // Interfaces
@@ -316,7 +330,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
       // Fetch artist info
       const artistResponse = await fetch(
-        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}`,
+        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}`
       );
       const artistInfo = await artistResponse.json();
       console.log("Artist info API response:", artistInfo);
@@ -329,7 +343,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
       // Fetch artist songs
       const songsResponse = await fetch(
-        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}/songs?page=0`,
+        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}/songs?page=0`
       );
       let songsData;
       try {
@@ -342,7 +356,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
       // Fetch artist albums
       const albumsResponse = await fetch(
-        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}/albums?page=0`,
+        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}/albums?page=0`
       );
       let albumsData;
       try {
@@ -479,7 +493,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
         source: "jiosaavn",
         _isJioSaavn: true,
       })),
-      index,
+      index
     );
   };
 

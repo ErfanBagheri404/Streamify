@@ -35,7 +35,8 @@ const Avatar = styled.Image`
 const HeaderTitle = styled.Text`
   color: #fff;
   font-size: 22px;
-  font-weight: 700;
+  font-family: GoogleSansBold;
+  line-height: 26px;
 `;
 
 const HeaderActions = styled.View`
@@ -51,6 +52,7 @@ const HeaderIconButton = styled.TouchableOpacity`
 const HeaderIconText = styled.Text`
   color: #fff;
   font-size: 20px;
+  font-family: GoogleSansRegular;
 `;
 
 const FilterChipsRow = styled.ScrollView`
@@ -72,7 +74,9 @@ const FilterChip = styled.TouchableOpacity<{ active?: boolean }>`
 const FilterChipText = styled.Text<{ active?: boolean }>`
   color: #fff;
   font-size: 13px;
-  font-weight: ${(p: { active?: boolean }) => (p.active ? "700" : "500")};
+  font-family: ${(p: { active?: boolean }) =>
+    p.active ? "GoogleSansBold" : "GoogleSansMedium"};
+  line-height: 13px;
 `;
 
 const SortRow = styled.View`
@@ -92,11 +96,15 @@ const SortIcon = styled.Text`
   color: #a3a3a3;
   font-size: 16px;
   margin-right: 8px;
+  font-family: GoogleSansRegular;
+  line-height: 20px;
 `;
 
 const SortLabel = styled.Text`
   color: #fff;
   font-size: 14px;
+  font-family: GoogleSansRegular;
+  line-height: 18px;
 `;
 
 const LayoutToggle = styled.TouchableOpacity`
@@ -106,6 +114,8 @@ const LayoutToggle = styled.TouchableOpacity`
 const LayoutIcon = styled.Text`
   color: #a3a3a3;
   font-size: 18px;
+  font-family: GoogleSansRegular;
+  line-height: 22px;
 `;
 
 const Grid = styled.ScrollView`
@@ -146,19 +156,24 @@ const LikedCoverGradient = styled(LinearGradient)`
 const LikedHeart = styled.Text`
   color: #fff;
   font-size: 32px;
+  font-family: GoogleSansRegular;
+  line-height: 36px;
 `;
 
 const CollectionTitle = styled.Text`
   color: #fff;
   font-size: 14px;
-  font-weight: 600;
   margin-top: 8px;
+  font-family: GoogleSansSemiBold;
+  line-height: 18px;
 `;
 
 const CollectionMeta = styled.Text`
   color: #a3a3a3;
   font-size: 12px;
   margin-top: 2px;
+  font-family: GoogleSansRegular;
+  line-height: 16px;
 `;
 
 const PinRow = styled.View`
@@ -170,16 +185,22 @@ const PinRow = styled.View`
 const PinIcon = styled.Text`
   color: #22c55e;
   margin-right: 4px;
+  font-family: GoogleSansRegular;
+  line-height: 16px;
 `;
 
 const PinLabel = styled.Text`
   color: #22c55e;
   font-size: 12px;
+  font-family: GoogleSansRegular;
+  line-height: 12px;
 `;
 
 const PinDot = styled.Text`
   color: #a3a3a3;
   margin: 0 4px;
+  font-family: GoogleSansRegular;
+  line-height: 12px;
 `;
 
 const sections = ["Playlists", "Albums", "Artists", "Downloaded"];

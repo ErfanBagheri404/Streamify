@@ -25,7 +25,8 @@ const BackButton = styled.TouchableOpacity`
 const HeaderTitle = styled.Text`
   color: #fff;
   font-size: 18px;
-  font-weight: 700;
+  font-family: GoogleSansBold;
+  line-height: 22px;
 `;
 
 const SettingsSection = styled.View`
@@ -35,9 +36,10 @@ const SettingsSection = styled.View`
 const SectionTitle = styled.Text`
   color: #a3a3a3;
   font-size: 14px;
-  font-weight: 600;
   margin-left: 16px;
   margin-bottom: 8px;
+  font-family: GoogleSansSemiBold;
+  line-height: 18px;
 `;
 
 const SettingItem = styled.TouchableOpacity`
@@ -59,17 +61,23 @@ const SettingIcon = styled.Text`
   color: #a3a3a3;
   font-size: 20px;
   margin-right: 12px;
+  font-family: GoogleSansRegular;
+  line-height: 24px;
 `;
 
 const SettingText = styled.Text`
   color: #fff;
   font-size: 16px;
+  font-family: GoogleSansRegular;
+  line-height: 20px;
 `;
 
 const SettingDescription = styled.Text`
   color: #a3a3a3;
   font-size: 12px;
   margin-top: 2px;
+  font-family: GoogleSansRegular;
+  line-height: 16px;
 `;
 
 const SettingContent = styled.View`
@@ -79,6 +87,8 @@ const SettingContent = styled.View`
 const ChevronIcon = styled.Text`
   color: #a3a3a3;
   font-size: 16px;
+  font-family: GoogleSansRegular;
+  line-height: 20px;
 `;
 
 export default function SettingsScreen({ navigation }: { navigation: any }) {

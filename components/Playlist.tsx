@@ -49,7 +49,8 @@ const HeaderButton = styled.TouchableOpacity`
 const HeaderTitle = styled.Text`
   color: #fff;
   font-size: 18px;
-  font-weight: 600;
+  font-family: GoogleSansSemiBold;
+  line-height: 22px;
 `;
 
 // Album Art Section
@@ -122,12 +123,15 @@ const AlbumInfoContainer = styled.View`
 const AlbumTitle = styled.Text`
   color: #fff;
   font-size: 24px;
-  font-weight: 700;
+  font-family: GoogleSansBold;
+  line-height: 28px;
 `;
 
 const AlbumArtist = styled.Text`
   color: #999;
   font-size: 16px;
+  font-family: GoogleSansRegular;
+  line-height: 20px;
 `;
 
 const ShuffleButton = styled.TouchableOpacity`
@@ -157,12 +161,15 @@ const SongInfo = styled.View`
 const SongTitle = styled.Text`
   color: #fff;
   font-size: 16px;
-  font-weight: 500;
+  font-family: GoogleSansMedium;
+  line-height: 20px;
 `;
 
 const SongArtist = styled.Text`
   color: #999;
   font-size: 14px;
+  font-family: GoogleSansRegular;
+  line-height: 18px;
 `;
 
 const SongActions = styled.View`
@@ -188,6 +195,8 @@ const EmptyText = styled.Text`
   font-size: 16px;
   text-align: center;
   margin-top: 16px;
+  font-family: GoogleSansRegular;
+  line-height: 20px;
 `;
 
 export const Playlist: React.FC<PlaylistProps> = ({

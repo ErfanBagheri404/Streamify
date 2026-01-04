@@ -1,12 +1,15 @@
 /********************************************************************
  *  FullPlayerModal.tsx - Modern dark theme player with blurred background
  *******************************************************************/
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Modal,
   TouchableOpacity,
   Dimensions,
   ActivityIndicator,
+  Text,
+  ScrollView,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Slider from "@react-native-community/slider";
@@ -18,8 +21,14 @@ import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { usePlayer } from "../contexts/PlayerContext";
 import { formatTime } from "../utils/formatters";
+import { CachedLyrics, lyricsService } from "../modules/lyricsService";
 
-const { width } = Dimensions.get("window");
+const { Animated, PanResponder } = require("react-native");
+
+const { width, height } = Dimensions.get("window");
+const SHEET_HEIGHT = height * 0.5;
+const SHEET_CLOSED_TOP = height;
+const SHEET_HALF_TOP = height - SHEET_HEIGHT;
 
 const ModalContainer = styled.View`
   flex: 1;
@@ -83,13 +92,116 @@ const BackButton = styled.TouchableOpacity`
   align-items: center;
 `;
 
-const BackButtonText = styled.Text`
-  color: #fff;
-  font-size: 16px;
-  margin-left: 8px;
+const MoreButton = styled.TouchableOpacity``;
+
+const BottomSheetOverlay = styled.TouchableOpacity`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
 `;
 
-const MoreButton = styled.TouchableOpacity``;
+const BottomSheetContainer = styled(Animated.View)`
+  position: absolute;
+  left: 0;
+  right: 0;
+`;
+
+const BottomSheetInner = styled.View`
+  background-color: #000000;
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+  padding-bottom: 32px;
+  height: 100%;
+`;
+
+const SheetHandle = styled.View`
+  width: 40px;
+  height: 4px;
+  border-radius: 12px;
+  background-color: #4b5563;
+  align-self: center;
+  margin-top: 8px;
+  margin-bottom: 8px;
+`;
+
+const SheetContent = styled.View`
+  padding-vertical: 8px;
+  padding-horizontal: 24px;
+`;
+
+const SheetHeaderRow = styled.View`
+  flex-direction: row;
+  align-items: center;
+  padding-vertical: 16px;
+  padding-horizontal: 24px;
+`;
+
+const SheetHeaderCoverImage = styled.Image`
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background-color: #333;
+  margin-right: 12px;
+`;
+
+const SheetHeaderCoverPlaceholder = styled.View`
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background-color: #333;
+  margin-right: 12px;
+  align-items: center;
+  justify-content: center;
+`;
+
+const SheetHeaderTextContainer = styled.View`
+  flex-direction: column;
+  flex: 1;
+`;
+
+const SheetHeaderTitle = styled.Text`
+  color: #fff;
+  font-size: 16px;
+  font-family: GoogleSansSemiBold;
+  line-height: 20px;
+`;
+
+const SheetHeaderArtist = styled.Text`
+  color: #9ca3af;
+  font-size: 14px;
+  margin-top: 2px;
+  font-family: GoogleSansRegular;
+  line-height: 18px;
+`;
+
+const SheetSeparator = styled.View`
+  height: 1px;
+  background-color: #111827;
+  margin-horizontal: 24px;
+`;
+
+const SheetItem = styled.TouchableOpacity`
+  flex-direction: row;
+  align-items: center;
+  padding-vertical: 12px;
+`;
+
+const SheetItemIconWrapper = styled.View`
+  width: 28px;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+`;
+
+const SheetItemText = styled.Text`
+  color: #fff;
+  font-size: 16px;
+  font-family: GoogleSansRegular;
+  line-height: 20px;
+`;
 
 const AlbumArtWrapper = styled.View`
   position: relative;
@@ -139,9 +251,10 @@ const TrackInfo = styled.View`
 const TrackTitle = styled.Text`
   color: #fff;
   font-size: 24px;
-  font-weight: 700;
   text-align: left;
   margin-right: 8px;
+  font-family: GoogleSansBold;
+  line-height: 28px;
 `;
 
 const TrackArtist = styled.Text`
@@ -149,6 +262,8 @@ const TrackArtist = styled.Text`
   font-size: 18px;
   text-align: left;
   margin-top: 2px;
+  font-family: GoogleSansRegular;
+  line-height: 22px;
 `;
 
 const ProgressContainer = styled.View`
@@ -183,6 +298,7 @@ const TimeContainer = styled.View`
 const TimeText = styled.Text`
   color: #999;
   font-size: 12px;
+  font-family: GoogleSansRegular;
 `;
 
 const Controls = styled.View`
@@ -205,11 +321,11 @@ const RepeatNumber = styled.Text`
   top: 8px;
   right: 8px;
   font-size: 10px;
-  font-weight: bold;
   color: #a3e635;
   background-color: rgba(0, 0, 0, 0.7);
   padding: 2px 4px;
   border-radius: 4px;
+  font-family: GoogleSansBold;
 `;
 
 const PlayPauseButton = styled.TouchableOpacity`
@@ -227,8 +343,10 @@ const LyricsCard = styled.View`
   background-color: rgba(255, 255, 255, 0.1);
   border-radius: 10px;
   padding: 22px;
+  padding-bottom: 16px;
   margin-top: 20px;
   margin-horizontal: 28px;
+  margin-bottom: 0px;
   backdrop-filter: blur(10px);
 `;
 
@@ -242,15 +360,17 @@ const LyricsHeader = styled.View`
 const LyricsTitle = styled.Text`
   color: #fff;
   font-size: 16px;
-  font-weight: 600;
+  font-family: GoogleSansBold;
+  line-height: 20px;
 `;
 
 const LyricLine = styled.Text<{ isActive: boolean }>`
-  color: ${(props) => (props.isActive ? "#fff" : "#999")};
-  font-size: 14px;
-  margin-vertical: 4px;
-  opacity: ${(props) => (props.isActive ? 1 : 0.7)};
-  font-weight: ${(props) => (props.isActive ? "600" : "400")};
+  color: #fff;
+  font-size: 20px;
+  margin-vertical: 6px;
+  opacity: 1;
+  font-family: GoogleSansRegular;
+  line-height: 22px;
 `;
 
 const CacheOverlay = styled.View`
@@ -273,9 +393,9 @@ const CacheInfoContainer = styled.View`
 const CacheInfoRow = styled.Text`
   color: #fff;
   font-size: 14px;
-  font-weight: 500;
   text-align: center;
   margin-vertical: 2px;
+  font-family: GoogleSansMedium;
 `;
 
 const CacheTouchable = styled.TouchableOpacity`
@@ -346,38 +466,178 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [cacheRetryCount, setCacheRetryCount] = useState(0);
   const [showCacheSize, setShowCacheSize] = useState(false);
   const [currentLyricIndex, setCurrentLyricIndex] = useState(0);
+  const [lyricsData, setLyricsData] = useState<string[]>([]);
+  const [isLoadingLyrics, setIsLoadingLyrics] = useState(false);
+  const [lyricsError, setLyricsError] = useState<string | null>(null);
+  const [isOptionsVisible, setIsOptionsVisible] = useState(false);
+  const [sheetState, setSheetState] = useState<"closed" | "half" | "full">(
+    "closed"
+  );
+  const sheetTop = useRef(new Animated.Value(SHEET_CLOSED_TOP)).current;
+  const [sheetHeight, setSheetHeight] = useState(SHEET_HEIGHT);
+  const sheetStateRef = useRef<"closed" | "half" | "full">("closed");
 
-  // Sample lyrics data
-  const sampleLyrics = [
-    "Just a young gun with the quick fuse",
-    "I was uptight, wanna let loose",
-    "I was dreaming of bigger things",
-    "And wanna leave my own life behind",
-    "Not a yes sir, not a follower",
-    "Fit the box, fit the mold",
-    "Have a seat in the foyer, take a number",
-    "I was lightning before the thunder",
-    "Thunder, thunder",
-    "Thunder, thun-, thunder",
-    "Thun-thun-thunder, thunder, thunder",
-    "Thunder, thunder, thunder",
-    "Thunder, thun-, thunder",
-    "Thun-thun-thunder, thunder",
-  ];
-
-  // Simulate lyric progression
-  useEffect(() => {
-    if (isPlaying && currentTrack) {
-      const interval = setInterval(() => {
-        setCurrentLyricIndex((prev) => {
-          const newIndex = (prev + 1) % sampleLyrics.length;
-          return newIndex;
-        });
-      }, 3000); // Change lyric every 3 seconds
-
-      return () => clearInterval(interval);
+  const animateSheet = (state: "closed" | "half" | "full") => {
+    let toValue = SHEET_CLOSED_TOP;
+    if (state === "closed") {
+      setSheetHeight(SHEET_HEIGHT);
+      toValue = SHEET_CLOSED_TOP;
+    } else if (state === "half") {
+      setSheetHeight(SHEET_HEIGHT);
+      toValue = SHEET_HALF_TOP;
+    } else if (state === "full") {
+      setSheetHeight(height);
+      toValue = 0;
     }
-  }, [isPlaying, currentTrack, sampleLyrics.length]);
+
+    Animated.timing(sheetTop, {
+      toValue,
+      duration: 250,
+      useNativeDriver: false,
+    }).start(() => {
+      sheetStateRef.current = state;
+      setSheetState(state);
+      if (state === "closed") {
+        setIsOptionsVisible(false);
+      }
+    });
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) =>
+        Math.abs(gestureState.dy) > 2,
+      onPanResponderMove: (_, gestureState) => {
+        const base =
+          sheetStateRef.current === "full"
+            ? 0
+            : sheetStateRef.current === "half"
+              ? SHEET_HALF_TOP
+              : SHEET_CLOSED_TOP;
+        let next = base + gestureState.dy;
+        if (next < 0) next = 0;
+        if (next > SHEET_CLOSED_TOP) next = SHEET_CLOSED_TOP;
+        sheetTop.setValue(next);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        const { dy, vy } = gestureState;
+        let target: "closed" | "half" | "full" = sheetStateRef.current;
+
+        if (sheetStateRef.current === "half") {
+          if (dy > 60 || vy > 0.5) {
+            target = "closed";
+          } else if (dy < -60 || vy < -0.5) {
+            target = "full";
+          } else {
+            target = "half";
+          }
+        } else if (sheetStateRef.current === "full") {
+          if (dy > 60 || vy > 0.5) {
+            target = "half";
+          } else {
+            target = "full";
+          }
+        }
+
+        animateSheet(target);
+      },
+    })
+  ).current;
+
+  const openOptions = () => {
+    setIsOptionsVisible(true);
+    animateSheet("half");
+  };
+
+  const closeOptions = () => {
+    animateSheet("closed");
+  };
+
+  const handleOptionPress = (option: string) => {
+    console.log("[FullPlayerModal] Option selected:", option);
+    animateSheet("closed");
+  };
+
+  // Fetch real lyrics when track changes
+  useEffect(() => {
+    const fetchLyrics = async () => {
+      // Reduced logging - uncomment for debugging
+      // console.log("[FullPlayerModal] Lyrics effect triggered", {
+      //   currentTrack,
+      //   hasTrack: !!currentTrack,
+      //   trackTitle: currentTrack?.title,
+      //   trackArtist: currentTrack?.artist,
+      //   trackSource: currentTrack?.source,
+      //   trackId: currentTrack?.id,
+      // });
+
+      if (!currentTrack) {
+        setLyricsData([]);
+        setCurrentLyricIndex(0);
+        setLyricsError(null);
+        return;
+      }
+
+      // Reset error state when track changes
+      setLyricsError(null);
+
+      setIsLoadingLyrics(true);
+      console.log("[FullPlayerModal] Starting lyrics fetch...");
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Lyrics fetch timeout")), 15000)
+      );
+
+      try {
+        const cachedLyrics = (await Promise.race([
+          lyricsService.getLyrics(currentTrack),
+          timeoutPromise,
+        ])) as CachedLyrics | null;
+
+        // Reduced logging - uncomment for debugging
+        // console.log("[FullPlayerModal] Lyrics fetch result:", {
+        //   hasLyrics: !!cachedLyrics,
+        //   lyricsLength: cachedLyrics?.lyrics?.length,
+        //   provider: cachedLyrics?.searchEngine,
+        //   artistName: cachedLyrics?.artistName,
+        //   trackName: cachedLyrics?.trackName,
+        // });
+
+        if (cachedLyrics) {
+          // Split lyrics into lines
+          const lines = cachedLyrics.lyrics
+            .split("\n")
+            .filter((line) => line.trim());
+          setLyricsData(lines);
+          setCurrentLyricIndex(0);
+          setLyricsError(null);
+          // Reduced logging - uncomment for debugging
+          // console.log(`[FullPlayerModal] Loaded ${lines.length} lyrics lines`);
+        } else {
+          setLyricsData([]);
+          setCurrentLyricIndex(0);
+          setLyricsError("Lyrics service temporarily unavailable");
+          // Reduced logging - uncomment for debugging
+          // console.log("[FullPlayerModal] No lyrics found");
+        }
+      } catch (error) {
+        console.error(
+          "[FullPlayerModal] Error or timeout fetching lyrics:",
+          error
+        );
+        setLyricsData([]);
+        setCurrentLyricIndex(0);
+        setLyricsError(
+          "Unable to load lyrics - service may be temporarily unavailable"
+        );
+      } finally {
+        setIsLoadingLyrics(false);
+      }
+    };
+
+    fetchLyrics();
+  }, [currentTrack]);
 
   // Update cache info when cacheProgress changes
   useEffect(() => {
@@ -517,24 +777,23 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               "rgba(0, 0, 0, 0.8)",
               "rgba(0, 0, 0, 0.9)",
             ]}
-            locations={[0, 0.7, 1]}
+            locations={[0, 0.6, 0.85]}
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
           />
         </BackgroundContainer>
-        <SafeArea edges={["top", "bottom"]}>
+        <SafeArea edges={["top"]}>
           <Header>
             <BackButton onPress={onClose}>
-              <Ionicons name="chevron-back" size={20} color="#fff" />
-              <BackButtonText>Back</BackButtonText>
+              <Ionicons name="chevron-down" size={24} color="#fff" />
             </BackButton>
-            <MoreButton onPress={() => {}}>
+            <MoreButton onPress={openOptions}>
               <Ionicons name="ellipsis-vertical" size={20} color="#fff" />
             </MoreButton>
           </Header>
 
-          {/* Content without ScrollView for full screen scrollability */}
-          <>
+          {/* Content with ScrollView for full screen scrollability */}
+          <ScrollView showsVerticalScrollIndicator={false}>
             {currentTrack.thumbnail ? (
               <AlbumArtWrapper>
                 <AlbumArtWithOpacity
@@ -604,7 +863,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                     isSongLiked(currentTrack.id) ? "heart" : "heart-outlined"
                   }
                   size={24}
-                  color={isSongLiked(currentTrack.id) ? "#ff4757" : "#fff"}
+                  color={isSongLiked(currentTrack.id) ? "#fff" : "#fff"}
                 />
               </LikeButton>
             </TrackRow>
@@ -692,19 +951,135 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
             <LyricsCard>
               <LyricsHeader>
-                <LyricsTitle>Lyrics</LyricsTitle>
-                <Ionicons name="chevron-forward" size={16} color="#999" />
+                <LyricsTitle>LYRICS</LyricsTitle>
               </LyricsHeader>
-              {sampleLyrics.slice(0, 5).map((line, index) => (
-                <LyricLine key={index} isActive={index === currentLyricIndex}>
-                  {line}
+
+              {isLoadingLyrics ? (
+                <ActivityIndicator
+                  size="small"
+                  color="#999"
+                  style={{ marginVertical: 20 }}
+                />
+              ) : lyricsData.length > 0 ? (
+                lyricsData.map((line, index) => (
+                  <LyricLine key={index} isActive={index === currentLyricIndex}>
+                    {line}
+                  </LyricLine>
+                ))
+              ) : lyricsError ? (
+                <LyricLine
+                  isActive={false}
+                  style={{ opacity: 0.6, fontSize: 12 }}
+                >
+                  {lyricsError}
                 </LyricLine>
-              ))}
+              ) : (
+                <LyricLine isActive={false} style={{ opacity: 0.6 }}>
+                  No lyrics available
+                </LyricLine>
+              )}
             </LyricsCard>
 
-            <Spacer size={100} />
-          </>
+            <Spacer size={40} />
+          </ScrollView>
         </SafeArea>
+        {isOptionsVisible && (
+          <>
+            <BottomSheetOverlay activeOpacity={1} onPress={closeOptions} />
+            <BottomSheetContainer
+              style={{ top: sheetTop, height: sheetHeight }}
+              {...panResponder.panHandlers}
+            >
+              <BottomSheetInner>
+                <SheetHandle />
+                <SheetHeaderRow>
+                  {currentTrack.thumbnail ? (
+                    <SheetHeaderCoverImage
+                      source={{ uri: currentTrack.thumbnail }}
+                    />
+                  ) : (
+                    <SheetHeaderCoverPlaceholder>
+                      <Ionicons
+                        name="musical-notes"
+                        size={24}
+                        color="#ffffff"
+                      />
+                    </SheetHeaderCoverPlaceholder>
+                  )}
+                  <SheetHeaderTextContainer>
+                    <SheetHeaderTitle numberOfLines={1}>
+                      {currentTrack.title}
+                    </SheetHeaderTitle>
+                    {currentTrack.artist && (
+                      <SheetHeaderArtist numberOfLines={1}>
+                        {currentTrack.artist}
+                      </SheetHeaderArtist>
+                    )}
+                  </SheetHeaderTextContainer>
+                </SheetHeaderRow>
+                <SheetSeparator />
+                <SheetContent>
+                  <SheetItem onPress={() => handleOptionPress("Share")}>
+                    <SheetItemIconWrapper>
+                      <Ionicons name="share-outline" size={22} color="#fff" />
+                    </SheetItemIconWrapper>
+                    <SheetItemText>Share</SheetItemText>
+                  </SheetItem>
+                  <SheetItem
+                    onPress={() => handleOptionPress("Add to other playlist")}
+                  >
+                    <SheetItemIconWrapper>
+                      <Ionicons
+                        name="add-circle-outline"
+                        size={22}
+                        color="#fff"
+                      />
+                    </SheetItemIconWrapper>
+                    <SheetItemText>Add to other playlist</SheetItemText>
+                  </SheetItem>
+                  <SheetItem onPress={() => handleOptionPress("Go to album")}>
+                    <SheetItemIconWrapper>
+                      <Ionicons name="albums-outline" size={22} color="#fff" />
+                    </SheetItemIconWrapper>
+                    <SheetItemText>Go to album</SheetItemText>
+                  </SheetItem>
+                  <SheetItem onPress={() => handleOptionPress("Go to artists")}>
+                    <SheetItemIconWrapper>
+                      <Ionicons name="people-outline" size={22} color="#fff" />
+                    </SheetItemIconWrapper>
+                    <SheetItemText>Go to artists</SheetItemText>
+                  </SheetItem>
+                  <SheetItem onPress={() => handleOptionPress("Sleep timer")}>
+                    <SheetItemIconWrapper>
+                      <Ionicons name="time-outline" size={22} color="#fff" />
+                    </SheetItemIconWrapper>
+                    <SheetItemText>Sleep timer</SheetItemText>
+                  </SheetItem>
+                  <SheetItem
+                    onPress={() => handleOptionPress("Go to song radio")}
+                  >
+                    <SheetItemIconWrapper>
+                      <Ionicons name="radio-outline" size={22} color="#fff" />
+                    </SheetItemIconWrapper>
+                    <SheetItemText>Go to song radio</SheetItemText>
+                  </SheetItem>
+                  <SheetItem
+                    onPress={() => handleOptionPress("View song credits")}
+                  >
+                    <SheetItemIconWrapper>
+                      <Ionicons
+                        name="information-circle-outline"
+                        size={22}
+                        color="#fff"
+                      />
+                    </SheetItemIconWrapper>
+                    <SheetItemText>View song credits</SheetItemText>
+                  </SheetItem>
+                </SheetContent>
+              </BottomSheetInner>
+            </BottomSheetContainer>
+          </>
+        )}
       </ModalContainer>
     </Modal>
   );

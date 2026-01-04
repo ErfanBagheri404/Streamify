@@ -29,16 +29,22 @@ const Content = styled.View`
 
 const Title = styled.Text`
   color: #ffffff;
+  font-family: GoogleSansRegular;
+  line-height: 20px;
 `;
 
 const Uploader = styled.Text`
   color: #a3a3a3;
   font-size: 12px;
+  font-family: GoogleSansRegular;
+  line-height: 16px;
 `;
 
 const Stats = styled.Text`
   color: #737373;
   font-size: 12px;
+  font-family: GoogleSansRegular;
+  line-height: 16px;
 `;
 
 export default function ListItem(props: ListItemProps) {
