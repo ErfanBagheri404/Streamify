@@ -17,6 +17,7 @@
             "compileSdkVersion": 35,
             "targetSdkVersion": 35,
             "abiFilters": ["armeabi-v7a", "arm64-v8a", "x86", "x86_64"],
+            "kotlinVersion": "1.8.10",
             "foregroundService": {
               "serviceType": "mediaPlayback",
               "notificationTitle": "Streamify is playing",
