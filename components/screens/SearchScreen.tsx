@@ -13,6 +13,8 @@ import { searchAPI } from "../../modules/searchAPI";
 import { SafeArea } from "../SafeArea";
 import { usePlayer } from "../../contexts/PlayerContext";
 
+const { Animated } = require("react-native");
+
 // --- Styled Components ---
 
 const Header = styled.View`
@@ -40,16 +42,40 @@ const ResultsContainer = styled.ScrollView`
   padding: 10px 0px 0px 10px;
 `;
 
-const NoResultsText = styled.Text`
-  color: #a3a3a3;
-  text-align: center;
-  margin-top: 32px;
-  font-size: 16px;
-  font-family: GoogleSansRegular;
-  line-height: 20px;
+const SkeletonRow = styled.View`
+  flex-direction: row;
+  padding-vertical: 10px;
+  padding-right: 16px;
+  align-items: center;
 `;
 
-const LoadingText = styled.Text`
+const SkeletonThumbnail = styled.View`
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  background-color: #404040;
+  margin-right: 12px;
+`;
+
+const SkeletonTextBlock = styled.View`
+  flex: 1;
+`;
+
+const SkeletonLinePrimary = styled.View`
+  height: 16px;
+  border-radius: 8px;
+  background-color: #404040;
+  margin-bottom: 6px;
+`;
+
+const SkeletonLineSecondary = styled.View`
+  height: 12px;
+  border-radius: 6px;
+  background-color: #262626;
+  width: 60%;
+`;
+
+const NoResultsText = styled.Text`
   color: #a3a3a3;
   text-align: center;
   margin-top: 32px;
@@ -242,6 +268,44 @@ export default function SearchScreen({ navigation }: any) {
 
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSearchRef = useRef<{
+    query: string;
+    source: SourceType;
+    filter: string;
+  } | null>(null);
+
+  const skeletonPulse = useRef(new Animated.Value(0)).current;
+  const skeletonAnimationRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (isLoading) {
+      if (skeletonAnimationRef.current) {
+        skeletonAnimationRef.current.stop();
+      }
+      skeletonPulse.setValue(0);
+      const animation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(skeletonPulse, {
+            toValue: 1,
+            duration: 700,
+            useNativeDriver: true,
+          }),
+          Animated.timing(skeletonPulse, {
+            toValue: 0,
+            duration: 700,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      skeletonAnimationRef.current = animation;
+      animation.start();
+    } else {
+      if (skeletonAnimationRef.current) {
+        skeletonAnimationRef.current.stop();
+        skeletonAnimationRef.current = null;
+      }
+    }
+  }, [isLoading, skeletonPulse]);
 
   // --- Helper Functions ---
 
@@ -281,6 +345,11 @@ export default function SearchScreen({ navigation }: any) {
     return `${minutes}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const skeletonOpacity = skeletonPulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.4, 1],
+  });
+
   // --- Search Handling ---
 
   const handleSearch = useCallback(
@@ -291,8 +360,14 @@ export default function SearchScreen({ navigation }: any) {
         return;
       }
 
-      // Don't clear results if we're already showing results for the same query
-      if (searchResults.length > 0 && searchQuery === queryToUse) {
+      const last = lastSearchRef.current;
+      if (
+        searchResults.length > 0 &&
+        last &&
+        last.query === queryToUse &&
+        last.source === selectedSource &&
+        last.filter === selectedFilter
+      ) {
         return;
       }
 
@@ -347,7 +422,7 @@ export default function SearchScreen({ navigation }: any) {
           // Remove YouTube-specific noise from upload string
           uploaded: r.uploaded?.replace(
             /(\[\d.\]+\['MKB'\]?)\s*views?\s*•?\s*/i,
-            "",
+            ""
           ),
         }));
 
@@ -355,11 +430,16 @@ export default function SearchScreen({ navigation }: any) {
       } catch (error) {
         console.error("Search error:", error);
         setSearchResults([]);
+        lastSearchRef.current = {
+          query: queryToUse,
+          source: selectedSource,
+          filter: selectedFilter,
+        };
       } finally {
         setIsLoading(false);
       }
     },
-    [searchQuery, selectedFilter, selectedSource],
+    [searchQuery, selectedFilter, selectedSource, searchResults.length]
   );
 
   // Auto-trigger search when switching Sources/Filters if we have a query
@@ -400,7 +480,7 @@ export default function SearchScreen({ navigation }: any) {
       try {
         const newSuggestions = await searchAPI.getSuggestions(
           text,
-          selectedSource,
+          selectedSource
         );
 
         setSuggestions(newSuggestions.slice(0, 5));
@@ -448,7 +528,7 @@ export default function SearchScreen({ navigation }: any) {
         const { searchAPI } = await import("../../modules/searchAPI");
         const albumDetails = await searchAPI.getJioSaavnAlbumDetails(
           item.albumId,
-          item.albumName,
+          item.albumName
         );
 
         if (
@@ -479,7 +559,7 @@ export default function SearchScreen({ navigation }: any) {
 
           // Find the index of the selected song in the album
           const selectedIndex = albumPlaylist.findIndex(
-            (song: any) => song.id === item.id,
+            (song: any) => song.id === item.id
           );
 
           // Open the album playlist without auto-playing
@@ -497,7 +577,7 @@ export default function SearchScreen({ navigation }: any) {
 
       return false; // Fallback to direct play
     },
-    [navigation],
+    [navigation]
   );
 
   const onSuggestionPress = (item: string) => {
@@ -608,7 +688,21 @@ export default function SearchScreen({ navigation }: any) {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: 120 }} // Increased padding for last items accessibility
         >
-          {isLoading && <LoadingText>Searching...</LoadingText>}
+          {isLoading &&
+            [...Array(6)].map((_, index) => (
+              <Animated.View
+                key={`skeleton-${index}`}
+                style={{ opacity: skeletonOpacity }}
+              >
+                <SkeletonRow>
+                  <SkeletonThumbnail />
+                  <SkeletonTextBlock>
+                    <SkeletonLinePrimary />
+                    <SkeletonLineSecondary />
+                  </SkeletonTextBlock>
+                </SkeletonRow>
+              </Animated.View>
+            ))}
 
           {!isLoading && searchResults.length === 0 && (
             <NoResultsText>
@@ -662,7 +756,7 @@ export default function SearchScreen({ navigation }: any) {
                               _isSoundCloud: result.source === "soundcloud",
                               _isJioSaavn: result.source === "jiosaavn",
                             })),
-                            searchResults.indexOf(item),
+                            searchResults.indexOf(item)
                           );
                         }}
                       >
@@ -672,7 +766,7 @@ export default function SearchScreen({ navigation }: any) {
                           author={item.author}
                           duration={formatDuration(
                             parseInt(item.duration) || 0,
-                            item.source,
+                            item.source
                           )}
                           views={
                             item.source === "jiosaavn" ? undefined : item.views
@@ -754,7 +848,7 @@ export default function SearchScreen({ navigation }: any) {
                           author={item.author}
                           duration={formatDuration(
                             parseInt(item.duration) || 0,
-                            item.source,
+                            item.source
                           )}
                           views={
                             item.source === "jiosaavn" ? undefined : item.views
@@ -799,7 +893,7 @@ export default function SearchScreen({ navigation }: any) {
                           author={item.author}
                           duration={formatDuration(
                             parseInt(item.duration) || 0,
-                            item.source,
+                            item.source
                           )}
                           views={
                             item.source === "jiosaavn" ? undefined : item.views
@@ -817,7 +911,7 @@ export default function SearchScreen({ navigation }: any) {
 
               {/* Songs Section */}
               {searchResults.filter(
-                (item) => !item.type || item.type === "song",
+                (item) => !item.type || item.type === "song"
               ).length > 0 && (
                 <SectionContainer>
                   <SectionTitle>Songs</SectionTitle>
@@ -892,7 +986,7 @@ export default function SearchScreen({ navigation }: any) {
                               _isSoundCloud: result.source === "soundcloud",
                               _isJioSaavn: result.source === "jiosaavn",
                             })),
-                            searchResults.indexOf(item),
+                            searchResults.indexOf(item)
                           );
                         }}
                       >
@@ -902,7 +996,7 @@ export default function SearchScreen({ navigation }: any) {
                           author={item.author}
                           duration={formatDuration(
                             parseInt(item.duration) || 0,
-                            item.source,
+                            item.source
                           )}
                           views={
                             item.source === "jiosaavn" ? undefined : item.views
