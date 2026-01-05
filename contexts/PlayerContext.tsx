@@ -14,7 +14,8 @@ import {
 } from "../modules/audioStreaming";
 import { extractColorsFromImage, ColorTheme } from "../utils/imageColors";
 import { StorageService } from "../utils/storage";
-import { Platform } from "react-native";
+import { Platform, AppState } from "react-native";
+import { foregroundServiceManager } from "../modules/foregroundService";
 
 export interface Track {
   id: string;
@@ -54,7 +55,7 @@ interface PlayerContextType {
   playTrack: (
     track: Track,
     playlist?: Track[],
-    index?: number
+    index?: number,
   ) => Promise<void>;
   playPause: () => Promise<void>;
   nextTrack: () => Promise<void>;
@@ -97,7 +98,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isShuffled, setIsShuffled] = useState(false);
   const [likedSongs, setLikedSongs] = useState<Track[]>([]);
   const [previouslyPlayedSongs, setPreviouslyPlayedSongs] = useState<Track[]>(
-    []
+    [],
   );
   const [colorTheme, setColorTheme] = useState<ColorTheme>({
     primary: "#a3e635",
@@ -115,7 +116,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [streamRetryCount, setStreamRetryCount] = useState(0);
   const originalPlaylistRef = useRef<Track[]>([]);
   const streamCheckRef = useRef<{ position: number; time: number } | null>(
-    null
+    null,
   );
 
   const soundRef = useRef<Audio.Sound | null>(null);
@@ -143,6 +144,52 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     loadLikedSongs();
   }, []);
 
+  // Initialize foreground service for background audio playback
+  useEffect(() => {
+    const initializeForegroundService = async () => {
+      if (Platform.OS === "android") {
+        try {
+          await foregroundServiceManager.initialize();
+          console.log("[PlayerContext] Foreground service initialized");
+        } catch (error) {
+          console.error(
+            "[PlayerContext] Failed to initialize foreground service:",
+            error,
+          );
+        }
+      }
+    };
+    initializeForegroundService();
+  }, []);
+
+  // Handle app state changes for background audio
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: string) => {
+      if (Platform.OS === "android") {
+        if (nextAppState === "background" && isPlaying && currentTrack) {
+          console.log(
+            "[PlayerContext] App going to background, starting foreground service",
+          );
+          foregroundServiceManager.startForegroundService(
+            currentTrack,
+            isPlaying,
+          );
+        } else if (nextAppState === "active") {
+          console.log("[PlayerContext] App coming to foreground");
+          // Keep the service running in case user switches tracks
+        }
+      }
+    };
+
+    const subscription = AppState.addEventListener(
+      "change",
+      handleAppStateChange,
+    );
+    return () => {
+      subscription.remove();
+    };
+  }, [isPlaying, currentTrack]);
+
   // Load previously played songs from storage on startup
   useEffect(() => {
     const loadPreviouslyPlayedSongs = async () => {
@@ -161,7 +208,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     if (cacheProgress && currentTrack?.id === cacheProgress.trackId) {
       console.log(
-        `[PlayerContext] Cache progress updated: ${cacheProgress.percentage}%`
+        `[PlayerContext] Cache progress updated: ${cacheProgress.percentage}%`,
       );
       // Force a cache info refresh when cacheProgress changes
       const refreshCacheInfo = async () => {
@@ -175,7 +222,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                     ...prev,
                     fileSize: info.fileSize,
                   }
-                : null
+                : null,
             );
           }
         } catch (error) {
@@ -227,7 +274,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         // Double-check sound still exists before accessing
         if (!soundRef.current) {
           console.log(
-            "[PlayerContext] Stream monitor - soundRef.current is null, stopping monitoring"
+            "[PlayerContext] Stream monitor - soundRef.current is null, stopping monitoring",
           );
           clearInterval(streamMonitor);
           return;
@@ -257,12 +304,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           if (timeDiff > 5000 && positionDiff === 0) {
             if (currentTrack) {
               console.warn(
-                "[PlayerContext] Stream appears stuck, attempting refresh"
+                "[PlayerContext] Stream appears stuck, attempting refresh",
               );
               handleStreamFailure();
             } else {
               console.warn(
-                "[PlayerContext] Stream appears stuck but no current track, skipping refresh"
+                "[PlayerContext] Stream appears stuck but no current track, skipping refresh",
               );
             }
             streamCheckRef.current = null;
@@ -271,7 +318,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           }
         } else {
           console.log(
-            `[PlayerContext] Stream not in valid state - isLoaded: ${status.isLoaded}, isPlaying: ${status.isPlaying}`
+            `[PlayerContext] Stream not in valid state - isLoaded: ${status.isLoaded}, isPlaying: ${status.isPlaying}`,
           );
         }
       } catch (error) {
@@ -291,7 +338,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const playTrack = useCallback(
     async (track: Track, playlistData: Track[] = [], index: number = 0) => {
       console.log(
-        `[PlayerContext] playTrack() called with track: ${track.title}, index: ${index}, playlist length: ${playlistData.length}, isLoading: ${isLoading}, isTransitioning: ${isTransitioning}`
+        `[PlayerContext] playTrack() called with track: ${track.title}, index: ${index}, playlist length: ${playlistData.length}, isLoading: ${isLoading}, isTransitioning: ${isTransitioning}`,
       );
 
       // Prevent multiple simultaneous play attempts (but allow transitions)
@@ -320,7 +367,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           } catch (error) {
             console.log(
               "[PlayerContext] Error cleaning up previous sound:",
-              error
+              error,
             );
           }
           soundRef.current = null;
@@ -331,7 +378,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
         // Set the track immediately so MiniPlayer can appear
         console.log(
-          `[PlayerContext] playTrack() - Setting current track: ${track.title}, index: ${index}`
+          `[PlayerContext] playTrack() - Setting current track: ${track.title}, index: ${index}`,
         );
         setCurrentTrack(track);
         setPlaylist(effectivePlaylist);
@@ -373,7 +420,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           // If we already have a streaming URL (not a cached file), use it as original
           originalStreamUrl = audioUrl;
           console.log(
-            `[PlayerContext] Using provided streaming URL as original: ${originalStreamUrl}`
+            `[PlayerContext] Using provided streaming URL as original: ${originalStreamUrl}`,
           );
         }
 
@@ -382,7 +429,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             if (track._isSoundCloud || track.source === "soundcloud") {
               // SoundCloud URLs expire, so we need to get a fresh one
               console.log(
-                `[PlayerContext] Getting fresh SoundCloud URL for track: ${track.id}`
+                `[PlayerContext] Getting fresh SoundCloud URL for track: ${track.id}`,
               );
 
               originalStreamUrl = await getAudioStreamUrl(
@@ -391,7 +438,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                   console.log(`[PlayerContext] Streaming status: ${status}`),
                 "soundcloud",
                 track.title,
-                track.artist
+                track.artist,
               );
 
               audioUrl = originalStreamUrl;
@@ -401,7 +448,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               if (!track.audioUrl || !track.duration || track.duration === 0) {
                 const { searchAPI } = await import("../modules/searchAPI");
                 const songDetails = await searchAPI.getJioSaavnSongDetails(
-                  track.id
+                  track.id,
                 );
 
                 if (songDetails && songDetails.audioUrl) {
@@ -416,10 +463,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                   }
                 } else {
                   console.log(
-                    `[PlayerContext] JioSaavn track has no audio URL, playback failed for: ${track.title}`
+                    `[PlayerContext] JioSaavn track has no audio URL, playback failed for: ${track.title}`,
                   );
                   throw new Error(
-                    `Unable to get audio stream for JioSaavn track: ${track.title}`
+                    `Unable to get audio stream for JioSaavn track: ${track.title}`,
                   );
                 }
               } else {
@@ -427,44 +474,44 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 audioUrl = track.audioUrl;
                 originalStreamUrl = audioUrl;
                 console.log(
-                  `[PlayerContext] Using existing JioSaavn audio URL for: ${track.title}`
+                  `[PlayerContext] Using existing JioSaavn audio URL for: ${track.title}`,
                 );
               }
             } else {
               // Only fetch streaming URL if we don't already have one
               if (!track.audioUrl) {
                 console.log(
-                  `[PlayerContext] Getting generic streaming URL for track: ${track.id} (source: ${track.source || "unknown"})`
+                  `[PlayerContext] Getting generic streaming URL for track: ${track.id} (source: ${track.source || "unknown"})`,
                 );
 
                 originalStreamUrl = await getAudioStreamUrl(
                   track.id,
                   (status) =>
                     console.log(
-                      `[PlayerContext] Generic streaming status: ${status}`
+                      `[PlayerContext] Generic streaming status: ${status}`,
                     ),
                   track.source || "youtube",
                   track.title,
-                  track.artist
+                  track.artist,
                 );
 
                 audioUrl = originalStreamUrl;
                 console.log(
-                  `[PlayerContext] Got generic streaming URL: ${audioUrl}`
+                  `[PlayerContext] Got generic streaming URL: ${audioUrl}`,
                 );
               } else {
                 // Use existing audio URL if available
                 audioUrl = track.audioUrl;
                 originalStreamUrl = audioUrl;
                 console.log(
-                  `[PlayerContext] Using existing audio URL for: ${track.title}`
+                  `[PlayerContext] Using existing audio URL for: ${track.title}`,
                 );
               }
             }
           } catch (streamingError) {
             console.error(
               "[PlayerContext] Failed to get streaming URL:",
-              streamingError
+              streamingError,
             );
           }
         }
@@ -479,7 +526,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           // Note: JioSaavn tracks are excluded from cache monitoring since they use direct audio URLs
         ) {
           console.log(
-            `[PlayerContext] Starting cache monitoring for track: ${track.id}`
+            `[PlayerContext] Starting cache monitoring for track: ${track.id}`,
           );
 
           // Monitor cache progress and resume if stuck
@@ -499,14 +546,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           } catch (monitorError) {
             console.error(
               "[PlayerContext] Failed to start cache monitoring:",
-              monitorError
+              monitorError,
             );
           }
 
           // Start progressive caching for YouTube tracks
           if (track.source === "youtube") {
             console.log(
-              `[PlayerContext] Starting progressive YouTube caching for track: ${track.id}`
+              `[PlayerContext] Starting progressive YouTube caching for track: ${track.id}`,
             );
             try {
               const { startProgressiveYouTubeCache, continueCachingTrack } =
@@ -519,18 +566,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               startProgressiveYouTubeCache(
                 originalStreamUrl,
                 track.id,
-                cacheController
+                cacheController,
               ).catch((error) => {
                 console.error(
                   `[PlayerContext] Progressive YouTube caching failed for ${track.id}:`,
-                  error
+                  error,
                 );
               });
 
               // Start continuous background caching after a delay to let initial chunk download
               setTimeout(() => {
                 console.log(
-                  `[PlayerContext] Starting continuous background caching for track: ${track.id}`
+                  `[PlayerContext] Starting continuous background caching for track: ${track.id}`,
                 );
                 const continuousController = new AbortController();
 
@@ -540,18 +587,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                   continuousController,
                   (percentage) => {
                     console.log(
-                      `[PlayerContext] Continuous cache progress: ${percentage}%`
+                      `[PlayerContext] Continuous cache progress: ${percentage}%`,
                     );
                     setCacheProgress({
                       trackId: track.id,
                       percentage: percentage,
                       fileSize: 0,
                     });
-                  }
+                  },
                 ).catch((error) => {
                   console.error(
                     `[PlayerContext] Continuous caching failed for ${track.id}:`,
-                    error
+                    error,
                   );
                 });
 
@@ -564,7 +611,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             } catch (cacheError) {
               console.error(
                 "[PlayerContext] Failed to start progressive YouTube caching:",
-                cacheError
+                cacheError,
               );
             }
           }
@@ -573,7 +620,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         if (!audioUrl) {
           // Instead of throwing an error, create a placeholder track
           console.warn(
-            "[PlayerContext] No audio URL available, creating placeholder"
+            "[PlayerContext] No audio URL available, creating placeholder",
           );
           // We'll still create the sound object but with a silent/placeholder audio
           // This allows the UI to show the track info even if playback isn't available
@@ -589,7 +636,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             try {
               const { sound } = await Audio.Sound.createAsync(
                 { uri: finalAudioUrl },
-                { shouldPlay: true }
+                { shouldPlay: true },
               );
               newSound = sound;
             } catch (createError: any) {
@@ -604,7 +651,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               ) {
                 console.warn(
                   "[PlayerContext] Detected extractor error, attempting fallback strategies",
-                  errorMessage
+                  errorMessage,
                 );
 
                 try {
@@ -617,7 +664,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                       console.log(`[PlayerContext] Fallback: ${status}`),
                     track.source,
                     track.title,
-                    track.artist
+                    track.artist,
                   );
 
                   if (alternativeUrl && alternativeUrl !== finalAudioUrl) {
@@ -625,10 +672,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
                     const { sound } = await Audio.Sound.createAsync(
                       { uri: finalAudioUrl },
-                      { shouldPlay: true }
+                      { shouldPlay: true },
                     );
                     console.log(
-                      "[PlayerContext] Alternative sound created successfully"
+                      "[PlayerContext] Alternative sound created successfully",
                     );
                     newSound = sound;
                   } else {
@@ -637,11 +684,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 } catch (fallbackError) {
                   console.warn(
                     "[PlayerContext] Creating silent placeholder as last resort",
-                    fallbackError
+                    fallbackError,
                   );
                   const { sound } = await Audio.Sound.createAsync(
                     { uri: "https://www.soundjay.com/misc/sounds/silence.mp3" },
-                    { shouldPlay: false, volume: 0 }
+                    { shouldPlay: false, volume: 0 },
                   );
                   newSound = sound;
                   finalAudioUrl = "";
@@ -654,7 +701,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             // Create a silent sound object to allow UI to work
             const { sound } = await Audio.Sound.createAsync(
               { uri: "https://www.soundjay.com/misc/sounds/silence.mp3" },
-              { shouldPlay: false, volume: 0 }
+              { shouldPlay: false, volume: 0 },
             );
             newSound = sound;
             finalAudioUrl = ""; // Mark as invalid for UI
@@ -666,6 +713,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           setIsLoading(false);
           setCurrentTrack({ ...track, audioUrl: finalAudioUrl });
 
+          // Start foreground service when playing a new track
+          if (Platform.OS === "android" && !!finalAudioUrl) {
+            foregroundServiceManager.startForegroundService(track, true);
+          }
+
           // Update media notification
 
           // Show user feedback if we had to use fallback
@@ -675,7 +727,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         } catch (soundError) {
           console.error(
             "[PlayerContext] Critical error in sound creation:",
-            soundError
+            soundError,
           );
 
           // Even if everything fails, ensure UI remains functional
@@ -722,7 +774,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 status.positionMillis > 1000
               ) {
                 console.error(
-                  `[PlayerContext] CONFIRMED: ${isYouTubeStream ? "YouTube" : "SoundCloud"} audio cutout at ${status.positionMillis}ms - position stuck despite isPlaying=true (threshold: ${threshold}, initialBuffer: ${isInitialBufferPhase})`
+                  `[PlayerContext] CONFIRMED: ${isYouTubeStream ? "YouTube" : "SoundCloud"} audio cutout at ${status.positionMillis}ms - position stuck despite isPlaying=true (threshold: ${threshold}, initialBuffer: ${isInitialBufferPhase})`,
                 );
                 handleStreamFailure();
                 positionStuckCounter = 0;
@@ -733,7 +785,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                   status.positionMillis <= 1000)
               ) {
                 console.log(
-                  "[PlayerContext] Skipping stream failure detection during transition or initial buffer"
+                  "[PlayerContext] Skipping stream failure detection during transition or initial buffer",
                 );
                 positionStuckCounter = 0;
               }
@@ -749,7 +801,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               status.positionMillis < 60000
             ) {
               console.log(
-                `[PlayerContext] SoundCloud track approaching 1min, preparing for refresh at position: ${status.positionMillis}ms`
+                `[PlayerContext] SoundCloud track approaching 1min, preparing for refresh at position: ${status.positionMillis}ms`,
               );
               // Could implement pre-emptive refresh here if needed
             }
@@ -764,7 +816,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
               if (positionStuckCounter >= threshold && currentTrack) {
                 console.warn(
-                  `[PlayerContext] Audio position stuck at ${status.positionMillis}ms, possible stream failure (${isYouTubeStream ? "YouTube" : "SoundCloud"}, threshold: ${threshold})`
+                  `[PlayerContext] Audio position stuck at ${status.positionMillis}ms, possible stream failure (${isYouTubeStream ? "YouTube" : "SoundCloud"}, threshold: ${threshold})`,
                 );
                 // Try to reload the stream
                 handleStreamFailure();
@@ -778,12 +830,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               // Refresh cache info at end of song
               if (currentTrack?.id) {
                 console.log(
-                  `[PlayerContext] Song finished, refreshing cache info for: ${currentTrack.id}`
+                  `[PlayerContext] Song finished, refreshing cache info for: ${currentTrack.id}`,
                 );
                 const finalCacheInfo = await getCacheInfo(currentTrack.id);
                 console.log(
                   "[PlayerContext] Final cache info at song end:",
-                  finalCacheInfo
+                  finalCacheInfo,
                 );
 
                 // Trigger post-playback YouTube caching if this is a YouTube stream
@@ -795,17 +847,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                     currentTrack.audioUrl.includes("piped"))
                 ) {
                   console.log(
-                    `[PlayerContext] Triggering post-playback YouTube caching for: ${currentTrack.id}`
+                    `[PlayerContext] Triggering post-playback YouTube caching for: ${currentTrack.id}`,
                   );
                   // Don't await this - let it run in background
                   audioManager
                     .cacheYouTubeStreamPostPlayback(
                       currentTrack.audioUrl,
-                      currentTrack.id
+                      currentTrack.id,
                     )
                     .catch((error) => {
                       console.log(
-                        `[PlayerContext] Post-playback YouTube caching failed: ${error}`
+                        `[PlayerContext] Post-playback YouTube caching failed: ${error}`,
                       );
                     });
                 }
@@ -816,7 +868,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 nextTrack();
               } else {
                 console.log(
-                  "[PlayerContext] Skipping auto-next due to ongoing transition/loading"
+                  "[PlayerContext] Skipping auto-next due to ongoing transition/loading",
                 );
               }
             }
@@ -831,7 +883,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsTransitioning(false);
       }
     },
-    [audioManager, isLoading, isTransitioning]
+    [audioManager, isLoading, isTransitioning],
   );
 
   const playPause = useCallback(async () => {
@@ -852,10 +904,20 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         await soundRef.current.pauseAsync();
         setIsPlaying(false);
 
+        // Stop foreground service when pausing
+        if (Platform.OS === "android") {
+          foregroundServiceManager.stopForegroundService();
+        }
+
         // Background tracking removed for simplicity
       } else {
         await soundRef.current.playAsync();
         setIsPlaying(true);
+
+        // Start foreground service when playing
+        if (Platform.OS === "android") {
+          foregroundServiceManager.startForegroundService(currentTrack, true);
+        }
 
         // Background tracking removed for simplicity
       }
@@ -876,7 +938,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const nextTrack = useCallback(async () => {
     console.log("[PlayerContext] nextTrack() called");
     console.log(
-      `[PlayerContext] Playlist length: ${playlist.length}, current index: ${currentIndex}, repeat mode: ${repeatMode}`
+      `[PlayerContext] Playlist length: ${playlist.length}, current index: ${currentIndex}, repeat mode: ${repeatMode}`,
     );
 
     // Basic validation
@@ -901,7 +963,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       // Handle repeat one mode - replay current track
       if (repeatMode === "one" && currentTrack) {
         console.log(
-          "[PlayerContext] nextTrack() - Repeat one mode, replaying current track"
+          "[PlayerContext] nextTrack() - Repeat one mode, replaying current track",
         );
         await playTrack(currentTrack, playlist, currentIndex);
         return;
@@ -912,12 +974,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log("[PlayerContext] nextTrack() - Single song playlist");
         if (repeatMode === "one" || repeatMode === "all") {
           console.log(
-            "[PlayerContext] nextTrack() - Single song with repeat, replaying"
+            "[PlayerContext] nextTrack() - Single song with repeat, replaying",
           );
           await playTrack(currentTrack!, playlist, 0);
         } else {
           console.log(
-            "[PlayerContext] nextTrack() - Single song, no repeat, stopping"
+            "[PlayerContext] nextTrack() - Single song, no repeat, stopping",
           );
           if (soundRef.current) {
             await soundRef.current.stopAsync();
@@ -933,12 +995,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (nextTrackItem) {
         console.log(
-          `[PlayerContext] nextTrack() - Playing next track at index ${nextIndex}: ${nextTrackItem.title}`
+          `[PlayerContext] nextTrack() - Playing next track at index ${nextIndex}: ${nextTrackItem.title}`,
         );
         await playTrack(nextTrackItem, playlist, nextIndex);
       } else {
         console.log(
-          `[PlayerContext] nextTrack() - No track found at index ${nextIndex}`
+          `[PlayerContext] nextTrack() - No track found at index ${nextIndex}`,
         );
         // If no track found, try to stop playback gracefully
         if (soundRef.current) {
@@ -970,7 +1032,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const previousTrack = useCallback(async () => {
     console.log("[PlayerContext] previousTrack() called");
     console.log(
-      `[PlayerContext] Playlist length: ${playlist.length}, current index: ${currentIndex}, repeat mode: ${repeatMode}`
+      `[PlayerContext] Playlist length: ${playlist.length}, current index: ${currentIndex}, repeat mode: ${repeatMode}`,
     );
 
     // Basic validation
@@ -995,7 +1057,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       // Handle repeat one mode - replay current track
       if (repeatMode === "one" && currentTrack) {
         console.log(
-          "[PlayerContext] previousTrack() - Repeat one mode, replaying current track"
+          "[PlayerContext] previousTrack() - Repeat one mode, replaying current track",
         );
         await playTrack(currentTrack, playlist, currentIndex);
         return;
@@ -1006,12 +1068,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log("[PlayerContext] previousTrack() - Single song playlist");
         if (repeatMode === "one" || repeatMode === "all") {
           console.log(
-            "[PlayerContext] previousTrack() - Single song with repeat, replaying"
+            "[PlayerContext] previousTrack() - Single song with repeat, replaying",
           );
           await playTrack(currentTrack!, playlist, 0);
         } else {
           console.log(
-            "[PlayerContext] previousTrack() - Single song, no repeat, stopping"
+            "[PlayerContext] previousTrack() - Single song, no repeat, stopping",
           );
           if (soundRef.current) {
             await soundRef.current.stopAsync();
@@ -1028,12 +1090,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (prevTrack) {
         console.log(
-          `[PlayerContext] previousTrack() - Playing previous track at index ${prevIndex}: ${prevTrack.title}`
+          `[PlayerContext] previousTrack() - Playing previous track at index ${prevIndex}: ${prevTrack.title}`,
         );
         await playTrack(prevTrack, playlist, prevIndex);
       } else {
         console.log(
-          `[PlayerContext] previousTrack() - No track found at index ${prevIndex}`
+          `[PlayerContext] previousTrack() - No track found at index ${prevIndex}`,
         );
         // If no track found, try to stop playback gracefully
         if (soundRef.current) {
@@ -1065,7 +1127,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const seekTo = useCallback(
     async (position: number) => {
       console.log(
-        `[PlayerContext] seekTo called - position: ${position}, soundRef.current: ${!!soundRef.current}, currentTrack?.audioUrl: ${!!currentTrack?.audioUrl}`
+        `[PlayerContext] seekTo called - position: ${position}, soundRef.current: ${!!soundRef.current}, currentTrack?.audioUrl: ${!!currentTrack?.audioUrl}`,
       );
 
       if (!soundRef.current || !currentTrack?.audioUrl) {
@@ -1092,7 +1154,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             currentTrack.source === "youtube")
         ) {
           console.log(
-            `[PlayerContext] Checking if position ${position}ms is cached for track: ${currentTrack.id}`
+            `[PlayerContext] Checking if position ${position}ms is cached for track: ${currentTrack.id}`,
           );
 
           try {
@@ -1102,15 +1164,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
             const positionCheck = await manager.isPositionCached(
               currentTrack.id,
-              position
+              position,
             );
             console.log(
-              `[PlayerContext] Position cache check: isCached=${positionCheck.isCached}, cacheEnd=${positionCheck.estimatedCacheEndMs}ms`
+              `[PlayerContext] Position cache check: isCached=${positionCheck.isCached}, cacheEnd=${positionCheck.estimatedCacheEndMs}ms`,
             );
 
             if (!positionCheck.isCached) {
               console.warn(
-                `[PlayerContext] Position ${position}ms is not cached (cache ends at ${positionCheck.estimatedCacheEndMs}ms). Attempting to cache more...`
+                `[PlayerContext] Position ${position}ms is not cached (cache ends at ${positionCheck.estimatedCacheEndMs}ms). Attempting to cache more...`,
               );
 
               // Set loading state to indicate we're caching
@@ -1120,7 +1182,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               // For YouTube tracks, use position-based caching
               if (currentTrack.source === "youtube") {
                 console.log(
-                  `[PlayerContext] Starting position-based caching from ${position}ms for YouTube track: ${currentTrack.id}`
+                  `[PlayerContext] Starting position-based caching from ${position}ms for YouTube track: ${currentTrack.id}`,
                 );
                 try {
                   const { cacheYouTubeStreamFromPosition } =
@@ -1134,16 +1196,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                     currentTrack.audioUrl,
                     currentTrack.id,
                     position / 1000, // Convert ms to seconds
-                    seekCacheController
+                    seekCacheController,
                   );
 
                   console.log(
-                    `[PlayerContext] Position-based caching completed, cached URL: ${cachedUrl}`
+                    `[PlayerContext] Position-based caching completed, cached URL: ${cachedUrl}`,
                   );
                 } catch (seekCacheError) {
                   console.error(
                     `[PlayerContext] Position-based caching failed for ${currentTrack.id}:`,
-                    seekCacheError
+                    seekCacheError,
                   );
                   // Fallback to regular cache monitoring
                   const { monitorAndResumeCache } =
@@ -1154,14 +1216,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                     currentTrack.audioUrl,
                     (percentage) => {
                       console.log(
-                        `[PlayerContext] Fallback cache completion progress: ${percentage}%`
+                        `[PlayerContext] Fallback cache completion progress: ${percentage}%`,
                       );
                       setCacheProgress({
                         trackId: currentTrack.id,
                         percentage: percentage,
                         fileSize: 0, // Will be updated when cache info is fetched
                       });
-                    }
+                    },
                   );
                 }
               } else {
@@ -1174,14 +1236,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                   currentTrack.audioUrl,
                   (percentage) => {
                     console.log(
-                      `[PlayerContext] Cache completion progress: ${percentage}%`
+                      `[PlayerContext] Cache completion progress: ${percentage}%`,
                     );
                     setCacheProgress({
                       trackId: currentTrack.id,
                       percentage: percentage,
                       fileSize: 0, // Will be updated when cache info is fetched
                     });
-                  }
+                  },
                 );
               }
 
@@ -1193,17 +1255,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               setIsLoading(false);
 
               console.log(
-                "[PlayerContext] Seeking to uncached position - will resume when ready"
+                "[PlayerContext] Seeking to uncached position - will resume when ready",
               );
             } else {
               console.log(
-                `[PlayerContext] Position ${position}ms is within cached range`
+                `[PlayerContext] Position ${position}ms is within cached range`,
               );
             }
           } catch (cacheCheckError) {
             console.error(
               "[PlayerContext] Error checking position cache:",
-              cacheCheckError
+              cacheCheckError,
             );
             // Continue with seek even if cache check fails - better to try than block
           }
@@ -1232,7 +1294,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           console.error("[PlayerContext] Error seeking:", error);
         } else {
           console.log(
-            "[PlayerContext] Seek failed - player no longer exists (expected during cleanup)"
+            "[PlayerContext] Seek failed - player no longer exists (expected during cleanup)",
           );
         }
         throw error;
@@ -1244,7 +1306,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       currentTrack?._isSoundCloud,
       currentTrack?.source,
       isPlaying,
-    ]
+    ],
   );
 
   const handleStreamFailure = useCallback(async () => {
@@ -1279,7 +1341,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     // For YouTube streams in the first 5 seconds, be more conservative
     if (isYouTubeStream && currentPosition < 5000) {
       console.warn(
-        "[PlayerContext] YouTube stream failure in early phase, waiting before reload..."
+        "[PlayerContext] YouTube stream failure in early phase, waiting before reload...",
       );
       // Don't reload immediately for YouTube in early phase - might be normal buffering
       return;
@@ -1288,7 +1350,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     // Check retry limit to prevent infinite loops
     if (streamRetryCount >= 3) {
       console.error(
-        "[PlayerContext] Maximum stream retry attempts reached, giving up"
+        "[PlayerContext] Maximum stream retry attempts reached, giving up",
       );
       setIsPlaying(false);
       setIsLoading(false);
@@ -1298,7 +1360,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     setStreamRetryCount((prev) => prev + 1);
 
     console.log(
-      `[PlayerContext] Current track: ${currentTrack.title} by ${currentTrack.artist}`
+      `[PlayerContext] Current track: ${currentTrack.title} by ${currentTrack.artist}`,
     );
     console.log(`[PlayerContext] Current audio URL: ${currentTrack.audioUrl}`);
 
@@ -1312,7 +1374,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           if (status.isLoaded) {
             currentPosition = status.positionMillis;
             console.log(
-              `[PlayerContext] Current position: ${currentPosition}ms`
+              `[PlayerContext] Current position: ${currentPosition}ms`,
             );
           } else {
             console.log("[PlayerContext] Sound not loaded, position will be 0");
@@ -1349,15 +1411,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             undefined,
             "soundcloud",
             currentTrack.title,
-            currentTrack.artist
+            currentTrack.artist,
           );
           console.log(
-            `[PlayerContext] Got fresh SoundCloud URL: ${newAudioUrl}`
+            `[PlayerContext] Got fresh SoundCloud URL: ${newAudioUrl}`,
           );
         } catch (error) {
           console.error(
             "[PlayerContext] Failed to get fresh SoundCloud URL:",
-            error
+            error,
           );
           // Keep existing URL as fallback
         }
@@ -1369,36 +1431,36 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             undefined,
             currentTrack._isSoundCloud ? "soundcloud" : "youtube",
             currentTrack.title,
-            currentTrack.artist
+            currentTrack.artist,
           );
           console.log(`[PlayerContext] Got fresh URL: ${newAudioUrl}`);
         } catch (error) {
           console.error(
             "[PlayerContext] Failed to get fresh audio URL:",
-            error
+            error,
           );
         }
       }
 
       if (newAudioUrl) {
         console.log(
-          `[PlayerContext] Creating new sound with URL: ${newAudioUrl}`
+          `[PlayerContext] Creating new sound with URL: ${newAudioUrl}`,
         );
         console.log(
-          `[PlayerContext] URL starts with file://: ${newAudioUrl.startsWith("file://")}`
+          `[PlayerContext] URL starts with file://: ${newAudioUrl.startsWith("file://")}`,
         );
         console.log(
-          `[PlayerContext] URL contains double file://: ${newAudioUrl.includes("file://file://")}`
+          `[PlayerContext] URL contains double file://: ${newAudioUrl.includes("file://file://")}`,
         );
 
         // Check if file exists for local files
         if (newAudioUrl.startsWith("file://")) {
           try {
             const fileInfo = await FileSystem.getInfoAsync(
-              newAudioUrl.replace("file://", "")
+              newAudioUrl.replace("file://", ""),
             );
             console.log(
-              `[PlayerContext] File exists check: ${fileInfo.exists}${fileInfo.exists ? `, size: ${fileInfo.size}` : ""}`
+              `[PlayerContext] File exists check: ${fileInfo.exists}${fileInfo.exists ? `, size: ${fileInfo.size}` : ""}`,
             );
           } catch (error) {
             console.log(`[PlayerContext] File check error: ${error}`);
@@ -1408,14 +1470,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         // Create new sound with fresh URL
         const { sound: newSound } = await Audio.Sound.createAsync(
           { uri: newAudioUrl },
-          { shouldPlay: true }
+          { shouldPlay: true },
         );
         console.log("[PlayerContext] New sound created successfully");
 
         // Seek to previous position
         if (currentPosition > 0) {
           console.log(
-            `[PlayerContext] Seeking to previous position: ${currentPosition}ms`
+            `[PlayerContext] Seeking to previous position: ${currentPosition}ms`,
           );
           try {
             await newSound.setPositionAsync(currentPosition);
@@ -1454,18 +1516,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
             if (status.didJustFinish) {
               console.log(
-                "[PlayerContext] Song finished - status.didJustFinish triggered"
+                "[PlayerContext] Song finished - status.didJustFinish triggered",
               );
 
               // Refresh cache info at end of song
               if (currentTrack?.id) {
                 console.log(
-                  `[PlayerContext] Song finished, refreshing cache info for: ${currentTrack.id}`
+                  `[PlayerContext] Song finished, refreshing cache info for: ${currentTrack.id}`,
                 );
                 const finalCacheInfo = await getCacheInfo(currentTrack.id);
                 console.log(
                   "[PlayerContext] Final cache info at song end:",
-                  finalCacheInfo
+                  finalCacheInfo,
                 );
 
                 // Trigger post-playback YouTube caching if this is a YouTube stream
@@ -1477,17 +1539,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                     currentTrack.audioUrl.includes("piped"))
                 ) {
                   console.log(
-                    `[PlayerContext] Triggering post-playback YouTube caching for: ${currentTrack.id}`
+                    `[PlayerContext] Triggering post-playback YouTube caching for: ${currentTrack.id}`,
                   );
                   // Don't await this - let it run in background
                   audioManager
                     .cacheYouTubeStreamPostPlayback(
                       currentTrack.audioUrl,
-                      currentTrack.id
+                      currentTrack.id,
                     )
                     .catch((error) => {
                       console.log(
-                        `[PlayerContext] Post-playback YouTube caching failed: ${error}`
+                        `[PlayerContext] Post-playback YouTube caching failed: ${error}`,
                       );
                     });
                 }
@@ -1495,7 +1557,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
               console.log("[PlayerContext] Calling nextTrack() for auto-play");
               console.log(
-                `[PlayerContext] Current playlist length: ${playlist.length}, current index: ${currentIndex}, repeat mode: ${repeatMode}`
+                `[PlayerContext] Current playlist length: ${playlist.length}, current index: ${currentIndex}, repeat mode: ${repeatMode}`,
               );
 
               // Wrap nextTrack in try-catch to handle auto-play failures gracefully
@@ -1509,14 +1571,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
                   // If auto-play fails, try to pause gracefully
                   console.log(
-                    "[PlayerContext] Auto-play failed, pausing playback"
+                    "[PlayerContext] Auto-play failed, pausing playback",
                   );
                   if (soundRef.current) {
                     try {
                       await soundRef.current.stopAsync();
                     } catch (stopError) {
                       console.error(
-                        `[PlayerContext] Failed to stop sound: ${stopError}`
+                        `[PlayerContext] Failed to stop sound: ${stopError}`,
                       );
                     }
                   }
@@ -1526,7 +1588,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 }
               } else {
                 console.log(
-                  "[PlayerContext] Skipping auto-play due to ongoing transition"
+                  "[PlayerContext] Skipping auto-play due to ongoing transition",
                 );
               }
             }
@@ -1543,13 +1605,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               if (timeSinceLastProgress > 3000) {
                 // No progress in 3 seconds
                 console.warn(
-                  "[PlayerContext] Possible cache exhaustion detected, reloading stream..."
+                  "[PlayerContext] Possible cache exhaustion detected, reloading stream...",
                 );
                 handleStreamFailure();
               }
             } else if (status.positionMillis > 300000 && isTransitioning) {
               console.log(
-                "[PlayerContext] Skipping cache exhaustion check during transition"
+                "[PlayerContext] Skipping cache exhaustion check during transition",
               );
             }
           }
@@ -1558,7 +1620,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log("[PlayerContext] === STREAM RELOADED SUCCESSFULLY ===");
       } else {
         console.warn(
-          "[PlayerContext] Could not get fresh audio URL for reload"
+          "[PlayerContext] Could not get fresh audio URL for reload",
         );
       }
     } catch (error) {
@@ -1571,7 +1633,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     console.log("[PlayerContext] Stopping all continuous caching operations");
     cacheControllersRef.current.forEach((controller, trackId) => {
       console.log(
-        `[PlayerContext] Aborting continuous caching for track: ${trackId}`
+        `[PlayerContext] Aborting continuous caching for track: ${trackId}`,
       );
       controller.abort();
     });
@@ -1585,6 +1647,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     // Clear media notification
 
     // Background services removed for simplicity
+
+    // Stop foreground service when clearing player
+    if (Platform.OS === "android") {
+      foregroundServiceManager.stopForegroundService();
+    }
 
     setCurrentTrack(null);
     setPlaylist([]);
@@ -1623,7 +1690,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       // Create shuffled playlist (excluding current track)
       const currentTrackItem = playlist[currentIndex];
       const remainingTracks = playlist.filter(
-        (_, index) => index !== currentIndex
+        (_, index) => index !== currentIndex,
       );
 
       // Fisher-Yates shuffle
@@ -1643,7 +1710,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       // Restore original playlist order
       const currentTrackItem = playlist[currentIndex];
       const originalIndex = originalPlaylistRef.current.findIndex(
-        (track) => track.id === currentTrackItem?.id
+        (track) => track.id === currentTrackItem?.id,
       );
 
       setPlaylist(originalPlaylistRef.current);
@@ -1677,21 +1744,21 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     (trackId: string) => {
       return likedSongs.some((song) => song.id === trackId);
     },
-    [likedSongs]
+    [likedSongs],
   );
 
   const getCacheInfo = useCallback(
     async (trackId: string) => {
       return await audioManager.getCacheInfo(trackId);
     },
-    [audioManager]
+    [audioManager],
   );
 
   // Handle notification responses for media controls
   useEffect(() => {
     // Skip notification handling since expo-notifications is removed
     console.log(
-      "[PlayerContext] Notification handling disabled - expo-notifications removed"
+      "[PlayerContext] Notification handling disabled - expo-notifications removed",
     );
     return () => {};
   }, [playPause, nextTrack, previousTrack, clearPlayer]);

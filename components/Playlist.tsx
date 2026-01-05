@@ -22,6 +22,8 @@ interface PlaylistProps {
   onBack?: () => void;
   onPlayAll?: () => void;
   onShuffle?: () => void;
+  onSongOptionsPress?: (song: any) => void;
+  onHeaderOptionsPress?: () => void;
   contentContainerStyle?: any;
   emptyMessage?: string;
   emptySubMessage?: string;
@@ -208,6 +210,8 @@ export const Playlist: React.FC<PlaylistProps> = ({
   onBack,
   onPlayAll,
   onShuffle,
+  onSongOptionsPress,
+  onHeaderOptionsPress,
   contentContainerStyle,
   emptyMessage = "No songs found",
   emptySubMessage = "This album is currently empty.",
@@ -232,7 +236,9 @@ export const Playlist: React.FC<PlaylistProps> = ({
         <ActionButton>
           <Ionicons name="cloud-download-outline" size={22} color="#999" />
         </ActionButton>
-        <ActionButton>
+        <ActionButton
+          onPress={() => onSongOptionsPress && onSongOptionsPress(item)}
+        >
           <Ionicons name="ellipsis-vertical" size={20} color="#999" />
         </ActionButton>
       </SongActions>
@@ -303,7 +309,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
           <Ionicons name="chevron-back" size={24} color="#fff" />
         </HeaderButton>
         <HeaderTitle>Album</HeaderTitle>
-        <HeaderButton>
+        <HeaderButton onPress={onHeaderOptionsPress}>
           <Ionicons name="ellipsis-vertical" size={20} color="#fff" />
         </HeaderButton>
       </Header>

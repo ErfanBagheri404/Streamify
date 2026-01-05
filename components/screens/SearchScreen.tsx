@@ -26,11 +26,13 @@ const SearchInput = styled.TextInput`
   height: 48px;
   background-color: #262626;
   border-radius: 24px;
-  padding: 0 16px;
+  padding-horizontal: 16px;
   color: #fff;
   font-size: 16px;
   font-family: GoogleSansRegular;
   text-align-vertical: center;
+  include-font-padding: false;
+  vertical-align: middle;
 `;
 
 const ResultsContainer = styled.ScrollView`
@@ -345,7 +347,7 @@ export default function SearchScreen({ navigation }: any) {
           // Remove YouTube-specific noise from upload string
           uploaded: r.uploaded?.replace(
             /(\[\d.\]+\['MKB'\]?)\s*views?\s*•?\s*/i,
-            ""
+            "",
           ),
         }));
 
@@ -357,7 +359,7 @@ export default function SearchScreen({ navigation }: any) {
         setIsLoading(false);
       }
     },
-    [searchQuery, selectedFilter, selectedSource]
+    [searchQuery, selectedFilter, selectedSource],
   );
 
   // Auto-trigger search when switching Sources/Filters if we have a query
@@ -398,7 +400,7 @@ export default function SearchScreen({ navigation }: any) {
       try {
         const newSuggestions = await searchAPI.getSuggestions(
           text,
-          selectedSource
+          selectedSource,
         );
 
         setSuggestions(newSuggestions.slice(0, 5));
@@ -446,7 +448,7 @@ export default function SearchScreen({ navigation }: any) {
         const { searchAPI } = await import("../../modules/searchAPI");
         const albumDetails = await searchAPI.getJioSaavnAlbumDetails(
           item.albumId,
-          item.albumName
+          item.albumName,
         );
 
         if (
@@ -477,7 +479,7 @@ export default function SearchScreen({ navigation }: any) {
 
           // Find the index of the selected song in the album
           const selectedIndex = albumPlaylist.findIndex(
-            (song: any) => song.id === item.id
+            (song: any) => song.id === item.id,
           );
 
           // Open the album playlist without auto-playing
@@ -495,7 +497,7 @@ export default function SearchScreen({ navigation }: any) {
 
       return false; // Fallback to direct play
     },
-    [navigation]
+    [navigation],
   );
 
   const onSuggestionPress = (item: string) => {
@@ -660,7 +662,7 @@ export default function SearchScreen({ navigation }: any) {
                               _isSoundCloud: result.source === "soundcloud",
                               _isJioSaavn: result.source === "jiosaavn",
                             })),
-                            searchResults.indexOf(item)
+                            searchResults.indexOf(item),
                           );
                         }}
                       >
@@ -670,7 +672,7 @@ export default function SearchScreen({ navigation }: any) {
                           author={item.author}
                           duration={formatDuration(
                             parseInt(item.duration) || 0,
-                            item.source
+                            item.source,
                           )}
                           views={
                             item.source === "jiosaavn" ? undefined : item.views
@@ -752,7 +754,7 @@ export default function SearchScreen({ navigation }: any) {
                           author={item.author}
                           duration={formatDuration(
                             parseInt(item.duration) || 0,
-                            item.source
+                            item.source,
                           )}
                           views={
                             item.source === "jiosaavn" ? undefined : item.views
@@ -797,7 +799,7 @@ export default function SearchScreen({ navigation }: any) {
                           author={item.author}
                           duration={formatDuration(
                             parseInt(item.duration) || 0,
-                            item.source
+                            item.source,
                           )}
                           views={
                             item.source === "jiosaavn" ? undefined : item.views
@@ -815,7 +817,7 @@ export default function SearchScreen({ navigation }: any) {
 
               {/* Songs Section */}
               {searchResults.filter(
-                (item) => !item.type || item.type === "song"
+                (item) => !item.type || item.type === "song",
               ).length > 0 && (
                 <SectionContainer>
                   <SectionTitle>Songs</SectionTitle>
@@ -890,7 +892,7 @@ export default function SearchScreen({ navigation }: any) {
                               _isSoundCloud: result.source === "soundcloud",
                               _isJioSaavn: result.source === "jiosaavn",
                             })),
-                            searchResults.indexOf(item)
+                            searchResults.indexOf(item),
                           );
                         }}
                       >
@@ -900,7 +902,7 @@ export default function SearchScreen({ navigation }: any) {
                           author={item.author}
                           duration={formatDuration(
                             parseInt(item.duration) || 0,
-                            item.source
+                            item.source,
                           )}
                           views={
                             item.source === "jiosaavn" ? undefined : item.views

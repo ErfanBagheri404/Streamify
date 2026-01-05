@@ -224,6 +224,11 @@ function AppContent() {
     setShowFullPlayer(false);
   };
 
+  const handlePlaylistUpdated = () => {
+    console.log("[App] Playlist updated, triggering refresh");
+    // This will be handled by the focus listener in LibraryScreen
+  };
+
   // Track current screen name for MiniPlayer positioning
   const [currentScreen, setCurrentScreen] = React.useState<string>("Home");
 
@@ -344,7 +349,7 @@ function AppContent() {
           onExpand={handleExpandPlayer}
           currentScreen={currentScreen}
         />
-        <FullPlayerModal visible={showFullPlayer} onClose={handleClosePlayer} />
+        <FullPlayerModal visible={showFullPlayer} onClose={handleClosePlayer} onPlaylistUpdated={handlePlaylistUpdated} />
       </View>
     </PlayerProvider>
   );
@@ -411,7 +416,7 @@ export default function App() {
 
   // Show app content when fonts are loaded
   if (!fontsLoaded) {
-    return <Text>LOADINGLOADINGLOADING</Text>;
+    return null;
   }
 
   return <AppContent />;

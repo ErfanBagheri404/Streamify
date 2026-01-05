@@ -22,6 +22,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { usePlayer } from "../contexts/PlayerContext";
 import { formatTime } from "../utils/formatters";
 import { CachedLyrics, lyricsService } from "../modules/lyricsService";
+import { SongActionSheet } from "./SongActionSheet";
+import { StorageService, Playlist } from "../utils/storage";
 
 const { Animated, PanResponder } = require("react-native");
 
@@ -29,6 +31,28 @@ const { width, height } = Dimensions.get("window");
 const SHEET_HEIGHT = height * 0.5;
 const SHEET_CLOSED_TOP = height;
 const SHEET_HALF_TOP = height - SHEET_HEIGHT;
+
+const PLAYER_SHEET_OPTIONS = [
+  { key: "Share", label: "Share", icon: "share-outline" },
+  {
+    key: "Add to other playlist",
+    label: "Add to other playlist",
+    icon: "add-circle-outline",
+  },
+  { key: "Go to album", label: "Go to album", icon: "albums-outline" },
+  { key: "Go to artists", label: "Go to artists", icon: "people-outline" },
+  { key: "Sleep timer", label: "Sleep timer", icon: "time-outline" },
+  {
+    key: "Go to song radio",
+    label: "Go to song radio",
+    icon: "radio-outline",
+  },
+  {
+    key: "View song credits",
+    label: "View song credits",
+    icon: "information-circle-outline",
+  },
+];
 
 const ModalContainer = styled.View`
   flex: 1;
@@ -203,6 +227,81 @@ const SheetItemText = styled.Text`
   line-height: 20px;
 `;
 
+const PlaylistSelectionModal = styled.Modal`
+  flex: 1;
+  background-color: rgba(0, 0, 0, 0.8);
+`;
+
+const PlaylistSelectionContainer = styled.View`
+  flex: 1;
+  background-color: #1a1a1a;
+  margin-top: 50px;
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+`;
+
+const PlaylistSelectionHeader = styled.View`
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+  border-bottom-width: 1px;
+  border-bottom-color: #333;
+`;
+
+const PlaylistSelectionTitle = styled.Text`
+  color: #fff;
+  font-size: 18px;
+  font-family: GoogleSansBold;
+`;
+
+const PlaylistSelectionClose = styled.TouchableOpacity`
+  padding: 8px;
+`;
+
+const PlaylistItem = styled.TouchableOpacity`
+  flex-direction: row;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom-width: 1px;
+  border-bottom-color: #2a2a2a;
+`;
+
+const PlaylistCover = styled.Image`
+  width: 50px;
+  height: 50px;
+  border-radius: 8px;
+  background-color: #333;
+  margin-right: 12px;
+`;
+
+const PlaylistPlaceholderCover = styled.View`
+  width: 50px;
+  height: 50px;
+  border-radius: 8px;
+  background-color: #333;
+  margin-right: 12px;
+  justify-content: center;
+  align-items: center;
+`;
+
+const PlaylistInfo = styled.View`
+  flex: 1;
+`;
+
+const PlaylistName = styled.Text`
+  color: #fff;
+  font-size: 16px;
+  font-family: GoogleSansMedium;
+`;
+
+const PlaylistMeta = styled.Text`
+  color: #888;
+  font-size: 14px;
+  font-family: GoogleSansRegular;
+  margin-top: 2px;
+`;
+
 const AlbumArtWrapper = styled.View`
   position: relative;
   width: ${width - 56}px;
@@ -236,7 +335,7 @@ const TrackRow = styled.View`
   padding-horizontal: 28px;
 `;
 
-const LikeButton = styled.TouchableOpacity`
+const LikeButton = styled(TouchableOpacity)`
   justify-content: center;
   align-items: center;
   padding-left: 40px;
@@ -303,16 +402,13 @@ const TimeText = styled.Text`
 
 const Controls = styled.View`
   flex-direction: row;
-  justify-content: center;
   align-items: center;
+  justify-content: space-between;
+  margin-horizontal: 28px;
   margin-top: 20px;
-  padding-horizontal: 28px;
-  width: 100%;
 `;
 
-const ControlButton = styled.TouchableOpacity`
-  padding: 16px;
-  margin: 0 16px;
+const ControlButton = styled(TouchableOpacity)`
   position: relative;
 `;
 
@@ -328,13 +424,10 @@ const RepeatNumber = styled.Text`
   font-family: GoogleSansBold;
 `;
 
-const PlayPauseButton = styled.TouchableOpacity`
+const PlayPauseButton = styled(TouchableOpacity)`
   background-color: #fff;
   border-radius: 32px;
   padding: 16px;
-  margin: 0 24px;
-  width: 56px;
-  height: 56px;
   justify-content: center;
   align-items: center;
 `;
@@ -424,11 +517,13 @@ const Spacer = styled.View<{ size: number }>`
 interface FullPlayerModalProps {
   visible: boolean;
   onClose: () => void;
+  onPlaylistUpdated?: () => void;
 }
 
 export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   visible,
   onClose,
+  onPlaylistUpdated,
 }) => {
   const {
     currentTrack,
@@ -473,6 +568,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [sheetState, setSheetState] = useState<"closed" | "half" | "full">(
     "closed"
   );
+  const [showPlaylistSelection, setShowPlaylistSelection] = useState(false);
+  const [userPlaylists, setUserPlaylists] = useState<Playlist[]>([]);
   const sheetTop = useRef(new Animated.Value(SHEET_CLOSED_TOP)).current;
   const [sheetHeight, setSheetHeight] = useState(SHEET_HEIGHT);
   const sheetStateRef = useRef<"closed" | "half" | "full">("closed");
@@ -516,8 +613,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               ? SHEET_HALF_TOP
               : SHEET_CLOSED_TOP;
         let next = base + gestureState.dy;
-        if (next < 0) next = 0;
-        if (next > SHEET_CLOSED_TOP) next = SHEET_CLOSED_TOP;
+        if (next < 0) {
+          next = 0;
+        }
+        if (next > SHEET_CLOSED_TOP) {
+          next = SHEET_CLOSED_TOP;
+        }
         sheetTop.setValue(next);
       },
       onPanResponderRelease: (_, gestureState) => {
@@ -554,9 +655,63 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     animateSheet("closed");
   };
 
+  const loadUserPlaylists = async () => {
+    try {
+      const allPlaylists = await StorageService.loadPlaylists();
+      // Filter out system playlists (liked songs and previously played are not in user playlists)
+      setUserPlaylists(allPlaylists);
+    } catch (error) {
+      console.error("[FullPlayerModal] Error loading playlists:", error);
+    }
+  };
+
+  const handlePlaylistSelect = async (playlist: Playlist) => {
+    if (!currentTrack) {
+      console.warn("[FullPlayerModal] No current track to add");
+      return;
+    }
+
+    try {
+      // Check if song is already in playlist
+      const isAlreadyInPlaylist = playlist.tracks.some(
+        (track) => track.id === currentTrack.id
+      );
+
+      if (isAlreadyInPlaylist) {
+        console.log("[FullPlayerModal] Song already in playlist");
+        setShowPlaylistSelection(false);
+        return;
+      }
+
+      // Add current track to playlist
+      const updatedPlaylist = {
+        ...playlist,
+        tracks: [...playlist.tracks, currentTrack],
+        updatedAt: new Date().toISOString(),
+      };
+
+      await StorageService.updatePlaylist(updatedPlaylist);
+      console.log("[FullPlayerModal] Song added to playlist:", playlist.name);
+
+      // Notify parent component that playlist was updated
+      if (onPlaylistUpdated) {
+        onPlaylistUpdated();
+      }
+
+      setShowPlaylistSelection(false);
+    } catch (error) {
+      console.error("[FullPlayerModal] Error adding song to playlist:", error);
+    }
+  };
+
   const handleOptionPress = (option: string) => {
     console.log("[FullPlayerModal] Option selected:", option);
     animateSheet("closed");
+
+    if (option === "Add to other playlist") {
+      loadUserPlaylists();
+      setShowPlaylistSelection(true);
+    }
   };
 
   // Fetch real lyrics when track changes
@@ -983,103 +1138,75 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
             <Spacer size={40} />
           </ScrollView>
         </SafeArea>
-        {isOptionsVisible && (
-          <>
-            <BottomSheetOverlay activeOpacity={1} onPress={closeOptions} />
-            <BottomSheetContainer
-              style={{ top: sheetTop, height: sheetHeight }}
-              {...panResponder.panHandlers}
-            >
-              <BottomSheetInner>
-                <SheetHandle />
-                <SheetHeaderRow>
-                  {currentTrack.thumbnail ? (
-                    <SheetHeaderCoverImage
-                      source={{ uri: currentTrack.thumbnail }}
+        <SongActionSheet
+          visible={isOptionsVisible}
+          onClose={closeOptions}
+          sheetTop={sheetTop}
+          sheetHeight={sheetHeight}
+          panHandlers={panResponder.panHandlers}
+          currentTrack={
+            currentTrack || { title: "", artist: "", thumbnail: "" }
+          }
+          options={PLAYER_SHEET_OPTIONS}
+          onOptionPress={handleOptionPress}
+        />
+
+        {/* Playlist Selection Modal */}
+        <PlaylistSelectionModal
+          visible={showPlaylistSelection}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowPlaylistSelection(false)}
+        >
+          <PlaylistSelectionContainer>
+            <PlaylistSelectionHeader>
+              <PlaylistSelectionTitle>Select Playlist</PlaylistSelectionTitle>
+              <PlaylistSelectionClose
+                onPress={() => setShowPlaylistSelection(false)}
+              >
+                <Ionicons name="close" size={24} color="#fff" />
+              </PlaylistSelectionClose>
+            </PlaylistSelectionHeader>
+
+            <ScrollView>
+              {userPlaylists.map((playlist) => (
+                <PlaylistItem
+                  key={playlist.id}
+                  onPress={() => handlePlaylistSelect(playlist)}
+                >
+                  {playlist.tracks.length > 0 &&
+                  playlist.tracks[0].thumbnail ? (
+                    <PlaylistCover
+                      source={{ uri: playlist.tracks[0].thumbnail }}
                     />
                   ) : (
-                    <SheetHeaderCoverPlaceholder>
-                      <Ionicons
-                        name="musical-notes"
-                        size={24}
-                        color="#ffffff"
-                      />
-                    </SheetHeaderCoverPlaceholder>
+                    <PlaylistPlaceholderCover>
+                      <Ionicons name="musical-notes" size={24} color="#666" />
+                    </PlaylistPlaceholderCover>
                   )}
-                  <SheetHeaderTextContainer>
-                    <SheetHeaderTitle numberOfLines={1}>
-                      {currentTrack.title}
-                    </SheetHeaderTitle>
-                    {currentTrack.artist && (
-                      <SheetHeaderArtist numberOfLines={1}>
-                        {currentTrack.artist}
-                      </SheetHeaderArtist>
-                    )}
-                  </SheetHeaderTextContainer>
-                </SheetHeaderRow>
-                <SheetSeparator />
-                <SheetContent>
-                  <SheetItem onPress={() => handleOptionPress("Share")}>
-                    <SheetItemIconWrapper>
-                      <Ionicons name="share-outline" size={22} color="#fff" />
-                    </SheetItemIconWrapper>
-                    <SheetItemText>Share</SheetItemText>
-                  </SheetItem>
-                  <SheetItem
-                    onPress={() => handleOptionPress("Add to other playlist")}
-                  >
-                    <SheetItemIconWrapper>
-                      <Ionicons
-                        name="add-circle-outline"
-                        size={22}
-                        color="#fff"
-                      />
-                    </SheetItemIconWrapper>
-                    <SheetItemText>Add to other playlist</SheetItemText>
-                  </SheetItem>
-                  <SheetItem onPress={() => handleOptionPress("Go to album")}>
-                    <SheetItemIconWrapper>
-                      <Ionicons name="albums-outline" size={22} color="#fff" />
-                    </SheetItemIconWrapper>
-                    <SheetItemText>Go to album</SheetItemText>
-                  </SheetItem>
-                  <SheetItem onPress={() => handleOptionPress("Go to artists")}>
-                    <SheetItemIconWrapper>
-                      <Ionicons name="people-outline" size={22} color="#fff" />
-                    </SheetItemIconWrapper>
-                    <SheetItemText>Go to artists</SheetItemText>
-                  </SheetItem>
-                  <SheetItem onPress={() => handleOptionPress("Sleep timer")}>
-                    <SheetItemIconWrapper>
-                      <Ionicons name="time-outline" size={22} color="#fff" />
-                    </SheetItemIconWrapper>
-                    <SheetItemText>Sleep timer</SheetItemText>
-                  </SheetItem>
-                  <SheetItem
-                    onPress={() => handleOptionPress("Go to song radio")}
-                  >
-                    <SheetItemIconWrapper>
-                      <Ionicons name="radio-outline" size={22} color="#fff" />
-                    </SheetItemIconWrapper>
-                    <SheetItemText>Go to song radio</SheetItemText>
-                  </SheetItem>
-                  <SheetItem
-                    onPress={() => handleOptionPress("View song credits")}
-                  >
-                    <SheetItemIconWrapper>
-                      <Ionicons
-                        name="information-circle-outline"
-                        size={22}
-                        color="#fff"
-                      />
-                    </SheetItemIconWrapper>
-                    <SheetItemText>View song credits</SheetItemText>
-                  </SheetItem>
-                </SheetContent>
-              </BottomSheetInner>
-            </BottomSheetContainer>
-          </>
-        )}
+                  <PlaylistInfo>
+                    <PlaylistName>{playlist.name}</PlaylistName>
+                    <PlaylistMeta>
+                      {playlist.tracks.length}{" "}
+                      {playlist.tracks.length === 1 ? "song" : "songs"}
+                    </PlaylistMeta>
+                  </PlaylistInfo>
+                </PlaylistItem>
+              ))}
+
+              {userPlaylists.length === 0 && (
+                <View style={{ padding: 40, alignItems: "center" }}>
+                  <Text style={{ color: "#888", fontSize: 16 }}>
+                    No playlists found
+                  </Text>
+                  <Text style={{ color: "#666", fontSize: 14, marginTop: 8 }}>
+                    Create a playlist first to add songs
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          </PlaylistSelectionContainer>
+        </PlaylistSelectionModal>
       </ModalContainer>
     </Modal>
   );

@@ -63,7 +63,9 @@ export class LyricsService {
   }
 
   private async loadCache(): Promise<void> {
-    if (this.isCacheLoaded) return;
+    if (this.isCacheLoaded) {
+      return;
+    }
 
     try {
       const cachedData = await StorageService.getItem(LYRICS_CACHE_KEY);
@@ -83,7 +85,7 @@ export class LyricsService {
       const cacheArray = Array.from(this.cache.entries());
       await StorageService.setItem(
         LYRICS_CACHE_KEY,
-        JSON.stringify(cacheArray)
+        JSON.stringify(cacheArray),
       );
       console.log(`[Lyrics] Saved ${this.cache.size} cached lyrics`);
     } catch (error) {
@@ -101,7 +103,9 @@ export class LyricsService {
   }
 
   private cleanTitle(title: string): string {
-    if (!title) return "";
+    if (!title) {
+      return "";
+    }
 
     let cleaned = title
       // 1. Extract song title from "Artist - Song" format
@@ -111,7 +115,7 @@ export class LyricsService {
       // 3. “Official”, “Lyrics”, “Video”, “HD”, “4K”, “Remastered”, etc.
       .replace(
         /\b(official|lyrics?|video|audio|hd|4k|remaster|re-master|remix|cover|acoustic|live|clean|explicit|amv|pmv)\b/gi,
-        " "
+        " ",
       )
       // 4. YouTube suffixes “- Topic”, “VEVO”, auto-generated
       .replace(/\s*-\s*topic\s*/gi, " ")
@@ -127,7 +131,9 @@ export class LyricsService {
   }
 
   private extractArtistFromTitle(title: string): string {
-    if (!title) return "";
+    if (!title) {
+      return "";
+    }
 
     // Extract artist from "Artist - Song" format
     const match = title.match(/^([^-]+)-/i);
@@ -139,7 +145,9 @@ export class LyricsService {
   }
 
   private cleanArtist(artist: string): string {
-    if (!artist) return "";
+    if (!artist) {
+      return "";
+    }
 
     return artist
       .replace(/\s*-\s*topic/gi, "") // “Travis Scott - Topic”
@@ -159,13 +167,13 @@ export class LyricsService {
     if (!cleanArtist && track.title.includes(" - ")) {
       cleanArtist = this.extractArtistFromTitle(track.title);
       console.log(
-        `[Lyrics] Extracted artist from title for lyrics.ovh: "${cleanArtist}"`
+        `[Lyrics] Extracted artist from title for lyrics.ovh: "${cleanArtist}"`,
       );
     }
 
     if (!cleanTitle || !cleanArtist) {
       throw new Error(
-        "[Lyrics] Insufficient track information to fetch lyrics from lyrics.ovh (need both title and artist)"
+        "[Lyrics] Insufficient track information to fetch lyrics from lyrics.ovh (need both title and artist)",
       );
     }
 
@@ -186,7 +194,7 @@ export class LyricsService {
 
   private async fetchLyricsFromLyricsOvh(
     track: Track,
-    cacheKey: string
+    cacheKey: string,
   ): Promise<CachedLyrics | null> {
     try {
       const url = this.buildLyricsOvhUrl(track);
@@ -196,7 +204,7 @@ export class LyricsService {
 
       if (!response.ok) {
         console.log(
-          `[Lyrics] lyrics.ovh request failed: HTTP ${response.status}`
+          `[Lyrics] lyrics.ovh request failed: HTTP ${response.status}`,
         );
         return null;
       }
@@ -205,7 +213,7 @@ export class LyricsService {
 
       if (!data || typeof data.lyrics !== "string") {
         console.log(
-          "[Lyrics] lyrics.ovh response does not contain valid lyrics"
+          "[Lyrics] lyrics.ovh response does not contain valid lyrics",
         );
         return null;
       }
@@ -231,7 +239,7 @@ export class LyricsService {
       await this.saveCache();
 
       console.log(
-        `[Lyrics] Successfully fetched and cached lyrics from lyrics.ovh for ${track.title}`
+        `[Lyrics] Successfully fetched and cached lyrics from lyrics.ovh for ${track.title}`,
       );
 
       return cachedLyrics;
@@ -243,7 +251,7 @@ export class LyricsService {
 
   private selectBestMetadataMatch(
     track: Track,
-    candidates: MusixmatchMetadataTrack[]
+    candidates: MusixmatchMetadataTrack[],
   ): MusixmatchMetadataTrack | null {
     if (!candidates.length) {
       return null;
@@ -296,13 +304,13 @@ export class LyricsService {
   }
 
   private async fetchMusixmatchMetadata(
-    track: Track
+    track: Track,
   ): Promise<MusixmatchMetadataTrack | null> {
     // OLD API - Commented out due to country restrictions
     // const baseUrl = "https://lyrics.lewdhutao.my.eu.org/v2";
 
     console.log(
-      "[Lyrics] Musixmatch metadata fallback is disabled (old API commented out)"
+      "[Lyrics] Musixmatch metadata fallback is disabled (old API commented out)",
     );
     return null;
   }
@@ -670,10 +678,10 @@ export class LyricsService {
     }
 
     console.log(
-      `[Lyrics] lyrics.ovh did not return lyrics for ${track.title} by ${track.artist}`
+      `[Lyrics] lyrics.ovh did not return lyrics for ${track.title} by ${track.artist}`,
     );
     console.log(
-      `[Lyrics] Final result: No lyrics found for ${track.title} by ${track.artist}`
+      `[Lyrics] Final result: No lyrics found for ${track.title} by ${track.artist}`,
     );
     return null;
   }
