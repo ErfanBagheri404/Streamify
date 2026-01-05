@@ -1,0 +1,41 @@
+diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
+index 1234567..abcdefg 100644
+--- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
++++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
+@@ -545,7 +545,11 @@ class MusicModule : ReactContextBaseJavaModule, ServiceConnection, MusicEvents.O
+ 
+         if (index >= 0 && index < musicService.tracks.size) {
+             val originalItem = musicService.tracks[index].originalItem
+-            callback.resolve(originalItem?.let { Arguments.fromBundle(it) })
++            if (originalItem != null) {
++                callback.resolve(Arguments.fromBundle(originalItem as Bundle))
++            } else {
++                callback.resolve(null)
++            }
+         } else {
+             callback.resolve(null)
+         }
+@@ -559,7 +563,7 @@ class MusicModule : ReactContextBaseJavaModule, ServiceConnection, MusicEvents.O
+     @ReactMethod
+     fun getQueue(callback: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(callback)) return@launch
+-
+-        callback.resolve(Arguments.fromList(musicService.tracks.map { it.originalItem }))
++        
++        callback.resolve(Arguments.fromList(musicService.tracks.mapNotNull { it.originalItem }))
+     }
+ 
+     @ReactMethod
+@@ -589,7 +593,11 @@ class MusicModule : ReactContextBaseJavaModule, ServiceConnection, MusicEvents.O
+         } else {
+             musicService.tracks[musicService.getCurrentTrackIndex()].originalItem
+         }
+-        callback.resolve(trackBundle?.let { Arguments.fromBundle(it) })
++        if (trackBundle != null) {
++            callback.resolve(Arguments.fromBundle(trackBundle as Bundle))
++        } else {
++            callback.resolve(null)
++        }
+     }
+ 
+     @ReactMethod
