@@ -1,12 +1,13 @@
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
-index 1234567..abcdefg 100644
+index b2409a0..bf2c691 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
-@@ -545,7 +545,11 @@ class MusicModule : ReactContextBaseJavaModule, ServiceConnection, MusicEvents.O
+@@ -545,7 +545,12 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+         if (verifyServiceBoundOrReject(callback)) return@launch
  
          if (index >= 0 && index < musicService.tracks.size) {
-             val originalItem = musicService.tracks[index].originalItem
--            callback.resolve(originalItem?.let { Arguments.fromBundle(it) })
+-            callback.resolve(Arguments.fromBundle(musicService.tracks[index].originalItem))
++            val originalItem = musicService.tracks[index].originalItem
 +            if (originalItem != null) {
 +                callback.resolve(Arguments.fromBundle(originalItem as Bundle))
 +            } else {
@@ -15,22 +16,30 @@ index 1234567..abcdefg 100644
          } else {
              callback.resolve(null)
          }
-@@ -559,7 +563,7 @@ class MusicModule : ReactContextBaseJavaModule, ServiceConnection, MusicEvents.O
-     @ReactMethod
+@@ -555,7 +560,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
      fun getQueue(callback: Promise) = scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
--
+ 
 -        callback.resolve(Arguments.fromList(musicService.tracks.map { it.originalItem }))
-+        
 +        callback.resolve(Arguments.fromList(musicService.tracks.mapNotNull { it.originalItem }))
      }
  
      @ReactMethod
-@@ -589,7 +593,11 @@ class MusicModule : ReactContextBaseJavaModule, ServiceConnection, MusicEvents.O
-         } else {
-             musicService.tracks[musicService.getCurrentTrackIndex()].originalItem
-         }
--        callback.resolve(trackBundle?.let { Arguments.fromBundle(it) })
+@@ -582,12 +587,16 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     @ReactMethod
+     fun getActiveTrack(callback: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(callback)) return@launch
+-        callback.resolve(
+-            if (musicService.tracks.isEmpty()) null
+-            else Arguments.fromBundle(
+-                musicService.tracks[musicService.getCurrentTrackIndex()].originalItem
+-            )
+-        )
++        val trackBundle = if (musicService.tracks.isEmpty()) {
++            null
++        } else {
++            musicService.tracks[musicService.getCurrentTrackIndex()].originalItem
++        }
 +        if (trackBundle != null) {
 +            callback.resolve(Arguments.fromBundle(trackBundle as Bundle))
 +        } else {
