@@ -154,11 +154,6 @@ class MediaSessionManager {
    * Update notification - functionality removed
    */
   private async updateNotification(config: MediaSessionConfig): Promise<void> {
-    if (!config.track) {
-      console.log("[MediaSession] No track to display in notification");
-      return;
-    }
-
     // Notification functionality removed since expo-notifications is uninstalled
     console.log("[MediaSession] Notification update skipped");
   }
@@ -180,11 +175,13 @@ class MediaSessionManager {
    */
   public async stop(): Promise<void> {
     try {
-      // Notification functionality removed since expo-notifications is uninstalled
       this.currentConfig = null;
-      console.log(
-        "[MediaSession] Media session stopped (notifications disabled)",
-      );
+      // Notification functionality removed since expo-notifications is uninstalled
+      if (this.notificationId) {
+        console.log(
+          "[MediaSession] Media session stopped (notifications disabled)",
+        );
+      }
     } catch (error) {
       console.error("[MediaSession] Failed to stop media session:", error);
       throw error;

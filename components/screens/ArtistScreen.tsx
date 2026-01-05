@@ -330,7 +330,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
       // Fetch artist info
       const artistResponse = await fetch(
-        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}`
+        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}`,
       );
       const artistInfo = await artistResponse.json();
       console.log("Artist info API response:", artistInfo);
@@ -343,7 +343,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
       // Fetch artist songs
       const songsResponse = await fetch(
-        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}/songs?page=0`
+        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}/songs?page=0`,
       );
       let songsData;
       try {
@@ -356,7 +356,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
       // Fetch artist albums
       const albumsResponse = await fetch(
-        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}/albums?page=0`
+        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}/albums?page=0`,
       );
       let albumsData;
       try {
@@ -493,7 +493,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
         source: "jiosaavn",
         _isJioSaavn: true,
       })),
-      index
+      index,
     );
   };
 

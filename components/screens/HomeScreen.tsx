@@ -266,7 +266,7 @@ export default function HomeScreen({ navigation }: any) {
   const fetchCategoryPlaylists = async (category: string) => {
     try {
       const response = await fetch(
-        CATEGORY_APIS[category as keyof typeof CATEGORY_APIS]
+        CATEGORY_APIS[category as keyof typeof CATEGORY_APIS],
       );
       const data = await response.json();
 
@@ -288,7 +288,7 @@ export default function HomeScreen({ navigation }: any) {
       for (const playlistId of FEATURED_PLAYLIST_IDS) {
         try {
           const response = await fetch(
-            `https://streamifyjiosaavn.vercel.app/api/playlists?id=${playlistId}`
+            `https://streamifyjiosaavn.vercel.app/api/playlists?id=${playlistId}`,
           );
           const data = await response.json();
           if (data.success && data.data) {
@@ -297,7 +297,7 @@ export default function HomeScreen({ navigation }: any) {
         } catch (error) {
           console.error(
             `Failed to fetch featured playlist ${playlistId}:`,
-            error
+            error,
           );
         }
       }
@@ -381,7 +381,7 @@ export default function HomeScreen({ navigation }: any) {
 
   const getPlaylistImageSource = (playlist: Playlist) => {
     const highQualityImage = playlist.image.find(
-      (img) => img.quality === "500x500"
+      (img) => img.quality === "500x500",
     );
     const imageUrl = highQualityImage?.url || playlist.image[0]?.url;
 

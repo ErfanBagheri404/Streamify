@@ -1,8 +1,18 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Track } from "../contexts/PlayerContext";
 
+export interface Playlist {
+  id: string;
+  name: string;
+  tracks: Track[];
+  createdAt: string;
+  updatedAt: string;
+  thumbnail?: string;
+}
+
 const LIKED_SONGS_KEY = "@liked_songs";
 const PREVIOUSLY_PLAYED_KEY = "@previously_played_songs";
+const PLAYLISTS_KEY = "@playlists";
 
 export const StorageService = {
   // Save liked songs to storage
@@ -116,6 +126,67 @@ export const StorageService = {
       await AsyncStorage.removeItem(key);
     } catch (error) {
       console.error("Error removing item from storage:", error);
+      throw error;
+    }
+  },
+
+  // Save playlists to storage
+  async savePlaylists(playlists: Playlist[]): Promise<void> {
+    try {
+      const jsonValue = JSON.stringify(playlists);
+      await AsyncStorage.setItem(PLAYLISTS_KEY, jsonValue);
+    } catch (error) {
+      console.error("Error saving playlists:", error);
+      throw error;
+    }
+  },
+
+  // Load playlists from storage
+  async loadPlaylists(): Promise<Playlist[]> {
+    try {
+      const jsonValue = await AsyncStorage.getItem(PLAYLISTS_KEY);
+      return jsonValue != null ? JSON.parse(jsonValue) : [];
+    } catch (error) {
+      console.error("Error loading playlists:", error);
+      return [];
+    }
+  },
+
+  // Add a new playlist
+  async addPlaylist(playlist: Playlist): Promise<void> {
+    try {
+      const playlists = await this.loadPlaylists();
+      const updatedPlaylists = [...playlists, playlist];
+      await this.savePlaylists(updatedPlaylists);
+    } catch (error) {
+      console.error("Error adding playlist:", error);
+      throw error;
+    }
+  },
+
+  // Delete a playlist by ID
+  async deletePlaylist(playlistId: string): Promise<void> {
+    try {
+      const playlists = await this.loadPlaylists();
+      const updatedPlaylists = playlists.filter((p) => p.id !== playlistId);
+      await this.savePlaylists(updatedPlaylists);
+    } catch (error) {
+      console.error("Error deleting playlist:", error);
+      throw error;
+    }
+  },
+
+  // Update a playlist
+  async updatePlaylist(playlist: Playlist): Promise<void> {
+    try {
+      const playlists = await this.loadPlaylists();
+      const index = playlists.findIndex((p) => p.id === playlist.id);
+      if (index !== -1) {
+        playlists[index] = playlist;
+        await this.savePlaylists(playlists);
+      }
+    } catch (error) {
+      console.error("Error updating playlist:", error);
       throw error;
     }
   },
