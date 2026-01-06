@@ -5,7 +5,7 @@ import { SafeArea } from "../SafeArea";
 import { usePlayer } from "../../contexts/PlayerContext";
 import Playlist from "../Playlist";
 import { StorageService } from "../../utils/storage";
-import { SongActionSheet } from "../SongActionSheet";
+import { SliderSheet } from "../SliderSheet";
 import { Track } from "../../contexts/PlayerContext";
 
 interface AlbumPlaylistScreenProps {
@@ -152,6 +152,13 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
         setShowRenameModal(true);
         return;
       }
+    }
+
+    if (sheetMode === "playlist-song" && option === "Download") {
+      console.log("Download song:", selectedTrack?.title);
+      // Add download logic here
+      closeSongActionSheet();
+      return;
     }
 
     if (
@@ -396,6 +403,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           onHeaderOptionsPress={handleHeaderOptionsPress}
           emptyMessage="Loading album..."
           emptySubMessage=""
+          type="album"
         />
       </SafeArea>
     );
@@ -414,6 +422,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           emptyMessage={errorMessage}
           emptySubMessage="Try refreshing or check your internet connection"
           emptyIcon="error-outline"
+          type="album"
         />
       </SafeArea>
     );
@@ -433,9 +442,10 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
         emptyMessage="No songs found"
         emptySubMessage="This album appears to be empty"
         emptyIcon="albums"
+        type="album"
       />
 
-      <SongActionSheet
+      <SliderSheet
         visible={showSongActionSheet}
         onClose={closeSongActionSheet}
         sheetTop={sheetTop}
@@ -467,6 +477,11 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
                 },
               ]
             : [
+                {
+                  key: "Download",
+                  label: "Download",
+                  icon: "cloud-download-outline",
+                },
                 {
                   key: "Share",
                   label: "Share",

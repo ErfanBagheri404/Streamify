@@ -115,6 +115,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [streamRetryCount, setStreamRetryCount] = useState(0);
   const originalPlaylistRef = useRef<Track[]>([]);
+  const currentPlaylistContextRef = useRef<Track[]>([]);
   const streamCheckRef = useRef<{ position: number; time: number } | null>(
     null,
   );
@@ -137,6 +138,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         const savedLikedSongs = await StorageService.loadLikedSongs();
         setLikedSongs(savedLikedSongs);
+
+        // Cache all liked songs that aren't already cached
+        if (savedLikedSongs.length > 0) {
+          console.log(
+            `[PlayerContext] Found ${savedLikedSongs.length} liked songs, starting background caching...`,
+          );
+          cacheAllLikedSongs(savedLikedSongs);
+        }
       } catch (error) {
         console.error("Error loading liked songs:", error);
       }
@@ -381,7 +390,25 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           `[PlayerContext] playTrack() - Setting current track: ${track.title}, index: ${index}`,
         );
         setCurrentTrack(track);
-        setPlaylist(effectivePlaylist);
+
+        // Preserve original playlist context when playing from a specific playlist
+        if (playlistData.length > 0) {
+          // We're playing from a specific playlist (like Previously Played)
+          currentPlaylistContextRef.current = playlistData;
+        } else if (currentPlaylistContextRef.current.length === 0) {
+          // No specific playlist context, use the current global playlist
+          currentPlaylistContextRef.current = playlist;
+        }
+
+        // Only update global playlist if we're not in a specific playlist context
+        // or if the effectivePlaylist is different from current context
+        if (
+          playlistData.length > 0 ||
+          currentPlaylistContextRef.current.length === 0
+        ) {
+          setPlaylist(effectivePlaylist);
+        }
+
         setCurrentIndex(effectiveIndex);
         setIsPlaying(false);
 
@@ -513,107 +540,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               "[PlayerContext] Failed to get streaming URL:",
               streamingError,
             );
-          }
-        }
-
-        // Start cache monitoring and completion if we have a valid track ID and audio URL
-        if (
-          track.id &&
-          originalStreamUrl && // Use the original streaming URL, not the cached file URL
-          (track._isSoundCloud ||
-            track.source === "soundcloud" ||
-            track.source === "youtube")
-          // Note: JioSaavn tracks are excluded from cache monitoring since they use direct audio URLs
-        ) {
-          console.log(
-            `[PlayerContext] Starting cache monitoring for track: ${track.id}`,
-          );
-
-          // Monitor cache progress and resume if stuck
-          try {
-            // Import the monitoring function
-            const { monitorAndResumeCache } =
-              await import("../modules/audioStreaming");
-
-            monitorAndResumeCache(track.id, originalStreamUrl, (percentage) => {
-              console.log(`[PlayerContext] Cache progress: ${percentage}%`);
-              setCacheProgress({
-                trackId: track.id,
-                percentage: percentage,
-                fileSize: 0, // Will be updated when cache info is fetched
-              });
-            });
-          } catch (monitorError) {
-            console.error(
-              "[PlayerContext] Failed to start cache monitoring:",
-              monitorError,
-            );
-          }
-
-          // Start progressive caching for YouTube tracks
-          if (track.source === "youtube") {
-            console.log(
-              `[PlayerContext] Starting progressive YouTube caching for track: ${track.id}`,
-            );
-            try {
-              const { startProgressiveYouTubeCache, continueCachingTrack } =
-                await import("../modules/audioStreaming");
-
-              // Create a new controller for background caching
-              const cacheController = new AbortController();
-
-              // Start progressive caching in background
-              startProgressiveYouTubeCache(
-                originalStreamUrl,
-                track.id,
-                cacheController,
-              ).catch((error) => {
-                console.error(
-                  `[PlayerContext] Progressive YouTube caching failed for ${track.id}:`,
-                  error,
-                );
-              });
-
-              // Start continuous background caching after a delay to let initial chunk download
-              setTimeout(() => {
-                console.log(
-                  `[PlayerContext] Starting continuous background caching for track: ${track.id}`,
-                );
-                const continuousController = new AbortController();
-
-                continueCachingTrack(
-                  originalStreamUrl,
-                  track.id,
-                  continuousController,
-                  (percentage) => {
-                    console.log(
-                      `[PlayerContext] Continuous cache progress: ${percentage}%`,
-                    );
-                    setCacheProgress({
-                      trackId: track.id,
-                      percentage: percentage,
-                      fileSize: 0,
-                    });
-                  },
-                ).catch((error) => {
-                  console.error(
-                    `[PlayerContext] Continuous caching failed for ${track.id}:`,
-                    error,
-                  );
-                });
-
-                // Store the controller for cleanup when track changes
-                if (!cacheControllersRef.current) {
-                  cacheControllersRef.current = new Map();
-                }
-                cacheControllersRef.current.set(track.id, continuousController);
-              }, 5000); // Start continuous caching after 5 seconds
-            } catch (cacheError) {
-              console.error(
-                "[PlayerContext] Failed to start progressive YouTube caching:",
-                cacheError,
-              );
-            }
           }
         }
 
@@ -827,6 +753,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             lastPosition = status.positionMillis;
 
             if (status.didJustFinish) {
+              setIsPlaying(false);
+
               // Refresh cache info at end of song
               if (currentTrack?.id) {
                 console.log(
@@ -1031,12 +959,19 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const previousTrack = useCallback(async () => {
     console.log("[PlayerContext] previousTrack() called");
+
+    // Use current playlist context if available, otherwise fall back to global playlist
+    const currentPlaylist =
+      currentPlaylistContextRef.current.length > 0
+        ? currentPlaylistContextRef.current
+        : playlist;
+
     console.log(
-      `[PlayerContext] Playlist length: ${playlist.length}, current index: ${currentIndex}, repeat mode: ${repeatMode}`,
+      `[PlayerContext] Playlist length: ${currentPlaylist.length}, current index: ${currentIndex}, repeat mode: ${repeatMode}`,
     );
 
     // Basic validation
-    if (playlist.length === 0) {
+    if (currentPlaylist.length === 0) {
       console.log("[PlayerContext] previousTrack() - No playlist, returning");
       return;
     }
@@ -1059,18 +994,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log(
           "[PlayerContext] previousTrack() - Repeat one mode, replaying current track",
         );
-        await playTrack(currentTrack, playlist, currentIndex);
+        await playTrack(currentTrack, currentPlaylist, currentIndex);
         return;
       }
 
       // Handle single song playlist
-      if (playlist.length === 1) {
+      if (currentPlaylist.length === 1) {
         console.log("[PlayerContext] previousTrack() - Single song playlist");
         if (repeatMode === "one" || repeatMode === "all") {
           console.log(
             "[PlayerContext] previousTrack() - Single song with repeat, replaying",
           );
-          await playTrack(currentTrack!, playlist, 0);
+          await playTrack(currentTrack!, currentPlaylist, 0);
         } else {
           console.log(
             "[PlayerContext] previousTrack() - Single song, no repeat, stopping",
@@ -1085,8 +1020,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Calculate previous index (loop to end if at beginning)
       const prevIndex =
-        currentIndex === 0 ? playlist.length - 1 : currentIndex - 1;
-      const prevTrack = playlist[prevIndex];
+        currentIndex === 0 ? currentPlaylist.length - 1 : currentIndex - 1;
+      const prevTrack = currentPlaylist[prevIndex];
 
       if (prevTrack) {
         console.log(
@@ -1151,7 +1086,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           currentTrack.id &&
           (currentTrack._isSoundCloud ||
             currentTrack.source === "soundcloud" ||
-            currentTrack.source === "youtube")
+            currentTrack.source === "youtube" ||
+            currentTrack._isJioSaavn ||
+            currentTrack.source === "jiosaavn")
         ) {
           console.log(
             `[PlayerContext] Checking if position ${position}ms is cached for track: ${currentTrack.id}`,
@@ -1518,6 +1455,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               console.log(
                 "[PlayerContext] Song finished - status.didJustFinish triggered",
               );
+              setIsPlaying(false);
 
               // Refresh cache info at end of song
               if (currentTrack?.id) {
@@ -1729,6 +1667,52 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       } else {
         // Add to liked songs
         updatedSongs = [...prev, track];
+
+        // Start caching the liked song
+        if (track.id && track.audioUrl) {
+          console.log(
+            `[PlayerContext] Starting to cache liked song: ${track.title} (${track.id})`,
+          );
+
+          // Import and start caching in background
+          import("../modules/audioStreaming")
+            .then(({ continueCachingTrack }) => {
+              const cacheController = new AbortController();
+
+              continueCachingTrack(
+                track.audioUrl,
+                track.id,
+                cacheController,
+                (percentage) => {
+                  console.log(
+                    `[PlayerContext] Liked song cache progress: ${percentage}%`,
+                  );
+                  setCacheProgress({
+                    trackId: track.id,
+                    percentage: percentage,
+                    fileSize: 0,
+                  });
+                },
+              ).catch((error) => {
+                console.error(
+                  `[PlayerContext] Failed to cache liked song ${track.id}:`,
+                  error,
+                );
+              });
+
+              // Store the controller for cleanup
+              if (!cacheControllersRef.current) {
+                cacheControllersRef.current = new Map();
+              }
+              cacheControllersRef.current.set(track.id, cacheController);
+            })
+            .catch((error) => {
+              console.error(
+                "[PlayerContext] Failed to import caching module:",
+                error,
+              );
+            });
+        }
       }
 
       // Persist to storage
@@ -1739,6 +1723,77 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       return updatedSongs;
     });
   }, []);
+
+  const cacheAllLikedSongs = useCallback(
+    async (songs: Track[]) => {
+      try {
+        const { continueCachingTrack } =
+          await import("../modules/audioStreaming");
+
+        for (const song of songs) {
+          if (song.id && song.audioUrl) {
+            // Check if song is already cached
+            const cacheInfo = await audioManager.getCacheInfo(song.id);
+
+            if (cacheInfo.isFullyCached) {
+              console.log(`[PlayerContext] Song already cached: ${song.title}`);
+              continue;
+            }
+
+            if (cacheInfo.isDownloading) {
+              console.log(
+                `[PlayerContext] Song already downloading: ${song.title}`,
+              );
+              continue;
+            }
+
+            console.log(
+              `[PlayerContext] Starting to cache liked song: ${song.title} (${song.id})`,
+            );
+
+            const cacheController = new AbortController();
+
+            continueCachingTrack(
+              song.audioUrl,
+              song.id,
+              cacheController,
+              (percentage) => {
+                console.log(
+                  `[PlayerContext] Background cache progress for ${song.title}: ${percentage}%`,
+                );
+                setCacheProgress({
+                  trackId: song.id,
+                  percentage: percentage,
+                  fileSize: 0,
+                });
+              },
+            ).catch((error) => {
+              console.error(
+                `[PlayerContext] Failed to cache liked song ${song.id}:`,
+                error,
+              );
+            });
+
+            // Store the controller for cleanup
+            if (!cacheControllersRef.current) {
+              cacheControllersRef.current = new Map();
+            }
+            cacheControllersRef.current.set(song.id, cacheController);
+
+            // Add small delay between starting downloads to prevent overwhelming the system
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+        }
+
+        console.log(
+          `[PlayerContext] Started background caching for ${songs.length} liked songs`,
+        );
+      } catch (error) {
+        console.error("[PlayerContext] Error caching all liked songs:", error);
+      }
+    },
+    [audioManager],
+  );
 
   const isSongLiked = useCallback(
     (trackId: string) => {

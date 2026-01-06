@@ -53,6 +53,9 @@ export const PreviouslyPlayedScreen: React.FC<PreviouslyPlayedScreenProps> = ({
           onBack={handleGoBack}
           emptyMessage="Loading..."
           emptySubMessage=""
+          showSongOptions={false}
+          showHeaderOptions={false}
+          type="playlist"
         />
       </SafeArea>
     );
@@ -70,6 +73,9 @@ export const PreviouslyPlayedScreen: React.FC<PreviouslyPlayedScreenProps> = ({
         emptyMessage="No previously played songs"
         emptySubMessage="Play some songs to see them here"
         emptyIcon="time"
+        showSongOptions={false}
+        showHeaderOptions={false}
+        type="playlist"
       />
     </SafeArea>
   );

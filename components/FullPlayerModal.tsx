@@ -22,7 +22,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { usePlayer } from "../contexts/PlayerContext";
 import { formatTime } from "../utils/formatters";
 import { CachedLyrics, lyricsService } from "../modules/lyricsService";
-import { SongActionSheet } from "./SongActionSheet";
+import { SliderSheet } from "./SliderSheet";
 import { StorageService, Playlist } from "../utils/storage";
 
 const { Animated, PanResponder } = require("react-native");
@@ -566,7 +566,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [lyricsError, setLyricsError] = useState<string | null>(null);
   const [isOptionsVisible, setIsOptionsVisible] = useState(false);
   const [sheetState, setSheetState] = useState<"closed" | "half" | "full">(
-    "closed"
+    "closed",
   );
   const [showPlaylistSelection, setShowPlaylistSelection] = useState(false);
   const [userPlaylists, setUserPlaylists] = useState<Playlist[]>([]);
@@ -643,7 +643,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
         animateSheet(target);
       },
-    })
+    }),
   ).current;
 
   const openOptions = () => {
@@ -674,7 +674,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     try {
       // Check if song is already in playlist
       const isAlreadyInPlaylist = playlist.tracks.some(
-        (track) => track.id === currentTrack.id
+        (track) => track.id === currentTrack.id,
       );
 
       if (isAlreadyInPlaylist) {
@@ -741,7 +741,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       console.log("[FullPlayerModal] Starting lyrics fetch...");
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Lyrics fetch timeout")), 15000)
+        setTimeout(() => reject(new Error("Lyrics fetch timeout")), 15000),
       );
 
       try {
@@ -779,12 +779,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       } catch (error) {
         console.error(
           "[FullPlayerModal] Error or timeout fetching lyrics:",
-          error
+          error,
         );
         setLyricsData([]);
         setCurrentLyricIndex(0);
         setLyricsError(
-          "Unable to load lyrics - service may be temporarily unavailable"
+          "Unable to load lyrics - service may be temporarily unavailable",
         );
       } finally {
         setIsLoadingLyrics(false);
@@ -809,7 +809,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               fileSize: 0,
               totalFileSize: 0,
               isFullyCached: false,
-            }
+            },
       );
     }
   }, [cacheProgress, currentTrack?.id]);
@@ -865,7 +865,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     };
 
     updateCacheInfo();
-    const cacheInterval = setInterval(updateCacheInfo, 10000); // Check every 10 seconds
+    const cacheInterval = setInterval(updateCacheInfo, 1000); // Live cache stats - update every second
     return () => clearInterval(cacheInterval);
   }, [currentTrack?.audioUrl, currentTrack?.id, getCacheInfo]);
 
@@ -948,30 +948,43 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
           </Header>
 
           {/* Content with ScrollView for full screen scrollability */}
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            scrollEnabled={lyricsData.length > 0}
+          >
             {currentTrack.thumbnail ? (
               <AlbumArtWrapper>
                 <AlbumArtWithOpacity
                   source={{ uri: currentTrack.thumbnail }}
                   showCache={showCacheSize}
                 />
-                {cacheInfo && showCacheSize && (
+                {showCacheSize && (
                   <CacheOverlay>
                     <CacheInfoContainer>
-                      <CacheInfoRow>
-                        {cacheInfo.isFullyCached
-                          ? "Cached: 100%"
-                          : `Cached: ${Math.round(cacheInfo.percentage)}%`}
-                      </CacheInfoRow>
-                      {cacheInfo.fileSize > 0 && (
+                      {!isSongLiked(currentTrack.id) ? (
                         <CacheInfoRow>
-                          {`Downloaded: ${cacheInfo.fileSize.toFixed(1)}MB`}
+                          Like the song to start caching
                         </CacheInfoRow>
-                      )}
-                      {cacheInfo.totalFileSize > 0 && (
-                        <CacheInfoRow>
-                          {`Total: ${cacheInfo.totalFileSize.toFixed(1)}MB`}
-                        </CacheInfoRow>
+                      ) : cacheInfo ? (
+                        <>
+                          <CacheInfoRow>
+                            {cacheInfo.isFullyCached
+                              ? "Cached: 100%"
+                              : `Cached: ${Math.round(cacheInfo.percentage)}%`}
+                          </CacheInfoRow>
+                          {cacheInfo.fileSize > 0 && (
+                            <CacheInfoRow>
+                              {`Downloaded: ${cacheInfo.fileSize.toFixed(1)}MB`}
+                            </CacheInfoRow>
+                          )}
+                          {cacheInfo.totalFileSize > 0 && (
+                            <CacheInfoRow>
+                              {`Total: ${cacheInfo.totalFileSize.toFixed(1)}MB`}
+                            </CacheInfoRow>
+                          )}
+                        </>
+                      ) : (
+                        <CacheInfoRow>Caching...</CacheInfoRow>
                       )}
                     </CacheInfoContainer>
                   </CacheOverlay>
@@ -986,14 +999,22 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 <PlaceholderAlbumArtWithOpacity showCache={showCacheSize}>
                   <Ionicons name="musical-notes" size={80} color="#fff" />
                 </PlaceholderAlbumArtWithOpacity>
-                {cacheInfo && showCacheSize && (
+                {showCacheSize && (
                   <CacheOverlay>
                     <CacheInfoContainer>
-                      <CacheInfoRow>
-                        {cacheInfo.isFullyCached
-                          ? "Cached: 100%"
-                          : `Cached: ${Math.round(cacheInfo.percentage)}%`}
-                      </CacheInfoRow>
+                      {!isSongLiked(currentTrack.id) ? (
+                        <CacheInfoRow>
+                          Like the song to start caching
+                        </CacheInfoRow>
+                      ) : cacheInfo ? (
+                        <CacheInfoRow>
+                          {cacheInfo.isFullyCached
+                            ? "Cached: 100%"
+                            : `Cached: ${Math.round(cacheInfo.percentage)}%`}
+                        </CacheInfoRow>
+                      ) : (
+                        <CacheInfoRow>Caching...</CacheInfoRow>
+                      )}
                     </CacheInfoContainer>
                   </CacheOverlay>
                 )}
@@ -1006,9 +1027,39 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
             <TrackRow>
               <TrackInfo>
-                <TrackTitle>{currentTrack.title}</TrackTitle>
+                <Text
+                  style={{
+                    color: "#fff",
+                    fontSize: 24,
+                    textAlign: "left",
+                    marginRight: 8,
+                    fontFamily: "GoogleSansBold",
+                    lineHeight: 28,
+                  }}
+                  adjustsFontSizeToFit={true}
+                  minimumFontScale={0.7}
+                  numberOfLines={3}
+                  allowFontScaling={false}
+                >
+                  {currentTrack.title}
+                </Text>
                 {currentTrack.artist && (
-                  <TrackArtist>{currentTrack.artist}</TrackArtist>
+                  <Text
+                    style={{
+                      color: "#999",
+                      fontSize: 18,
+                      textAlign: "left",
+                      marginTop: 2,
+                      fontFamily: "GoogleSansRegular",
+                      lineHeight: 22,
+                    }}
+                    adjustsFontSizeToFit={true}
+                    minimumFontScale={0.8}
+                    numberOfLines={3}
+                    allowFontScaling={false}
+                  >
+                    {currentTrack.artist}
+                  </Text>
                 )}
               </TrackInfo>
 
@@ -1138,7 +1189,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
             <Spacer size={40} />
           </ScrollView>
         </SafeArea>
-        <SongActionSheet
+        <SliderSheet
           visible={isOptionsVisible}
           onClose={closeOptions}
           sheetTop={sheetTop}

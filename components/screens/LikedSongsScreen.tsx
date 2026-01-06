@@ -53,6 +53,9 @@ export const LikedSongsScreen: React.FC<LikedSongsScreenProps> = ({
           onBack={handleGoBack}
           emptyMessage="Loading..."
           emptySubMessage=""
+          showSongOptions={false}
+          showHeaderOptions={false}
+          type="playlist"
         />
       </SafeArea>
     );
@@ -70,6 +73,9 @@ export const LikedSongsScreen: React.FC<LikedSongsScreenProps> = ({
         emptyMessage="No liked songs yet"
         emptySubMessage="Like songs from the player to see them here"
         emptyIcon="heart"
+        showSongOptions={false}
+        showHeaderOptions={false}
+        type="playlist"
       />
     </SafeArea>
   );

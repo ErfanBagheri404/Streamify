@@ -80,6 +80,32 @@ export class AudioStreamManager {
   private readonly PROGRESS_UPDATE_INTERVAL = 1000; // 1 second
   private readonly MIN_PROGRESS_THRESHOLD = 0.5; // Minimum 0.5% progress per update
 
+  // Cache for getCacheInfo results to prevent excessive filesystem calls
+  private cacheInfoCache = new Map<
+    string,
+    {
+      result: {
+        percentage: number;
+        fileSize: number;
+        totalFileSize?: number;
+        isFullyCached: boolean;
+        isDownloading?: boolean;
+        downloadSpeed?: number;
+        retryCount?: number;
+      };
+      timestamp: number;
+    }
+  >();
+  private readonly CACHE_INFO_TTL = 5000; // 5 second TTL
+
+  /**
+   * Clear cached cache info for a specific track
+   */
+  private clearCacheInfoCache(trackId: string): void {
+    this.cacheInfoCache.delete(trackId);
+    console.log(`[Audio] Cleared cache info cache for track: ${trackId}`);
+  }
+
   // Hardcoded Client ID from your logs
   private readonly SOUNDCLOUD_CLIENT_ID = "gqKBMSuBw5rbN9rDRYPqKNvF17ovlObu";
 
@@ -243,6 +269,10 @@ export class AudioStreamManager {
     console.log(
       `[CacheProgress] Updated progress for ${trackId}: ${newPercentage}%${fileSize ? ` (${Math.round(fileSize * 100) / 100}MB)` : ""}${options?.downloadedSize ? ` downloaded: ${Math.round(options.downloadedSize * 100) / 100}MB` : ""}`,
     );
+
+    // Clear cache info cache since progress changed
+    this.clearCacheInfoCache(trackId);
+
     return true;
   }
 
@@ -296,6 +326,9 @@ export class AudioStreamManager {
     };
 
     this.cacheProgress.set(trackId, completedProgress);
+
+    // Clear cache info cache since the file status changed
+    this.clearCacheInfoCache(trackId);
     console.log(
       `[CacheProgress] Download completed for ${trackId}: ${Math.round(fileSize * 100) / 100}MB (took ${existingProgress ? Math.round((now - existingProgress.downloadStartTime) / 1000) : 0}s)`,
     );
@@ -1020,6 +1053,15 @@ export class AudioStreamManager {
     retryCount?: number;
   }> {
     try {
+      // Check cache first (with 5 second TTL)
+      const cached = this.cacheInfoCache.get(trackId);
+      if (cached && Date.now() - cached.timestamp < this.CACHE_INFO_TTL) {
+        console.log(
+          `[Audio] Using cached cache info for ${trackId} (age: ${Date.now() - cached.timestamp}ms)`,
+        );
+        return cached.result;
+      }
+
       console.log(`[Audio] === getCacheInfo START for ${trackId} ===`);
 
       // Check if we have any cached progress for this track (even completed downloads)
@@ -1230,7 +1272,7 @@ export class AudioStreamManager {
 
         // Apply stability rules to prevent percentage drops
         const existingPercentage = activeProgress?.percentage || 0;
-        let stablePercentage = Math.min(98, Math.round(rawPercentage));
+        let stablePercentage = Math.min(99, Math.round(rawPercentage));
 
         // Never allow percentage to decrease significantly (more than 5%)
         if (stablePercentage < existingPercentage - 5) {
@@ -1253,7 +1295,7 @@ export class AudioStreamManager {
             );
             // Recalculate percentage with new estimate
             const newRawPercentage = (fileSize / estimatedTotalSize) * 100;
-            stablePercentage = Math.min(98, Math.round(newRawPercentage));
+            stablePercentage = Math.min(99, Math.round(newRawPercentage));
           }
         }
 
@@ -1296,18 +1338,33 @@ export class AudioStreamManager {
         retryCount: 0,
       };
       console.log(`[Audio] === getCacheInfo END for ${trackId} ===`, result);
+
+      // Cache the result for 5 seconds to prevent excessive filesystem calls
+      this.cacheInfoCache.set(trackId, {
+        result,
+        timestamp: Date.now(),
+      });
+
       return result;
     } catch (error) {
       console.error(
         `[Audio] Error getting cache info for track ${trackId}:`,
         error,
       );
-      return {
+      const errorResult = {
         percentage: 0,
         fileSize: 0,
         totalFileSize: 0,
         isFullyCached: false,
       };
+
+      // Cache the error result for 5 seconds to prevent excessive filesystem calls
+      this.cacheInfoCache.set(trackId, {
+        result: errorResult,
+        timestamp: Date.now(),
+      });
+
+      return errorResult;
     }
   }
 
@@ -1381,6 +1438,8 @@ export class AudioStreamManager {
           // Delete the cached file
           await FileSystem.deleteAsync(cachedFilePath, { idempotent: true });
           this.soundCloudCache.delete(trackId);
+          // Clear cache info cache since the file was deleted
+          this.clearCacheInfoCache(trackId);
         } catch (error) {
           console.warn(
             `[Audio] Failed to delete cached file for track ${trackId}:`,
@@ -1415,6 +1474,8 @@ export class AudioStreamManager {
           // Delete the cached file
           await FileSystem.deleteAsync(cachedFilePath, { idempotent: true });
           this.trackCache.delete(trackId);
+          // Clear cache info cache since the file was deleted
+          this.clearCacheInfoCache(trackId);
         } catch (error) {
           console.warn(
             `[Audio] Failed to delete cached file for track ${trackId}:`,
@@ -1823,6 +1884,9 @@ export class AudioStreamManager {
             await FileSystem.writeAsStringAsync(tempFilePath, combinedBase64, {
               encoding: FileSystem.EncodingType.Base64,
             });
+
+            // Clear cache info cache since we updated the file
+            this.clearCacheInfoCache(trackId);
 
             const chunkSizeDownloaded = chunkResult.headers?.["content-length"]
               ? parseInt(chunkResult.headers["content-length"])
@@ -2474,6 +2538,8 @@ export class AudioStreamManager {
         // Clean up partial file
         try {
           await FileSystem.deleteAsync(cacheFilePath);
+          // Clear cache info cache since the file was deleted
+          this.clearCacheInfoCache(trackId);
         } catch (cleanupError) {
           console.log(
             `[Audio] Failed to cleanup partial file: ${cleanupError}`,
@@ -2737,17 +2803,32 @@ export class AudioStreamManager {
         ? cacheFilePath
         : `file://${cacheFilePath}`;
 
+      // Check if cache file exists, if not create it
+      const fileInfo = await FileSystem.getInfoAsync(properCacheFilePath);
+      if (!fileInfo.exists) {
+        console.log(
+          `[Audio] Cache file doesn't exist, creating empty file at: ${properCacheFilePath}`,
+        );
+        await FileSystem.writeAsStringAsync(properCacheFilePath, "", {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      }
+
       // Continue downloading in chunks until fully cached
       let currentPosition = cacheInfo.fileSize * 1024 * 1024; // Convert MB to bytes
       const chunkSize = 512 * 1024; // 512KB chunks
       let consecutiveErrors = 0;
       const maxErrors = 3;
 
-      while (
-        !controller.signal.aborted &&
-        !cacheInfo.isFullyCached &&
-        consecutiveErrors < maxErrors
-      ) {
+      while (!controller.signal.aborted && consecutiveErrors < maxErrors) {
+        // Get updated cache info for each iteration
+        const currentCacheInfo = await this.getCacheInfo(trackId);
+        if (currentCacheInfo.isFullyCached) {
+          console.log(
+            `[Audio] Track ${trackId} is now fully cached, stopping download`,
+          );
+          break;
+        }
         try {
           console.log(
             `[Audio] Downloading chunk from position ${currentPosition} for ${trackId}`,
@@ -2845,6 +2926,9 @@ export class AudioStreamManager {
             // Update track cache with the combined file
             this.trackCache.set(trackId, properCacheFilePath);
 
+            // Clear cache info cache since we updated the file
+            this.clearCacheInfoCache(trackId);
+
             // Update position and check cache status
             currentPosition += chunkSize;
             consecutiveErrors = 0; // Reset error counter
@@ -2857,12 +2941,17 @@ export class AudioStreamManager {
             );
             onProgress?.(updatedCacheInfo.percentage);
 
-            // Check if we're fully cached
-            if (updatedCacheInfo.percentage >= 98) {
-              console.log(`[Audio] Track ${trackId} is now fully cached!`);
+            // Check if we're fully cached - allow completion at 95% to prevent getting stuck
+            if (updatedCacheInfo.percentage >= 95) {
+              console.log(
+                `[Audio] Track ${trackId} is now fully cached at ${updatedCacheInfo.percentage}%!`,
+              );
               this.markDownloadCompleted(trackId, updatedCacheInfo.fileSize);
               break;
             }
+
+            // Update current position for next chunk
+            currentPosition = updatedCacheInfo.fileSize * 1024 * 1024;
 
             // Small delay between chunks to be gentle on the server
             await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -2873,8 +2962,16 @@ export class AudioStreamManager {
             consecutiveErrors++;
 
             if (chunkResult.status === 416) {
-              // Range not satisfiable - might be end of file
+              // Range not satisfiable - reached end of file
               console.log(`[Audio] Reached end of file for ${trackId}`);
+              // Get final cache info and mark as completed
+              const finalCacheInfo = await this.getCacheInfo(trackId);
+              if (finalCacheInfo.percentage >= 95) {
+                console.log(
+                  `[Audio] File appears complete at ${finalCacheInfo.percentage}%, marking as fully cached`,
+                );
+                this.markDownloadCompleted(trackId, finalCacheInfo.fileSize);
+              }
               break;
             }
           }
@@ -2891,6 +2988,25 @@ export class AudioStreamManager {
       }
 
       console.log(`[Audio] Continuous caching completed for track: ${trackId}`);
+
+      // Final check: if we're very close to completion, force mark as 100%
+      try {
+        const finalCacheInfo = await this.getCacheInfo(trackId);
+        if (
+          finalCacheInfo.percentage >= 95 &&
+          finalCacheInfo.percentage < 100
+        ) {
+          console.log(
+            `[Audio] Force completing cache at ${finalCacheInfo.percentage}% for ${trackId}`,
+          );
+          this.markDownloadCompleted(trackId, finalCacheInfo.fileSize);
+        }
+      } catch (finalCheckError) {
+        console.warn(
+          `[Audio] Final cache check failed for ${trackId}:`,
+          finalCheckError,
+        );
+      }
     } catch (error) {
       console.error(`[Audio] Continuous caching failed for ${trackId}:`, error);
     }
