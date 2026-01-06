@@ -28,6 +28,9 @@ interface PlaylistProps {
   emptyMessage?: string;
   emptySubMessage?: string;
   emptyIcon?: string;
+  showSongOptions?: boolean; // Whether to show the options button for songs
+  showHeaderOptions?: boolean; // Whether to show the header options button
+  type?: "album" | "playlist"; // Type of content being displayed
 }
 
 // Main screen container
@@ -149,6 +152,14 @@ const SongItem = styled.TouchableOpacity`
   padding: 12px 24px;
 `;
 
+const SongThumbnail = styled.Image`
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  background-color: #333;
+  margin-right: 12px;
+`;
+
 const SongNumber = styled.Text`
   color: #999;
   font-size: 14px;
@@ -157,7 +168,7 @@ const SongNumber = styled.Text`
 
 const SongInfo = styled.View`
   flex: 1;
-  margin-left: 16px;
+  margin-left: 4px;
 `;
 
 const SongTitle = styled.Text`
@@ -216,6 +227,9 @@ export const Playlist: React.FC<PlaylistProps> = ({
   emptyMessage = "No songs found",
   emptySubMessage = "This album is currently empty.",
   emptyIcon = "musical-notes-outline",
+  showSongOptions,
+  showHeaderOptions = true, // Default to true for backward compatibility
+  type = "album", // Default to album for backward compatibility
 }) => {
   const { playTrack } = usePlayer();
 
@@ -226,6 +240,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
   const renderSongItem = ({ item, index }: { item: any; index: number }) => (
     <SongItem onPress={() => handlePlaySong(item, index)}>
       <SongNumber>{index + 1}</SongNumber>
+      {item.thumbnail && <SongThumbnail source={{ uri: item.thumbnail }} />}
       <SongInfo>
         <SongTitle numberOfLines={1}>{item.title}</SongTitle>
         {item.artist && (
@@ -233,14 +248,11 @@ export const Playlist: React.FC<PlaylistProps> = ({
         )}
       </SongInfo>
       <SongActions>
-        <ActionButton>
-          <Ionicons name="cloud-download-outline" size={22} color="#999" />
-        </ActionButton>
-        <ActionButton
-          onPress={() => onSongOptionsPress && onSongOptionsPress(item)}
-        >
-          <Ionicons name="ellipsis-vertical" size={20} color="#999" />
-        </ActionButton>
+        {showSongOptions !== false && onSongOptionsPress && (
+          <ActionButton onPress={() => onSongOptionsPress(item)}>
+            <Ionicons name="ellipsis-vertical" size={20} color="#999" />
+          </ActionButton>
+        )}
       </SongActions>
     </SongItem>
   );
@@ -308,10 +320,13 @@ export const Playlist: React.FC<PlaylistProps> = ({
         <HeaderButton onPress={onBack}>
           <Ionicons name="chevron-back" size={24} color="#fff" />
         </HeaderButton>
-        <HeaderTitle>Album</HeaderTitle>
-        <HeaderButton onPress={onHeaderOptionsPress}>
-          <Ionicons name="ellipsis-vertical" size={20} color="#fff" />
-        </HeaderButton>
+        <HeaderTitle>{type === "playlist" ? "Playlist" : "Album"}</HeaderTitle>
+        {showHeaderOptions && onHeaderOptionsPress && (
+          <HeaderButton onPress={onHeaderOptionsPress}>
+            <Ionicons name="ellipsis-vertical" size={20} color="#fff" />
+          </HeaderButton>
+        )}
+        {!showHeaderOptions && <View style={{ width: 40 }} />}
       </Header>
 
       <FlatList

@@ -16,7 +16,7 @@ import Entypo from "@expo/vector-icons/Entypo";
 import { FontAwesome5, FontAwesome6, Fontisto } from "@expo/vector-icons";
 import { usePlayer } from "../../contexts/PlayerContext";
 import { StorageService, Playlist } from "../../utils/storage";
-import { SongActionSheet } from "../SongActionSheet";
+import { SliderSheet } from "../SliderSheet";
 import { Track } from "../../contexts/PlayerContext";
 
 const Screen = styled.View`
@@ -333,7 +333,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
         animateSheet(target);
       },
-    })
+    }),
   ).current;
 
   const closeSongActionSheet = () => {
@@ -570,7 +570,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                         </CollectionCard>
                       ))}
                   </GridRow>
-                )
+                ),
               )}
             </>
           )}
@@ -707,7 +707,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         </Modal>
 
         {/* Song Action Sheet */}
-        <SongActionSheet
+        <SliderSheet
           visible={showSongActionSheet}
           onClose={closeSongActionSheet}
           sheetTop={sheetTop}

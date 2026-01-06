@@ -1,6 +1,3 @@
-/********************************************************************
- *  SongActionSheet.tsx - Reusable bottom sheet for song actions
- *******************************************************************/
 import React from "react";
 import { TouchableOpacity, ScrollView } from "react-native";
 const { Animated } = require("react-native");
@@ -13,7 +10,7 @@ interface SheetOption {
   icon: string;
 }
 
-interface SongActionSheetProps {
+interface SliderSheetProps {
   visible: boolean;
   onClose: () => void;
   sheetTop: any; // Animated.AnimatedValue
@@ -102,12 +99,14 @@ const SheetHeaderTitle = styled.Text`
   font-size: 16px;
   font-family: GoogleSansMedium;
   margin-bottom: 2px;
+  line-height: 20px;
 `;
 
 const SheetHeaderArtist = styled.Text`
   color: #9ca3af;
   font-size: 14px;
   font-family: GoogleSansRegular;
+  line-height: 18px;
 `;
 
 const SheetSeparator = styled.View`
@@ -135,9 +134,10 @@ const SheetItemText = styled.Text`
   color: #ffffff;
   font-size: 16px;
   font-family: GoogleSansRegular;
+  line-height: 20px;
 `;
 
-export const SongActionSheet: React.FC<SongActionSheetProps> = ({
+export const SliderSheet: React.FC<SliderSheetProps> = ({
   visible,
   onClose,
   sheetTop,

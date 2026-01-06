@@ -349,7 +349,11 @@ function AppContent() {
           onExpand={handleExpandPlayer}
           currentScreen={currentScreen}
         />
-        <FullPlayerModal visible={showFullPlayer} onClose={handleClosePlayer} onPlaylistUpdated={handlePlaylistUpdated} />
+        <FullPlayerModal
+          visible={showFullPlayer}
+          onClose={handleClosePlayer}
+          onPlaylistUpdated={handlePlaylistUpdated}
+        />
       </View>
     </PlayerProvider>
   );

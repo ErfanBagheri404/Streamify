@@ -5,7 +5,7 @@
     "scheme": "streamify",
     "sdkVersion": "54.0.0",
     "orientation": "portrait",
-    "icon": "./assets/StreamifyLogo2.png",
+    "icon": "./assets/StreamifyLogo.png",
     "platforms": ["android"],
     "plugins": [
       "expo-font",
@@ -36,11 +36,7 @@
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE"
       ],
-      "versionCode": 1,
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/StreamifyLogo2.png",
-        "backgroundColor": "#000000"
-      }
+      "versionCode": 1
     },
     "extra": {
       "eas": {
