@@ -1,3 +1,5 @@
+<img width="1632" height="656" alt="StreamifyBanner" src="https://github.com/user-attachments/assets/d5eedf8e-ff9f-4cfa-bd05-f780a91b216f" />
+
 # Streamify 🎵
 
 A modern, feature-rich music streaming application built with React Native and Expo, designed to deliver seamless audio experiences across Android devices.
