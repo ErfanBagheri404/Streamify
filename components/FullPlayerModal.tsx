@@ -783,9 +783,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
         );
         setLyricsData([]);
         setCurrentLyricIndex(0);
-        setLyricsError(
-          "Unable to load lyrics - service may be temporarily unavailable",
-        );
+        setLyricsError("Couldn't load lyrics for this track");
       } finally {
         setIsLoadingLyrics(false);
       }
@@ -948,10 +946,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
           </Header>
 
           {/* Content with ScrollView for full screen scrollability */}
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            scrollEnabled={lyricsData.length > 0}
-          >
+          <ScrollView showsVerticalScrollIndicator={false} scrollEnabled={true}>
             {currentTrack.thumbnail ? (
               <AlbumArtWrapper>
                 <AlbumArtWithOpacity
@@ -1173,16 +1168,32 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   </LyricLine>
                 ))
               ) : lyricsError ? (
-                <LyricLine
-                  isActive={false}
-                  style={{ opacity: 0.6, fontSize: 12 }}
-                >
-                  {lyricsError}
-                </LyricLine>
+                <>
+                  <LyricLine
+                    isActive={false}
+                    style={{ opacity: 0.6, fontSize: 14 }}
+                  >
+                    {lyricsError}
+                  </LyricLine>
+                  <LyricLine
+                    isActive={false}
+                    style={{ opacity: 0.4, fontSize: 12, marginTop: 8 }}
+                  >
+                    Try again later or check your internet connection
+                  </LyricLine>
+                </>
               ) : (
-                <LyricLine isActive={false} style={{ opacity: 0.6 }}>
-                  No lyrics available
-                </LyricLine>
+                <>
+                  <LyricLine isActive={false} style={{ opacity: 0.6 }}>
+                    Lyrics not available for this track
+                  </LyricLine>
+                  <LyricLine
+                    isActive={false}
+                    style={{ opacity: 0.4, fontSize: 12, marginTop: 8 }}
+                  >
+                    We're always working to expand our lyrics database
+                  </LyricLine>
+                </>
               )}
             </LyricsCard>
 
