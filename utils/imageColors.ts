@@ -13,28 +13,48 @@ export interface ColorTheme {
 
 export const extractColorsFromImage = async (
   imageUrl: string,
-): Promise<ColorTheme> => {
+): Promise<ExtendedColorTheme> => {
   try {
-    const defaultTheme: ColorTheme = {
+    const defaultTheme: ExtendedColorTheme = {
       primary: "#a3e635",
       secondary: "#22d3ee",
       background: "#000000",
       text: "#ffffff",
       accent: "#f59e0b",
+      isGradient: false,
     };
 
     if (imageUrl) {
       const colors = await extractDominantColors(imageUrl);
+      console.log("[extractColorsFromImage] Extracted colors:", colors); // eslint-disable-line no-console
 
       if (colors && colors.length > 0) {
         const primaryColor = colors[0] || defaultTheme.primary;
         const secondaryColor = colors[1] || defaultTheme.secondary;
         const accentColor = colors[2] || defaultTheme.accent;
+        console.log("[extractColorsFromImage] Using colors:", {
+          primaryColor,
+          secondaryColor,
+          accentColor,
+        });
 
-        // Create a dark, tinted background based on the primary color
+        // Find the closest matching predefined theme based on extracted colors
+        const closestTheme = findClosestPredefinedTheme(
+          primaryColor,
+          secondaryColor,
+          accentColor,
+        );
+
+        if (closestTheme) {
+          console.log(
+            "[extractColorsFromImage] Found closest theme:",
+            closestTheme,
+          );
+          return closestTheme;
+        }
+
+        // Fallback to custom theme generation if no close match found
         const darkBackground = makeDarkBackground(primaryColor);
-
-        // Ensure text has good contrast
         const textColor = getContrastColor(darkBackground);
 
         const theme = {
@@ -43,6 +63,7 @@ export const extractColorsFromImage = async (
           background: darkBackground,
           text: textColor,
           accent: accentColor,
+          isGradient: false,
         };
 
         return theme;
@@ -57,6 +78,7 @@ export const extractColorsFromImage = async (
       background: "#000000",
       text: "#ffffff",
       accent: "#f59e0b",
+      isGradient: false,
     };
   }
 };
@@ -87,7 +109,7 @@ const extractDominantColors = async (imageUrl: string): Promise<string[]> => {
       { format: ImageManipulator.SaveFormat.PNG, base64: true },
     );
 
-    console.log(!!resizedImage.base64);
+    console.log(!!resizedImage.base64); // eslint-disable-line no-console
 
     if (!resizedImage.base64) {
       throw new Error("Failed to get base64 data from image");
@@ -105,7 +127,7 @@ const extractDominantColors = async (imageUrl: string): Promise<string[]> => {
 
     return colors;
   } catch (error) {
-    console.error("Error extracting colors from image:", error);
+    console.error("Error extracting colors from image:", error); // eslint-disable-line no-console
     // Fallback to URL-based analysis
     return await extractColorsFromUrl(imageUrl);
   }
@@ -555,13 +577,31 @@ const getContrastColor = (color: string): string => {
 };
 
 // Predefined color themes for different genres/moods
-export const predefinedThemes = {
+export interface GradientTheme {
+  colors: string[];
+  start?: [number, number];
+  end?: [number, number];
+  locations?: number[];
+}
+
+export interface ExtendedColorTheme extends ColorTheme {
+  gradient?: GradientTheme;
+  isGradient?: boolean;
+}
+
+export const predefinedThemes: Record<string, ExtendedColorTheme> = {
   electronic: {
     primary: "#00d4ff",
     secondary: "#ff00ff",
     background: "#0a0a0a",
     text: "#ffffff",
     accent: "#ffff00",
+    gradient: {
+      colors: ["#0a0a0a", "#1a1a2e", "#16213e"],
+      start: [0, 0],
+      end: [1, 1],
+    },
+    isGradient: true,
   },
   rock: {
     primary: "#ff4444",
@@ -569,6 +609,12 @@ export const predefinedThemes = {
     background: "#1a0a0a",
     text: "#ffffff",
     accent: "#ffaa44",
+    gradient: {
+      colors: ["#1a0a0a", "#2a0a0a", "#3a1a1a"],
+      start: [0, 0],
+      end: [1, 0],
+    },
+    isGradient: true,
   },
   jazz: {
     primary: "#d4af37",
@@ -576,6 +622,12 @@ export const predefinedThemes = {
     background: "#2a1a0a",
     text: "#f5f5dc",
     accent: "#cd853f",
+    gradient: {
+      colors: ["#2a1a0a", "#3a2a1a", "#4a3a2a"],
+      start: [0, 0],
+      end: [1, 1],
+    },
+    isGradient: true,
   },
   classical: {
     primary: "#4a90e2",
@@ -583,6 +635,12 @@ export const predefinedThemes = {
     background: "#0a0a1a",
     text: "#f0f8ff",
     accent: "#9370db",
+    gradient: {
+      colors: ["#0a0a1a", "#1a1a2a", "#2a2a3a"],
+      start: [0, 0],
+      end: [0, 1],
+    },
+    isGradient: true,
   },
   pop: {
     primary: "#ff69b4",
@@ -590,5 +648,390 @@ export const predefinedThemes = {
     background: "#1a0a1a",
     text: "#ffffff",
     accent: "#ffc0cb",
+    gradient: {
+      colors: ["#1a0a1a", "#2a0a2a", "#3a1a3a"],
+      start: [0, 0],
+      end: [1, 0],
+    },
+    isGradient: true,
   },
+  // New themes with gradients
+  sunset: {
+    primary: "#ff6b35",
+    secondary: "#f7931e",
+    background: "#2a1810",
+    text: "#ffffff",
+    accent: "#ffd23f",
+    gradient: {
+      colors: ["#2a1810", "#4a2810", "#6a3810"],
+      start: [0, 0],
+      end: [1, 1],
+    },
+    isGradient: true,
+  },
+  ocean: {
+    primary: "#00b4d8",
+    secondary: "#0077b6",
+    background: "#0a1a2a",
+    text: "#ffffff",
+    accent: "#90e0ef",
+    gradient: {
+      colors: ["#0a1a2a", "#0a2a3a", "#0a3a4a"],
+      start: [0, 0],
+      end: [0, 1],
+    },
+    isGradient: true,
+  },
+  forest: {
+    primary: "#2d6a4f",
+    secondary: "#40916c",
+    background: "#0a2a1a",
+    text: "#ffffff",
+    accent: "#52b788",
+    gradient: {
+      colors: ["#0a2a1a", "#1a3a2a", "#2a4a3a"],
+      start: [0, 0],
+      end: [1, 0],
+    },
+    isGradient: true,
+  },
+  midnight: {
+    primary: "#6c757d",
+    secondary: "#495057",
+    background: "#0a0a0a",
+    text: "#ffffff",
+    accent: "#dee2e6",
+    gradient: {
+      colors: ["#0a0a0a", "#1a1a1a", "#2a2a2a"],
+      start: [0, 0],
+      end: [1, 1],
+    },
+    isGradient: true,
+  },
+  neon: {
+    primary: "#ff073a",
+    secondary: "#39ff14",
+    background: "#0a0a0a",
+    text: "#ffffff",
+    accent: "#ff6b35",
+    gradient: {
+      colors: ["#0a0a0a", "#1a0a1a", "#2a0a2a"],
+      start: [0, 0],
+      end: [1, 0],
+    },
+    isGradient: true,
+  },
+  warm: {
+    primary: "#e76f51",
+    secondary: "#f4a261",
+    background: "#2a1a0a",
+    text: "#ffffff",
+    accent: "#e9c46a",
+    gradient: {
+      colors: ["#2a1a0a", "#3a2a1a", "#4a3a2a"],
+      start: [0, 0],
+      end: [1, 1],
+    },
+    isGradient: true,
+  },
+  cool: {
+    primary: "#457b9d",
+    secondary: "#1d3557",
+    background: "#0a1a2a",
+    text: "#ffffff",
+    accent: "#a8dadc",
+    gradient: {
+      colors: ["#0a1a2a", "#1a2a3a", "#2a3a4a"],
+      start: [0, 0],
+      end: [0, 1],
+    },
+    isGradient: true,
+  },
+  vintage: {
+    primary: "#8b4513",
+    secondary: "#a0522d",
+    background: "#2a1a0a",
+    text: "#f5deb3",
+    accent: "#daa520",
+    gradient: {
+      colors: ["#2a1a0a", "#3a2a1a", "#4a3a2a"],
+      start: [0, 0],
+      end: [1, 0],
+    },
+    isGradient: true,
+  },
+  // Additional beautiful gradient themes
+  aurora: {
+    primary: "#ff006e",
+    secondary: "#8338ec",
+    background: "#1a0a2a",
+    text: "#ffffff",
+    accent: "#06ffa5",
+    gradient: {
+      colors: ["#1a0a2a", "#2a1a3a", "#3a2a4a"],
+      start: [0, 0],
+      end: [1, 1],
+    },
+    isGradient: true,
+  },
+  cosmic: {
+    primary: "#7209b7",
+    secondary: "#560bad",
+    background: "#0a0a1a",
+    text: "#ffffff",
+    accent: "#f72585",
+    gradient: {
+      colors: ["#0a0a1a", "#1a0a2a", "#2a0a3a"],
+      start: [0, 0],
+      end: [0, 1],
+    },
+    isGradient: true,
+  },
+  sunrise: {
+    primary: "#ff9500",
+    secondary: "#ff6200",
+    background: "#2a1810",
+    text: "#ffffff",
+    accent: "#ffdd00",
+    gradient: {
+      colors: ["#2a1810", "#4a2810", "#6a3810"],
+      start: [0, 1],
+      end: [1, 0],
+    },
+    isGradient: true,
+  },
+  twilight: {
+    primary: "#667eea",
+    secondary: "#764ba2",
+    background: "#0a1a2a",
+    text: "#ffffff",
+    accent: "#f093fb",
+    gradient: {
+      colors: ["#0a1a2a", "#1a2a3a", "#2a3a4a"],
+      start: [0, 0],
+      end: [1, 1],
+    },
+    isGradient: true,
+  },
+  fire: {
+    primary: "#ff4757",
+    secondary: "#ff6348",
+    background: "#2a1010",
+    text: "#ffffff",
+    accent: "#ffa502",
+    gradient: {
+      colors: ["#2a1010", "#4a2020", "#6a3030"],
+      start: [0, 0],
+      end: [1, 0],
+    },
+    isGradient: true,
+  },
+  ice: {
+    primary: "#74b9ff",
+    secondary: "#0984e3",
+    background: "#0a1a2a",
+    text: "#ffffff",
+    accent: "#00cec9",
+    gradient: {
+      colors: ["#0a1a2a", "#0a2a3a", "#0a3a4a"],
+      start: [0, 0],
+      end: [0, 1],
+    },
+    isGradient: true,
+  },
+  nature: {
+    primary: "#00b894",
+    secondary: "#55a3ff",
+    background: "#0a2a1a",
+    text: "#ffffff",
+    accent: "#fdcb6e",
+    gradient: {
+      colors: ["#0a2a1a", "#1a3a2a", "#2a4a3a"],
+      start: [0, 0],
+      end: [1, 1],
+    },
+    isGradient: true,
+  },
+  sunsetGlow: {
+    primary: "#ff7675",
+    secondary: "#fd79a8",
+    background: "#2a1018",
+    text: "#ffffff",
+    accent: "#fdcb6e",
+    gradient: {
+      colors: ["#2a1018", "#4a2028", "#6a3038"],
+      start: [0, 0],
+      end: [1, 1],
+    },
+    isGradient: true,
+  },
+  deepSpace: {
+    primary: "#6c5ce7",
+    secondary: "#a29bfe",
+    background: "#0a0a1a",
+    text: "#ffffff",
+    accent: "#fd79a8",
+    gradient: {
+      colors: ["#0a0a1a", "#1a1a2a", "#2a2a3a"],
+      start: [0, 0],
+      end: [1, 0],
+    },
+    isGradient: true,
+  },
+  autumn: {
+    primary: "#e17055",
+    secondary: "#fab1a0",
+    background: "#2a1810",
+    text: "#ffffff",
+    accent: "#fdcb6e",
+    gradient: {
+      colors: ["#2a1810", "#3a2820", "#4a3830"],
+      start: [0, 0],
+      end: [1, 0],
+    },
+    isGradient: true,
+  },
+  midnightBlue: {
+    primary: "#0984e3",
+    secondary: "#74b9ff",
+    background: "#0a0a2a",
+    text: "#ffffff",
+    accent: "#00cec9",
+    gradient: {
+      colors: ["#0a0a2a", "#1a1a3a", "#2a2a4a"],
+      start: [0, 0],
+      end: [0, 1],
+    },
+    isGradient: true,
+  },
+};
+
+// Helper function to convert hex color to RGB
+const hexToRgb = (hex: string): { r: number; g: number; b: number } => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result
+    ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16),
+      }
+    : { r: 0, g: 0, b: 0 };
+};
+
+// Calculate color distance using Euclidean distance in RGB space
+const colorDistance = (color1: string, color2: string): number => {
+  const rgb1 = hexToRgb(color1);
+  const rgb2 = hexToRgb(color2);
+  return Math.sqrt(
+    Math.pow(rgb1.r - rgb2.r, 2) +
+      Math.pow(rgb1.g - rgb2.g, 2) +
+      Math.pow(rgb1.b - rgb2.b, 2),
+  );
+};
+
+// Find the closest predefined theme based on extracted colors
+const findClosestPredefinedTheme = (
+  primaryColor: string,
+  secondaryColor: string,
+  accentColor: string,
+): ExtendedColorTheme | null => {
+  let closestTheme: ExtendedColorTheme | null = null;
+  let minDistance = Infinity;
+
+  // Convert extracted colors to hex format if they're in HSL format
+  let primaryHex = primaryColor;
+  let secondaryHex = secondaryColor;
+  let accentHex = accentColor;
+
+  if (primaryColor.startsWith("hsl")) {
+    primaryHex = hslToHex(primaryColor);
+  }
+  if (secondaryColor.startsWith("hsl")) {
+    secondaryHex = hslToHex(secondaryColor);
+  }
+  if (accentColor.startsWith("hsl")) {
+    accentHex = hslToHex(accentColor);
+  }
+
+  // Find the closest matching theme
+  Object.entries(predefinedThemes).forEach(([_themeName, theme]) => {
+    const distance =
+      colorDistance(primaryHex, theme.primary) * 0.5 + // Primary color has more weight
+      colorDistance(secondaryHex, theme.secondary) * 0.3 +
+      colorDistance(accentHex, theme.accent) * 0.2;
+
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestTheme = theme;
+    }
+  });
+
+  // Only return a predefined theme if it's reasonably close (threshold: 150)
+  if (minDistance < 150) {
+    console.log(
+      "[findClosestPredefinedTheme] Found theme with distance:",
+      minDistance,
+      "Theme:",
+      closestTheme,
+    );
+    return closestTheme;
+  }
+
+  console.log(
+    "[findClosestPredefinedTheme] No close theme found, minDistance:",
+    minDistance,
+  );
+  return null;
+};
+
+// Convert HSL color to hex
+const hslToHex = (hsl: string): string => {
+  const match = hsl.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
+  if (!match) {
+    return "#000000";
+  }
+
+  const h = parseInt(match[1], 10);
+  const s = parseInt(match[2], 10) / 100;
+  const l = parseInt(match[3], 10) / 100;
+
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+
+  let r = 0,
+    g = 0,
+    b = 0;
+
+  if (h < 60) {
+    r = c;
+    g = x;
+    b = 0;
+  } else if (h < 120) {
+    r = x;
+    g = c;
+    b = 0;
+  } else if (h < 180) {
+    r = 0;
+    g = c;
+    b = x;
+  } else if (h < 240) {
+    r = 0;
+    g = x;
+    b = c;
+  } else if (h < 300) {
+    r = x;
+    g = 0;
+    b = c;
+  } else {
+    r = c;
+    g = 0;
+    b = x;
+  }
+
+  r = Math.round((r + m) * 255);
+  g = Math.round((g + m) * 255);
+  b = Math.round((b + m) * 255);
+
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`; // eslint-disable-line no-bitwise
 };

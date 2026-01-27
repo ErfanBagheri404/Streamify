@@ -12,7 +12,12 @@ import {
   AudioStreamManager,
   getAudioStreamUrl,
 } from "../modules/audioStreaming";
-import { extractColorsFromImage, ColorTheme } from "../utils/imageColors";
+import {
+  extractColorsFromImage,
+  ColorTheme,
+  ExtendedColorTheme,
+  predefinedThemes,
+} from "../utils/imageColors";
 import { StorageService } from "../utils/storage";
 import { Platform, AppState } from "react-native";
 import { foregroundServiceManager } from "../modules/foregroundService";
@@ -40,7 +45,7 @@ interface PlayerContextType {
   repeatMode: "off" | "one" | "all";
   isShuffled: boolean;
   isInPlaylistContext: boolean;
-  colorTheme: ColorTheme;
+  colorTheme: ExtendedColorTheme;
   likedSongs: Track[];
   previouslyPlayedSongs: Track[];
   cacheProgress: {
@@ -79,6 +84,7 @@ interface PlayerContextType {
     retryCount?: number;
   }>;
   resetStreamRetryCount: () => void;
+  applyPredefinedTheme: (themeName: string) => void;
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
@@ -100,12 +106,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [previouslyPlayedSongs, setPreviouslyPlayedSongs] = useState<Track[]>(
     [],
   );
-  const [colorTheme, setColorTheme] = useState<ColorTheme>({
+  const [colorTheme, setColorTheme] = useState<ExtendedColorTheme>({
     primary: "#a3e635",
     secondary: "#22d3ee",
     background: "#000000",
     text: "#ffffff",
     accent: "#f59e0b",
+    isGradient: false,
   });
   const [cacheProgress, setCacheProgress] = useState<{
     trackId: string;
@@ -252,6 +259,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           background: "#000000",
           text: "#ffffff",
           accent: "#ffffff",
+          isGradient: false,
         });
         return;
       }
@@ -1818,6 +1826,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => {};
   }, [playPause, nextTrack, previousTrack, clearPlayer]);
 
+  const applyPredefinedTheme = (themeName: string) => {
+    const theme = predefinedThemes[themeName];
+    if (theme) {
+      setColorTheme(theme);
+    }
+  };
+
   const value: PlayerContextType = {
     currentTrack,
     playlist,
@@ -1850,6 +1865,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     isSongLiked,
     getCacheInfo,
     resetStreamRetryCount: () => setStreamRetryCount(0),
+    applyPredefinedTheme,
   };
 
   return (

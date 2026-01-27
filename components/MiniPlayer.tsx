@@ -2,6 +2,7 @@ import * as React from "react";
 import { TouchableOpacity, ActivityIndicator } from "react-native";
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { usePlayer } from "../contexts/PlayerContext";
 
 const MiniPlayerContainer = styled.View<{ bottomPosition: number }>`
@@ -150,14 +151,43 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
     await previousTrack();
   };
 
+  const displayTheme = colorTheme;
+
+  // Debug: Log the current color theme
+  console.log("[MiniPlayer] Current theme:", {
+    isGradient: displayTheme.isGradient,
+    hasGradient: !!displayTheme.gradient,
+    gradient: displayTheme.gradient,
+    background: displayTheme.background,
+    primary: displayTheme.primary,
+  });
+
   return (
     <MiniPlayerContainer
       bottomPosition={currentBottomPosition}
       style={{
-        backgroundColor: colorTheme.background,
-        borderTopColor: colorTheme.text + "20" /* 12% opacity */,
+        backgroundColor: displayTheme.isGradient
+          ? "transparent"
+          : displayTheme.background,
+        borderTopColor: displayTheme.text + "20" /* 12% opacity */,
       }}
     >
+      {displayTheme.isGradient && displayTheme.gradient ? (
+        <LinearGradient
+          colors={displayTheme.gradient.colors}
+          start={displayTheme.gradient.start || [0, 0]}
+          end={displayTheme.gradient.end || [1, 1]}
+          locations={displayTheme.gradient.locations || undefined}
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            borderRadius: 10,
+          }}
+        />
+      ) : null}
       <TouchableOpacity
         onPress={onExpand}
         style={{ flexDirection: "row", alignItems: "center", flex: 1 }}
@@ -166,24 +196,24 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
           <Thumbnail source={{ uri: currentTrack.thumbnail }} />
         ) : (
           <PlaceholderThumbnail
-            style={{ backgroundColor: colorTheme.text + "1A" }}
+            style={{ backgroundColor: displayTheme.text + "1A" }}
           >
             <Ionicons
               name="musical-notes"
               size={24}
-              color={colorTheme.text + "80"}
+              color={displayTheme.text + "80"}
             />
           </PlaceholderThumbnail>
         )}
 
         <TrackInfo>
-          <TrackTitle numberOfLines={1} style={{ color: colorTheme.text }}>
+          <TrackTitle numberOfLines={1} style={{ color: displayTheme.text }}>
             {currentTrack.title}
           </TrackTitle>
           {currentTrack.artist && (
             <TrackArtist
               numberOfLines={1}
-              style={{ color: colorTheme.text, opacity: 0.7 }}
+              style={{ color: displayTheme.text, opacity: 0.7 }}
             >
               {currentTrack.artist}
             </TrackArtist>
@@ -193,7 +223,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
 
       <ControlsContainer>
         <ControlButton onPress={handlePrevious}>
-          <Ionicons name="play-back" size={20} color={colorTheme.text} />
+          <Ionicons name="play-back" size={20} color={displayTheme.text} />
         </ControlButton>
 
         <ControlButton
@@ -203,20 +233,20 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
           {isLoading || isTransitioning ? (
             <ActivityIndicator
               size="small"
-              color={colorTheme.text}
+              color={displayTheme.text}
               style={{ width: 24, height: 24 }}
             />
           ) : (
             <Ionicons
               name={isPlaying ? "pause" : "play"}
               size={24}
-              color={colorTheme.text}
+              color={displayTheme.text}
             />
           )}
         </ControlButton>
 
         <ControlButton onPress={handleNext}>
-          <Ionicons name="play-forward" size={20} color={colorTheme.text} />
+          <Ionicons name="play-forward" size={20} color={displayTheme.text} />
         </ControlButton>
       </ControlsContainer>
     </MiniPlayerContainer>

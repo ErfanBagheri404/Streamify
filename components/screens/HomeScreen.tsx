@@ -271,7 +271,7 @@ export default function HomeScreen({ navigation }: any) {
   const fetchCategoryPlaylists = async (category: string) => {
     try {
       const response = await fetch(
-        CATEGORY_APIS[category as keyof typeof CATEGORY_APIS]
+        CATEGORY_APIS[category as keyof typeof CATEGORY_APIS],
       );
       const data = await response.json();
 
@@ -288,26 +288,36 @@ export default function HomeScreen({ navigation }: any) {
   const fetchFeaturedPlaylists = async () => {
     try {
       setLoadingFeatured(true);
-      const featuredData: Playlist[] = [];
 
-      for (const playlistId of FEATURED_PLAYLIST_IDS) {
+      // Fetch all featured playlists in parallel for faster loading
+      const playlistPromises = FEATURED_PLAYLIST_IDS.map(async (playlistId) => {
         try {
           const response = await fetch(
-            `https://streamifyjiosaavn.vercel.app/api/playlists?id=${playlistId}`
+            `https://streamifyjiosaavn.vercel.app/api/playlists?id=${playlistId}`,
           );
           const data = await response.json();
           if (data.success && data.data) {
-            featuredData.push(data.data);
+            return data.data;
           }
+          return null;
         } catch (error) {
           console.error(
             `Failed to fetch featured playlist ${playlistId}:`,
-            error
+            error,
           );
+          return null;
         }
-      }
+      });
 
-      setFeaturedPlaylists(featuredData);
+      // Wait for all playlists to load in parallel
+      const featuredData = await Promise.all(playlistPromises);
+
+      // Filter out any null results (failed fetches)
+      const validPlaylists = featuredData.filter(
+        (playlist) => playlist !== null,
+      );
+
+      setFeaturedPlaylists(validPlaylists);
     } catch (error) {
       console.error("Failed to fetch featured playlists:", error);
     } finally {
@@ -346,19 +356,26 @@ export default function HomeScreen({ navigation }: any) {
 
   // Load initial data
   useEffect(() => {
+    // Load featured playlists first (now in parallel for faster loading)
     fetchFeaturedPlaylists();
-    // Load initial categories
-    if (selectedCategories.includes("all")) {
-      // Load all categories when "All" is selected
-      Object.keys(CATEGORY_APIS).forEach((category) => {
-        fetchCategoryPlaylists(category);
-      });
-    } else {
-      // Load only selected categories
-      selectedCategories.forEach((category) => {
-        fetchCategoryPlaylists(category);
-      });
-    }
+
+    // Load categories with a small delay to prioritize featured playlists
+    // This ensures featured playlists appear to load first
+    const categoryLoadTimeout = setTimeout(() => {
+      if (selectedCategories.includes("all")) {
+        // Load all categories when "All" is selected
+        Object.keys(CATEGORY_APIS).forEach((category) => {
+          fetchCategoryPlaylists(category);
+        });
+      } else {
+        // Load only selected categories
+        selectedCategories.forEach((category) => {
+          fetchCategoryPlaylists(category);
+        });
+      }
+    }, 200); // Small delay to prioritize featured playlists
+
+    return () => clearTimeout(categoryLoadTimeout);
   }, []);
 
   const handlePlayTrack = (track: any) => {
@@ -386,7 +403,7 @@ export default function HomeScreen({ navigation }: any) {
 
   const getPlaylistImageSource = (playlist: Playlist) => {
     const highQualityImage = playlist.image.find(
-      (img) => img.quality === "500x500"
+      (img) => img.quality === "500x500",
     );
     const imageUrl = highQualityImage?.url || playlist.image[0]?.url;
 

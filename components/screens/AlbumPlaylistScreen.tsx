@@ -37,7 +37,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
   const [showSongActionSheet, setShowSongActionSheet] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [sheetMode, setSheetMode] = useState<"playlist" | "playlist-song">(
-    "playlist-song"
+    "playlist-song",
   );
   const sheetTop = useRef(new Animated.Value(SHEET_CLOSED_TOP)).current;
   const [sheetHeight, setSheetHeight] = useState(SHEET_HEIGHT);
@@ -112,7 +112,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
 
         animateSheet(target);
       },
-    })
+    }),
   ).current;
 
   const closeSongActionSheet = () => {
@@ -173,7 +173,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       }
 
       const updatedTracks = playlist.tracks.filter(
-        (track) => track.id !== selectedTrack.id
+        (track) => track.id !== selectedTrack.id,
       );
       const updatedPlaylist = {
         ...playlist,
@@ -246,7 +246,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
     const unsubscribe = navigation.addListener("focus", () => {
       if (source === "user-playlist") {
         console.log(
-          "[AlbumPlaylistScreen] Screen focused, refreshing playlist"
+          "[AlbumPlaylistScreen] Screen focused, refreshing playlist",
         );
         loadAlbumSongs();
       }
@@ -277,7 +277,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
         const { searchAPI } = await import("../../modules/searchAPI");
         const albumDetails = await searchAPI.getJioSaavnAlbumDetails(
           albumId,
-          albumName
+          albumName,
         );
 
         if (
@@ -286,7 +286,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           albumDetails.songs.length > 0
         ) {
           console.log(
-            `[AlbumPlaylistScreen] Found ${albumDetails.songs.length} songs in album`
+            `[AlbumPlaylistScreen] Found ${albumDetails.songs.length} songs in album`,
           );
           const songs = albumDetails.songs.map((song: any) => ({
             id: String(song.id),
@@ -331,14 +331,14 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
 
           if (playlist) {
             console.log(
-              `[AlbumPlaylistScreen] Found playlist with ${playlist.tracks.length} songs`
+              `[AlbumPlaylistScreen] Found playlist with ${playlist.tracks.length} songs`,
             );
             setAlbumSongs(playlist.tracks);
             setAlbumTitle(playlist.name);
             setAlbumArtist(
               `${playlist.tracks.length} ${
                 playlist.tracks.length === 1 ? "song" : "songs"
-              }`
+              }`,
             );
             // Use first song's thumbnail as album art if available
             if (playlist.tracks.length > 0 && playlist.tracks[0].thumbnail) {
@@ -374,7 +374,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       setErrorMessage(
         error instanceof Error
           ? `Failed to load album: ${error.message}`
-          : "Failed to load album tracks. This album may not be available or the service is temporarily unavailable."
+          : "Failed to load album tracks. This album may not be available or the service is temporarily unavailable.",
       );
     } finally {
       setIsLoading(false);
