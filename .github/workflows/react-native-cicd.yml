@@ -99,7 +99,7 @@ jobs:
       # ----------------------------------------------------------
 
       - name: 📱 Build Development APK
-        if: github.event.inputs.buildType == 'dev-apk' || github.event.inputs.buildType == 'all'
+        if: github.event.inputs.buildType == 'dev-apk' || github.event.inputs.buildType == 'all' || (github.event_name == 'push' && github.ref == 'refs/heads/development') || (github.event_name == 'pull_request' && github.ref == 'refs/heads/development')
         run: |
           export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
            
