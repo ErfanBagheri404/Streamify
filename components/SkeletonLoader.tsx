@@ -32,7 +32,7 @@ export const SkeletonLoader: React.FC<SkeletonProps> = ({
           duration: 1200,
           useNativeDriver: true,
         }),
-      ])
+      ]),
     );
 
     animation.start();

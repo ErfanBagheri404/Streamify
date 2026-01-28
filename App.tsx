@@ -43,7 +43,7 @@ enableScreens();
 // Register the playback service for proper media session integration
 try {
   TrackPlayer.registerPlaybackService(() =>
-    require("./services/playbackService")
+    require("./services/playbackService"),
   );
   console.log("[App] Playback service registered successfully");
 } catch (error) {

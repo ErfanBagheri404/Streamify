@@ -4181,7 +4181,7 @@ export class AudioStreamManager {
           .filter(
             (f: any) =>
               !f.type?.startsWith("audio/") &&
-              !f.mimeType?.startsWith('audio/'),
+              !f.mimeType?.startsWith("audio/"),
           )
           .sort((a: any, b: any) => (a.bitrate || 0) - (b.bitrate || 0)); // Lower bitrate first
 

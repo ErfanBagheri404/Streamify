@@ -566,7 +566,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [lyricsError, setLyricsError] = useState<string | null>(null);
   const [isOptionsVisible, setIsOptionsVisible] = useState(false);
   const [sheetState, setSheetState] = useState<"closed" | "half" | "full">(
-    "closed"
+    "closed",
   );
   const [showPlaylistSelection, setShowPlaylistSelection] = useState(false);
   const [userPlaylists, setUserPlaylists] = useState<Playlist[]>([]);
@@ -643,7 +643,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
         animateSheet(target);
       },
-    })
+    }),
   ).current;
 
   const openOptions = () => {
@@ -674,7 +674,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     try {
       // Check if song is already in playlist
       const isAlreadyInPlaylist = playlist.tracks.some(
-        (track) => track.id === currentTrack.id
+        (track) => track.id === currentTrack.id,
       );
 
       if (isAlreadyInPlaylist) {
@@ -741,7 +741,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       console.log("[FullPlayerModal] Starting lyrics fetch...");
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Lyrics fetch timeout")), 15000)
+        setTimeout(() => reject(new Error("Lyrics fetch timeout")), 15000),
       );
 
       try {
@@ -779,7 +779,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       } catch (error) {
         console.error(
           "[FullPlayerModal] Error or timeout fetching lyrics:",
-          error
+          error,
         );
         setLyricsData([]);
         setCurrentLyricIndex(0);
@@ -807,7 +807,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               fileSize: 0,
               totalFileSize: 0,
               isFullyCached: false,
-            }
+            },
       );
     }
   }, [cacheProgress, currentTrack?.id]);

@@ -29,7 +29,7 @@ export class TrackPlayerService {
     // Check if TrackPlayer is available and initialized
     if (!TrackPlayer) {
       throw new Error(
-        "TrackPlayer is not available - make sure react-native-track-player is properly installed"
+        "TrackPlayer is not available - make sure react-native-track-player is properly installed",
       );
     }
 
@@ -40,7 +40,7 @@ export class TrackPlayerService {
 
     if (!nativeTrackPlayer) {
       throw new Error(
-        "Native TrackPlayer module is not available. If you are using Expo, make sure you are *not* running in Expo Go and that you have rebuilt the app after installing react-native-track-player."
+        "Native TrackPlayer module is not available. If you are using Expo, make sure you are *not* running in Expo Go and that you have rebuilt the app after installing react-native-track-player.",
       );
     }
 
@@ -51,7 +51,7 @@ export class TrackPlayerService {
       console.log("[TrackPlayerService] TrackPlayer state check:", state);
     } catch (error) {
       console.warn(
-        "[TrackPlayerService] TrackPlayer not ready, attempting setup..."
+        "[TrackPlayerService] TrackPlayer not ready, attempting setup...",
       );
       await this.setupPlayer();
     }
@@ -67,7 +67,7 @@ export class TrackPlayerService {
       if (!TrackPlayer) {
         console.error("[TrackPlayerService] TrackPlayer is null!");
         throw new Error(
-          "TrackPlayer is not available - make sure react-native-track-player is properly installed"
+          "TrackPlayer is not available - make sure react-native-track-player is properly installed",
         );
       }
 
@@ -78,20 +78,20 @@ export class TrackPlayerService {
 
       if (!nativeTrackPlayer) {
         console.error(
-          "[TrackPlayerService] Native TrackPlayer module is null - this usually means the native module is not linked or you are running in an environment (like Expo Go or web) that does not support react-native-track-player."
+          "[TrackPlayerService] Native TrackPlayer module is null - this usually means the native module is not linked or you are running in an environment (like Expo Go or web) that does not support react-native-track-player.",
         );
         throw new Error(
-          "Native TrackPlayer module is not available. Rebuild the app after installing react-native-track-player and avoid running in Expo Go."
+          "Native TrackPlayer module is not available. Rebuild the app after installing react-native-track-player and avoid running in Expo Go.",
         );
       }
 
       console.log(
         "[TrackPlayerService] TrackPlayer object type:",
-        typeof TrackPlayer
+        typeof TrackPlayer,
       );
       console.log(
         "[TrackPlayerService] TrackPlayer methods:",
-        Object.keys(TrackPlayer)
+        Object.keys(TrackPlayer),
       );
 
       await TrackPlayer.setupPlayer({
@@ -104,7 +104,7 @@ export class TrackPlayerService {
         ],
       });
       console.log(
-        "[TrackPlayerService] TrackPlayer setup completed successfully"
+        "[TrackPlayerService] TrackPlayer setup completed successfully",
       );
 
       await TrackPlayer.updateOptions({
@@ -178,7 +178,7 @@ export class TrackPlayerService {
     TrackPlayer.addEventListener(Event.PlaybackTrackChanged, (event) => {
       console.log(
         "[TrackPlayerService] Track changed to index:",
-        event.nextTrack
+        event.nextTrack,
       );
       this.currentTrackIndex = event.nextTrack || 0;
     });
@@ -209,18 +209,18 @@ export class TrackPlayerService {
     try {
       console.log(
         "[TrackPlayerService] addTracks called, isSetup:",
-        this.isSetup
+        this.isSetup,
       );
 
       // Ensure player is initialized and ready before adding tracks
       await this.ensureTrackPlayerReady();
 
       console.log(
-        "[TrackPlayerService] Player setup complete, proceeding with addTracks"
+        "[TrackPlayerService] Player setup complete, proceeding with addTracks",
       );
 
       const trackPlayerTracks = tracks.map((track, index) =>
-        this.convertTrackToTrackPlayer(track, index)
+        this.convertTrackToTrackPlayer(track, index),
       );
 
       console.log("[TrackPlayerService] About to call TrackPlayer.reset()");
@@ -228,12 +228,12 @@ export class TrackPlayerService {
       try {
         await TrackPlayer.reset();
         console.log(
-          "[TrackPlayerService] TrackPlayer.reset() completed successfully"
+          "[TrackPlayerService] TrackPlayer.reset() completed successfully",
         );
       } catch (resetError) {
         console.error(
           "[TrackPlayerService] TrackPlayer.reset() failed:",
-          resetError
+          resetError,
         );
         console.error("[TrackPlayerService] TrackPlayer object:", TrackPlayer);
         throw resetError;
@@ -251,7 +251,7 @@ export class TrackPlayerService {
         "[TrackPlayerService] Added",
         tracks.length,
         "tracks starting at index",
-        startIndex
+        startIndex,
       );
     } catch (error) {
       console.error("[TrackPlayerService] Failed to add tracks:", error);
@@ -307,7 +307,7 @@ export class TrackPlayerService {
       await TrackPlayer.skipToNext();
       this.currentTrackIndex = Math.min(
         this.currentTrackIndex + 1,
-        this.playlist.length - 1
+        this.playlist.length - 1,
       );
       console.log("[TrackPlayerService] Skipped to next track");
     } catch (error) {
@@ -375,7 +375,7 @@ export class TrackPlayerService {
     } catch (error) {
       console.error(
         "[TrackPlayerService] Failed to get playback state:",
-        error
+        error,
       );
       return { state: State.None };
     }
@@ -475,12 +475,12 @@ export class TrackPlayerService {
 
       console.log(
         "[TrackPlayerService] Updated current track with new URL:",
-        newAudioUrl
+        newAudioUrl,
       );
     } catch (error) {
       console.error(
         "[TrackPlayerService] Failed to update current track:",
-        error
+        error,
       );
       throw error;
     }
