@@ -32,7 +32,7 @@ export const SkeletonLoader: React.FC<SkeletonProps> = ({
           duration: 1200,
           useNativeDriver: true,
         }),
-      ]),
+      ])
     );
 
     animation.start();
@@ -112,23 +112,17 @@ export const FeaturedPlaylistSkeleton: React.FC = () => (
 );
 
 const CategorySkeletonContainer = styled.View`
-  margin-top: 24px;
+  margin-top: 0px;
 `;
 
-const CategoryTitle = styled(SkeletonLoader).attrs({
-  width: 120,
-  height: 18,
-})`
-  margin-left: 16px;
-  margin-bottom: 16px;
-  border-radius: 9px;
+export const CategoryPlaylistContainer = styled.View`
+  padding: 0 16px;
 `;
 
 export const CategoryPlaylistSkeleton: React.FC = () => (
   <CategorySkeletonContainer>
-    <CategoryTitle />
-    <FeaturedSkeletonContainer>
+    <CategoryPlaylistContainer>
       <PlaylistSkeletonRow count={6} />
-    </FeaturedSkeletonContainer>
+    </CategoryPlaylistContainer>
   </CategorySkeletonContainer>
 );

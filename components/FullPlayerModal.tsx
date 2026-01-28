@@ -18,6 +18,7 @@ import styled from "styled-components/native";
 import { FontAwesome6, Ionicons } from "@expo/vector-icons";
 import { Entypo } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
+import TrackPlayer from "react-native-track-player";
 import { LinearGradient } from "expo-linear-gradient";
 import { usePlayer } from "../contexts/PlayerContext";
 import { formatTime } from "../utils/formatters";
@@ -532,7 +533,6 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     isPlaying,
     isLoading,
     isTransitioning,
-    sound,
     playPause,
     nextTrack,
     previousTrack,
@@ -566,7 +566,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [lyricsError, setLyricsError] = useState<string | null>(null);
   const [isOptionsVisible, setIsOptionsVisible] = useState(false);
   const [sheetState, setSheetState] = useState<"closed" | "half" | "full">(
-    "closed",
+    "closed"
   );
   const [showPlaylistSelection, setShowPlaylistSelection] = useState(false);
   const [userPlaylists, setUserPlaylists] = useState<Playlist[]>([]);
@@ -643,7 +643,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
         animateSheet(target);
       },
-    }),
+    })
   ).current;
 
   const openOptions = () => {
@@ -674,7 +674,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     try {
       // Check if song is already in playlist
       const isAlreadyInPlaylist = playlist.tracks.some(
-        (track) => track.id === currentTrack.id,
+        (track) => track.id === currentTrack.id
       );
 
       if (isAlreadyInPlaylist) {
@@ -741,7 +741,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       console.log("[FullPlayerModal] Starting lyrics fetch...");
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Lyrics fetch timeout")), 15000),
+        setTimeout(() => reject(new Error("Lyrics fetch timeout")), 15000)
       );
 
       try {
@@ -779,7 +779,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       } catch (error) {
         console.error(
           "[FullPlayerModal] Error or timeout fetching lyrics:",
-          error,
+          error
         );
         setLyricsData([]);
         setCurrentLyricIndex(0);
@@ -807,7 +807,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               fileSize: 0,
               totalFileSize: 0,
               isFullyCached: false,
-            },
+            }
       );
     }
   }, [cacheProgress, currentTrack?.id]);
@@ -820,17 +820,16 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
   // Track position and duration
   useEffect(() => {
-    if (!sound || !currentTrack?.audioUrl) {
+    if (!currentTrack?.audioUrl) {
       return;
     }
 
     const updatePosition = async () => {
       try {
-        const status = await sound.getStatusAsync();
-        if (status.isLoaded) {
-          setCurrentPosition(status.positionMillis);
-          setDuration(status.durationMillis || 0);
-        }
+        const position = await TrackPlayer.getPosition();
+        const duration = await TrackPlayer.getDuration();
+        setCurrentPosition(position * 1000); // Convert to milliseconds
+        setDuration(duration * 1000); // Convert to milliseconds
       } catch (error) {
         if (!error?.toString().includes("Player does not exist")) {
           // Silently ignore player not existing errors
@@ -842,7 +841,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     updatePosition();
 
     return () => clearInterval(interval);
-  }, [sound, currentTrack?.id]); // Reset when track changes
+  }, [currentTrack?.id]); // Reset when track changes
 
   // Cache info update effect
   useEffect(() => {
@@ -869,7 +868,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
   const handleSeek = async (value: number) => {
     try {
-      if (sound && currentTrack?.audioUrl) {
+      if (currentTrack?.audioUrl) {
         await seekTo(value);
       }
       setCurrentPosition(value);

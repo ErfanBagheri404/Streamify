@@ -4,6 +4,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { enableScreens } from "react-native-screens";
+import TrackPlayer from "react-native-track-player";
 import {
   View,
   TouchableOpacity,
@@ -38,6 +39,16 @@ import ArtistScreen from "./components/screens/ArtistScreen";
 import SettingsScreen from "./components/screens/SettingsScreen";
 
 enableScreens();
+
+// Register the playback service for proper media session integration
+try {
+  TrackPlayer.registerPlaybackService(() =>
+    require("./services/playbackService")
+  );
+  console.log("[App] Playback service registered successfully");
+} catch (error) {
+  console.error("[App] Failed to register playback service:", error);
+}
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
