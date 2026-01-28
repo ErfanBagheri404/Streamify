@@ -2,20 +2,21 @@ name: React Native CI/CD
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, development]
     paths-ignore:
       - "**.md"
       - "LICENSE"
       - "docs/**"
   pull_request:
-    branches: [main, master]
+    branches: [main, master, development]
   workflow_dispatch:
     inputs:
       buildType:
         type: choice
         description: "Build type to run"
         options:
-          - prod-apk # <-- changed from 'dev'
+          - dev-apk
+          - prod-apk
           - all
 
 env:
@@ -32,7 +33,7 @@ jobs:
 
   build-and-deploy:
     needs: check-skip
-    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/development')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: 🏗 Checkout repository
@@ -80,11 +81,40 @@ jobs:
           npx expo prebuild --platform android --clean
 
       # ----------------------------------------------------------
+      #  DEVELOPMENT build (with development client, debugging enabled)
+      # ----------------------------------------------------------
+
+      - name: 📱 Build Development APK
+        if: github.event.inputs.buildType == 'dev-apk' || github.event.inputs.buildType == 'all'
+        run: |
+          export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
+           
+           # Use EAS cloud build for development APK
+           echo "Building development APK using EAS cloud build..."
+           
+           # Build and wait for completion
+           eas build --platform android --profile development --non-interactive --wait
+           
+           echo "Development build completed! 🎉"
+           echo ""
+           echo "The development APK has been built successfully!"
+           echo "This APK includes the development client with debugging capabilities."
+           echo "To download your APK:"
+           echo "1. Visit your EAS dashboard at: https://expo.dev/accounts/[your-account]/projects/streamify/builds"
+           echo "2. Look for the latest completed development build"
+           echo "3. Click on it to download the APK file"
+           echo ""
+           echo "Alternatively, you can run: eas build:list --platform android --limit 5"
+           echo "to see your recent builds and their download links."
+        env:
+          NODE_ENV: development
+
+      # ----------------------------------------------------------
       #  PRODUCTION build (standalone, offline, no Metro required)
       # ----------------------------------------------------------
 
       - name: 📱 Build Production APK
-        if: github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push'
+        if: github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
         run: |
           export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
            
@@ -113,8 +143,16 @@ jobs:
           LOG=$(ls -t ./logs/*.log 2>/dev/null | head -n1)
           if [ -f "$LOG" ]; then cat "$LOG"; else echo "No gradle log found"; fi
 
+      - name: 📦 Upload development APK
+        if: always() && (github.event.inputs.buildType == 'dev-apk' || github.event.inputs.buildType == 'all')
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-dev-apk
+          path: ./app-*.apk
+          retention-days: 7
+
       - name: 📦 Upload production APK
-        if: always()
+        if: always() && (github.event.inputs.buildType == 'prod-apk' || github.event.inputs.buildType == 'all' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')))
         uses: actions/upload-artifact@v4
         with:
           name: app-prod-apk
