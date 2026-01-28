@@ -73,6 +73,20 @@ jobs:
           cat package.json | grep "main"
 
       # ----------------------------------------------------------
+      #  CLEAN BUILD ENVIRONMENT
+      # ----------------------------------------------------------
+      - name: 🧹 Clear EAS build cache and clean project
+        run: |
+          echo "Clearing EAS build cache and cleaning project..."
+          # Clear EAS cache to prevent plugin conflicts
+          eas build:cache:clear || true
+          # Clean any cached node modules
+          rm -rf node_modules/.cache || true
+          # Clean metro cache
+          rm -rf .expo/metro-cache || true
+          echo "Build cache cleared successfully"
+
+      # ----------------------------------------------------------
       #  PREBUILD - Generate native Android files
       # ----------------------------------------------------------
       - name: 🏗 Run Prebuild (Generate Android files)
