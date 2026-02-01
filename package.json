@@ -15,7 +15,7 @@
     "format:check": "prettier --check .",
     "prebuild": "expo prebuild",
     "clean": "rm -rf node_modules && rm -f package-lock.json",
-    "postinstall": "patch-package"
+    "postinstall-disabled": "patch-package"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
