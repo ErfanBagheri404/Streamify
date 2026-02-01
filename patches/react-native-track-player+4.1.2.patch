@@ -110,3 +110,31 @@ index b2409a0..52cc969 100644
      fun setRate(rate: Float, callback: Promise) = scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
  
+@@ -546,5 +546,10 @@
+  
+           if (index >= 0 && index < musicService.tracks.size) {
+-             callback.resolve(Arguments.fromBundle(musicService.tracks[index].originalItem))
++             val originalItem = musicService.tracks[index].originalItem
++             if (originalItem != null) {
++                 callback.resolve(Arguments.fromBundle(originalItem))
++             } else {
++                 callback.resolve(null)
++             }
+           } else {
+               callback.resolve(null)
+@@ -590,7 +590,12 @@
+           callback.resolve(
+               if (musicService.tracks.isEmpty()) null
+-             else Arguments.fromBundle(
+-                 musicService.tracks[musicService.getCurrentTrackIndex()].originalItem
+-             )
++             else {
++                 val originalItem = musicService.tracks[musicService.getCurrentTrackIndex()].originalItem
++                 if (originalItem != null) {
++                     Arguments.fromBundle(originalItem)
++                 } else {
++                     null
++                 }
++             }
+           )
+       }
