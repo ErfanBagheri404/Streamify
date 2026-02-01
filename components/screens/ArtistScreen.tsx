@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { usePlayer } from "../../contexts/PlayerContext";
 import { SafeArea } from "../SafeArea";
+import { t } from "../../utils/localization";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 const HEADER_HEIGHT = screenHeight * 0.45;
@@ -45,7 +46,7 @@ const HeaderContent = styled.View`
   flex: 1;
   justify-content: flex-end;
   padding: 24px;
-  padding-bottom: 32px;
+  padding-bottom: 16px;
 `;
 
 const BackButton = styled.TouchableOpacity`
@@ -88,7 +89,7 @@ const ActionButtonsRow = styled.View`
   justify-content: space-between;
   align-items: center;
   padding: 0 24px;
-  margin-bottom: 32px;
+  margin-bottom: 18px;
 `;
 
 const LeftButtons = styled.View`
@@ -197,7 +198,6 @@ const MoreOptionsIcon = styled.TouchableOpacity`
 
 const AlbumsSection = styled.View`
   padding: 0 24px;
-  margin-top: 32px;
 `;
 
 const AlbumsTitle = styled.Text`
@@ -279,6 +279,31 @@ const RetryButtonText = styled.Text`
   line-height: 20px;
 `;
 
+// Category Tabs
+const CategoryTabs = styled.View`
+  flex-direction: row;
+  padding: 0 24px;
+  margin-bottom: 24px;
+  border-bottom-width: 1px;
+  border-bottom-color: #333;
+`;
+
+const CategoryTab = styled.TouchableOpacity<{ isActive: boolean }>`
+  padding: 12px 16px;
+  margin-right: 8px;
+  border-bottom-width: 2px;
+  border-bottom-color: ${(props) =>
+    props.isActive ? "#1db954" : "transparent"};
+`;
+
+const CategoryTabText = styled.Text<{ isActive: boolean }>`
+  color: ${(props) => (props.isActive ? "#fff" : "#a3a3a3")};
+  font-size: 16px;
+  font-family: ${(props) =>
+    props.isActive ? "GoogleSansMedium" : "GoogleSansRegular"};
+  line-height: 20px;
+`;
+
 // Interfaces
 interface ArtistScreenProps {
   navigation: any;
@@ -313,11 +338,205 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
   const [artistData, setArtistData] = useState<Artist | null>(null);
   const [popularSongs, setPopularSongs] = useState<Song[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
+  const [playlists, setPlaylists] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<
+    "songs" | "albums" | "playlists"
+  >("songs");
+  const [isYouTubeChannel, setIsYouTubeChannel] = useState(false);
 
   const { artistId, artistName } = route.params;
+
+  // Function to fetch YouTube albums for a channel
+  const fetchYouTubeAlbums = async (channelId: string) => {
+    try {
+      // First, try to get the channel data to access tabs
+      const channelResponse = await fetch(
+        `https://api.piped.private.coffee/channel/${channelId}`
+      );
+      const channelData = await channelResponse.json();
+
+      console.log("Channel tabs data for albums:", channelData.tabs);
+
+      // Look for albums tab data
+      const albumsTab = channelData.tabs?.find(
+        (tab: any) => tab.name === "albums"
+      );
+      if (albumsTab && albumsTab.data) {
+        try {
+          // Use the correct GET format for the tabs endpoint
+          const albumsTabData = JSON.parse(albumsTab.data);
+          const encodedData = encodeURIComponent(JSON.stringify(albumsTabData));
+          const albumsResponse = await fetch(
+            `https://api.piped.private.coffee/channels/tabs?data=${encodedData}`
+          );
+
+          if (albumsResponse.ok) {
+            const albumsData = await albumsResponse.json();
+            console.log("Albums data fetched successfully:", albumsData);
+
+            // Process the albums data
+            if (albumsData.content && Array.isArray(albumsData.content)) {
+              return albumsData.content.map((album: any, index: number) => ({
+                id: album.url || `album_${index}`,
+                title:
+                  album.name ||
+                  album.title ||
+                  t("screens.artist.unknown_album"),
+                thumbnail:
+                  album.thumbnail ||
+                  "https://via.placeholder.com/160x160/333/ffffff?text=Album",
+                year: album.year || "",
+                type: "album",
+                songCount: album.videos || 0,
+              }));
+            }
+          }
+        } catch (apiError) {
+          console.log(
+            "Failed to fetch albums from tabs endpoint, using fallback:",
+            apiError
+          );
+        }
+      }
+
+      // Fallback: Create albums from relatedStreams data by grouping by upload date
+      const relatedStreams = channelData.relatedStreams || [];
+
+      // Group videos by upload year to create "albums"
+      const yearGroups = relatedStreams.reduce((groups: any, video: any) => {
+        const year = new Date(video.uploaded).getFullYear();
+        if (!groups[year]) {
+          groups[year] = [];
+        }
+        groups[year].push(video);
+        return groups;
+      }, {});
+
+      // Create albums from year groups
+      const albums = Object.keys(yearGroups)
+        .map((year, index) => ({
+          id: `album_${year}`,
+          title: `${year} Releases`,
+          thumbnail:
+            yearGroups[year][0]?.thumbnail ||
+            "https://via.placeholder.com/160x160/333/ffffff?text=Album",
+          year: year,
+          type: "album",
+          songCount: yearGroups[year].length,
+        }))
+        .sort((a, b) => parseInt(b.year) - parseInt(a.year));
+
+      return albums;
+    } catch (error) {
+      console.error("Error fetching YouTube albums:", error);
+      return [];
+    }
+  };
+
+  // Function to fetch YouTube playlists for a channel
+  const fetchYouTubePlaylists = async (channelId: string) => {
+    try {
+      // First, try to get the channel data to access tabs
+      const channelResponse = await fetch(
+        `https://api.piped.private.coffee/channel/${channelId}`
+      );
+      const channelData = await channelResponse.json();
+
+      console.log("Channel tabs data:", channelData.tabs);
+
+      // Look for playlists tab data
+      const playlistsTab = channelData.tabs?.find(
+        (tab: any) => tab.name === "playlists"
+      );
+      if (playlistsTab && playlistsTab.data) {
+        try {
+          // Use the correct GET format for the tabs endpoint
+          const playlistsTabData = JSON.parse(playlistsTab.data);
+          const encodedData = encodeURIComponent(
+            JSON.stringify(playlistsTabData)
+          );
+          const playlistsResponse = await fetch(
+            `https://api.piped.private.coffee/channels/tabs?data=${encodedData}`
+          );
+
+          if (playlistsResponse.ok) {
+            const playlistsData = await playlistsResponse.json();
+            console.log("Playlists data fetched successfully:", playlistsData);
+
+            // Process the playlists data
+            if (playlistsData.content && Array.isArray(playlistsData.content)) {
+              return playlistsData.content.map(
+                (playlist: any, index: number) => ({
+                  id: playlist.url || `playlist_${index}`,
+                  title:
+                    playlist.name ||
+                    playlist.title ||
+                    t("screens.artist.unknown_playlist"),
+                  thumbnail:
+                    playlist.thumbnail ||
+                    "https://via.placeholder.com/160x160/333/ffffff?text=Playlist",
+                  videoCount: playlist.videos || playlist.videoCount || 0,
+                  type: "playlist",
+                })
+              );
+            }
+          }
+        } catch (apiError) {
+          console.log(
+            "Failed to fetch playlists from tabs endpoint, using fallback:",
+            apiError
+          );
+        }
+      }
+
+      // Fallback: Create playlists from relatedStreams data by grouping similar content
+      const relatedStreams = channelData.relatedStreams || [];
+
+      // Group videos by common themes or upload dates
+      const playlists = [
+        {
+          id: "recent_videos",
+          title: t("screens.artist.recent_videos"),
+          thumbnail:
+            relatedStreams[0]?.thumbnail ||
+            "https://via.placeholder.com/160x160/333/ffffff?text=Recent",
+          videoCount: Math.min(relatedStreams.length, 10),
+          type: "playlist",
+        },
+        {
+          id: "popular_videos",
+          title: t("screens.artist.popular_videos"),
+          thumbnail:
+            relatedStreams.find((v: any) => v.views > 1000000)?.thumbnail ||
+            "https://via.placeholder.com/160x160/333/ffffff?text=Popular",
+          videoCount:
+            relatedStreams.filter((v: any) => v.views > 1000000).length || 5,
+          type: "playlist",
+        },
+        {
+          id: "official_audio",
+          title: t("screens.artist.official_audio"),
+          thumbnail:
+            relatedStreams.find((v: any) => v.title?.includes("Official Audio"))
+              ?.thumbnail ||
+            "https://via.placeholder.com/160x160/333/ffffff?text=Audio",
+          videoCount:
+            relatedStreams.filter((v: any) =>
+              v.title?.includes("Official Audio")
+            ).length || 5,
+          type: "playlist",
+        },
+      ].filter((playlist) => playlist.videoCount > 0);
+
+      return playlists;
+    } catch (error) {
+      console.error("Error fetching YouTube playlists:", error);
+      return [];
+    }
+  };
 
   useEffect(() => {
     fetchArtistData();
@@ -328,9 +547,77 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
       setLoading(true);
       setError(null);
 
+      // Check if this is a YouTube channel (ID starts with "UC" or similar YouTube channel pattern)
+      const isYouTubeChannel =
+        artistId.startsWith("UC") ||
+        artistId.startsWith("U") ||
+        artistId.length === 24;
+
+      setIsYouTubeChannel(isYouTubeChannel);
+
+      if (isYouTubeChannel) {
+        // Use Piped API for YouTube channels
+        const channelResponse = await fetch(
+          `https://api.piped.private.coffee/channel/${artistId}`
+        );
+        const channelData = await channelResponse.json();
+        console.log("YouTube channel API response:", channelData);
+
+        // Process YouTube channel data
+        const processedArtist: Artist = {
+          id: artistId,
+          name: channelData.name || artistName,
+          image:
+            channelData.avatarUrl ||
+            "https://via.placeholder.com/500x500/1a1a1a/ffffff?text=Artist",
+          monthlyListeners: channelData.subscribers || 0,
+        };
+
+        // Process channel videos as songs - show all available videos
+        const processedSongs: Song[] = (channelData.relatedStreams || []).map(
+          (video: any, index: number) => ({
+            id: video.url?.split("v=")[1] || video.id || `video_${index}`,
+            title: video.title || t("screens.artist.unknown_title"),
+            thumbnail:
+              video.thumbnail ||
+              "https://via.placeholder.com/56x56/333/ffffff?text=V",
+            playCount: video.views || 0,
+            source: "youtube",
+            _isJioSaavn: false,
+          })
+        );
+
+        // Process channel tabs data for albums and playlists
+        const tabsData = channelData.tabs || [];
+        console.log("Available tabs from channel:", tabsData);
+
+        // Process albums from tabs data
+        const processedAlbums = await fetchYouTubeAlbums(artistId);
+
+        // Process playlists from tabs data
+        const processedPlaylists = await fetchYouTubePlaylists(artistId);
+
+        setArtistData(processedArtist);
+        setPopularSongs(processedSongs);
+        setAlbums(processedAlbums);
+        setPlaylists(processedPlaylists);
+        setLoading(false);
+        return;
+
+        // YouTube channels don't have traditional albums, but we could show playlists if needed
+        // For now, we'll leave albums empty for YouTube channels
+
+        setArtistData(processedArtist);
+        setPopularSongs(processedSongs);
+        setAlbums(processedAlbums);
+        setLoading(false);
+        return;
+      }
+
+      // Original JioSaavn API logic for non-YouTube artists
       // Fetch artist info
       const artistResponse = await fetch(
-        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}`,
+        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}`
       );
       const artistInfo = await artistResponse.json();
       console.log("Artist info API response:", artistInfo);
@@ -343,7 +630,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
       // Fetch artist songs
       const songsResponse = await fetch(
-        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}/songs?page=0`,
+        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}/songs?page=0`
       );
       let songsData;
       try {
@@ -356,7 +643,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
       // Fetch artist albums
       const albumsResponse = await fetch(
-        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}/albums?page=0`,
+        `https://streamifyjiosaavn.vercel.app/api/artists/${artistId}/albums?page=0`
       );
       let albumsData;
       try {
@@ -418,7 +705,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
         .slice(0, 5)
         .map((song: any, index: number) => ({
           id: String(song.id || song.songId),
-          title: song.title || song.name || "Unknown Title",
+          title: song.title || song.name || t("screens.artist.unknown_title"),
           thumbnail:
             song.image?.find((img: any) => img.quality === "500x500")?.url ||
             song.image?.[0]?.url ||
@@ -446,7 +733,8 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
           console.log("Processing individual album:", album);
           return {
             id: String(album.id || album.albumId),
-            title: album.title || album.name || "Unknown Album",
+            title:
+              album.title || album.name || t("screens.artist.unknown_album"),
             year: album.year || album.releaseYear || "",
             thumbnail:
               album.image?.find((img: any) => img.quality === "500x500")?.url ||
@@ -472,28 +760,28 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
     const track = {
       id: song.id,
       title: song.title,
-      artist: artistData?.name || "Unknown Artist",
+      artist: artistData?.name || t("screens.artist.unknown_artist"),
       thumbnail: song.thumbnail,
       duration: 0,
       url: "",
-      // Add JioSaavn metadata for proper playback
-      source: "jiosaavn",
-      _isJioSaavn: true,
+      // Use the song's source if available (YouTube), otherwise default to JioSaavn
+      source: song.source || "jiosaavn",
+      _isJioSaavn: song._isJioSaavn || false,
     };
     playTrack(
       track,
       popularSongs.map((s) => ({
         id: s.id,
         title: s.title,
-        artist: artistData?.name || "Unknown Artist",
+        artist: artistData?.name || t("screens.artist.unknown_artist"),
         thumbnail: s.thumbnail,
         duration: 0,
         url: "",
-        // Add JioSaavn metadata for proper playback
-        source: "jiosaavn",
-        _isJioSaavn: true,
+        // Use the song's source if available (YouTube), otherwise default to JioSaavn
+        source: s.source || "jiosaavn",
+        _isJioSaavn: s._isJioSaavn || false,
       })),
-      index,
+      index
     );
   };
 
@@ -550,7 +838,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
         <ErrorContainer>
           <ErrorText>{error}</ErrorText>
           <RetryButton onPress={fetchArtistData}>
-            <RetryButtonText>Retry</RetryButtonText>
+            <RetryButtonText>{t("screens.artist.retry")}</RetryButtonText>
           </RetryButton>
         </ErrorContainer>
       </SafeArea>
@@ -561,9 +849,9 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
     return (
       <SafeArea>
         <ErrorContainer>
-          <ErrorText>Artist not found</ErrorText>
+          <ErrorText>{t("screens.artist.artist_not_found")}</ErrorText>
           <RetryButton onPress={() => navigation.goBack()}>
-            <RetryButtonText>Go Back</RetryButtonText>
+            <RetryButtonText>{t("screens.artist.go_back")}</RetryButtonText>
           </RetryButton>
         </ErrorContainer>
       </SafeArea>
@@ -576,7 +864,9 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
       <SongThumbnail source={{ uri: item.thumbnail }} />
       <SongDetails>
         <SongTitle numberOfLines={1}>{item.title}</SongTitle>
-        <PlayCount>{formatPlayCount(item.playCount)} plays</PlayCount>
+        <PlayCount>
+          {formatPlayCount(item.playCount)} {t("screens.artist.plays")}
+        </PlayCount>
       </SongDetails>
       <MoreOptionsIcon>
         <Ionicons name="ellipsis-horizontal" size={20} color="#a3a3a3" />
@@ -626,8 +916,8 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
               <ArtistName>{artistData.name}</ArtistName>
               {artistData.monthlyListeners && (
                 <MonthlyListeners>
-                  {formatMonthlyListeners(artistData.monthlyListeners)} monthly
-                  listeners
+                  {formatMonthlyListeners(artistData.monthlyListeners)}{" "}
+                  {t("screens.artist.monthly_listeners")}
                 </MonthlyListeners>
               )}
             </HeaderContent>
@@ -640,7 +930,9 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
               <LeftButtons>
                 <FollowButton onPress={handleFollow}>
                   <FollowButtonText>
-                    {isFollowing ? "Following" : "Follow"}
+                    {isFollowing
+                      ? t("screens.artist.following")
+                      : t("screens.artist.follow")}
                   </FollowButtonText>
                 </FollowButton>
                 <MoreOptionsButton>
@@ -660,20 +952,52 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
               </PlayShuffleButton>
             </ActionButtonsRow>
 
-            {/* Popular Songs Section */}
-            <PopularSection>
-              <PopularTitle>Popular</PopularTitle>
-              <FlatList
-                data={popularSongs}
-                renderItem={renderSongItem}
-                keyExtractor={(item) => item.id}
-                scrollEnabled={false}
-                showsVerticalScrollIndicator={false}
-              />
-            </PopularSection>
+            {/* Category Tabs - Show for all sources */}
+            <CategoryTabs>
+              <CategoryTab
+                isActive={activeCategory === "songs"}
+                onPress={() => setActiveCategory("songs")}
+              >
+                <CategoryTabText isActive={activeCategory === "songs"}>
+                  {t("screens.artist.songs")}
+                </CategoryTabText>
+              </CategoryTab>
+              <CategoryTab
+                isActive={activeCategory === "albums"}
+                onPress={() => setActiveCategory("albums")}
+              >
+                <CategoryTabText isActive={activeCategory === "albums"}>
+                  {t("screens.artist.albums")}
+                </CategoryTabText>
+              </CategoryTab>
+              {isYouTubeChannel && (
+                <CategoryTab
+                  isActive={activeCategory === "playlists"}
+                  onPress={() => setActiveCategory("playlists")}
+                >
+                  <CategoryTabText isActive={activeCategory === "playlists"}>
+                    {t("screens.artist.playlists")}
+                  </CategoryTabText>
+                </CategoryTab>
+              )}
+            </CategoryTabs>
 
-            {/* Albums Section */}
-            {albums.length > 0 && (
+            {/* Content based on active category */}
+            {activeCategory === "songs" && (
+              <PopularSection>
+                <PopularTitle>
+                  {isYouTubeChannel ? t("screens.artist.videos") : "Popular"}
+                </PopularTitle>
+                <FlatList
+                  data={popularSongs}
+                  renderItem={renderSongItem}
+                  keyExtractor={(item) => item.id}
+                  scrollEnabled={false}
+                  showsVerticalScrollIndicator={false}
+                />
+              </PopularSection>
+            )}
+            {activeCategory === "albums" && (
               <AlbumsSection>
                 <AlbumsTitle>Albums</AlbumsTitle>
                 <AlbumsGrid>
@@ -684,20 +1008,56 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                         console.log("Navigating to album:", {
                           albumId: album.id,
                           albumName: album.title,
-                          albumArtist: artistData?.name || "Unknown Artist",
-                          source: "jiosaavn",
+                          albumArtist:
+                            artistData?.name ||
+                            t("screens.artist.unknown_artist"),
+                          source: isYouTubeChannel ? "youtube" : "jiosaavn",
                         });
                         navigation.navigate("AlbumPlaylist", {
                           albumId: album.id,
                           albumName: album.title,
-                          albumArtist: artistData?.name || "Unknown Artist",
-                          source: "jiosaavn",
+                          albumArtist:
+                            artistData?.name ||
+                            t("screens.artist.unknown_artist"),
+                          source: isYouTubeChannel ? "youtube" : "jiosaavn",
                         });
                       }}
                     >
                       <AlbumImage source={{ uri: album.thumbnail }} />
                       <AlbumTitle numberOfLines={1}>{album.title}</AlbumTitle>
                       <AlbumYear>{album.year}</AlbumYear>
+                    </AlbumItem>
+                  ))}
+                </AlbumsGrid>
+              </AlbumsSection>
+            )}
+            {activeCategory === "playlists" && isYouTubeChannel && (
+              <AlbumsSection>
+                <AlbumsTitle>Playlists</AlbumsTitle>
+                <AlbumsGrid>
+                  {playlists.map((playlist) => (
+                    <AlbumItem
+                      key={playlist.id}
+                      onPress={() => {
+                        console.log("Navigating to playlist:", {
+                          playlistId: playlist.id,
+                          playlistName: playlist.title,
+                        });
+                        navigation.navigate("AlbumPlaylist", {
+                          albumId: playlist.id,
+                          albumName: playlist.title,
+                          albumArtist:
+                            artistData?.name ||
+                            t("screens.artist.unknown_artist"),
+                          source: "youtube",
+                        });
+                      }}
+                    >
+                      <AlbumImage source={{ uri: playlist.thumbnail }} />
+                      <AlbumTitle numberOfLines={1}>
+                        {playlist.title}
+                      </AlbumTitle>
+                      <AlbumYear>{playlist.videoCount} videos</AlbumYear>
                     </AlbumItem>
                   ))}
                 </AlbumsGrid>

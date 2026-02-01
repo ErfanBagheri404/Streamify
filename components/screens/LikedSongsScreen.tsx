@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { SafeArea } from "../SafeArea";
 import { usePlayer } from "../../contexts/PlayerContext";
 import Playlist from "../Playlist";
+import { t } from "../../utils/localization";
 
 interface LikedSongsScreenProps {
   navigation: any;
@@ -51,7 +52,7 @@ export const LikedSongsScreen: React.FC<LikedSongsScreenProps> = ({
           libraryCover="liked"
           songs={[]}
           onBack={handleGoBack}
-          emptyMessage="Loading..."
+          emptyMessage={t("loading.text")}
           emptySubMessage=""
           showSongOptions={false}
           showHeaderOptions={false}

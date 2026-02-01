@@ -5,6 +5,7 @@ import StreamItem from "../StreamItem";
 import { SafeArea } from "../SafeArea";
 import { LinearGradient } from "expo-linear-gradient";
 import { usePlayer } from "../../contexts/PlayerContext";
+import { t } from "../../utils/localization";
 import {
   FeaturedPlaylistSkeleton,
   CategoryPlaylistSkeleton,
@@ -271,7 +272,7 @@ export default function HomeScreen({ navigation }: any) {
   const fetchCategoryPlaylists = async (category: string) => {
     try {
       const response = await fetch(
-        CATEGORY_APIS[category as keyof typeof CATEGORY_APIS],
+        CATEGORY_APIS[category as keyof typeof CATEGORY_APIS]
       );
       const data = await response.json();
 
@@ -293,7 +294,7 @@ export default function HomeScreen({ navigation }: any) {
       const playlistPromises = FEATURED_PLAYLIST_IDS.map(async (playlistId) => {
         try {
           const response = await fetch(
-            `https://streamifyjiosaavn.vercel.app/api/playlists?id=${playlistId}`,
+            `https://streamifyjiosaavn.vercel.app/api/playlists?id=${playlistId}`
           );
           const data = await response.json();
           if (data.success && data.data) {
@@ -303,7 +304,7 @@ export default function HomeScreen({ navigation }: any) {
         } catch (error) {
           console.error(
             `Failed to fetch featured playlist ${playlistId}:`,
-            error,
+            error
           );
           return null;
         }
@@ -314,7 +315,7 @@ export default function HomeScreen({ navigation }: any) {
 
       // Filter out any null results (failed fetches)
       const validPlaylists = featuredData.filter(
-        (playlist) => playlist !== null,
+        (playlist) => playlist !== null
       );
 
       setFeaturedPlaylists(validPlaylists);
@@ -383,7 +384,7 @@ export default function HomeScreen({ navigation }: any) {
       playTrack({
         id: track.id,
         title: track.name,
-        artist: track.artists[0]?.name || "Unknown Artist",
+        artist: track.artists[0]?.name || t("screens.artist.unknown_artist"),
         audioUrl: track.preview_url,
         thumbnail: track.album?.images[0]?.url || "",
         duration: track.duration_ms,
@@ -403,7 +404,7 @@ export default function HomeScreen({ navigation }: any) {
 
   const getPlaylistImageSource = (playlist: Playlist) => {
     const highQualityImage = playlist.image.find(
-      (img) => img.quality === "500x500",
+      (img) => img.quality === "500x500"
     );
     const imageUrl = highQualityImage?.url || playlist.image[0]?.url;
 

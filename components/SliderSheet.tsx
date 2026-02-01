@@ -119,6 +119,7 @@ const SheetItem = styled.TouchableOpacity`
   flex-direction: row;
   align-items: center;
   padding-vertical: 12px;
+  width: 100%;
 `;
 
 const SheetItemIconWrapper = styled.View`
@@ -135,6 +136,8 @@ const SheetItemText = styled.Text`
   font-size: 16px;
   font-family: GoogleSansRegular;
   line-height: 20px;
+  flex: 1;
+  flex-wrap: wrap;
 `;
 
 export const SliderSheet: React.FC<SliderSheetProps> = ({

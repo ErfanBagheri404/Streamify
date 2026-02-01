@@ -1,5 +1,7 @@
 // lib/searchAPI.ts
 
+import { t } from "../utils/localization";
+
 export interface SearchResult {
   id: string;
   title: string;
@@ -11,7 +13,12 @@ export interface SearchResult {
   views?: string;
   img?: string;
   thumbnailUrl?: string;
-  source?: "youtube" | "soundcloud" | "jiosaavn";
+  source?:
+    | "youtube"
+    | "soundcloud"
+    | "jiosaavn"
+    | "youtubemusic"
+    | "youtube_channel";
   type?: "song" | "album" | "artist" | "unknown";
   albumId?: string | null;
   albumName?: string | null;
@@ -71,13 +78,14 @@ function fmtTimeAgo(stamp: number | string | undefined): string {
 // Robust fetcher for Piped/Invidious
 const fetchWithFallbacks = async (
   instances: string[],
-  endpoint: string,
+  endpoint: string
 ): Promise<any> => {
   for (const baseUrl of instances) {
     const startTime = Date.now();
     try {
       console.log(`[API] 🟡 Attempting: ${baseUrl} ...`);
       const url = `${baseUrl}${endpoint}`;
+      console.log(`[API] 🟡 Full URL: ${url}`);
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
       const response = await fetch(url, {
@@ -87,9 +95,15 @@ const fetchWithFallbacks = async (
       clearTimeout(timeoutId);
       if (response.ok) {
         const text = await response.text();
+        console.log(`[API] ✅ Response received: ${text.length} characters`);
         try {
           if (text.trim().startsWith("{") || text.trim().startsWith("[")) {
-            return JSON.parse(text);
+            const parsed = JSON.parse(text);
+            console.log(
+              `[API] ✅ Parsed response:`,
+              parsed.items ? `${parsed.items.length} items` : "no items array"
+            );
+            return parsed;
           }
         } catch (e) {
           /* ignore parse error */
@@ -106,7 +120,12 @@ const fetchWithFallbacks = async (
 export const searchAPI = {
   getSuggestions: async (
     query: string,
-    source: "youtube" | "soundcloud" | "spotify" | "jiosaavn" = "youtube",
+    source:
+      | "youtube"
+      | "youtubemusic"
+      | "soundcloud"
+      | "spotify"
+      | "jiosaavn" = "youtube"
   ): Promise<string[]> => {
     if (!query.trim()) {
       return [];
@@ -116,7 +135,7 @@ export const searchAPI = {
     const isMultilingual = /[^\u0000-\u007F]/.test(query);
     if (isMultilingual) {
       console.log(
-        `[API] Detected multilingual query for suggestions: "${query}"`,
+        `[API] Detected multilingual query for suggestions: "${query}"`
       );
     }
 
@@ -131,6 +150,41 @@ export const searchAPI = {
     if (source === "spotify") {
       return await searchAPI.getSpotifySuggestions(query);
     }
+    if (source === "youtubemusic") {
+      // YouTube Music uses the same suggestions as YouTube
+      const endpoint = `/suggestions?query=${encodeURIComponent(query)}`;
+      const data = await fetchWithFallbacks(PIPED_INSTANCES, endpoint);
+      let suggestions: string[] = [];
+
+      if (Array.isArray(data)) {
+        if (data.length > 1 && Array.isArray(data[1])) {
+          suggestions = (data[1] as any[]).filter(
+            (v): v is string => typeof v === "string"
+          );
+        } else {
+          suggestions = (data as any[]).filter(
+            (v): v is string => typeof v === "string"
+          );
+        }
+      } else if (data && Array.isArray((data as any).suggestions)) {
+        suggestions = (data as any).suggestions.filter(
+          (v: any) => typeof v === "string"
+        );
+      }
+
+      if (!suggestions.length) {
+        const musicTerms = [
+          "official audio",
+          "lyrics",
+          "live",
+          "remix",
+          "extended",
+        ];
+        suggestions = [query, ...musicTerms.map((t) => `${query} ${t}`)];
+      }
+
+      return suggestions.slice(0, 5);
+    }
 
     const endpoint = `/suggestions?query=${encodeURIComponent(query)}`;
     const data = await fetchWithFallbacks(PIPED_INSTANCES, endpoint);
@@ -139,16 +193,16 @@ export const searchAPI = {
     if (Array.isArray(data)) {
       if (data.length > 1 && Array.isArray(data[1])) {
         suggestions = (data[1] as any[]).filter(
-          (v): v is string => typeof v === "string",
+          (v): v is string => typeof v === "string"
         );
       } else {
         suggestions = (data as any[]).filter(
-          (v): v is string => typeof v === "string",
+          (v): v is string => typeof v === "string"
         );
       }
     } else if (data && Array.isArray((data as any).suggestions)) {
       suggestions = (data as any).suggestions.filter(
-        (v: any) => typeof v === "string",
+        (v: any) => typeof v === "string"
       );
     }
 
@@ -166,7 +220,7 @@ export const searchAPI = {
     }
     try {
       console.log(
-        `[API] Fetching SoundCloud suggestions via proxy for: "${query}"`,
+        `[API] Fetching SoundCloud suggestions via proxy for: "${query}"`
       );
       const tracks = await searchAPI.scrapeSoundCloudSearch(query);
       if (!Array.isArray(tracks) || tracks.length === 0) {
@@ -182,7 +236,7 @@ export const searchAPI = {
       const titles = tracks
         .map((t: any) => t && t.title)
         .filter(
-          (t): t is string => typeof t === "string" && t.trim().length > 0,
+          (t): t is string => typeof t === "string" && t.trim().length > 0
         );
       const uniqueTitles: string[] = [];
       for (const title of titles) {
@@ -205,7 +259,7 @@ export const searchAPI = {
       }
       console.log(
         `[API] SoundCloud suggestion titles: ${uniqueTitles.length}`,
-        uniqueTitles,
+        uniqueTitles
       );
       return uniqueTitles.slice(0, 5);
     } catch (e) {
@@ -240,11 +294,18 @@ export const searchAPI = {
   },
 
   // --- JIOSAAVN SEARCH ---
-  searchWithJioSaavn: async (query: string) => {
-    console.log(`[API] Starting JioSaavn search for: "${query}"`);
+  searchWithJioSaavn: async (
+    query: string,
+    filter?: string,
+    page: number = 1,
+    limit: number = 20
+  ) => {
+    console.log(
+      `[API] Starting JioSaavn search for: "${query}" (page: ${page}, limit: ${limit})`
+    );
 
     try {
-      const searchUrl = `https://streamifyjiosaavn.vercel.app/api/search?query=${encodeURIComponent(query)}`;
+      const searchUrl = `https://streamifyjiosaavn.vercel.app/api/search?query=${encodeURIComponent(query)}&page=${page}&limit=${limit}`;
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
@@ -315,24 +376,24 @@ export const searchAPI = {
       });
 
       console.log(
-        `[API] Filtered ${artists.length} artists to ${filteredArtists.length} relevant artists`,
+        `[API] Filtered ${artists.length} artists to ${filteredArtists.length} relevant artists`
       );
 
       // Log exact matches for debugging
       const exactMatches = filteredArtists.filter(
         (artist: any) =>
           (artist.title || "").toLowerCase().trim() ===
-          query.toLowerCase().trim(),
+          query.toLowerCase().trim()
       );
       if (exactMatches.length > 0) {
         console.log(
           `[API] Found ${exactMatches.length} exact artist matches for "${query}":`,
-          exactMatches.map((a: any) => a.title),
+          exactMatches.map((a: any) => a.title)
         );
       }
 
       console.log(
-        `[API] 🟢 JioSaavn Success: Found ${songs.length} songs, ${albums.length} albums, ${artists.length} artists, ${topQuery.length} top queries`,
+        `[API] 🟢 JioSaavn Success: Found ${songs.length} songs, ${albums.length} albums, ${artists.length} artists, ${topQuery.length} top queries`
       );
 
       // Format all results to match SearchResult interface
@@ -354,8 +415,8 @@ export const searchAPI = {
 
         topQueryResults.push({
           id: String(item.id),
-          title: item.title || "Unknown Title",
-          author: item.description || "Unknown",
+          title: item.title || t("screens.artist.unknown_title"),
+          author: item.description || t("screens.artist.unknown_artist"),
           duration: "0",
           views: "0",
           uploaded: "",
@@ -370,9 +431,14 @@ export const searchAPI = {
       // Process song results - filter out collaboration songs when searching for individual artists
       songs.forEach((song: any) => {
         const songTitle =
-          song.name || song.title || song.song || "Unknown Title";
+          song.name ||
+          song.title ||
+          song.song ||
+          t("screens.artist.unknown_title");
         const songArtists =
-          song.primaryArtists || song.singers || "Unknown Artist";
+          song.primaryArtists ||
+          song.singers ||
+          t("screens.artist.unknown_artist");
 
         // Skip collaboration songs if user is searching for individual artist
         if (
@@ -416,8 +482,8 @@ export const searchAPI = {
 
         albumsResults.push({
           id: String(album.id),
-          title: album.title || "Unknown Album",
-          author: album.artist || "Unknown Artist",
+          title: album.title || t("screens.artist.unknown_album"),
+          author: album.artist || t("screens.artist.unknown_artist"),
           duration: "0",
           views: "0",
           uploaded: album.year || "",
@@ -432,7 +498,7 @@ export const searchAPI = {
 
       // Process artist results - filter out collaborations when searching for individual artists
       filteredArtists.forEach((artist: any) => {
-        const artistName = artist.title || "Unknown Artist";
+        const artistName = artist.title || t("screens.artist.unknown_artist");
 
         // Skip collaboration artists if user is searching for individual artist
         if (
@@ -466,8 +532,7 @@ export const searchAPI = {
 
       // Check for exact artist matches in the filtered artists
       const exactArtistMatches = artistsResults.filter(
-        (item) =>
-          item.title.toLowerCase().trim() === query.toLowerCase().trim(),
+        (item) => item.title.toLowerCase().trim() === query.toLowerCase().trim()
       );
 
       // Build final result array in the correct order: Top Results (with artist first if exact match), Songs, Albums
@@ -495,14 +560,42 @@ export const searchAPI = {
 
       // Add remaining artists (non-exact matches)
       const remainingArtists = artistsResults.filter(
-        (item) =>
-          item.title.toLowerCase().trim() !== query.toLowerCase().trim(),
+        (item) => item.title.toLowerCase().trim() !== query.toLowerCase().trim()
       );
       if (remainingArtists.length > 0) {
         finalResults = [...finalResults, ...remainingArtists];
       }
 
       console.log(`[API] Final JioSaavn results: ${finalResults.length} total`);
+
+      // Apply filter if specified
+      if (filter && filter !== "") {
+        const filteredResults = finalResults.filter((item) => {
+          switch (filter) {
+            case "songs":
+              return (
+                item.type === "song" ||
+                (!item.type &&
+                  item.source === "jiosaavn" &&
+                  item.duration &&
+                  item.duration !== "0")
+              );
+            case "albums":
+              return item.type === "album";
+            case "artists":
+              return (
+                item.type === "artist" || item.source === "youtube_channel"
+              );
+            default:
+              return true;
+          }
+        });
+        console.log(
+          `[API] Applied filter "${filter}": ${filteredResults.length} results`
+        );
+        return filteredResults;
+      }
+
       return finalResults;
     } catch (e: any) {
       console.warn(`[API] 🔴 JioSaavn Error: ${e.message}`);
@@ -567,10 +660,14 @@ export const searchAPI = {
 
       return {
         id: String(song.id),
-        title: song.name || song.title || song.song || "Unknown Title",
+        title:
+          song.name ||
+          song.title ||
+          song.song ||
+          t("screens.artist.unknown_title"),
         artist:
           song.artists?.primary?.map((artist: any) => artist.name).join(", ") ||
-          "Unknown Artist",
+          t("screens.artist.unknown_artist"),
         duration: song.duration || 0,
         thumbnail: thumbnailUrl,
         audioUrl: audioUrl,
@@ -589,7 +686,7 @@ export const searchAPI = {
   // --- JIOSAAVN ALBUM DETAILS ---
   getJioSaavnAlbumDetails: async (albumId: string, albumName: string) => {
     console.log(
-      `[API] Fetching JioSaavn album details for: "${albumName}" (ID: ${albumId})`,
+      `[API] Fetching JioSaavn album details for: "${albumName}" (ID: ${albumId})`
     );
 
     try {
@@ -618,7 +715,7 @@ export const searchAPI = {
             albumData.data.songs
           ) {
             console.log(
-              `[API] 🟢 JioSaavn Album Details Success (Direct): Found ${albumData.data.songs.length} songs for "${albumName}"`,
+              `[API] 🟢 JioSaavn Album Details Success (Direct): Found ${albumData.data.songs.length} songs for "${albumName}"`
             );
 
             return {
@@ -644,7 +741,7 @@ export const searchAPI = {
       } catch (albumError) {
         console.log(
           "[API] Direct album endpoint failed, trying search approach:",
-          albumError,
+          albumError
         );
       }
 
@@ -679,7 +776,7 @@ export const searchAPI = {
 
           // Filter songs that belong to the specified album
           let albumSongs = data.data.results.filter(
-            (song: any) => song.album && song.album.id === albumId,
+            (song: any) => song.album && song.album.id === albumId
           );
 
           // If no exact album ID match, try fuzzy matching by album name
@@ -688,13 +785,13 @@ export const searchAPI = {
               (song: any) =>
                 song.album &&
                 song.album.name &&
-                song.album.name.toLowerCase().includes(albumName.toLowerCase()),
+                song.album.name.toLowerCase().includes(albumName.toLowerCase())
             );
           }
 
           if (albumSongs.length > 0) {
             console.log(
-              `[API] 🟢 JioSaavn Album Details Success (Search): Found ${albumSongs.length} songs for "${albumName}" using query: "${query}"`,
+              `[API] 🟢 JioSaavn Album Details Success (Search): Found ${albumSongs.length} songs for "${albumName}" using query: "${query}"`
             );
 
             return {
@@ -713,7 +810,7 @@ export const searchAPI = {
         } catch (searchError) {
           console.log(
             `[API] Search attempt with query "${query}" failed:`,
-            searchError,
+            searchError
           );
           continue;
         }
@@ -726,8 +823,15 @@ export const searchAPI = {
     }
   },
 
-  searchWithPiped: async (query: string, filter: string) => {
-    console.log(`[API] Searching Piped: "${query}"`);
+  searchWithPiped: async (
+    query: string,
+    filter: string,
+    page: number = 1,
+    limit: number = 20
+  ) => {
+    console.log(
+      `[API] Searching Piped: "${query}" (page: ${page}, limit: ${limit})`
+    );
 
     // Enhanced multilingual search - preserve original query but also try transliterated version
     const searchQueries = [query];
@@ -742,10 +846,18 @@ export const searchAPI = {
     const filterParam = filter === "" ? "all" : filter;
 
     // Try the primary query first
+    const offset = (page - 1) * limit;
+    console.log(
+      `[API] Piped offset calculation: page=${page}, limit=${limit}, offset=${offset}`
+    );
     const endpoint = `/search?q=${encodeURIComponent(
-      query,
-    )}&filter=${filterParam}`;
+      query
+    )}&filter=${filterParam}&offset=${offset}&limit=${limit}`;
+    console.log(`[API] Piped endpoint: ${endpoint}`);
     const data = await fetchWithFallbacks(PIPED_INSTANCES, endpoint);
+    console.log(
+      `[API] Piped response: ${data ? data.items?.length : "null"} items`
+    );
 
     // If no results and we have multilingual query, try with relaxed search terms
     if (
@@ -753,12 +865,12 @@ export const searchAPI = {
       /[^\u0000-\u007F]/.test(query)
     ) {
       console.log(
-        "[API] No results for multilingual query, trying broader search",
+        "[API] No results for multilingual query, trying broader search"
       );
-      const broadEndpoint = `/search?q=${encodeURIComponent(query)}&filter=all`;
+      const broadEndpoint = `/search?q=${encodeURIComponent(query)}&filter=all&offset=${offset}&limit=${limit}`;
       const broadData = await fetchWithFallbacks(
         PIPED_INSTANCES,
-        broadEndpoint,
+        broadEndpoint
       );
       return broadData && Array.isArray(broadData.items) ? broadData.items : [];
     }
@@ -766,86 +878,170 @@ export const searchAPI = {
     return data && Array.isArray(data.items) ? data.items : [];
   },
 
-  searchWithInvidious: async (query: string, sortType: string) => {
-    console.log(`[API] Searching Invidious: "${query}"`);
+  searchWithInvidious: async (
+    query: string,
+    sortType: string,
+    page: number = 1,
+    limit: number = 20
+  ) => {
+    console.log(
+      `[API] Searching Invidious: "${query}" (page: ${page}, limit: ${limit})`
+    );
     const sortParam = sortType === "date" ? "upload_date" : "view_count";
+    const offset = (page - 1) * limit;
     const endpoint = `/search?q=${encodeURIComponent(
-      query,
-    )}&sort_by=${sortParam}`;
+      query
+    )}&sort_by=${sortParam}&offset=${offset}&limit=${limit}`;
     const data = await fetchWithFallbacks(INVIDIOUS_INSTANCES, endpoint);
     return Array.isArray(data) ? data : [];
   },
 
-  // --- SOUNDCLOUD SEARCH WITH PROXY API ---
-  searchWithSoundCloud: async (query: string) => {
+  // --- SOUNDCLOUD SEARCH WITH HYBRID API APPROACH ---
+  searchWithSoundCloud: async (
+    query: string,
+    filter: string = "",
+    page: number = 1,
+    limit: number = 20
+  ) => {
     // Enhanced multilingual support for SoundCloud
     const isMultilingual = /[^\u0000-\u007F]/.test(query);
 
-    // Use SoundCloud proxy API
-    try {
-      const tracks = await searchAPI.scrapeSoundCloudSearch(query);
+    // Use previous proxy API for "tracks" filter (default when no filter selected)
+    if (filter === "" || filter === "tracks") {
+      try {
+        // Use the SoundCloud proxy API for tracks/all
+        const searchUrl = `https://proxy.searchsoundcloud.com/tracks?q=${encodeURIComponent(
+          query
+        )}&page=${page}&limit=${limit}`;
 
-      // Format the results manually instead of calling formatSearchResults
-      if (!Array.isArray(tracks)) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+        const response = await fetch(searchUrl, {
+          signal: controller.signal,
+          headers: {
+            "User-Agent": USER_AGENT,
+            Accept: "application/json",
+          },
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (!data || !data.collection || !Array.isArray(data.collection)) {
+          throw new Error("Invalid response format");
+        }
+
+        // Convert proxy API response to expected format
+        const tracks = data.collection.map((track: any) => ({
+          id: String(track.id),
+          title: track.title,
+          author: track.user?.username || t("screens.artist.unknown_artist"),
+          duration: track.duration
+            ? String(Math.floor(track.duration / 1000))
+            : "0",
+          views: String(track.playback_count || 0),
+          uploaded: track.created_at
+            ? fmtTimeAgo(new Date(track.created_at).getTime())
+            : "unknown date",
+          thumbnailUrl: track.artwork_url,
+          img: track.artwork_url,
+          href:
+            track.permalink_url || `https://soundcloud.com/tracks/${track.id}`,
+          source: "soundcloud",
+          _isSoundCloud: true,
+          kind: "track",
+          likes: track.likes_count || 0,
+          reposts: track.reposts_count || 0,
+          genre: track.genre || "",
+          downloadable: track.downloadable || false,
+          trackCount: 0,
+        }));
+
+        console.log(
+          `[API] SoundCloud proxy API returned ${tracks.length} results for query: ${query}, filter: ${filter}`
+        );
+        return tracks;
+      } catch (error) {
         return [];
       }
+    }
 
-      // Deduplicate tracks by ID to prevent duplicate keys
-      const seenIds = new Set<string>();
-      return (
-        tracks
-          .filter((track) => track && track._isSoundCloud)
-          .filter((track) => {
-            const trackId = String(track.id);
-            if (seenIds.has(trackId)) {
-              console.log(
-                `[API] Skipping duplicate SoundCloud track: ${trackId}`,
-              );
-              return false;
-            }
-            seenIds.add(trackId);
-            return true;
-          })
-          // Filter out tracks that are likely to be unavailable
-          .filter((track) => {
-            // Skip tracks with very short duration (likely incomplete)
-            if (track.duration && track.duration < 10000) {
-              console.log(`[API] Skipping short track: ${track.id}`);
-              return false;
-            }
-            // Skip tracks with no duration info
-            if (!track.duration) {
-              console.log(`[API] Skipping track with no duration: ${track.id}`);
-              return false;
-            }
-            return true;
-          })
-          .map((track) => {
-            const artwork = track.artwork_url
-              ? track.artwork_url.replace("large.jpg", "t500x500.jpg")
-              : track.user?.avatar_url;
-            return {
-              id: String(track.id),
-              title: track.title || "Unknown Title",
-              author: track.user?.username || "Unknown Artist",
-              duration: track.duration
-                ? String(Math.floor(track.duration / 1000))
-                : "0",
-              views: String(track.playback_count || 0),
-              uploaded: fmtTimeAgo(new Date(track.created_at).getTime()),
-              thumbnailUrl: artwork,
-              img: artwork,
-              href: track.permalink_url,
-              source: "soundcloud",
-            };
-          })
+    // Use BeatSeek API for "playlists" and "albums" filters
+    try {
+      // Map filter to BeatSeek API types
+      const beatSeekType = filter === "playlists" ? "playlists" : "albums";
+      const searchUrl = `https://beatseek.io/api/search?query=${encodeURIComponent(
+        query
+      )}&platform=soundcloud&type=${beatSeekType}&limit=50`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+      const response = await fetch(searchUrl, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          Accept: "application/json",
+        },
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (!data || !data.results || !Array.isArray(data.results)) {
+        throw new Error("Invalid response format from BeatSeek API");
+      }
+
+      // Transform BeatSeek API results to match expected format
+      const tracks = data.results.map((item: any) => ({
+        id: String(item.id),
+        title: item.title || t("screens.artist.unknown_title"),
+        author: item.artist || t("screens.artist.unknown_artist"),
+        duration: item.duration
+          ? String(Math.floor(item.duration / 1000))
+          : "0",
+        views: String(item.playbackCount || 0),
+        uploaded: item.createdAt
+          ? fmtTimeAgo(new Date(item.createdAt).getTime())
+          : "unknown date",
+        thumbnailUrl: item.artworkUrl,
+        img: item.artworkUrl,
+        href: item.url,
+        source: "soundcloud",
+        _isSoundCloud: true,
+        kind: item.kind || "track",
+        likes: item.likes || 0,
+        reposts: item.reposts || 0,
+        genre: item.genre || "",
+        downloadable: item.downloadable || false,
+        trackCount: item.trackCount || 0,
+      }));
+
+      console.log(
+        `[API] BeatSeek API returned ${tracks.length} results for query: ${query}, filter: ${filter}`
       );
+      return tracks;
     } catch (error) {
       return [];
     }
   },
 
-  formatSearchResults: (results: any[]): SearchResult[] => {
+  formatSearchResults: (
+    results: any[],
+    source: string = "youtube"
+  ): SearchResult[] => {
     if (!Array.isArray(results)) {
       return [];
     }
@@ -861,7 +1057,7 @@ export const searchAPI = {
             : item.user?.avatar_url;
           return {
             id: String(item.id),
-            title: item.title || "Unknown Title",
+            title: item.title || t("screens.artist.unknown_title"),
             author: item.user?.username || "Unknown Artist",
             duration: item.duration
               ? String(Math.floor(item.duration / 1000))
@@ -875,6 +1071,32 @@ export const searchAPI = {
           } as SearchResult;
         }
         // --- PIPED / INVIDIOUS ---
+        // Handle channel items
+        if (
+          item.type === "channel" ||
+          (item.url && item.url.startsWith("/channel/"))
+        ) {
+          const result: SearchResult = {
+            id: item.url
+              ? item.url.split("/channel/")[1]
+              : item.name || t("screens.artist.unknown_artist"),
+            title:
+              item.name || item.title || t("screens.artist.unknown_playlist"),
+            author: item.name || t("screens.artist.unknown_artist"),
+            duration: "0", // Channels don't have duration
+            views: String(item.subscribers || 0),
+            uploaded: "", // Channels don't have upload date
+            thumbnailUrl: item.thumbnail || "",
+            img: item.thumbnail || "",
+            href: item.url || "#",
+            // Use "youtube_channel" as source to apply JioSaavn-like styling
+            source: "youtube_channel" as any,
+            type: "artist", // Mark as artist to appear in Artists section
+          };
+          return result;
+        }
+
+        // Handle video items
         const isPiped =
           item.url &&
           typeof item.url === "string" &&
@@ -890,15 +1112,22 @@ export const searchAPI = {
         }
         const result: SearchResult = {
           id,
-          title: item.title || "Unknown Title",
-          author: item.uploaderName || item.author || "Unknown Artist",
+          title: item.title || t("screens.artist.unknown_title"),
+          author:
+            item.uploaderName ||
+            item.author ||
+            t("screens.artist.unknown_artist"),
           duration: String(item.duration || item.lengthSeconds || "0"),
           views: String(item.views || item.viewCount || "0"),
           uploaded: fmtTimeAgo(Number(item.published || item.uploaded)),
           thumbnailUrl,
           img: thumbnailUrl,
           href: isPiped ? item.url : `/watch?v=${id}`,
-          source: "youtube",
+          source: source as
+            | "youtube"
+            | "soundcloud"
+            | "jiosaavn"
+            | "youtubemusic",
         };
         return result;
       })
@@ -910,7 +1139,7 @@ export const searchAPI = {
     try {
       // Use the SoundCloud proxy API
       const searchUrl = `https://proxy.searchsoundcloud.com/tracks?q=${encodeURIComponent(
-        query,
+        query
       )}`;
 
       const controller = new AbortController();
@@ -940,7 +1169,9 @@ export const searchAPI = {
       const tracks = data.collection.map((track: any) => ({
         id: String(track.id),
         title: track.title,
-        user: { username: track.user?.username || "Unknown Artist" },
+        user: {
+          username: track.user?.username || t("screens.artist.unknown_artist"),
+        },
         duration: track.duration || 0,
         playback_count: track.playback_count || 0,
         created_at: track.created_at || new Date().toISOString(),
@@ -954,5 +1185,63 @@ export const searchAPI = {
     } catch (e: any) {
       return [];
     }
+  },
+
+  // --- YOUTUBE MUSIC SEARCH ---
+  searchWithYouTubeMusic: async (
+    query: string,
+    filter: string,
+    page: number = 1,
+    limit: number = 20
+  ) => {
+    console.log(
+      `[API] Searching YouTube Music: "${query}" with filter: "${filter}" (page: ${page}, limit: ${limit})`
+    );
+
+    // Enhanced multilingual search - preserve original query but also try transliterated version
+    const searchQueries = [query];
+
+    // Check if query contains non-Latin characters and add transliterated version
+    if (/[^\u0000-\u007F]/.test(query)) {
+      console.log(`[API] Detected non-Latin characters in query: "${query}"`);
+    }
+
+    // Map YouTube Music specific filters to Piped API filters
+    let filterParam = filter === "" ? "all" : filter;
+
+    // For YouTube Music, we want to search specifically for music content
+    // Use "music_songs" filter when searching for songs specifically
+    if (filter === "videos") {
+      filterParam = "music_songs"; // YouTube Music specific filter for songs
+    } else if (filter === "playlists") {
+      filterParam = "music_albums"; // YouTube Music specific filter for albums
+    } else if (filter === "channels") {
+      filterParam = "music_artists"; // YouTube Music specific filter for artists
+    }
+
+    // Try the primary query first with YouTube Music specific filter
+    const offset = (page - 1) * limit;
+    const endpoint = `/search?q=${encodeURIComponent(
+      query
+    )}&filter=${filterParam}&offset=${offset}&limit=${limit}`;
+    const data = await fetchWithFallbacks(PIPED_INSTANCES, endpoint);
+
+    // If no results and we have multilingual query, try with relaxed search terms
+    if (
+      (!data || !Array.isArray(data.items) || data.items.length === 0) &&
+      /[^\u0000-\u007F]/.test(query)
+    ) {
+      console.log(
+        "[API] No results for multilingual query, trying broader search"
+      );
+      const broadEndpoint = `/search?q=${encodeURIComponent(query)}&filter=all`;
+      const broadData = await fetchWithFallbacks(
+        PIPED_INSTANCES,
+        broadEndpoint
+      );
+      return broadData && Array.isArray(broadData.items) ? broadData.items : [];
+    }
+
+    return data && Array.isArray(data.items) ? data.items : [];
   },
 };

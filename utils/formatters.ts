@@ -1,6 +1,8 @@
+import { t } from "./localization";
+
 export const formatDuration = (seconds: number): string => {
   if (seconds === 0) {
-    return "LIVE";
+    return t("search.live");
   }
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
