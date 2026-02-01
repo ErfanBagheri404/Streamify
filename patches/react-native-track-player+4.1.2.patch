@@ -2,6 +2,150 @@ diff --git a/node_modules/react-native-track-player/android/src/main/java/com/do
 index b2409a0..bf2c691 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
+@@ -35,7 +35,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     }
+ 
+     @ReactMethod(isBlockingSynchronousMethod = false)
+-    fun setupPlayer(options: ReadableMap?, promise: Promise) {
++    fun setupPlayer(options: ReadableMap?, promise: Promise) = scope.launch {
+         if (playerOptions != null) {
+             promise.reject(ErrCode.PRECONDITION_FAILED, "Player has already been initialized")
+             return@launch
+@@ -55,7 +55,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     }
+ 
+     @ReactMethod(isBlockingSynchronousMethod = false)
+-    fun destroy() {
++    fun destroy(promise: Promise) = scope.launch {
+         if (musicService::class.java.isInstance(service)) {
+             musicService.destroy()
+             unbindService()
+@@ -65,7 +65,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     }
+ 
+     @ReactMethod(isBlockingSynchronousMethod = false)
+-    fun updateOptions(options: ReadableMap, promise: Promise) {
++    fun updateOptions(options: ReadableMap, promise: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(promise)) return@launch
+ 
+         val androidOptions = options.getMap("android")
+@@ -85,7 +85,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     }
+ 
+     @ReactMethod(isBlockingSynchronousMethod = false)
+-    fun add(tracks: ReadableArray, insertBeforeId: String?, promise: Promise) {
++    fun add(tracks: ReadableArray, insertBeforeId: String?, promise: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(promise)) return@launch
+ 
+         val queue = tracks.toAudioItemList()
+@@ -105,7 +105,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     }
+ 
+     @ReactMethod(isBlockingSynchronousMethod = false)
+-    fun remove(tracks: ReadableArray, promise: Promise) {
++    fun remove(tracks: ReadableArray, promise: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(promise)) return@launch
+ 
+         val trackList = tracks.toStringArray()
+@@ -115,7 +115,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     }
+ 
+     @ReactMethod(isBlockingSynchronousMethod = false)
+-    fun removeUpcomingTracks(promise: Promise) {
++    fun removeUpcomingTracks(promise: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(promise)) return@launch
+ 
+         musicService.removeUpcomingTracks()
+@@ -123,7 +123,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     }
+ 
+     @ReactMethod(isBlockingSynchronousMethod = false)
+-    fun skip(index: Int, promise: Promise) {
++    fun skip(index: Int, promise: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(promise)) return@launch
+ 
+         if (index < 0 || index >= musicService.tracks.size) {
+@@ -135,7 +135,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     }
+ 
+     @ReactMethod(isBlockingSynchronousMethod = false)
+-    fun skipToNext(promise: Promise) {
++    fun skipToNext(promise: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(promise)) return@launch
+ 
+         if (musicService.tracks.isEmpty()) {
+@@ -147,7 +147,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     }
+ 
+     @ReactMethod(isBlockingSynchronousMethod = false)
+-    fun skipToPrevious(promise: Promise) {
++    fun skipToPrevious(promise: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(promise)) return@launch
+ 
+         if (musicService.tracks.isEmpty()) {
+@@ -159,7 +159,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     }
+ 
+     @ReactMethod(isBlockingSynchronousMethod = false)
+-    fun play(promise: Promise) {
++    fun play(promise: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(promise)) return@launch
+ 
+         musicService.play()
+@@ -167,7 +167,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     }
+ 
+     @ReactMethod(isBlockingSynchronousMethod = false)
+-    fun pause(promise: Promise) {
++    fun pause(promise: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(promise)) return@launch
+ 
+         musicService.pause()
+@@ -175,7 +175,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     }
+ 
+     @ReactMethod(isBlockingSynchronousMethod = false)
+-    fun stop(promise: Promise) {
++    fun stop(promise: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(promise)) return@launch
+ 
+         musicService.stop()
+@@ -183,7 +183,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     }
+ 
+     @ReactMethod(isBlockingSynchronousMethod = false)
+-    fun reset(promise: Promise) {
++    fun reset(promise: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(promise)) return@launch
+ 
+         musicService.reset()
+@@ -191,7 +191,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     }
+ 
+     @ReactMethod(isBlockingSynchronousMethod = false)
+-    fun seekTo(seconds: Float, promise: Promise) {
++    fun seekTo(seconds: Float, promise: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(promise)) return@launch
+ 
+         musicService.seekTo(seconds.toLong())
+@@ -199,7 +199,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     }
+ 
+     @ReactMethod(isBlockingSynchronousMethod = false)
+-    fun setVolume(volume: Float, promise: Promise) {
++    fun setVolume(volume: Float, promise: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(promise)) return@launch
+ 
+         musicService.setVolume(volume)
+@@ -207,7 +207,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     }
+ 
+     @ReactMethod(isBlockingSynchronousMethod = false)
+-    fun setRate(rate: Float, promise: Promise) {
++    fun setRate(rate: Float, promise: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(promise)) return@launch
+ 
+         musicService.setRate(rate)
 @@ -545,7 +545,12 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
          if (verifyServiceBoundOrReject(callback)) return@launch
  
