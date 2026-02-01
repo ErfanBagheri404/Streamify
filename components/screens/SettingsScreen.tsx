@@ -6,6 +6,7 @@ import { clearSoundCloudCache } from "../../modules/audioStreaming";
 import { Image } from "react-native";
 import { Switch } from "react-native-gesture-handler";
 import Slider from "@react-native-community/slider";
+import { t } from "../../utils/localization";
 
 const Screen = styled.View`
   flex: 1;
@@ -183,21 +184,21 @@ export default function SettingsScreen({
   const getHeaderTitle = () => {
     switch (currentPage) {
       case "account":
-        return "Account";
+        return t("screens.settings.main.account_title");
       case "playback":
-        return "Playback";
+        return t("screens.settings.main.playback_title");
       case "privacy":
-        return "Privacy and Social";
+        return t("screens.settings.main.privacy_title");
       case "notifications":
-        return "Notifications";
+        return t("screens.settings.main.notifications_title");
       case "data":
-        return "Data-saving and offline";
+        return t("screens.settings.main.data_title");
       case "quality":
-        return "Media quality";
+        return t("screens.settings.main.quality_title");
       case "support":
-        return "About and support";
+        return t("screens.settings.main.support_title");
       default:
-        return "Settings";
+        return t("screens.settings.main.title");
     }
   };
 
@@ -206,7 +207,9 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Account Details</SettingText>
+            <SettingText>
+              {t("screens.settings.account.account_details")}
+            </SettingText>
           </SettingContent>
         </SettingLeft>
       </SettingItem>
@@ -217,7 +220,9 @@ export default function SettingsScreen({
             <Ionicons name="person-circle" size={48} color="#fff" />
           </SettingIcon>
           <SettingContent>
-            <SettingText>Account Image</SettingText>
+            <SettingText>
+              {t("screens.settings.account.account_image")}
+            </SettingText>
           </SettingContent>
         </SettingLeft>
       </SettingItem>
@@ -225,8 +230,10 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Username</SettingText>
-            <SettingDescription>your_username</SettingDescription>
+            <SettingText>{t("screens.settings.account.username")}</SettingText>
+            <SettingDescription>
+              {t("screens.settings.account.username_placeholder")}
+            </SettingDescription>
           </SettingContent>
         </SettingLeft>
       </SettingItem>
@@ -234,8 +241,10 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Email</SettingText>
-            <SettingDescription>user@example.com</SettingDescription>
+            <SettingText>{t("screens.settings.account.email")}</SettingText>
+            <SettingDescription>
+              {t("screens.settings.account.email_placeholder")}
+            </SettingDescription>
           </SettingContent>
         </SettingLeft>
       </SettingItem>
@@ -247,8 +256,12 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Gapless Playback</SettingText>
-            <SettingDescription>Play tracks without gaps</SettingDescription>
+            <SettingText>
+              {t("screens.settings.playback.gapless_playback")}
+            </SettingText>
+            <SettingDescription>
+              {t("screens.settings.playback.gapless_playback_desc")}
+            </SettingDescription>
           </SettingContent>
         </SettingLeft>
         <SettingRight>
@@ -264,9 +277,9 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Automix</SettingText>
+            <SettingText>{t("screens.settings.playback.automix")}</SettingText>
             <SettingDescription>
-              Automatically mix between songs
+              {t("screens.settings.playback.automix_desc")}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>
@@ -283,9 +296,14 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Crossfade</SettingText>
+            <SettingText>
+              {t("screens.settings.playback.crossfade")}
+            </SettingText>
             <SettingDescription>
-              Smooth transition between tracks ({crossfadeValue}s)
+              {t("screens.settings.playback.crossfade_desc").replace(
+                "{time}",
+                crossfadeValue.toString()
+              )}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>
@@ -307,7 +325,9 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Listening Controls</SettingText>
+            <SettingText>
+              {t("screens.settings.playback.listening_controls")}
+            </SettingText>
           </SettingContent>
         </SettingLeft>
       </SettingItem>
@@ -315,9 +335,9 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Autoplay</SettingText>
+            <SettingText>{t("screens.settings.playback.autoplay")}</SettingText>
             <SettingDescription>
-              Continue playing similar music
+              {t("screens.settings.playback.autoplay_desc")}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>
@@ -334,8 +354,12 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Mono Audio</SettingText>
-            <SettingDescription>Combine audio channels</SettingDescription>
+            <SettingText>
+              {t("screens.settings.playback.mono_audio")}
+            </SettingText>
+            <SettingDescription>
+              {t("screens.settings.playback.mono_audio_desc")}
+            </SettingDescription>
           </SettingContent>
         </SettingLeft>
         <SettingRight>
@@ -351,7 +375,9 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Equalizer</SettingText>
+            <SettingText>
+              {t("screens.settings.playback.equalizer")}
+            </SettingText>
           </SettingContent>
         </SettingLeft>
       </SettingItem>
@@ -359,9 +385,11 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Volume Normalization</SettingText>
+            <SettingText>
+              {t("screens.settings.playback.volume_normalization")}
+            </SettingText>
             <SettingDescription>
-              Consistent volume across tracks
+              {t("screens.settings.playback.volume_normalization_desc")}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>
@@ -382,9 +410,11 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Private Session</SettingText>
+            <SettingText>
+              {t("screens.settings.privacy.private_session")}
+            </SettingText>
             <SettingDescription>
-              Start a private listening session
+              {t("screens.settings.privacy.private_session_desc")}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>
@@ -400,9 +430,11 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Listening Activity</SettingText>
+            <SettingText>
+              {t("screens.settings.privacy.listening_activity")}
+            </SettingText>
             <SettingDescription>
-              Share what I'm listening to with followers
+              {t("screens.settings.privacy.listening_activity_desc")}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>
@@ -418,9 +450,11 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Recently Played Artists</SettingText>
+            <SettingText>
+              {t("screens.settings.privacy.recently_played_artists")}
+            </SettingText>
             <SettingDescription>
-              Show recently played artists on profile
+              {t("screens.settings.privacy.recently_played_artists_desc")}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>
@@ -436,9 +470,11 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Make my profile public</SettingText>
+            <SettingText>
+              {t("screens.settings.privacy.public_profile")}
+            </SettingText>
             <SettingDescription>
-              Allow others to find and follow you
+              {t("screens.settings.privacy.public_profile_desc")}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>
@@ -459,9 +495,11 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Push Notifications</SettingText>
+            <SettingText>
+              {t("screens.settings.notifications.push_notifications")}
+            </SettingText>
             <SettingDescription>
-              Receive notifications on your device
+              {t("screens.settings.notifications.push_notifications_desc")}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>
@@ -477,8 +515,12 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Email Notifications</SettingText>
-            <SettingDescription>Get updates via email</SettingDescription>
+            <SettingText>
+              {t("screens.settings.notifications.email_notifications")}
+            </SettingText>
+            <SettingDescription>
+              {t("screens.settings.notifications.email_notifications_desc")}
+            </SettingDescription>
           </SettingContent>
         </SettingLeft>
         <SettingRight>
@@ -493,9 +535,11 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>New Music Alerts</SettingText>
+            <SettingText>
+              {t("screens.settings.notifications.new_music_alerts")}
+            </SettingText>
             <SettingDescription>
-              Notifications for new releases
+              {t("screens.settings.notifications.new_music_alerts_desc")}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>
@@ -511,9 +555,11 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Playlist Updates</SettingText>
+            <SettingText>
+              {t("screens.settings.notifications.playlist_updates")}
+            </SettingText>
             <SettingDescription>
-              When playlists you follow are updated
+              {t("screens.settings.notifications.playlist_updates_desc")}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>
@@ -534,9 +580,9 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Data Saver</SettingText>
+            <SettingText>{t("screens.settings.data.data_saver")}</SettingText>
             <SettingDescription>
-              Reduce data usage while streaming
+              {t("screens.settings.data.data_saver_desc")}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>
@@ -552,9 +598,11 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Download Quality</SettingText>
+            <SettingText>
+              {t("screens.settings.data.download_quality")}
+            </SettingText>
             <SettingDescription>
-              Normal quality for downloads
+              {t("screens.settings.data.download_quality_desc")}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>
@@ -562,9 +610,11 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Auto-download Playlists</SettingText>
+            <SettingText>
+              {t("screens.settings.data.auto_download_playlists")}
+            </SettingText>
             <SettingDescription>
-              Automatically download your playlists
+              {t("screens.settings.data.auto_download_playlists_desc")}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>
@@ -637,8 +687,10 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Equalizer</SettingText>
-            <SettingDescription>Custom audio settings</SettingDescription>
+            <SettingText>{t("screens.settings.quality.equalizer")}</SettingText>
+            <SettingDescription>
+              {t("screens.settings.quality.equalizer_desc")}
+            </SettingDescription>
           </SettingContent>
         </SettingLeft>
       </SettingItem>
@@ -650,9 +702,11 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Help Center</SettingText>
+            <SettingText>
+              {t("screens.settings.support.help_center")}
+            </SettingText>
             <SettingDescription>
-              Find answers to common questions
+              {t("screens.settings.support.help_center_desc")}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>
@@ -660,25 +714,9 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Community</SettingText>
-            <SettingDescription>Connect with other users</SettingDescription>
-          </SettingContent>
-        </SettingLeft>
-      </SettingItem>
-      <SettingItem>
-        <SettingLeft>
-          <SettingContent>
-            <SettingText>App Version</SettingText>
-            <SettingDescription>Version 1.0.0</SettingDescription>
-          </SettingContent>
-        </SettingLeft>
-      </SettingItem>
-      <SettingItem>
-        <SettingLeft>
-          <SettingContent>
-            <SettingText>Terms of Service</SettingText>
+            <SettingText>{t("screens.settings.support.community")}</SettingText>
             <SettingDescription>
-              Read our terms and conditions
+              {t("screens.settings.support.community_desc")}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>
@@ -686,9 +724,35 @@ export default function SettingsScreen({
       <SettingItem>
         <SettingLeft>
           <SettingContent>
-            <SettingText>Privacy Policy</SettingText>
+            <SettingText>
+              {t("screens.settings.support.app_version")}
+            </SettingText>
             <SettingDescription>
-              Learn how we protect your data
+              {t("screens.settings.support.app_version_desc")}
+            </SettingDescription>
+          </SettingContent>
+        </SettingLeft>
+      </SettingItem>
+      <SettingItem>
+        <SettingLeft>
+          <SettingContent>
+            <SettingText>
+              {t("screens.settings.support.terms_of_service")}
+            </SettingText>
+            <SettingDescription>
+              {t("screens.settings.support.terms_of_service_desc")}
+            </SettingDescription>
+          </SettingContent>
+        </SettingLeft>
+      </SettingItem>
+      <SettingItem>
+        <SettingLeft>
+          <SettingContent>
+            <SettingText>
+              {t("screens.settings.support.privacy_policy")}
+            </SettingText>
+            <SettingDescription>
+              {t("screens.settings.support.privacy_policy_desc")}
             </SettingDescription>
           </SettingContent>
         </SettingLeft>

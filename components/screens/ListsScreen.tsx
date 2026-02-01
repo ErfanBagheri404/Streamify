@@ -2,6 +2,7 @@ import React from "react";
 import styled from "styled-components/native";
 import { FlatList } from "react-native";
 import ListItem from "../ListItem";
+import { t } from "../../utils/localization";
 // generateImageUrl temporarily stubbed until the module is available
 const generateImageUrl = (id: string, quality: string) =>
   `https://i.ytimg.com/vi/${id}/${quality}default.jpg`;
@@ -18,15 +19,15 @@ const Content = styled.View`
 export default function ListsScreen() {
   const data = [
     {
-      title: "Top Hits",
-      stats: "32 items",
-      uploader_data: "Curated",
+      title: t("screens.album_playlist.top_hits"),
+      stats: `32 ${t("screens.album_playlist.items")}`,
+      uploader_data: t("screens.album_playlist.curated"),
       thumbnail: generateImageUrl("SeGNxgujehE", "hq"),
     },
     {
-      title: "New Releases",
-      stats: "18 items",
-      uploader_data: "Weekly",
+      title: t("screens.album_playlist.new_releases"),
+      stats: `18 ${t("screens.album_playlist.items")}`,
+      uploader_data: t("screens.album_playlist.weekly"),
       thumbnail: generateImageUrl("dQw4w9WgXcQ", "mq"),
     },
   ];

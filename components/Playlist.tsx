@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Entypo } from "@expo/vector-icons";
 import { usePlayer } from "../contexts/PlayerContext";
+import { t } from "../utils/localization";
 
 interface PlaylistProps {
   title: string; // e.g., "Justice"
@@ -224,8 +225,8 @@ export const Playlist: React.FC<PlaylistProps> = ({
   onSongOptionsPress,
   onHeaderOptionsPress,
   contentContainerStyle,
-  emptyMessage = "No songs found",
-  emptySubMessage = "This album is currently empty.",
+  emptyMessage = t("screens.album_playlist.no_songs_found"),
+  emptySubMessage = t("screens.album_playlist.album_empty"),
   emptyIcon = "musical-notes-outline",
   showSongOptions,
   showHeaderOptions = true, // Default to true for backward compatibility
@@ -320,7 +321,11 @@ export const Playlist: React.FC<PlaylistProps> = ({
         <HeaderButton onPress={onBack}>
           <Ionicons name="chevron-back" size={24} color="#fff" />
         </HeaderButton>
-        <HeaderTitle>{type === "playlist" ? "Playlist" : "Album"}</HeaderTitle>
+        <HeaderTitle>
+          {type === "playlist"
+            ? t("screens.album_playlist.playlist")
+            : t("screens.album_playlist.album")}
+        </HeaderTitle>
         {showHeaderOptions && onHeaderOptionsPress && (
           <HeaderButton onPress={onHeaderOptionsPress}>
             <Ionicons name="ellipsis-vertical" size={20} color="#fff" />

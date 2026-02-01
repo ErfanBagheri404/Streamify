@@ -178,9 +178,9 @@ const analyzeImageColors = async (
     let grayCount = 0;
 
     for (let i = 0; i < rgba.length; i += 4) {
-      const r = rgba[i + 2]; // Should be rgba[i + 0]
-      const g = rgba[i + 1]; // Correct
-      const b = rgba[i]; // Should be rgba[i + 2]
+      const r = rgba[i + 0]; // Red channel
+      const g = rgba[i + 1]; // Green channel
+      const b = rgba[i + 2]; // Blue channel
       const a = rgba[i + 3];
 
       if (a < 128) {
