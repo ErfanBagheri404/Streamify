@@ -5,15 +5,19 @@ const { getDefaultConfig } = require("expo/metro-config");
 const config = getDefaultConfig(__dirname);
 
 // Add SVG transformer configuration
-config.transformer = {
-  ...config.transformer,
-  babelTransformerPath: require.resolve("react-native-svg-transformer"),
-};
+try {
+  config.transformer = {
+    ...config.transformer,
+    babelTransformerPath: require.resolve("react-native-svg-transformer"),
+  };
 
-config.resolver = {
-  ...config.resolver,
-  assetExts: config.resolver.assetExts.filter((ext) => ext !== "svg"),
-  sourceExts: [...config.resolver.sourceExts, "svg"],
-};
+  config.resolver = {
+    ...config.resolver,
+    assetExts: config.resolver.assetExts.filter((ext) => ext !== "svg"),
+    sourceExts: [...config.resolver.sourceExts, "svg"],
+  };
+} catch (error) {
+  console.warn("react-native-svg-transformer not available, skipping SVG configuration");
+}
 
 module.exports = config;
