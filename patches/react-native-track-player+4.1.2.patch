@@ -1,8 +1,8 @@
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
-index 1234567..abcdefg 100644
+index b2409a0..52cc969 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
-@@ -160,7 +160,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+@@ -159,7 +159,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
          }
      }
  
@@ -11,8 +11,8 @@ index 1234567..abcdefg 100644
      fun setupPlayer(data: ReadableMap?, promise: Promise) {
          if (isServiceBound) {
              promise.reject(
-@@ -253,7 +253,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
-         }
+@@ -250,7 +250,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+         callback.resolve(isServiceBound)
      }
  
 -    @ReactMethod
@@ -20,8 +20,8 @@ index 1234567..abcdefg 100644
      fun updateOptions(data: ReadableMap?, callback: Promise) = scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
  
-@@ -264,7 +264,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
-         }
+@@ -263,7 +263,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+         callback.resolve(null)
      }
  
 -    @ReactMethod
@@ -29,8 +29,8 @@ index 1234567..abcdefg 100644
      fun add(data: ReadableArray?, insertBeforeIndex: Int, callback: Promise) = scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
  
-@@ -308,7 +308,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
-         }
+@@ -307,7 +307,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+         callback.resolve(null)
      }
  
 -    @ReactMethod
@@ -38,8 +38,8 @@ index 1234567..abcdefg 100644
      fun remove(data: ReadableArray?, callback: Promise) = scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
          val inputIndexes = Arguments.toList(data)
-@@ -375,7 +375,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
-         }
+@@ -374,7 +374,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+         callback.resolve(null)
      }
  
 -    @ReactMethod
@@ -47,8 +47,8 @@ index 1234567..abcdefg 100644
      fun removeUpcomingTracks(callback: Promise) = scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
  
-@@ -422,7 +422,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
-         }
+@@ -421,7 +421,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+         callback.resolve(null)
      }
  
 -    @ReactMethod
@@ -56,8 +56,8 @@ index 1234567..abcdefg 100644
      fun reset(callback: Promise) = scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
  
-@@ -433,7 +433,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
-         }
+@@ -432,7 +432,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+         callback.resolve(null)
      }
  
 -    @ReactMethod
@@ -65,8 +65,8 @@ index 1234567..abcdefg 100644
      fun play(callback: Promise) = scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
  
-@@ -441,7 +441,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
-         }
+@@ -440,7 +440,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+         callback.resolve(null)
      }
  
 -    @ReactMethod
@@ -74,8 +74,8 @@ index 1234567..abcdefg 100644
      fun pause(callback: Promise) = scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
  
-@@ -449,7 +449,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
-         }
+@@ -448,7 +448,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+         callback.resolve(null)
      }
  
 -    @ReactMethod
@@ -83,8 +83,8 @@ index 1234567..abcdefg 100644
      fun stop(callback: Promise) = scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
  
-@@ -457,7 +457,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
-         }
+@@ -456,7 +456,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+         callback.resolve(null)
      }
  
 -    @ReactMethod
@@ -92,8 +92,8 @@ index 1234567..abcdefg 100644
      fun seekTo(seconds: Float, callback: Promise) = scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
  
-@@ -481,7 +481,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
-         }
+@@ -480,7 +480,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+         callback.resolve(null)
      }
  
 -    @ReactMethod
@@ -101,11 +101,12 @@ index 1234567..abcdefg 100644
      fun setVolume(volume: Float, callback: Promise) = scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
  
-@@ -496,7 +496,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
-         }
+@@ -495,7 +495,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+         callback.resolve(musicService.getVolume())
      }
  
 -    @ReactMethod
 +    @ReactMethod(isBlockingSynchronousMethod = false)
      fun setRate(rate: Float, callback: Promise) = scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
+ 
