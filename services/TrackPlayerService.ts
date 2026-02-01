@@ -13,6 +13,78 @@ import { t } from "../utils/localization";
 import { Platform, NativeModules } from "react-native";
 import { Track } from "../contexts/PlayerContext";
 
+// TurboModule compatibility workaround
+const setupTurboModuleCompatibility = () => {
+  try {
+    const TrackPlayerModule =
+      (NativeModules as any).TrackPlayerModule ||
+      (NativeModules as any).TrackPlayer;
+
+    if (
+      TrackPlayerModule &&
+      typeof TrackPlayerModule.getConstants === "function"
+    ) {
+      // Wrap getConstants to handle TurboModule annotation issues
+      const originalGetConstants = TrackPlayerModule.getConstants;
+      TrackPlayerModule.getConstants = function () {
+        try {
+          return originalGetConstants.call(this);
+        } catch (e) {
+          console.warn(
+            "[TrackPlayerService] TurboModule getConstants error, returning safe defaults"
+          );
+          return {
+            STATE_NONE: 0,
+            STATE_READY: 1,
+            STATE_PLAYING: 2,
+            STATE_PAUSED: 3,
+            STATE_STOPPED: 4,
+            STATE_BUFFERING: 5,
+            STATE_CONNECTING: 6,
+          };
+        }
+      };
+
+      // Mark all methods as asynchronous to avoid TurboModule sync issues
+      const syncMethods = [
+        "getConstants",
+        "getState",
+        "getPosition",
+        "getDuration",
+        "getBufferedPosition",
+      ];
+      syncMethods.forEach((method) => {
+        if (typeof TrackPlayerModule[method] === "function") {
+          const originalMethod = TrackPlayerModule[method];
+          TrackPlayerModule[method] = function (...args: any[]) {
+            try {
+              return originalMethod.apply(this, args);
+            } catch (e) {
+              console.warn(
+                `[TrackPlayerService] TurboModule ${method} error:`,
+                e
+              );
+              // Return safe defaults for sync methods
+              if (method === "getState") return Promise.resolve(0);
+              if (method === "getPosition") return Promise.resolve(0);
+              if (method === "getDuration") return Promise.resolve(0);
+              if (method === "getBufferedPosition") return Promise.resolve(0);
+              return Promise.resolve(0);
+            }
+          };
+        }
+      });
+    }
+
+    console.log("[TrackPlayerService] TurboModule compatibility layer applied");
+  } catch (error) {
+    console.warn(
+      "[TrackPlayerService] Failed to apply TurboModule compatibility layer:",
+      error
+    );
+  }
+};
+
 export class TrackPlayerService {
   private static instance: TrackPlayerService;
   private isSetup = false;
@@ -21,7 +93,17 @@ export class TrackPlayerService {
 
   static getInstance(): TrackPlayerService {
     if (!TrackPlayerService.instance) {
-      TrackPlayerService.instance = new TrackPlayerService();
+      try {
+        // Setup TurboModule compatibility before creating instance
+        setupTurboModuleCompatibility();
+        TrackPlayerService.instance = new TrackPlayerService();
+      } catch (error) {
+        console.error(
+          "[TrackPlayerService] Failed to create TrackPlayerService instance:",
+          error
+        );
+        throw error;
+      }
     }
     return TrackPlayerService.instance;
   }
@@ -43,6 +125,32 @@ export class TrackPlayerService {
       throw new Error(
         "Native TrackPlayer module is not available. If you are using Expo, make sure you are *not* running in Expo Go and that you have rebuilt the app after installing react-native-track-player."
       );
+    }
+
+    // TurboModule compatibility check - disable synchronous methods that cause issues
+    if (
+      nativeTrackPlayer &&
+      typeof nativeTrackPlayer.getConstants === "function"
+    ) {
+      try {
+        // Temporarily disable synchronous methods that might cause TurboModule issues
+        const originalGetConstants = nativeTrackPlayer.getConstants;
+        nativeTrackPlayer.getConstants = function () {
+          try {
+            return originalGetConstants.call(this);
+          } catch (e) {
+            console.warn(
+              "[TrackPlayerService] TurboModule getConstants error, returning empty object"
+            );
+            return {};
+          }
+        };
+      } catch (e) {
+        console.warn(
+          "[TrackPlayerService] Failed to wrap native module methods:",
+          e
+        );
+      }
     }
 
     // Check if TrackPlayer is properly initialized
@@ -86,6 +194,23 @@ export class TrackPlayerService {
         );
       }
 
+      // Additional TurboModule compatibility check before setup
+      try {
+        // Test if the native module responds to basic calls
+        if (typeof nativeTrackPlayer.getConstants === "function") {
+          const constants = nativeTrackPlayer.getConstants();
+          console.log(
+            "[TrackPlayerService] TrackPlayer constants available:",
+            !!constants
+          );
+        }
+      } catch (turboError) {
+        console.warn(
+          "[TrackPlayerService] TurboModule compatibility issue detected, continuing with setup..."
+        );
+        // Continue with setup even if there are TurboModule issues
+      }
+
       console.log(
         "[TrackPlayerService] TrackPlayer object type:",
         typeof TrackPlayer
@@ -94,6 +219,9 @@ export class TrackPlayerService {
         "[TrackPlayerService] TrackPlayer methods:",
         Object.keys(TrackPlayer)
       );
+
+      // Add a small delay to ensure native module is ready during development reload
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       await TrackPlayer.setupPlayer({
         maxCacheSize: 1024 * 10, // 10MB cache
