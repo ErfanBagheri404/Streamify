@@ -1,18 +1,5 @@
-import en from "../locales/en.json";
+const translations: Record<string, string> = {}
 
-export const t = (key: string): string => {
-  const keys = key.split(".");
-  let current: any = en;
-  
-  for (const k of keys) {
-    if (current && typeof current === "object" && k in current) {
-      current = current[k];
-    } else {
-      return key; // Return the key if translation not found
-    }
-  }
-  
-  return typeof current === "string" ? current : key;
-};
-
-export default t;
+export function t(key: string): string {
+  return translations[key] ?? key
+}

@@ -46,7 +46,7 @@ const HeaderContent = styled.View`
   flex: 1;
   justify-content: flex-end;
   padding: 24px;
-  padding-bottom: 16px;
+  padding-bottom: 0px;
 `;
 
 const BackButton = styled.TouchableOpacity`

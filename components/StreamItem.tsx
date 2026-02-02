@@ -1,7 +1,6 @@
 import React, { useCallback, useState } from "react";
 import { View, Text } from "react-native";
 import styled from "styled-components/native";
-import { t } from "../utils/localization";
 
 export type StreamItemProps = {
   id: string;
@@ -31,9 +30,9 @@ const Row = styled.View`
 const ThumbWrap = styled.View<{ source?: string }>`
   width: 96px; /* w-24 */
   height: ${(props) =>
-    props.source === "jiosaavn" || props.source === "youtube_channel"
+    props.source === "jiosaavn"
       ? "96px"
-      : "56px"}; /* 1:1 for JioSaavn and YouTube channels, 16:9 for others */
+      : "56px"}; /* 1:1 for JioSaavn, 16:9 for others */
   background-color: #262626; /* neutral-800 */
   border-radius: 8px;
   overflow: hidden;
@@ -117,10 +116,7 @@ function StreamItem(props: StreamItemProps) {
       parts.push(views);
     }
     if (uploaded) {
-      const cleanedUploaded =
-        typeof uploaded === "string"
-          ? uploaded.replace("Streamed ", "")
-          : uploaded;
+      const cleanedUploaded = uploaded.replace("Streamed ", "");
       parts.push(cleanedUploaded);
     }
     return parts.join(" • ");
@@ -147,23 +143,18 @@ function StreamItem(props: StreamItemProps) {
             }}
           >
             {!imageLoaded && (
-              <Text style={{ color: "#a3a3a3", fontSize: 12 }}>
-                {t("loading.text")}
-              </Text>
+              <Text style={{ color: "#a3a3a3", fontSize: 12 }}>Loading...</Text>
             )}
             {imageLoaded && imageError && (
-              <Text style={{ color: "#a3a3a3", fontSize: 12 }}>
-                {t("errors.no_image")}
-              </Text>
+              <Text style={{ color: "#a3a3a3", fontSize: 12 }}>No Image</Text>
             )}
           </View>
         )}
-        {/* Only show duration badge for meaningful durations and not for JioSaavn results or YouTube channels */}
+        {/* Only show duration badge for meaningful durations and not for JioSaavn results */}
         {duration &&
           duration !== "0" &&
           duration !== "0:00" &&
-          source !== "jiosaavn" &&
-          source !== "youtube_channel" && (
+          source !== "jiosaavn" && (
             <DurationBadge>
               <DurationText>{duration}</DurationText>
             </DurationBadge>

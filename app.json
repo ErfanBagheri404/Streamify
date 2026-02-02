@@ -11,6 +11,17 @@
       "expo-font",
       "expo-task-manager",
       [
+        "react-native-track-player",
+        {
+          "iosCategory": "playback",
+          "iosCategoryMode": "default",
+          "iosCategoryOptions": ["mixWithOthers", "duckOthers"],
+          "android": {
+            "appKilledPlaybackBehavior": "stop"
+          }
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {

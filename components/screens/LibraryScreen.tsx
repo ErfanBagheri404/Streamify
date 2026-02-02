@@ -18,7 +18,6 @@ import { usePlayer } from "../../contexts/PlayerContext";
 import { StorageService, Playlist } from "../../utils/storage";
 import { SliderSheet } from "../SliderSheet";
 import { Track } from "../../contexts/PlayerContext";
-import { t } from "../../utils/localization";
 
 const Screen = styled.View`
   flex: 1;
@@ -230,34 +229,27 @@ const ThreeDotButton = styled.TouchableOpacity`
   z-index: 10;
 `;
 
-const sections = [
-  t("screens.library.sections.playlists"),
-  t("screens.library.sections.albums"),
-  t("screens.library.sections.artists"),
-  t("screens.library.sections.downloaded"),
-];
+const sections = ["Playlists", "Albums", "Artists", "Downloaded"];
 
 const sampleCollections = [
   {
     id: "liked",
-    title: t("screens.library.liked_songs"),
-    meta: t("screens.library.playlist_meta"),
+    title: "Liked Songs",
+    meta: "Playlist • 650 songs",
     pinned: true,
     cover: null,
   },
   {
     id: "previously-played",
-    title: t("screens.library.previously_played"),
-    meta: t("screens.library.playlist_meta"),
+    title: "Previously Played",
+    meta: "Playlist • 0 songs",
     pinned: true,
     cover: null,
   },
 ];
 
 export default function LibraryScreen({ navigation }: { navigation: any }) {
-  const [activeSection, setActiveSection] = React.useState(
-    t("screens.library.sections.playlists")
-  );
+  const [activeSection, setActiveSection] = React.useState("Playlists");
   const [playlists, setPlaylists] = React.useState<Playlist[]>([]);
   const [showCreatePlaylistModal, setShowCreatePlaylistModal] =
     React.useState(false);
@@ -341,7 +333,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
         animateSheet(target);
       },
-    })
+    }),
   ).current;
 
   const closeSongActionSheet = () => {
@@ -383,7 +375,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
   const handleCreatePlaylist = async () => {
     if (!newPlaylistName.trim()) {
-      console.warn(t("screens.library.please_enter_name"));
+      console.warn("Please enter a playlist name");
       return;
     }
 
@@ -402,7 +394,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       setShowCreatePlaylistModal(false);
     } catch (error) {
       console.error("Error creating playlist:", error);
-      console.warn(t("screens.library.failed_create_playlist"));
+      console.warn("Failed to create playlist");
     }
   };
 
@@ -423,7 +415,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         <Header>
           <HeaderLeft>
             <Avatar source={require("../../assets/StreamifyLogo.png")} />
-            <HeaderTitle>{t("screens.library.title")}</HeaderTitle>
+            <HeaderTitle>Your Library</HeaderTitle>
           </HeaderLeft>
           <HeaderActions>
             <HeaderIconButton onPress={() => navigation.navigate("Settings")}>
@@ -463,7 +455,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             <SortIcon>
               <FontAwesome5 name="arrows-alt-v" size={12} color="white" />
             </SortIcon>
-            <SortLabel>{t("screens.library.recents")}</SortLabel>
+            <SortLabel>Recents</SortLabel>
           </SortLeft>
           <LayoutToggle>
             <LayoutIcon>
@@ -515,7 +507,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                       <PinIcon>
                         <AntDesign name="pushpin" size={14} color="green" />
                       </PinIcon>
-                      <PinLabel>{t("screens.library.playlist")}</PinLabel>
+                      <PinLabel>Playlist</PinLabel>
                       <PinDot>•</PinDot>
                       <CollectionMeta>
                         {item.id === "liked"
@@ -578,7 +570,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                         </CollectionCard>
                       ))}
                   </GridRow>
-                )
+                ),
               )}
             </>
           )}
@@ -632,7 +624,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                   includeFontPadding: false,
                   verticalAlign: "middle",
                 }}
-                placeholder={t("screens.library.enter_playlist_name")}
+                placeholder="Enter playlist name"
                 placeholderTextColor="#9ca3af"
                 value={newPlaylistName}
                 onChangeText={(text) => {
@@ -727,32 +719,32 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           options={[
             {
               key: "Share",
-              label: t("actions.share"),
+              label: "Share",
               icon: "share-outline",
             },
             {
               key: "Add to other playlist",
-              label: t("actions.add_to_other_playlist"),
+              label: "Add to other playlist",
               icon: "add-circle-outline",
             },
             {
               key: "Go to album",
-              label: t("actions.go_to_album"),
+              label: "Go to album",
               icon: "albums-outline",
             },
             {
               key: "Go to artists",
-              label: t("actions.go_to_artists"),
+              label: "Go to artists",
               icon: "people-outline",
             },
             {
               key: "Sleep timer",
-              label: t("actions.sleep_timer"),
+              label: "Sleep timer",
               icon: "time-outline",
             },
             {
               key: "Go to song radio",
-              label: t("actions.go_to_song_radio"),
+              label: "Go to song radio",
               icon: "radio-outline",
             },
           ]}
