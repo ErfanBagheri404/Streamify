@@ -3,8 +3,7 @@ import styled from "styled-components/native";
 import { SafeArea } from "../SafeArea";
 import { Ionicons } from "@expo/vector-icons";
 import { clearSoundCloudCache } from "../../modules/audioStreaming";
-import { Image } from "react-native";
-import { Switch } from "react-native-gesture-handler";
+import { Switch, Image } from "react-native";
 import Slider from "@react-native-community/slider";
 
 const Screen = styled.View`
@@ -60,10 +59,7 @@ const SettingLeft = styled.View`
   flex-direction: row;
   align-items: center;
   flex: 1;
-  padding-left: ${(props) =>
-    props.hasIcon
-      ? "8px"
-      : "0px"}; /* 24px (icon width) + 12px (margin) = 36px */
+  padding-left: ${props => props.hasIcon ? '8px' : '0px'}; /* 24px (icon width) + 12px (margin) = 36px */
 `;
 
 const SettingRight = styled.View`

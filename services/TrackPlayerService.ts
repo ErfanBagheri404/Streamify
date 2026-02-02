@@ -9,8 +9,81 @@ import TrackPlayer, {
   IOSCategoryOptions,
   PitchAlgorithm,
 } from "react-native-track-player";
+import { t } from "../utils/localization";
 import { Platform, NativeModules } from "react-native";
 import { Track } from "../contexts/PlayerContext";
+
+// TurboModule compatibility workaround
+const setupTurboModuleCompatibility = () => {
+  try {
+    const TrackPlayerModule =
+      (NativeModules as any).TrackPlayerModule ||
+      (NativeModules as any).TrackPlayer;
+
+    if (
+      TrackPlayerModule &&
+      typeof TrackPlayerModule.getConstants === "function"
+    ) {
+      // Wrap getConstants to handle TurboModule annotation issues
+      const originalGetConstants = TrackPlayerModule.getConstants;
+      TrackPlayerModule.getConstants = function () {
+        try {
+          return originalGetConstants.call(this);
+        } catch (e) {
+          console.warn(
+            "[TrackPlayerService] TurboModule getConstants error, returning safe defaults"
+          );
+          return {
+            STATE_NONE: 0,
+            STATE_READY: 1,
+            STATE_PLAYING: 2,
+            STATE_PAUSED: 3,
+            STATE_STOPPED: 4,
+            STATE_BUFFERING: 5,
+            STATE_CONNECTING: 6,
+          };
+        }
+      };
+
+      // Mark all methods as asynchronous to avoid TurboModule sync issues
+      const syncMethods = [
+        "getConstants",
+        "getState",
+        "getPosition",
+        "getDuration",
+        "getBufferedPosition",
+      ];
+      syncMethods.forEach((method) => {
+        if (typeof TrackPlayerModule[method] === "function") {
+          const originalMethod = TrackPlayerModule[method];
+          TrackPlayerModule[method] = function (...args: any[]) {
+            try {
+              return originalMethod.apply(this, args);
+            } catch (e) {
+              console.warn(
+                `[TrackPlayerService] TurboModule ${method} error:`,
+                e
+              );
+              // Return safe defaults for sync methods
+              if (method === "getState") return Promise.resolve(0);
+              if (method === "getPosition") return Promise.resolve(0);
+              if (method === "getDuration") return Promise.resolve(0);
+              if (method === "getBufferedPosition") return Promise.resolve(0);
+              return Promise.resolve(0);
+            }
+          };
+        }
+      });
+    }
+
+    console.log("[TrackPlayerService] TurboModule compatibility layer applied");
+  } catch (error) {
+    console.warn(
+      "[TrackPlayerService] Failed to apply TurboModule compatibility layer:",
+      error
+    );
+  }
+};
 
 export class TrackPlayerService {
   private static instance: TrackPlayerService;
@@ -20,7 +93,17 @@ export class TrackPlayerService {
 
   static getInstance(): TrackPlayerService {
     if (!TrackPlayerService.instance) {
-      TrackPlayerService.instance = new TrackPlayerService();
+      try {
+        // Setup TurboModule compatibility before creating instance
+        setupTurboModuleCompatibility();
+        TrackPlayerService.instance = new TrackPlayerService();
+      } catch (error) {
+        console.error(
+          "[TrackPlayerService] Failed to create TrackPlayerService instance:",
+          error
+        );
+        throw error;
+      }
     }
     return TrackPlayerService.instance;
   }
@@ -29,7 +112,7 @@ export class TrackPlayerService {
     // Check if TrackPlayer is available and initialized
     if (!TrackPlayer) {
       throw new Error(
-        "TrackPlayer is not available - make sure react-native-track-player is properly installed",
+        "TrackPlayer is not available - make sure react-native-track-player is properly installed"
       );
     }
 
@@ -40,8 +123,34 @@ export class TrackPlayerService {
 
     if (!nativeTrackPlayer) {
       throw new Error(
-        "Native TrackPlayer module is not available. If you are using Expo, make sure you are *not* running in Expo Go and that you have rebuilt the app after installing react-native-track-player.",
+        "Native TrackPlayer module is not available. If you are using Expo, make sure you are *not* running in Expo Go and that you have rebuilt the app after installing react-native-track-player."
       );
+    }
+
+    // TurboModule compatibility check - disable synchronous methods that cause issues
+    if (
+      nativeTrackPlayer &&
+      typeof nativeTrackPlayer.getConstants === "function"
+    ) {
+      try {
+        // Temporarily disable synchronous methods that might cause TurboModule issues
+        const originalGetConstants = nativeTrackPlayer.getConstants;
+        nativeTrackPlayer.getConstants = function () {
+          try {
+            return originalGetConstants.call(this);
+          } catch (e) {
+            console.warn(
+              "[TrackPlayerService] TurboModule getConstants error, returning empty object"
+            );
+            return {};
+          }
+        };
+      } catch (e) {
+        console.warn(
+          "[TrackPlayerService] Failed to wrap native module methods:",
+          e
+        );
+      }
     }
 
     // Check if TrackPlayer is properly initialized
@@ -51,7 +160,7 @@ export class TrackPlayerService {
       console.log("[TrackPlayerService] TrackPlayer state check:", state);
     } catch (error) {
       console.warn(
-        "[TrackPlayerService] TrackPlayer not ready, attempting setup...",
+        "[TrackPlayerService] TrackPlayer not ready, attempting setup..."
       );
       await this.setupPlayer();
     }
@@ -67,7 +176,7 @@ export class TrackPlayerService {
       if (!TrackPlayer) {
         console.error("[TrackPlayerService] TrackPlayer is null!");
         throw new Error(
-          "TrackPlayer is not available - make sure react-native-track-player is properly installed",
+          "TrackPlayer is not available - make sure react-native-track-player is properly installed"
         );
       }
 
@@ -78,21 +187,41 @@ export class TrackPlayerService {
 
       if (!nativeTrackPlayer) {
         console.error(
-          "[TrackPlayerService] Native TrackPlayer module is null - this usually means the native module is not linked or you are running in an environment (like Expo Go or web) that does not support react-native-track-player.",
+          "[TrackPlayerService] Native TrackPlayer module is null - this usually means the native module is not linked or you are running in an environment (like Expo Go or web) that does not support react-native-track-player."
         );
         throw new Error(
-          "Native TrackPlayer module is not available. Rebuild the app after installing react-native-track-player and avoid running in Expo Go.",
+          "Native TrackPlayer module is not available. Rebuild the app after installing react-native-track-player and avoid running in Expo Go."
         );
+      }
+
+      // Additional TurboModule compatibility check before setup
+      try {
+        // Test if the native module responds to basic calls
+        if (typeof nativeTrackPlayer.getConstants === "function") {
+          const constants = nativeTrackPlayer.getConstants();
+          console.log(
+            "[TrackPlayerService] TrackPlayer constants available:",
+            !!constants
+          );
+        }
+      } catch (turboError) {
+        console.warn(
+          "[TrackPlayerService] TurboModule compatibility issue detected, continuing with setup..."
+        );
+        // Continue with setup even if there are TurboModule issues
       }
 
       console.log(
         "[TrackPlayerService] TrackPlayer object type:",
-        typeof TrackPlayer,
+        typeof TrackPlayer
       );
       console.log(
         "[TrackPlayerService] TrackPlayer methods:",
-        Object.keys(TrackPlayer),
+        Object.keys(TrackPlayer)
       );
+
+      // Add a small delay to ensure native module is ready during development reload
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       await TrackPlayer.setupPlayer({
         maxCacheSize: 1024 * 10, // 10MB cache
@@ -104,7 +233,7 @@ export class TrackPlayerService {
         ],
       });
       console.log(
-        "[TrackPlayerService] TrackPlayer setup completed successfully",
+        "[TrackPlayerService] TrackPlayer setup completed successfully"
       );
 
       await TrackPlayer.updateOptions({
@@ -178,7 +307,7 @@ export class TrackPlayerService {
     TrackPlayer.addEventListener(Event.PlaybackTrackChanged, (event) => {
       console.log(
         "[TrackPlayerService] Track changed to index:",
-        event.nextTrack,
+        event.nextTrack
       );
       this.currentTrackIndex = event.nextTrack || 0;
     });
@@ -189,7 +318,7 @@ export class TrackPlayerService {
       id: track.id,
       url: track.audioUrl || "",
       title: track.title,
-      artist: track.artist || "Unknown Artist",
+      artist: track.artist || t("screens.artist.unknown_artist"),
       artwork: track.thumbnail || "",
       duration: track.duration || 0,
       headers: {
@@ -209,18 +338,18 @@ export class TrackPlayerService {
     try {
       console.log(
         "[TrackPlayerService] addTracks called, isSetup:",
-        this.isSetup,
+        this.isSetup
       );
 
       // Ensure player is initialized and ready before adding tracks
       await this.ensureTrackPlayerReady();
 
       console.log(
-        "[TrackPlayerService] Player setup complete, proceeding with addTracks",
+        "[TrackPlayerService] Player setup complete, proceeding with addTracks"
       );
 
       const trackPlayerTracks = tracks.map((track, index) =>
-        this.convertTrackToTrackPlayer(track, index),
+        this.convertTrackToTrackPlayer(track, index)
       );
 
       console.log("[TrackPlayerService] About to call TrackPlayer.reset()");
@@ -228,12 +357,12 @@ export class TrackPlayerService {
       try {
         await TrackPlayer.reset();
         console.log(
-          "[TrackPlayerService] TrackPlayer.reset() completed successfully",
+          "[TrackPlayerService] TrackPlayer.reset() completed successfully"
         );
       } catch (resetError) {
         console.error(
           "[TrackPlayerService] TrackPlayer.reset() failed:",
-          resetError,
+          resetError
         );
         console.error("[TrackPlayerService] TrackPlayer object:", TrackPlayer);
         throw resetError;
@@ -251,7 +380,7 @@ export class TrackPlayerService {
         "[TrackPlayerService] Added",
         tracks.length,
         "tracks starting at index",
-        startIndex,
+        startIndex
       );
     } catch (error) {
       console.error("[TrackPlayerService] Failed to add tracks:", error);
@@ -307,7 +436,7 @@ export class TrackPlayerService {
       await TrackPlayer.skipToNext();
       this.currentTrackIndex = Math.min(
         this.currentTrackIndex + 1,
-        this.playlist.length - 1,
+        this.playlist.length - 1
       );
       console.log("[TrackPlayerService] Skipped to next track");
     } catch (error) {
@@ -375,7 +504,7 @@ export class TrackPlayerService {
     } catch (error) {
       console.error(
         "[TrackPlayerService] Failed to get playback state:",
-        error,
+        error
       );
       return { state: State.None };
     }
@@ -475,12 +604,12 @@ export class TrackPlayerService {
 
       console.log(
         "[TrackPlayerService] Updated current track with new URL:",
-        newAudioUrl,
+        newAudioUrl
       );
     } catch (error) {
       console.error(
         "[TrackPlayerService] Failed to update current track:",
-        error,
+        error
       );
       throw error;
     }

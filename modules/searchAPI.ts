@@ -11,7 +11,7 @@ export interface SearchResult {
   views?: string;
   img?: string;
   thumbnailUrl?: string;
-  source?: "youtube" | "soundcloud" | "jiosaavn";
+  source?: "youtube" | "soundcloud" | "jiosaavn" | "youtubemusic";
   type?: "song" | "album" | "artist" | "unknown";
   albumId?: string | null;
   albumName?: string | null;
@@ -71,7 +71,7 @@ function fmtTimeAgo(stamp: number | string | undefined): string {
 // Robust fetcher for Piped/Invidious
 const fetchWithFallbacks = async (
   instances: string[],
-  endpoint: string,
+  endpoint: string
 ): Promise<any> => {
   for (const baseUrl of instances) {
     const startTime = Date.now();
@@ -106,7 +106,12 @@ const fetchWithFallbacks = async (
 export const searchAPI = {
   getSuggestions: async (
     query: string,
-    source: "youtube" | "soundcloud" | "spotify" | "jiosaavn" = "youtube",
+    source:
+      | "youtube"
+      | "youtubemusic"
+      | "soundcloud"
+      | "spotify"
+      | "jiosaavn" = "youtube"
   ): Promise<string[]> => {
     if (!query.trim()) {
       return [];
@@ -116,7 +121,7 @@ export const searchAPI = {
     const isMultilingual = /[^\u0000-\u007F]/.test(query);
     if (isMultilingual) {
       console.log(
-        `[API] Detected multilingual query for suggestions: "${query}"`,
+        `[API] Detected multilingual query for suggestions: "${query}"`
       );
     }
 
@@ -139,16 +144,16 @@ export const searchAPI = {
     if (Array.isArray(data)) {
       if (data.length > 1 && Array.isArray(data[1])) {
         suggestions = (data[1] as any[]).filter(
-          (v): v is string => typeof v === "string",
+          (v): v is string => typeof v === "string"
         );
       } else {
         suggestions = (data as any[]).filter(
-          (v): v is string => typeof v === "string",
+          (v): v is string => typeof v === "string"
         );
       }
     } else if (data && Array.isArray((data as any).suggestions)) {
       suggestions = (data as any).suggestions.filter(
-        (v: any) => typeof v === "string",
+        (v: any) => typeof v === "string"
       );
     }
 
@@ -166,7 +171,7 @@ export const searchAPI = {
     }
     try {
       console.log(
-        `[API] Fetching SoundCloud suggestions via proxy for: "${query}"`,
+        `[API] Fetching SoundCloud suggestions via proxy for: "${query}"`
       );
       const tracks = await searchAPI.scrapeSoundCloudSearch(query);
       if (!Array.isArray(tracks) || tracks.length === 0) {
@@ -182,7 +187,7 @@ export const searchAPI = {
       const titles = tracks
         .map((t: any) => t && t.title)
         .filter(
-          (t): t is string => typeof t === "string" && t.trim().length > 0,
+          (t): t is string => typeof t === "string" && t.trim().length > 0
         );
       const uniqueTitles: string[] = [];
       for (const title of titles) {
@@ -205,7 +210,7 @@ export const searchAPI = {
       }
       console.log(
         `[API] SoundCloud suggestion titles: ${uniqueTitles.length}`,
-        uniqueTitles,
+        uniqueTitles
       );
       return uniqueTitles.slice(0, 5);
     } catch (e) {
@@ -240,7 +245,12 @@ export const searchAPI = {
   },
 
   // --- JIOSAAVN SEARCH ---
-  searchWithJioSaavn: async (query: string) => {
+  searchWithJioSaavn: async (
+    query: string,
+    filter?: string,
+    page?: number,
+    limit?: number
+  ) => {
     console.log(`[API] Starting JioSaavn search for: "${query}"`);
 
     try {
@@ -315,24 +325,24 @@ export const searchAPI = {
       });
 
       console.log(
-        `[API] Filtered ${artists.length} artists to ${filteredArtists.length} relevant artists`,
+        `[API] Filtered ${artists.length} artists to ${filteredArtists.length} relevant artists`
       );
 
       // Log exact matches for debugging
       const exactMatches = filteredArtists.filter(
         (artist: any) =>
           (artist.title || "").toLowerCase().trim() ===
-          query.toLowerCase().trim(),
+          query.toLowerCase().trim()
       );
       if (exactMatches.length > 0) {
         console.log(
           `[API] Found ${exactMatches.length} exact artist matches for "${query}":`,
-          exactMatches.map((a: any) => a.title),
+          exactMatches.map((a: any) => a.title)
         );
       }
 
       console.log(
-        `[API] 🟢 JioSaavn Success: Found ${songs.length} songs, ${albums.length} albums, ${artists.length} artists, ${topQuery.length} top queries`,
+        `[API] 🟢 JioSaavn Success: Found ${songs.length} songs, ${albums.length} albums, ${artists.length} artists, ${topQuery.length} top queries`
       );
 
       // Format all results to match SearchResult interface
@@ -466,8 +476,7 @@ export const searchAPI = {
 
       // Check for exact artist matches in the filtered artists
       const exactArtistMatches = artistsResults.filter(
-        (item) =>
-          item.title.toLowerCase().trim() === query.toLowerCase().trim(),
+        (item) => item.title.toLowerCase().trim() === query.toLowerCase().trim()
       );
 
       // Build final result array in the correct order: Top Results (with artist first if exact match), Songs, Albums
@@ -495,8 +504,7 @@ export const searchAPI = {
 
       // Add remaining artists (non-exact matches)
       const remainingArtists = artistsResults.filter(
-        (item) =>
-          item.title.toLowerCase().trim() !== query.toLowerCase().trim(),
+        (item) => item.title.toLowerCase().trim() !== query.toLowerCase().trim()
       );
       if (remainingArtists.length > 0) {
         finalResults = [...finalResults, ...remainingArtists];
@@ -589,7 +597,7 @@ export const searchAPI = {
   // --- JIOSAAVN ALBUM DETAILS ---
   getJioSaavnAlbumDetails: async (albumId: string, albumName: string) => {
     console.log(
-      `[API] Fetching JioSaavn album details for: "${albumName}" (ID: ${albumId})`,
+      `[API] Fetching JioSaavn album details for: "${albumName}" (ID: ${albumId})`
     );
 
     try {
@@ -618,7 +626,7 @@ export const searchAPI = {
             albumData.data.songs
           ) {
             console.log(
-              `[API] 🟢 JioSaavn Album Details Success (Direct): Found ${albumData.data.songs.length} songs for "${albumName}"`,
+              `[API] 🟢 JioSaavn Album Details Success (Direct): Found ${albumData.data.songs.length} songs for "${albumName}"`
             );
 
             return {
@@ -644,7 +652,7 @@ export const searchAPI = {
       } catch (albumError) {
         console.log(
           "[API] Direct album endpoint failed, trying search approach:",
-          albumError,
+          albumError
         );
       }
 
@@ -679,7 +687,7 @@ export const searchAPI = {
 
           // Filter songs that belong to the specified album
           let albumSongs = data.data.results.filter(
-            (song: any) => song.album && song.album.id === albumId,
+            (song: any) => song.album && song.album.id === albumId
           );
 
           // If no exact album ID match, try fuzzy matching by album name
@@ -688,13 +696,13 @@ export const searchAPI = {
               (song: any) =>
                 song.album &&
                 song.album.name &&
-                song.album.name.toLowerCase().includes(albumName.toLowerCase()),
+                song.album.name.toLowerCase().includes(albumName.toLowerCase())
             );
           }
 
           if (albumSongs.length > 0) {
             console.log(
-              `[API] 🟢 JioSaavn Album Details Success (Search): Found ${albumSongs.length} songs for "${albumName}" using query: "${query}"`,
+              `[API] 🟢 JioSaavn Album Details Success (Search): Found ${albumSongs.length} songs for "${albumName}" using query: "${query}"`
             );
 
             return {
@@ -713,7 +721,7 @@ export const searchAPI = {
         } catch (searchError) {
           console.log(
             `[API] Search attempt with query "${query}" failed:`,
-            searchError,
+            searchError
           );
           continue;
         }
@@ -726,7 +734,12 @@ export const searchAPI = {
     }
   },
 
-  searchWithPiped: async (query: string, filter: string) => {
+  searchWithPiped: async (
+    query: string,
+    filter: string,
+    page?: number,
+    limit?: number
+  ) => {
     console.log(`[API] Searching Piped: "${query}"`);
 
     // Enhanced multilingual search - preserve original query but also try transliterated version
@@ -743,7 +756,7 @@ export const searchAPI = {
 
     // Try the primary query first
     const endpoint = `/search?q=${encodeURIComponent(
-      query,
+      query
     )}&filter=${filterParam}`;
     const data = await fetchWithFallbacks(PIPED_INSTANCES, endpoint);
 
@@ -753,12 +766,12 @@ export const searchAPI = {
       /[^\u0000-\u007F]/.test(query)
     ) {
       console.log(
-        "[API] No results for multilingual query, trying broader search",
+        "[API] No results for multilingual query, trying broader search"
       );
       const broadEndpoint = `/search?q=${encodeURIComponent(query)}&filter=all`;
       const broadData = await fetchWithFallbacks(
         PIPED_INSTANCES,
-        broadEndpoint,
+        broadEndpoint
       );
       return broadData && Array.isArray(broadData.items) ? broadData.items : [];
     }
@@ -766,18 +779,28 @@ export const searchAPI = {
     return data && Array.isArray(data.items) ? data.items : [];
   },
 
-  searchWithInvidious: async (query: string, sortType: string) => {
+  searchWithInvidious: async (
+    query: string,
+    sortType: string,
+    page?: number,
+    limit?: number
+  ) => {
     console.log(`[API] Searching Invidious: "${query}"`);
     const sortParam = sortType === "date" ? "upload_date" : "view_count";
     const endpoint = `/search?q=${encodeURIComponent(
-      query,
+      query
     )}&sort_by=${sortParam}`;
     const data = await fetchWithFallbacks(INVIDIOUS_INSTANCES, endpoint);
     return Array.isArray(data) ? data : [];
   },
 
   // --- SOUNDCLOUD SEARCH WITH PROXY API ---
-  searchWithSoundCloud: async (query: string) => {
+  searchWithSoundCloud: async (
+    query: string,
+    filter?: string,
+    page?: number,
+    limit?: number
+  ) => {
     // Enhanced multilingual support for SoundCloud
     const isMultilingual = /[^\u0000-\u007F]/.test(query);
 
@@ -799,7 +822,7 @@ export const searchAPI = {
             const trackId = String(track.id);
             if (seenIds.has(trackId)) {
               console.log(
-                `[API] Skipping duplicate SoundCloud track: ${trackId}`,
+                `[API] Skipping duplicate SoundCloud track: ${trackId}`
               );
               return false;
             }
@@ -843,6 +866,15 @@ export const searchAPI = {
     } catch (error) {
       return [];
     }
+  },
+
+  searchWithYouTubeMusic: async (
+    query: string,
+    filter: string,
+    page?: number,
+    limit?: number
+  ) => {
+    return searchAPI.searchWithPiped(query, filter, page, limit);
   },
 
   formatSearchResults: (results: any[]): SearchResult[] => {
@@ -910,7 +942,7 @@ export const searchAPI = {
     try {
       // Use the SoundCloud proxy API
       const searchUrl = `https://proxy.searchsoundcloud.com/tracks?q=${encodeURIComponent(
-        query,
+        query
       )}`;
 
       const controller = new AbortController();
