@@ -2,13 +2,13 @@ name: React Native CI/CD
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, development]
     paths-ignore:
       - "**.md"
       - "LICENSE"
       - "docs/**"
   pull_request:
-    branches: [main, master]
+    branches: [main, master, development]
   workflow_dispatch:
     inputs:
       buildType:
@@ -32,7 +32,7 @@ jobs:
 
   build-and-deploy:
     needs: check-skip
-    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/development')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: 🏗 Checkout repository
