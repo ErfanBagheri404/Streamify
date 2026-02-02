@@ -1,5 +1,6 @@
 {
   "expo": {
+    "newArchEnabled": false,
     "name": "Streamify",
     "slug": "streamify-mobile",
     "scheme": "streamify",
