@@ -1,38 +1,18 @@
-name: React Native CI/CD
+name: Development Debug APK
 
 on:
   push:
-    branches: [main, master]
-    paths-ignore:
-      - "**.md"
-      - "LICENSE"
-      - "docs/**"
+    branches: [development]
   pull_request:
-    branches: [main, master]
+    branches: [development]
   workflow_dispatch:
-    inputs:
-      buildType:
-        type: choice
-        description: "Build type to run"
-        options:
-          - prod-apk # <-- changed from 'dev'
-          - all
 
 env:
   EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
   NODE_OPTIONS: --openssl-legacy-provider
 
 jobs:
-  check-skip:
-    runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
-    steps:
-      - name: Skip CI check
-        run: echo "Proceeding with workflow"
-
-  build-and-deploy:
-    needs: check-skip
-    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) || github.event_name == 'workflow_dispatch'
+  build-dev-apk:
     runs-on: ubuntu-latest
     steps:
       - name: 🏗 Checkout repository
@@ -102,41 +82,29 @@ jobs:
           npx expo prebuild --platform android --clean
 
       # ----------------------------------------------------------
-      #  PRODUCTION build (standalone, offline, no Metro required)
+      #  DEVELOPMENT build - Debug APK only
       # ----------------------------------------------------------
-
-<<<<<<< HEAD
-      - name: 📱 Build Production APK (main/master)
-        if: >
-          (github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push')
-          && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-=======
-      - name: 📱 Build Production APK
-        if: github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push'
->>>>>>> 2477e6e38407734f1c6cfbcb833da731b0594232
+      - name: 📱 Build Debug APK (development profile)
         run: |
           export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
-           
-           # Use EAS cloud build for production APK (works on all platforms)
-           echo "Building production APK using EAS cloud build..."
-           
-           # Build and wait for completion
-           eas build --platform android --profile production-apk --non-interactive --wait
-           
-           echo "Build completed! 🎉"
-           echo ""
-           echo "The production APK has been built successfully!"
-           echo "To download your APK:"
-           echo "1. Visit your EAS dashboard at: https://expo.dev/accounts/[your-account]/projects/streamify/builds"
-           echo "2. Look for the latest completed production build"
-           echo "3. Click on it to download the APK file"
-           echo ""
-           echo "Alternatively, you can run: eas build:list --platform android --limit 5"
-           echo "to see your recent builds and their download links."
+          
+          echo "Building debug APK for development branch using EAS cloud build..."
+          
+          # Build and wait for completion
+          eas build --platform android --profile debug-apk --non-interactive --wait
+          
+          echo "Development debug APK build completed! 🎉"
+          echo ""
+          echo "The development APK has been built successfully!"
+          echo "To download your debug APK:"
+          echo "1. Visit your EAS dashboard at: https://expo.dev/accounts/[your-account]/projects/streamify/builds"
+          echo "2. Look for the latest completed debug build"
+          echo "3. Click on it to download the APK file"
+          echo ""
+          echo "Alternatively, you can run: eas build:list --platform android --limit 5"
+          echo "to see your recent builds and their download links."
         env:
-          NODE_ENV: production
-
-
+          NODE_ENV: development
 
       - name: 🔍 Print Gradle log (if failed)
         if: failure()
@@ -144,10 +112,10 @@ jobs:
           LOG=$(ls -t ./logs/*.log 2>/dev/null | head -n1)
           if [ -f "$LOG" ]; then cat "$LOG"; else echo "No gradle log found"; fi
 
-      - name: 📦 Upload production APK
+      - name: 📦 Upload debug APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: app-prod-apk
-          path: ./app-*.apk
+          name: app-dev-apk
+          path: ./**/*.apk
           retention-days: 7
