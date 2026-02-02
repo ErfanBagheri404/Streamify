@@ -127,8 +127,10 @@ jobs:
       #  PRODUCTION build (standalone, offline, no Metro required)
       # ----------------------------------------------------------
 
-      - name: 📱 Build Production APK
-        if: github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
+      - name: 📱 Build Production APK (main/master)
+        if: >
+          (github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push')
+          && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         run: |
           export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
            
@@ -150,6 +152,17 @@ jobs:
            echo "to see your recent builds and their download links."
         env:
           NODE_ENV: production
+
+      - name: 📱 Build Debug APK (development branch)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/development'
+        run: |
+          export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
+
+          echo "Building debug APK for development branch using EAS cloud build..."
+
+          eas build --platform android --profile debug-apk --non-interactive --wait
+
+          echo "Development debug APK build completed."
 
       - name: 🔍 Print Gradle log (if failed)
         if: failure()
