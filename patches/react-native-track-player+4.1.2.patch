@@ -1,5 +1,5 @@
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
-index b2409a0..a35d05b 100644
+index b2409a0..e3b4578 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 @@ -159,7 +159,7 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
@@ -124,7 +124,17 @@ index b2409a0..a35d05b 100644
          } else {
              callback.resolve(null)
          }
-@@ -584,9 +589,14 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+@@ -555,7 +560,8 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     fun getQueue(callback: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(callback)) return@launch
+ 
+-        callback.resolve(Arguments.fromList(musicService.tracks.map { it.originalItem }))
++        val items = musicService.tracks.mapNotNull { it.originalItem }
++        callback.resolve(Arguments.fromList(items))
+     }
+ 
+     @ReactMethod
+@@ -584,9 +590,14 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
          if (verifyServiceBoundOrReject(callback)) return@launch
          callback.resolve(
              if (musicService.tracks.isEmpty()) null
@@ -142,3 +152,16 @@ index b2409a0..a35d05b 100644
          )
      }
  
+@@ -624,6 +635,11 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+     @ReactMethod
+     fun getPlaybackState(callback: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(callback)) return@launch
+-        callback.resolve(Arguments.fromBundle(musicService.getPlayerStateBundle(musicService.state)))
++        val stateBundle = musicService.getPlayerStateBundle(musicService.state)
++        if (stateBundle != null) {
++            callback.resolve(Arguments.fromBundle(stateBundle))
++        } else {
++            callback.resolve(null)
++        }
+     }
+ }

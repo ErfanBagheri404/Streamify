@@ -25,7 +25,6 @@ import { formatTime } from "../utils/formatters";
 import { CachedLyrics, lyricsService } from "../modules/lyricsService";
 import { SliderSheet } from "./SliderSheet";
 import { StorageService, Playlist } from "../utils/storage";
-import { t } from "../utils/localization";
 
 const { Animated, PanResponder } = require("react-native");
 
@@ -35,39 +34,23 @@ const SHEET_CLOSED_TOP = height;
 const SHEET_HALF_TOP = height - SHEET_HEIGHT;
 
 const PLAYER_SHEET_OPTIONS = [
-  {
-    key: "Share",
-    label: t("screens.album_playlist.share"),
-    icon: "share-outline",
-  },
+  { key: "Share", label: "Share", icon: "share-outline" },
   {
     key: "Add to other playlist",
-    label: t("screens.album_playlist.add_to_other_playlist"),
+    label: "Add to other playlist",
     icon: "add-circle-outline",
   },
-  {
-    key: "Go to album",
-    label: t("screens.album_playlist.go_to_album"),
-    icon: "albums-outline",
-  },
-  {
-    key: "Go to artists",
-    label: t("screens.album_playlist.go_to_artists"),
-    icon: "people-outline",
-  },
-  {
-    key: "Sleep timer",
-    label: t("screens.album_playlist.sleep_timer"),
-    icon: "time-outline",
-  },
+  { key: "Go to album", label: "Go to album", icon: "albums-outline" },
+  { key: "Go to artists", label: "Go to artists", icon: "people-outline" },
+  { key: "Sleep timer", label: "Sleep timer", icon: "time-outline" },
   {
     key: "Go to song radio",
-    label: t("screens.album_playlist.go_to_song_radio"),
+    label: "Go to song radio",
     icon: "radio-outline",
   },
   {
     key: "View song credits",
-    label: t("screens.album_playlist.view_song_credits"),
+    label: "View song credits",
     icon: "information-circle-outline",
   },
 ];
@@ -583,7 +566,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [lyricsError, setLyricsError] = useState<string | null>(null);
   const [isOptionsVisible, setIsOptionsVisible] = useState(false);
   const [sheetState, setSheetState] = useState<"closed" | "half" | "full">(
-    "closed"
+    "closed",
   );
   const [showPlaylistSelection, setShowPlaylistSelection] = useState(false);
   const [userPlaylists, setUserPlaylists] = useState<Playlist[]>([]);
@@ -660,7 +643,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
         animateSheet(target);
       },
-    })
+    }),
   ).current;
 
   const openOptions = () => {
@@ -691,7 +674,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     try {
       // Check if song is already in playlist
       const isAlreadyInPlaylist = playlist.tracks.some(
-        (track) => track.id === currentTrack.id
+        (track) => track.id === currentTrack.id,
       );
 
       if (isAlreadyInPlaylist) {
@@ -758,7 +741,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       console.log("[FullPlayerModal] Starting lyrics fetch...");
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Lyrics fetch timeout")), 15000)
+        setTimeout(() => reject(new Error("Lyrics fetch timeout")), 15000),
       );
 
       try {
@@ -789,20 +772,18 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
         } else {
           setLyricsData([]);
           setCurrentLyricIndex(0);
-          setLyricsError(
-            t("screens.album_playlist.lyrics_service_unavailable")
-          );
+          setLyricsError("Lyrics service temporarily unavailable");
           // Reduced logging - uncomment for debugging
           // console.log("[FullPlayerModal] No lyrics found");
         }
       } catch (error) {
         console.error(
           "[FullPlayerModal] Error or timeout fetching lyrics:",
-          error
+          error,
         );
         setLyricsData([]);
         setCurrentLyricIndex(0);
-        setLyricsError(t("screens.album_playlist.couldnt_load_lyrics"));
+        setLyricsError("Couldn't load lyrics for this track");
       } finally {
         setIsLoadingLyrics(false);
       }
@@ -826,7 +807,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               fileSize: 0,
               totalFileSize: 0,
               isFullyCached: false,
-            }
+            },
       );
     }
   }, [cacheProgress, currentTrack?.id]);
@@ -982,7 +963,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                         <>
                           <CacheInfoRow>
                             {cacheInfo.isFullyCached
-                              ? t("screens.album_playlist.cached_100")
+                              ? "Cached: 100%"
                               : `Cached: ${Math.round(cacheInfo.percentage)}%`}
                           </CacheInfoRow>
                           {cacheInfo.fileSize > 0 && (
@@ -997,7 +978,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                           )}
                         </>
                       ) : (
-                        <CacheInfoRow>{t("player.caching")}</CacheInfoRow>
+                        <CacheInfoRow>Caching...</CacheInfoRow>
                       )}
                     </CacheInfoContainer>
                   </CacheOverlay>
@@ -1022,11 +1003,11 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                       ) : cacheInfo ? (
                         <CacheInfoRow>
                           {cacheInfo.isFullyCached
-                            ? t("screens.album_playlist.cached_100")
+                            ? "Cached: 100%"
                             : `Cached: ${Math.round(cacheInfo.percentage)}%`}
                         </CacheInfoRow>
                       ) : (
-                        <CacheInfoRow>{t("player.caching")}</CacheInfoRow>
+                        <CacheInfoRow>Caching...</CacheInfoRow>
                       )}
                     </CacheInfoContainer>
                   </CacheOverlay>
@@ -1170,7 +1151,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
             <LyricsCard>
               <LyricsHeader>
-                <LyricsTitle>{t("player.lyrics")}</LyricsTitle>
+                <LyricsTitle>LYRICS</LyricsTitle>
               </LyricsHeader>
 
               {isLoadingLyrics ? (
@@ -1240,9 +1221,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
         >
           <PlaylistSelectionContainer>
             <PlaylistSelectionHeader>
-              <PlaylistSelectionTitle>
-                {t("player.select_playlist")}
-              </PlaylistSelectionTitle>
+              <PlaylistSelectionTitle>Select Playlist</PlaylistSelectionTitle>
               <PlaylistSelectionClose
                 onPress={() => setShowPlaylistSelection(false)}
               >

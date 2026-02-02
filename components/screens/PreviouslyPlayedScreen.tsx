@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { SafeArea } from "../SafeArea";
 import { usePlayer } from "../../contexts/PlayerContext";
 import Playlist from "../Playlist";
-import { t } from "../../utils/localization";
 
 interface PreviouslyPlayedScreenProps {
   navigation: any;
@@ -52,7 +51,7 @@ export const PreviouslyPlayedScreen: React.FC<PreviouslyPlayedScreenProps> = ({
           libraryCover="previously-played"
           songs={[]}
           onBack={handleGoBack}
-          emptyMessage={t("loading.text")}
+          emptyMessage="Loading..."
           emptySubMessage=""
           showSongOptions={false}
           showHeaderOptions={false}

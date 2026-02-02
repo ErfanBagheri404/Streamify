@@ -343,60 +343,40 @@ interface SearchResult {
 }
 
 const sourceFilters: { id: SourceType; label: string; color: string }[] = [
-  {
-    id: "youtube",
-    label: t("screens.album_playlist.youtube"),
-    color: "#ff0000",
-  }, // YouTube Red
-  {
-    id: "youtubemusic",
-    label: t("screens.album_playlist.youtube_music"),
-    color: "#ff0000",
-  }, // YouTube Red
-  {
-    id: "soundcloud",
-    label: t("screens.album_playlist.soundcloud"),
-    color: "#ff7700",
-  }, // SC Orange
-  {
-    id: "spotify",
-    label: t("screens.album_playlist.spotify"),
-    color: "#1db954",
-  }, // Spotify Green
-  {
-    id: "jiosaavn",
-    label: t("screens.album_playlist.jiosaavn"),
-    color: "#1fa18a",
-  }, // JioSaavn Orange
+  { id: "youtube", label: "YouTube", color: "#ff0000" }, // YouTube Red
+  { id: "youtubemusic", label: "YouTube Music", color: "#ff0000" }, // YouTube Red
+  { id: "soundcloud", label: "SoundCloud", color: "#ff7700" }, // SC Orange
+  { id: "spotify", label: "Spotify", color: "#1db954" }, // Spotify Green
+  { id: "jiosaavn", label: "JioSaavn", color: "#1fa18a" }, // JioSaavn Orange
 ];
 
 const searchFilters = [
-  { value: "", label: t("screens.search.all") },
-  { value: "videos", label: t("screens.search.videos") },
-  { value: "channels", label: t("screens.search.channels") },
-  { value: "playlists", label: t("screens.search.playlists") },
-  { value: "date", label: t("screens.search.latest") },
-  { value: "views", label: t("screens.search.popular") },
+  { value: "", label: "All" },
+  { value: "videos", label: "Videos" },
+  { value: "channels", label: "Channels" },
+  { value: "playlists", label: "Playlists" },
+  { value: "date", label: "Latest" },
+  { value: "views", label: "Popular" },
 ];
 
 const youtubeMusicFilters = [
-  { value: "", label: t("screens.search.all") },
-  { value: "videos", label: t("screens.search.videos") },
-  { value: "playlists", label: t("screens.search.playlists") },
-  { value: "channels", label: t("screens.search.artists") },
+  { value: "", label: "All" },
+  { value: "videos", label: "Videos" },
+  { value: "playlists", label: "Playlists" },
+  { value: "channels", label: "Artists" },
 ];
 
 const soundCloudFilters = [
-  { value: "tracks", label: t("screens.search.tracks") },
-  { value: "playlists", label: t("screens.search.playlists") },
-  { value: "albums", label: t("screens.search.albums") },
+  { value: "tracks", label: "Tracks" },
+  { value: "playlists", label: "Playlists" },
+  { value: "albums", label: "Albums" },
 ];
 
 const jioSaavnFilters = [
-  { value: "", label: t("screens.search.all") },
-  { value: "songs", label: t("screens.search.songs") },
-  { value: "albums", label: t("screens.search.albums") },
-  { value: "artists", label: t("screens.search.artists") },
+  { value: "", label: "All" },
+  { value: "songs", label: "Songs" },
+  { value: "albums", label: "Albums" },
+  { value: "artists", label: "Artists" },
 ];
 
 // --- Main Component ---
@@ -448,31 +428,15 @@ export default function SearchScreen({ navigation }: any) {
 
   // State for source filters with reordering
   const [sourceFilters, setSourceFilters] = useState([
-    {
-      id: "youtube" as SourceType,
-      label: t("screens.search.youtube"),
-      color: "#ff0000",
-    },
+    { id: "youtube" as SourceType, label: "YouTube", color: "#ff0000" },
     {
       id: "youtubemusic" as SourceType,
-      label: t("screens.search.youtube_music"),
+      label: "YouTube Music",
       color: "#ff0000",
     },
-    {
-      id: "soundcloud" as SourceType,
-      label: t("screens.search.soundcloud"),
-      color: "#ff7700",
-    },
-    {
-      id: "jiosaavn" as SourceType,
-      label: t("screens.search.jiosaavn"),
-      color: "#1fa18a",
-    },
-    {
-      id: "spotify" as SourceType,
-      label: t("screens.search.spotify"),
-      color: "#1db954",
-    },
+    { id: "soundcloud" as SourceType, label: "SoundCloud", color: "#ff7700" },
+    { id: "jiosaavn" as SourceType, label: "JioSaavn", color: "#1fa18a" },
+    { id: "spotify" as SourceType, label: "Spotify", color: "#1db954" },
   ]);
 
   const [selectedSource, setSelectedSource] = useState<SourceType>("youtube");
@@ -682,10 +646,7 @@ export default function SearchScreen({ navigation }: any) {
           results.length > 0 &&
           !results[0].source
         ) {
-          formattedResults = searchAPI.formatSearchResults(
-            results,
-            selectedSource
-          );
+          formattedResults = searchAPI.formatSearchResults(results);
         }
 
         // Apply display formatting
