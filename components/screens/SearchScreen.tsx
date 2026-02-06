@@ -19,7 +19,7 @@ import {
 } from "react-native";
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
-import StreamItem from "../StreamItem";
+import { default as StreamItem } from "../StreamItem";
 import { searchAPI } from "../../modules/searchAPI";
 import { SafeArea } from "../SafeArea";
 import { usePlayer } from "../../contexts/PlayerContext";
@@ -39,16 +39,15 @@ interface SearchSectionProps {
   setShowSuggestions: (show: boolean) => void;
   playTrack: (track: any, playlist: any[], index: number) => Promise<void>;
   searchResults: any[];
+  selectedFilter?: string;
+  selectedSource?: string;
 }
 
 // Helper function for formatting duration
 const formatDuration = (seconds: number, source?: string): string => {
   if (seconds === 0) {
-    // Don't show LIVE for JioSaavn when duration is 0
-    if (source === "jiosaavn") {
-      return "";
-    }
-    return t("search.live");
+    // Never show LIVE badge for any source when duration is 0
+    return "";
   }
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -265,8 +264,12 @@ const SearchSection = memo(
     setShowSuggestions,
     playTrack,
     searchResults,
+    selectedFilter,
+    selectedSource,
   }: SearchSectionProps) => {
-    if (items.length === 0) return null;
+    if (items.length === 0) {
+      return null;
+    }
 
     const renderItem = useCallback(
       ({ item }: { item: any }) => (
@@ -279,12 +282,26 @@ const SearchSection = memo(
             title={item.title}
             author={item.author}
             duration={formatDuration(parseInt(item.duration) || 0, item.source)}
-            views={item.source === "jiosaavn" ? undefined : item.views}
+            views={
+              item.source === "jiosaavn" ||
+              (selectedSource === "youtubemusic" &&
+                selectedFilter === "songs") ||
+              item.views === "-1" ||
+              item.views === "0"
+                ? undefined
+                : item.views
+            }
+            videoCount={item.videoCount}
             uploaded={item.uploaded}
             thumbnailUrl={item.thumbnailUrl}
             isAlbum={!!item.albumId}
             albumYear={item.albumYear}
             source={item.source}
+            type={item.type}
+            channelDescription={item.description}
+            verified={item.verified}
+            searchFilter={selectedFilter}
+            searchSource={selectedSource}
           />
         </TouchableOpacity>
       ),
@@ -335,8 +352,13 @@ interface SearchResult {
   views?: string;
   img?: string;
   thumbnailUrl?: string;
-  source?: "youtube" | "soundcloud" | "jiosaavn" | "youtube_channel";
-  type?: "song" | "album" | "artist" | "unknown";
+  source?:
+    | "youtube"
+    | "soundcloud"
+    | "jiosaavn"
+    | "youtube_channel"
+    | "youtubemusic";
+  type?: "song" | "album" | "artist" | "playlist" | "unknown";
   albumId?: string;
   albumName?: string;
   albumYear?: string;
@@ -355,13 +377,12 @@ const searchFilters = [
   { value: "videos", label: "Videos" },
   { value: "channels", label: "Channels" },
   { value: "playlists", label: "Playlists" },
-  { value: "date", label: "Latest" },
-  { value: "views", label: "Popular" },
 ];
 
 const youtubeMusicFilters = [
-  { value: "", label: "All" },
+  { value: "songs", label: "Songs" },
   { value: "videos", label: "Videos" },
+  { value: "albums", label: "Albums" },
   { value: "playlists", label: "Playlists" },
   { value: "channels", label: "Artists" },
 ];
@@ -454,6 +475,7 @@ export default function SearchScreen({ navigation }: any) {
     page: 1,
     hasMore: true,
     isLoadingMore: false,
+    nextpage: null as string | null,
   });
 
   const retryRef = useRef({
@@ -561,6 +583,7 @@ export default function SearchScreen({ navigation }: any) {
           page: 1,
           hasMore: true,
           isLoadingMore: false,
+          nextpage: null,
         };
         // Reset retry counter for new searches
         retryRef.current.attempts = 0;
@@ -603,37 +626,58 @@ export default function SearchScreen({ navigation }: any) {
           console.log(t("search.spotify_not_implemented"));
           results = [];
         } else if (selectedSource === "youtubemusic") {
-          // YouTube Music Search
-          results = await searchAPI.searchWithYouTubeMusic(
+          const youtubeMusicResponse = await searchAPI.searchWithYouTubeMusic(
             queryToUse,
             selectedFilter,
             paginationRef.current.page,
-            20
+            20,
+            paginationRef.current.nextpage || undefined
           );
+          if (youtubeMusicResponse.nextpage) {
+            paginationRef.current.nextpage = youtubeMusicResponse.nextpage;
+          } else {
+            paginationRef.current.nextpage = null;
+          }
+          results = youtubeMusicResponse.items || [];
         } else {
           // YouTube (Default)
-          results =
-            selectedFilter === "date" || selectedFilter === "views"
-              ? await searchAPI.searchWithInvidious(
-                  queryToUse,
-                  selectedFilter,
-                  paginationRef.current.page,
-                  20
-                )
-              : await searchAPI.searchWithPiped(
-                  queryToUse,
-                  selectedFilter,
-                  paginationRef.current.page,
-                  20
-                );
+          if (selectedFilter === "date" || selectedFilter === "views") {
+            results = await searchAPI.searchWithInvidious(
+              queryToUse,
+              selectedFilter,
+              paginationRef.current.page,
+              20
+            );
+          } else {
+            // Handle Piped API response which returns {items, nextpage}
+            const pipedResponse = await searchAPI.searchWithPiped(
+              queryToUse,
+              selectedFilter,
+              paginationRef.current.page,
+              20,
+              paginationRef.current.nextpage || undefined
+            );
+            // Extract nextpage token for future pagination
+            if (pipedResponse.nextpage) {
+              paginationRef.current.nextpage = pipedResponse.nextpage;
+              console.log(
+                `[Search] Extracted nextpage token: ${pipedResponse.nextpage.substring(0, 50)}...`
+              );
+            } else {
+              paginationRef.current.nextpage = null;
+              console.log("[Search] No nextpage token in response");
+            }
+            results = pipedResponse.items;
+          }
         }
 
         console.log(`[Search] API returned ${results.length} results`);
         console.log(
           "[Search] First few API results:",
-          results
-            .slice(0, 3)
-            .map((item) => ({ id: item.videoId || item.id, title: item.title }))
+          results.slice(0, 3).map((item) => ({
+            id: item.videoId || item.id,
+            title: item.title,
+          }))
         );
 
         // Common formatter (only format if not already formatted)
@@ -652,7 +696,15 @@ export default function SearchScreen({ navigation }: any) {
         // Apply display formatting
         formattedResults = formattedResults.map((r) => ({
           ...r,
-          views: r.views ? shortCount(r.views) + " views" : undefined,
+          views:
+            selectedSource === "youtubemusic" &&
+            (selectedFilter === "songs" ||
+              selectedFilter === "all" ||
+              r.type === "song")
+              ? undefined
+              : r.views
+                ? shortCount(r.views) + " views"
+                : undefined,
           // Remove YouTube-specific noise from upload string
           uploaded:
             r.uploaded && typeof r.uploaded === "string"
@@ -669,10 +721,12 @@ export default function SearchScreen({ navigation }: any) {
                 (item.source === "youtube" ||
                   item.source === "youtube_channel") &&
                 (item.href?.includes("/channel/") || item.type === "channel")
-              )
-                return 0; // channels
-              if (item.type === "playlist" || item.href?.includes("&list="))
-                return 2; // playlists
+              ) {
+                return 0;
+              } // channels
+              if (item.type === "playlist" || item.href?.includes("&list=")) {
+                return 2;
+              } // playlists
               return 1; // videos
             } else {
               // youtubemusic
@@ -680,10 +734,12 @@ export default function SearchScreen({ navigation }: any) {
                 (item.source === "youtubemusic" ||
                   item.source === "youtube_channel") &&
                 (item.href?.includes("/channel/") || item.type === "channel")
-              )
-                return 0; // artists/channels
-              if (item.type === "playlist" || item.href?.includes("&list="))
-                return 2; // playlists
+              ) {
+                return 0;
+              } // artists/channels
+              if (item.type === "playlist" || item.href?.includes("&list=")) {
+                return 2;
+              } // playlists
               return 1; // videos
             }
           };
@@ -768,9 +824,10 @@ export default function SearchScreen({ navigation }: any) {
 
             return [...prev, ...newItems];
           });
-          // Check if we got fewer results than expected (indicating end of results)
-          const hasMore =
-            formattedResults.length >= 20 && formattedResults.length > 0; // Assume 20 items per page, but only if we got results
+          // Check if we have a nextpage token for pagination (Piped API uses nextpage tokens)
+          const hasMore = paginationRef.current.nextpage
+            ? true
+            : formattedResults.length >= 20 && formattedResults.length > 0;
           setHasMoreResults(hasMore);
           paginationRef.current.hasMore = hasMore;
           paginationRef.current.isLoadingMore = false;
@@ -782,8 +839,9 @@ export default function SearchScreen({ navigation }: any) {
           );
         } else {
           setSearchResults(formattedResults);
-          const hasMore =
-            formattedResults.length >= 20 && formattedResults.length > 0;
+          const hasMore = paginationRef.current.nextpage
+            ? true
+            : formattedResults.length >= 20 && formattedResults.length > 0;
           setHasMoreResults(hasMore);
           paginationRef.current.hasMore = hasMore;
           console.log(
@@ -870,11 +928,10 @@ export default function SearchScreen({ navigation }: any) {
     // Set appropriate default filter for each source
     if (selectedSource === "soundcloud") {
       setSelectedFilter("tracks");
-    } else if (
-      selectedSource === "youtube" ||
-      selectedSource === "youtubemusic"
-    ) {
-      setSelectedFilter(""); // "All" filter
+    } else if (selectedSource === "youtubemusic") {
+      setSelectedFilter("songs"); // Default to "Songs" for YouTube Music
+    } else if (selectedSource === "youtube") {
+      setSelectedFilter(""); // "All" filter for YouTube
     } else {
       setSelectedFilter(""); // Default to "All" for other sources
     }
@@ -897,8 +954,9 @@ export default function SearchScreen({ navigation }: any) {
 
   // Memoized filtering functions for better performance
   const filteredResults = useMemo(() => {
-    if (!searchResults.length)
+    if (!searchResults.length) {
       return { topResults: [], artists: [], albums: [], songs: [] };
+    }
 
     // Pre-calculate collaboration check for better performance
     const isSearchingForIndividualArtist =
@@ -919,7 +977,9 @@ export default function SearchScreen({ navigation }: any) {
 
     const artists = searchResults
       .filter((item) => {
-        if (item.type !== "artist") return false;
+        if (item.type !== "artist") {
+          return false;
+        }
 
         // Skip collaboration artists for individual searches
         if (isSearchingForIndividualArtist && isCollaboration(item.title)) {
@@ -934,19 +994,39 @@ export default function SearchScreen({ navigation }: any) {
         const aIsExact = a.title.toLowerCase().trim() === queryLower;
         const bIsExact = b.title.toLowerCase().trim() === queryLower;
 
-        if (aIsExact && !bIsExact) return -1;
-        if (!aIsExact && bIsExact) return 1;
+        if (aIsExact && !bIsExact) {
+          return -1;
+        }
+        if (!aIsExact && bIsExact) {
+          return 1;
+        }
         return 0;
       });
 
-    const albums = searchResults.filter((item) => item.type === "album");
+    const albums = searchResults.filter((item) => {
+      // Filter out albums for YouTube and YouTube Music sources
+      if (
+        item.type === "album" &&
+        (item.source === "youtube" || item.source === "youtubemusic")
+      ) {
+        return false;
+      }
+      return item.type === "album";
+    });
+    const playlists = searchResults.filter(
+      (item) => item.type === "playlist" || item.href?.includes("&list=")
+    );
 
     const songs = searchResults.filter((item) => {
       // Filter songs by type - combine both conditions in one filter
-      if (item.type && item.type !== "song") return false;
+      if (item.type && item.type !== "song") {
+        return false;
+      }
 
       // For items without explicit type, check if they have duration (indicating they're songs)
-      if (!item.type && !item.duration) return false;
+      if (!item.type && !item.duration) {
+        return false;
+      }
 
       // Skip collaboration songs for individual artist searches
       if (
@@ -965,6 +1045,7 @@ export default function SearchScreen({ navigation }: any) {
     console.log("[Filter] Top results:", topResults.length);
     console.log("[Filter] Artists:", artists.length);
     console.log("[Filter] Albums:", albums.length);
+    console.log("[Filter] Playlists:", playlists.length);
     console.log("[Filter] Songs:", songs.length);
     if (searchResults.length > 0) {
       console.log(
@@ -975,7 +1056,7 @@ export default function SearchScreen({ navigation }: any) {
       );
     }
 
-    return { topResults, artists, albums, songs };
+    return { topResults, artists, albums, playlists, songs };
   }, [searchResults, searchQuery]);
 
   // Optimized item press handlers
@@ -1048,6 +1129,15 @@ export default function SearchScreen({ navigation }: any) {
           albumArtist: item.author,
           source: item.source,
         });
+      } else if (item.source === "youtube" || item.source === "youtubemusic") {
+        // Handle YouTube/YouTube Music playlists
+        navigation.navigate("AlbumPlaylist", {
+          albumId: item.id,
+          albumName: item.title,
+          albumArtist: item.author,
+          source: item.source,
+          videoCount: item.videoCount,
+        });
       }
     },
     [navigation]
@@ -1083,9 +1173,11 @@ export default function SearchScreen({ navigation }: any) {
               t("screens.artist.unknown_title"),
             artist:
               song.artists?.primary
-                ?.map((artist: any) => artist.name)
+                ?.map((artist: any) =>
+                  artist.name?.replace(/\s*-\s*Topic$/i, "")
+                )
                 .join(", ") ||
-              song.singers ||
+              song.singers?.replace(/\s*-\s*Topic$/i, "") ||
               t("screens.artist.unknown_artist"),
             duration: song.duration || 0,
             thumbnail:
@@ -1444,11 +1536,28 @@ export default function SearchScreen({ navigation }: any) {
                 />
               )}
 
-              {/* Albums Section */}
-              {filteredResults.albums.length > 0 && (
+              {/* Albums Section - Hide for YouTube and YouTube Music */}
+              {filteredResults.albums.length > 0 &&
+                selectedSource !== "youtube" &&
+                selectedSource !== "youtubemusic" && (
+                  <SearchSection
+                    items={filteredResults.albums}
+                    title="Albums"
+                    onItemPress={handleAlbumPress}
+                    searchQuery={searchQuery}
+                    showSuggestions={showSuggestions}
+                    setShowSuggestions={setShowSuggestions}
+                    navigation={navigation}
+                    playTrack={playTrack}
+                    searchResults={searchResults}
+                  />
+                )}
+
+              {/* Playlists Section */}
+              {filteredResults.playlists.length > 0 && (
                 <SearchSection
-                  items={filteredResults.albums}
-                  title="Albums"
+                  items={filteredResults.playlists}
+                  title="Playlists"
                   onItemPress={handleAlbumPress}
                   searchQuery={searchQuery}
                   showSuggestions={showSuggestions}
@@ -1474,27 +1583,35 @@ export default function SearchScreen({ navigation }: any) {
                 />
               )}
 
-              {/* Load More Button - Only at the end of all content */}
-              {hasMoreResults && (
+              {/* Load More Button or End of Results - Only at the end of all content */}
+              {!hasMoreResults && searchResults.length > 0 ? (
                 <View style={{ paddingVertical: 20, alignItems: "center" }}>
-                  {isLoadingMore ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <TouchableOpacity
-                      onPress={loadMoreResults}
-                      style={{
-                        backgroundColor: "#333",
-                        paddingHorizontal: 20,
-                        paddingVertical: 10,
-                        borderRadius: 20,
-                      }}
-                    >
-                      <Text style={{ color: "#fff", fontSize: 14 }}>
-                        Load More
-                      </Text>
-                    </TouchableOpacity>
-                  )}
+                  <Text style={{ color: "#a3a3a3", fontSize: 14 }}>
+                    End of search results
+                  </Text>
                 </View>
+              ) : (
+                hasMoreResults && (
+                  <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                    {isLoadingMore ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <TouchableOpacity
+                        onPress={loadMoreResults}
+                        style={{
+                          backgroundColor: "#333",
+                          paddingHorizontal: 20,
+                          paddingVertical: 10,
+                          borderRadius: 20,
+                        }}
+                      >
+                        <Text style={{ color: "#fff", fontSize: 14 }}>
+                          Load More
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )
               )}
             </>
           )}

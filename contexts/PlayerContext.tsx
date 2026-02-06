@@ -6,7 +6,7 @@ import React, {
   useRef,
   useEffect,
 } from "react";
-import TrackPlayer, { State, Event } from "react-native-track-player";
+import TrackPlayer, { State, Event } from "../utils/safeTrackPlayer";
 import * as FileSystem from "expo-file-system";
 import {
   AudioStreamManager,
@@ -256,10 +256,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [cacheProgress?.percentage, currentTrack?.id]);
 
-  // Update color theme only when track is ready (after loading completes)
+  // Update color theme immediately when track changes (before loading completes)
   useEffect(() => {
     const updateTheme = async () => {
-      if (!currentTrack?.thumbnail || isLoading) {
+      if (!currentTrack?.thumbnail) {
         setColorTheme({
           primary: "#ffffff",
           secondary: "#ffffff",
@@ -280,7 +280,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     };
 
     updateTheme();
-  }, [currentTrack?.thumbnail, isLoading]);
+  }, [currentTrack?.thumbnail]);
 
   // Monitor stream health and refresh if needed
   useEffect(() => {

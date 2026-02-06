@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { ScrollView } from "react-native";
 import styled from "styled-components/native";
-import StreamItem from "../StreamItem";
+import { default as StreamItem } from "../StreamItem";
 import { SafeArea } from "../SafeArea";
 import { LinearGradient } from "expo-linear-gradient";
 import { usePlayer } from "../../contexts/PlayerContext";
@@ -9,43 +9,36 @@ import {
   FeaturedPlaylistSkeleton,
   CategoryPlaylistSkeleton,
 } from "../SkeletonLoader";
+import {
+  getJioSaavnPlaylistEndpoint,
+  getJioSaavnPlaylistByIdEndpoint,
+  fetchWithRetry,
+} from "../core/api";
 
 // API endpoints for your Lowkey Backend
 const CATEGORY_APIS = {
-  indie:
-    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=indie",
-  edm: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=edm",
-  metal:
-    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=metal",
-  punk: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=punk",
-  party:
-    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=party",
-  jazz: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=jazz",
-  love: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=love",
-  rap: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=rap",
-  workout:
-    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=workout",
-  pop: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=pop",
-  hiphop:
-    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=hiphop",
-  rock: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=rock",
-  melody:
-    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=melody",
-  lofi: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=lofi",
-  chill:
-    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=chill",
-  focus:
-    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=focus",
-  instrumental:
-    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=instrumental",
-  folk: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=folk",
-  devotional:
-    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=devotional",
-  ambient:
-    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=ambient",
-  sleep:
-    "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=sleep",
-  soul: "https://streamifyjiosaavn.vercel.app/api/search/playlists?query=soul",
+  indie: getJioSaavnPlaylistEndpoint("indie"),
+  edm: getJioSaavnPlaylistEndpoint("edm"),
+  metal: getJioSaavnPlaylistEndpoint("metal"),
+  punk: getJioSaavnPlaylistEndpoint("punk"),
+  party: getJioSaavnPlaylistEndpoint("party"),
+  jazz: getJioSaavnPlaylistEndpoint("jazz"),
+  love: getJioSaavnPlaylistEndpoint("love"),
+  rap: getJioSaavnPlaylistEndpoint("rap"),
+  workout: getJioSaavnPlaylistEndpoint("workout"),
+  pop: getJioSaavnPlaylistEndpoint("pop"),
+  hiphop: getJioSaavnPlaylistEndpoint("hiphop"),
+  rock: getJioSaavnPlaylistEndpoint("rock"),
+  melody: getJioSaavnPlaylistEndpoint("melody"),
+  lofi: getJioSaavnPlaylistEndpoint("lofi"),
+  chill: getJioSaavnPlaylistEndpoint("chill"),
+  focus: getJioSaavnPlaylistEndpoint("focus"),
+  instrumental: getJioSaavnPlaylistEndpoint("instrumental"),
+  folk: getJioSaavnPlaylistEndpoint("folk"),
+  devotional: getJioSaavnPlaylistEndpoint("devotional"),
+  ambient: getJioSaavnPlaylistEndpoint("ambient"),
+  sleep: getJioSaavnPlaylistEndpoint("sleep"),
+  soul: getJioSaavnPlaylistEndpoint("soul"),
 };
 
 // Featured playlist IDs
@@ -270,10 +263,12 @@ export default function HomeScreen({ navigation }: any) {
   // Fetch playlist data for a specific category
   const fetchCategoryPlaylists = async (category: string) => {
     try {
-      const response = await fetch(
+      const data = await fetchWithRetry<any>(
         CATEGORY_APIS[category as keyof typeof CATEGORY_APIS],
+        {},
+        3,
+        1000
       );
-      const data = await response.json();
 
       if (data.success && data.data?.results) {
         const playlists = data.data.results.slice(0, 6);
@@ -292,10 +287,16 @@ export default function HomeScreen({ navigation }: any) {
       // Fetch all featured playlists in parallel for faster loading
       const playlistPromises = FEATURED_PLAYLIST_IDS.map(async (playlistId) => {
         try {
-          const response = await fetch(
-            `https://streamifyjiosaavn.vercel.app/api/playlists?id=${playlistId}`,
+          const data = await fetchWithRetry<any>(
+            getJioSaavnPlaylistByIdEndpoint(playlistId),
+            {},
+            3,
+            1000
           );
-          const data = await response.json();
+          console.log(
+            `[DEBUG] Playlist ${playlistId} response:`,
+            JSON.stringify(data, null, 2)
+          );
           if (data.success && data.data) {
             return data.data;
           }
@@ -303,7 +304,7 @@ export default function HomeScreen({ navigation }: any) {
         } catch (error) {
           console.error(
             `Failed to fetch featured playlist ${playlistId}:`,
-            error,
+            error
           );
           return null;
         }
@@ -314,10 +315,85 @@ export default function HomeScreen({ navigation }: any) {
 
       // Filter out any null results (failed fetches)
       const validPlaylists = featuredData.filter(
-        (playlist) => playlist !== null,
+        (playlist) => playlist !== null
       );
 
-      setFeaturedPlaylists(validPlaylists);
+      console.log(`[DEBUG] Valid playlists count: ${validPlaylists.length}`);
+      console.log(
+        `[DEBUG] First playlist structure:`,
+        JSON.stringify(validPlaylists[0], null, 2)
+      );
+
+      // Transform playlist data to match expected interface
+      const transformedPlaylists = validPlaylists.map((playlist) => {
+        try {
+          // Handle different possible API response formats
+          const playlistData = {
+            id: playlist.id || playlist.playlistId || "",
+            name:
+              playlist.name ||
+              playlist.title ||
+              playlist.playlistName ||
+              "Unknown Playlist",
+            type: playlist.type || "playlist",
+            image:
+              playlist.image || playlist.images || playlist.imageUrl
+                ? Array.isArray(playlist.image)
+                  ? playlist.image
+                  : Array.isArray(playlist.images)
+                    ? playlist.images
+                    : playlist.imageUrl
+                      ? [{ quality: "500x500", url: playlist.imageUrl }]
+                      : []
+                : [],
+            url: playlist.url || playlist.permaUrl || "",
+            songCount:
+              playlist.songCount ||
+              playlist.songsCount ||
+              playlist.songs?.length ||
+              0,
+            language: playlist.language || "Unknown",
+            explicitContent: playlist.explicitContent || false,
+          };
+
+          // If no images found, add a default one
+          if (playlistData.image.length === 0) {
+            playlistData.image = [
+              {
+                quality: "500x500",
+                url: "https://via.placeholder.com/500x500.png?text=No+Image",
+              },
+            ];
+          }
+
+          return playlistData;
+        } catch (error) {
+          console.error(`[DEBUG] Error transforming playlist:`, error);
+          // Return a default playlist structure if transformation fails
+          return {
+            id: "error",
+            name: "Error Loading Playlist",
+            type: "playlist",
+            image: [
+              {
+                quality: "500x500",
+                url: "https://via.placeholder.com/500x500.png?text=Error",
+              },
+            ],
+            url: "",
+            songCount: 0,
+            language: "Unknown",
+            explicitContent: false,
+          };
+        }
+      });
+
+      console.log(
+        `[DEBUG] Transformed first playlist:`,
+        JSON.stringify(transformedPlaylists[0], null, 2)
+      );
+
+      setFeaturedPlaylists(transformedPlaylists);
     } catch (error) {
       console.error("Failed to fetch featured playlists:", error);
     } finally {
@@ -402,16 +478,33 @@ export default function HomeScreen({ navigation }: any) {
   };
 
   const getPlaylistImageSource = (playlist: Playlist) => {
-    const highQualityImage = playlist.image.find(
-      (img) => img.quality === "500x500",
-    );
-    const imageUrl = highQualityImage?.url || playlist.image[0]?.url;
+    try {
+      console.log(
+        `[DEBUG] Playlist ${playlist.id} image data:`,
+        JSON.stringify(playlist.image, null, 2)
+      );
 
-    // Return the image URL as URI or fallback image source
-    if (imageUrl) {
-      return { uri: imageUrl };
+      // Ensure playlist.image is an array
+      const imageArray = Array.isArray(playlist.image) ? playlist.image : [];
+
+      const highQualityImage = imageArray.find(
+        (img) => img && img.quality === "500x500"
+      );
+      const imageUrl = highQualityImage?.url || imageArray[0]?.url;
+
+      // Return the image URL as URI or fallback image source
+      if (imageUrl) {
+        return { uri: imageUrl };
+      } else {
+        return require("../../assets/StreamifyLogo.png");
+      }
+    } catch (error) {
+      console.error(
+        `[DEBUG] Error in getPlaylistImageSource for playlist ${playlist.id}:`,
+        error
+      );
+      return require("../../assets/StreamifyLogo.png");
     }
-    return require("../../assets/StreamifyLogo.png");
   };
 
   const formatSongCount = (count: number) => {

@@ -1,6 +1,6 @@
 import TrackPlayer, {
-  Event,
-  Capability,
+  Event as TrackPlayerEvent,
+  Capability as TrackPlayerCapability,
   RepeatMode,
   AppKilledPlaybackBehavior,
   State,
@@ -8,10 +8,149 @@ import TrackPlayer, {
   IOSCategoryMode,
   IOSCategoryOptions,
   PitchAlgorithm,
-} from "react-native-track-player";
+} from "../utils/safeTrackPlayer";
 import { t } from "../utils/localization";
 import { Platform, NativeModules } from "react-native";
 import { Track } from "../contexts/PlayerContext";
+
+// Comprehensive fallback constants for TrackPlayer capabilities
+const CAPABILITY_FALLBACKS = {
+  Play: "play",
+  Pause: "pause",
+  SkipToNext: "skipToNext",
+  SkipToPrevious: "skipToPrevious",
+  Stop: "stop",
+  SeekTo: "seekTo",
+  JumpForward: "jumpForward",
+  JumpBackward: "jumpBackward",
+  Like: "like",
+  Dislike: "dislike",
+  Bookmark: "bookmark",
+} as const;
+
+// Fallback constants for TrackPlayer events
+const EVENT_FALLBACKS = {
+  RemotePlay: "remote-play",
+  RemotePause: "remote-pause",
+  RemoteStop: "remote-stop",
+  RemoteNext: "remote-next",
+  RemotePrevious: "remote-previous",
+  RemoteSeek: "remote-seek",
+  RemoteDuck: "remote-duck",
+  PlaybackQueueEnded: "playback-queue-ended",
+  PlaybackTrackChanged: "playback-track-changed",
+  PlaybackProgressUpdated: "playback-progress-updated",
+} as const;
+
+// Safe capability constants with fallbacks
+const Capability = TrackPlayerCapability || CAPABILITY_FALLBACKS;
+const Event = TrackPlayerEvent || EVENT_FALLBACKS;
+
+// Additional safety check for individual capability constants
+const getSafeCapability = (
+  capabilityName: keyof typeof CAPABILITY_FALLBACKS,
+): any => {
+  try {
+    // Return the actual Capability enum value if available, otherwise use fallback string
+    return TrackPlayerCapability
+      ? TrackPlayerCapability[capabilityName]
+      : CAPABILITY_FALLBACKS[capabilityName];
+  } catch (error) {
+    console.warn(
+      `[TrackPlayerService] Failed to get capability ${capabilityName}, using fallback`,
+    );
+    return CAPABILITY_FALLBACKS[capabilityName];
+  }
+};
+
+// Additional safety check for individual event constants
+const getSafeEvent = (eventName: keyof typeof EVENT_FALLBACKS): any => {
+  try {
+    return Event[eventName] || EVENT_FALLBACKS[eventName];
+  } catch (error) {
+    console.warn(
+      `[TrackPlayerService] Failed to get event ${eventName}, using fallback`,
+    );
+    return EVENT_FALLBACKS[eventName];
+  }
+};
+
+// Module-level initialization check
+const initializeTrackPlayerConstants = () => {
+  try {
+    console.log("[TrackPlayerService] Initializing TrackPlayer constants...");
+
+    // Check if TrackPlayer module is available
+    if (!TrackPlayer) {
+      console.error("[TrackPlayerService] TrackPlayer module is null!");
+      return false;
+    }
+
+    // Check if native module is available
+    const nativeTrackPlayer =
+      (NativeModules as any).TrackPlayerModule ||
+      (NativeModules as any).TrackPlayer;
+
+    if (!nativeTrackPlayer) {
+      console.error("[TrackPlayerService] Native TrackPlayer module is null!");
+      return false;
+    }
+
+    // Validate capability constants
+    const capabilityCheck = {
+      original: TrackPlayerCapability,
+      fallback: CAPABILITY_FALLBACKS,
+      usingFallback: !TrackPlayerCapability,
+    };
+
+    const eventCheck = {
+      original: TrackPlayerEvent,
+      fallback: EVENT_FALLBACKS,
+      usingFallback: !TrackPlayerEvent,
+    };
+
+    console.log(
+      "[TrackPlayerService] Capability constants check:",
+      capabilityCheck,
+    );
+    console.log("[TrackPlayerService] Event constants check:", eventCheck);
+
+    // Test if we can access the constants without errors
+    if (TrackPlayerCapability) {
+      try {
+        const testCapabilities = [
+          TrackPlayerCapability.Play,
+          TrackPlayerCapability.Pause,
+          TrackPlayerCapability.SkipToNext,
+          TrackPlayerCapability.SkipToPrevious,
+        ];
+        console.log(
+          "[TrackPlayerService] Successfully accessed capability constants",
+        );
+      } catch (error) {
+        console.warn(
+          "[TrackPlayerService] Error accessing capability constants, will use fallbacks:",
+          error,
+        );
+      }
+    }
+
+    return true;
+  } catch (error) {
+    console.error(
+      "[TrackPlayerService] Failed to initialize TrackPlayer constants:",
+      error,
+    );
+    return false;
+  }
+};
+
+// Initialize constants immediately when module loads
+const constantsInitialized = initializeTrackPlayerConstants();
+console.log(
+  "[TrackPlayerService] Constants initialization result:",
+  constantsInitialized,
+);
 
 // TurboModule compatibility workaround
 const setupTurboModuleCompatibility = () => {
@@ -31,7 +170,7 @@ const setupTurboModuleCompatibility = () => {
           return originalGetConstants.call(this);
         } catch (e) {
           console.warn(
-            "[TrackPlayerService] TurboModule getConstants error, returning safe defaults"
+            "[TrackPlayerService] TurboModule getConstants error, returning safe defaults",
           );
           return {
             STATE_NONE: 0,
@@ -62,13 +201,21 @@ const setupTurboModuleCompatibility = () => {
             } catch (e) {
               console.warn(
                 `[TrackPlayerService] TurboModule ${method} error:`,
-                e
+                e,
               );
               // Return safe defaults for sync methods
-              if (method === "getState") return Promise.resolve(0);
-              if (method === "getPosition") return Promise.resolve(0);
-              if (method === "getDuration") return Promise.resolve(0);
-              if (method === "getBufferedPosition") return Promise.resolve(0);
+              if (method === "getState") {
+                return Promise.resolve(0);
+              }
+              if (method === "getPosition") {
+                return Promise.resolve(0);
+              }
+              if (method === "getDuration") {
+                return Promise.resolve(0);
+              }
+              if (method === "getBufferedPosition") {
+                return Promise.resolve(0);
+              }
               return Promise.resolve(0);
             }
           };
@@ -80,7 +227,7 @@ const setupTurboModuleCompatibility = () => {
   } catch (error) {
     console.warn(
       "[TrackPlayerService] Failed to apply TurboModule compatibility layer:",
-      error
+      error,
     );
   }
 };
@@ -100,7 +247,7 @@ export class TrackPlayerService {
       } catch (error) {
         console.error(
           "[TrackPlayerService] Failed to create TrackPlayerService instance:",
-          error
+          error,
         );
         throw error;
       }
@@ -112,7 +259,7 @@ export class TrackPlayerService {
     // Check if TrackPlayer is available and initialized
     if (!TrackPlayer) {
       throw new Error(
-        "TrackPlayer is not available - make sure react-native-track-player is properly installed"
+        "TrackPlayer is not available - make sure react-native-track-player is properly installed",
       );
     }
 
@@ -123,7 +270,7 @@ export class TrackPlayerService {
 
     if (!nativeTrackPlayer) {
       throw new Error(
-        "Native TrackPlayer module is not available. If you are using Expo, make sure you are *not* running in Expo Go and that you have rebuilt the app after installing react-native-track-player."
+        "Native TrackPlayer module is not available. If you are using Expo, make sure you are *not* running in Expo Go and that you have rebuilt the app after installing react-native-track-player.",
       );
     }
 
@@ -140,7 +287,7 @@ export class TrackPlayerService {
             return originalGetConstants.call(this);
           } catch (e) {
             console.warn(
-              "[TrackPlayerService] TurboModule getConstants error, returning empty object"
+              "[TrackPlayerService] TurboModule getConstants error, returning empty object",
             );
             return {};
           }
@@ -148,7 +295,7 @@ export class TrackPlayerService {
       } catch (e) {
         console.warn(
           "[TrackPlayerService] Failed to wrap native module methods:",
-          e
+          e,
         );
       }
     }
@@ -160,14 +307,16 @@ export class TrackPlayerService {
       console.log("[TrackPlayerService] TrackPlayer state check:", state);
     } catch (error) {
       console.warn(
-        "[TrackPlayerService] TrackPlayer not ready, attempting setup..."
+        "[TrackPlayerService] TrackPlayer not ready, attempting setup...",
       );
       await this.setupPlayer();
     }
   }
 
   async setupPlayer() {
-    if (this.isSetup) return;
+    if (this.isSetup) {
+      return;
+    }
 
     try {
       console.log("[TrackPlayerService] Setting up TrackPlayer...");
@@ -176,8 +325,37 @@ export class TrackPlayerService {
       if (!TrackPlayer) {
         console.error("[TrackPlayerService] TrackPlayer is null!");
         throw new Error(
-          "TrackPlayer is not available - make sure react-native-track-player is properly installed"
+          "TrackPlayer is not available - make sure react-native-track-player is properly installed",
         );
+      }
+
+      // Check if Capability constants are available
+      if (!Capability) {
+        console.warn(
+          "[TrackPlayerService] Capability constants are null, using string fallbacks",
+        );
+      } else {
+        console.log(
+          "[TrackPlayerService] Capability constants available:",
+          Object.keys(Capability),
+        );
+        // Test individual capabilities to ensure they're not null
+        try {
+          const testCapabilities = [
+            getSafeCapability("Play"),
+            getSafeCapability("Pause"),
+            getSafeCapability("SkipToNext"),
+            getSafeCapability("SkipToPrevious"),
+          ];
+          console.log(
+            "[TrackPlayerService] All capability fallbacks working correctly",
+          );
+        } catch (error) {
+          console.error(
+            "[TrackPlayerService] Error testing capability fallbacks:",
+            error,
+          );
+        }
       }
 
       // Check if native module behind TrackPlayer is available
@@ -187,10 +365,10 @@ export class TrackPlayerService {
 
       if (!nativeTrackPlayer) {
         console.error(
-          "[TrackPlayerService] Native TrackPlayer module is null - this usually means the native module is not linked or you are running in an environment (like Expo Go or web) that does not support react-native-track-player."
+          "[TrackPlayerService] Native TrackPlayer module is null - this usually means the native module is not linked or you are running in an environment (like Expo Go or web) that does not support react-native-track-player.",
         );
         throw new Error(
-          "Native TrackPlayer module is not available. Rebuild the app after installing react-native-track-player and avoid running in Expo Go."
+          "Native TrackPlayer module is not available. Rebuild the app after installing react-native-track-player and avoid running in Expo Go.",
         );
       }
 
@@ -201,23 +379,23 @@ export class TrackPlayerService {
           const constants = nativeTrackPlayer.getConstants();
           console.log(
             "[TrackPlayerService] TrackPlayer constants available:",
-            !!constants
+            !!constants,
           );
         }
       } catch (turboError) {
         console.warn(
-          "[TrackPlayerService] TurboModule compatibility issue detected, continuing with setup..."
+          "[TrackPlayerService] TurboModule compatibility issue detected, continuing with setup...",
         );
         // Continue with setup even if there are TurboModule issues
       }
 
       console.log(
         "[TrackPlayerService] TrackPlayer object type:",
-        typeof TrackPlayer
+        typeof TrackPlayer,
       );
       console.log(
         "[TrackPlayerService] TrackPlayer methods:",
-        Object.keys(TrackPlayer)
+        Object.keys(TrackPlayer),
       );
 
       // Add a small delay to ensure native module is ready during development reload
@@ -233,8 +411,67 @@ export class TrackPlayerService {
         ],
       });
       console.log(
-        "[TrackPlayerService] TrackPlayer setup completed successfully"
+        "[TrackPlayerService] TrackPlayer setup completed successfully",
       );
+
+      // Build capabilities array safely
+      const capabilities = [];
+      const compactCapabilities = [];
+      const notificationCapabilities = [];
+
+      // Only use actual Capability constants if they're available
+      if (TrackPlayerCapability) {
+        try {
+          capabilities.push(
+            TrackPlayerCapability.Play,
+            TrackPlayerCapability.Pause,
+            TrackPlayerCapability.SkipToNext,
+            TrackPlayerCapability.SkipToPrevious,
+            TrackPlayerCapability.Stop,
+            TrackPlayerCapability.SeekTo,
+          );
+          compactCapabilities.push(
+            TrackPlayerCapability.Play,
+            TrackPlayerCapability.Pause,
+            TrackPlayerCapability.SkipToNext,
+            TrackPlayerCapability.SkipToPrevious,
+          );
+          notificationCapabilities.push(
+            TrackPlayerCapability.Play,
+            TrackPlayerCapability.Pause,
+            TrackPlayerCapability.SkipToNext,
+            TrackPlayerCapability.SkipToPrevious,
+          );
+        } catch (error) {
+          console.warn(
+            "[TrackPlayerService] Error accessing capability constants, using fallbacks",
+          );
+        }
+      }
+
+      // If no capabilities were added (constants are null), use string fallbacks
+      if (capabilities.length === 0) {
+        capabilities.push(
+          "play",
+          "pause",
+          "skipToNext",
+          "skipToPrevious",
+          "stop",
+          "seekTo",
+        );
+        compactCapabilities.push(
+          "play",
+          "pause",
+          "skipToNext",
+          "skipToPrevious",
+        );
+        notificationCapabilities.push(
+          "play",
+          "pause",
+          "skipToNext",
+          "skipToPrevious",
+        );
+      }
 
       await TrackPlayer.updateOptions({
         android: {
@@ -244,26 +481,9 @@ export class TrackPlayerService {
         // This is the key for proper media session integration
         // The service will automatically handle media session creation
         progressUpdateEventInterval: 1,
-        capabilities: [
-          Capability.Play,
-          Capability.Pause,
-          Capability.SkipToNext,
-          Capability.SkipToPrevious,
-          Capability.Stop,
-          Capability.SeekTo,
-        ],
-        compactCapabilities: [
-          Capability.Play,
-          Capability.Pause,
-          Capability.SkipToNext,
-          Capability.SkipToPrevious,
-        ],
-        notificationCapabilities: [
-          Capability.Play,
-          Capability.Pause,
-          Capability.SkipToNext,
-          Capability.SkipToPrevious,
-        ],
+        capabilities,
+        compactCapabilities,
+        notificationCapabilities,
       });
 
       this.setupEventListeners();
@@ -276,41 +496,44 @@ export class TrackPlayerService {
   }
 
   private setupEventListeners() {
-    TrackPlayer.addEventListener(Event.RemotePlay, () => {
+    TrackPlayer.addEventListener(getSafeEvent("RemotePlay"), () => {
       TrackPlayer.play();
     });
 
-    TrackPlayer.addEventListener(Event.RemotePause, () => {
+    TrackPlayer.addEventListener(getSafeEvent("RemotePause"), () => {
       TrackPlayer.pause();
     });
 
-    TrackPlayer.addEventListener(Event.RemoteNext, () => {
+    TrackPlayer.addEventListener(getSafeEvent("RemoteNext"), () => {
       TrackPlayer.skipToNext();
     });
 
-    TrackPlayer.addEventListener(Event.RemotePrevious, () => {
+    TrackPlayer.addEventListener(getSafeEvent("RemotePrevious"), () => {
       TrackPlayer.skipToPrevious();
     });
 
-    TrackPlayer.addEventListener(Event.RemoteStop, () => {
+    TrackPlayer.addEventListener(getSafeEvent("RemoteStop"), () => {
       TrackPlayer.stop();
     });
 
-    TrackPlayer.addEventListener(Event.RemoteSeek, (event) => {
+    TrackPlayer.addEventListener(getSafeEvent("RemoteSeek"), (event: any) => {
       TrackPlayer.seekTo(event.position);
     });
 
-    TrackPlayer.addEventListener(Event.PlaybackQueueEnded, () => {
+    TrackPlayer.addEventListener(getSafeEvent("PlaybackQueueEnded"), () => {
       console.log("[TrackPlayerService] Playback queue ended");
     });
 
-    TrackPlayer.addEventListener(Event.PlaybackTrackChanged, (event) => {
-      console.log(
-        "[TrackPlayerService] Track changed to index:",
-        event.nextTrack
-      );
-      this.currentTrackIndex = event.nextTrack || 0;
-    });
+    TrackPlayer.addEventListener(
+      getSafeEvent("PlaybackTrackChanged"),
+      (event: any) => {
+        console.log(
+          "[TrackPlayerService] Track changed to index:",
+          event.nextTrack,
+        );
+        this.currentTrackIndex = event.nextTrack || 0;
+      },
+    );
   }
 
   convertTrackToTrackPlayer(track: Track, index: number) {
@@ -338,18 +561,18 @@ export class TrackPlayerService {
     try {
       console.log(
         "[TrackPlayerService] addTracks called, isSetup:",
-        this.isSetup
+        this.isSetup,
       );
 
       // Ensure player is initialized and ready before adding tracks
       await this.ensureTrackPlayerReady();
 
       console.log(
-        "[TrackPlayerService] Player setup complete, proceeding with addTracks"
+        "[TrackPlayerService] Player setup complete, proceeding with addTracks",
       );
 
       const trackPlayerTracks = tracks.map((track, index) =>
-        this.convertTrackToTrackPlayer(track, index)
+        this.convertTrackToTrackPlayer(track, index),
       );
 
       console.log("[TrackPlayerService] About to call TrackPlayer.reset()");
@@ -357,12 +580,12 @@ export class TrackPlayerService {
       try {
         await TrackPlayer.reset();
         console.log(
-          "[TrackPlayerService] TrackPlayer.reset() completed successfully"
+          "[TrackPlayerService] TrackPlayer.reset() completed successfully",
         );
       } catch (resetError) {
         console.error(
           "[TrackPlayerService] TrackPlayer.reset() failed:",
-          resetError
+          resetError,
         );
         console.error("[TrackPlayerService] TrackPlayer object:", TrackPlayer);
         throw resetError;
@@ -380,7 +603,7 @@ export class TrackPlayerService {
         "[TrackPlayerService] Added",
         tracks.length,
         "tracks starting at index",
-        startIndex
+        startIndex,
       );
     } catch (error) {
       console.error("[TrackPlayerService] Failed to add tracks:", error);
@@ -436,7 +659,7 @@ export class TrackPlayerService {
       await TrackPlayer.skipToNext();
       this.currentTrackIndex = Math.min(
         this.currentTrackIndex + 1,
-        this.playlist.length - 1
+        this.playlist.length - 1,
       );
       console.log("[TrackPlayerService] Skipped to next track");
     } catch (error) {
@@ -504,7 +727,7 @@ export class TrackPlayerService {
     } catch (error) {
       console.error(
         "[TrackPlayerService] Failed to get playback state:",
-        error
+        error,
       );
       return { state: State.None };
     }
@@ -542,7 +765,7 @@ export class TrackPlayerService {
 
   async setRepeatMode(mode: "off" | "one" | "all") {
     try {
-      let repeatMode: RepeatMode;
+      let repeatMode: any;
       switch (mode) {
         case "one":
           repeatMode = RepeatMode.Track;
@@ -604,12 +827,12 @@ export class TrackPlayerService {
 
       console.log(
         "[TrackPlayerService] Updated current track with new URL:",
-        newAudioUrl
+        newAudioUrl,
       );
     } catch (error) {
       console.error(
         "[TrackPlayerService] Failed to update current track:",
-        error
+        error,
       );
       throw error;
     }

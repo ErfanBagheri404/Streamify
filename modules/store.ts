@@ -1,5 +1,8 @@
 export const params = new URL(location.href).searchParams;
 
+// Import centralized API configuration
+import { API } from "../components/core/api";
+
 // Import missing types
 type CollectionItem = {
   id: string;
@@ -67,7 +70,7 @@ if (savedStore) {
 
 export function setState<K extends keyof AppSettings>(
   key: K,
-  val: AppSettings[K],
+  val: AppSettings[K]
 ) {
   state[key] = val;
   const str = JSON.stringify(state);
@@ -117,7 +120,7 @@ export const store: {
     hls: {
       src: () => "",
       manifests: [],
-      api: ["https://api.piped.private.coffee"],
+      api: [...API.piped],
     },
     supportsOpus: navigator.mediaCapabilities
       .decodingInfo({
@@ -147,15 +150,9 @@ export const store: {
   },
   streamHistory: [],
   api: {
-    piped: ["https://api.piped.private.coffee"],
+    piped: [...API.piped],
     proxy: [],
-    invidious: [
-      "https://yewtu.be",
-      "https://inv.nadeko.net",
-      "https://invidious.nerdvpn.de/",
-      "https://invidious.f5.si/",
-      "https://inv.perditum.com/",
-    ],
+    invidious: API.invidious.map((url) => url.replace("/api/v1", "")),
     hyperpipe: ["https://hyperpipeapi.onrender.com"],
     jiosaavn: "https://saavn.dev",
     status: "P",

@@ -4,7 +4,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { enableScreens } from "react-native-screens";
-import TrackPlayer from "react-native-track-player";
+import TrackPlayer from "./utils/safeTrackPlayer";
 import {
   View,
   TouchableOpacity,
@@ -22,6 +22,9 @@ import { MaterialIcons } from "@expo/vector-icons";
 
 // Context
 import { PlayerProvider } from "./contexts/PlayerContext";
+
+// API
+import { updateInvidiousInstancesFromUma } from "./components/core/api";
 
 // Components
 import { MiniPlayer } from "./components/MiniPlayer";
@@ -43,7 +46,7 @@ enableScreens();
 // Register the playback service for proper media session integration
 try {
   TrackPlayer.registerPlaybackService(() =>
-    require("./services/playbackService"),
+    require("./services/playbackService")
   );
   console.log("[App] Playback service registered successfully");
 } catch (error) {
@@ -377,6 +380,18 @@ export default function App() {
     GoogleSansSemiBold: require("./assets/fonts/GoogleSansSemiBold.ttf"),
     GoogleSansBold: require("./assets/fonts/GoogleSansBold.ttf"),
   });
+
+  // Fetch Invidious instances on app startup
+  useEffect(() => {
+    const fetchInstances = async () => {
+      console.log("[App] Fetching Invidious instances from Uma repository...");
+      await updateInvidiousInstancesFromUma();
+      console.log("[App] Invidious instances update complete");
+    };
+
+    fetchInstances();
+  }, []);
+
   // const [showLoadingScreen, setShowLoadingScreen] = useState(true);
   // const [isLoadingComplete, setIsLoadingComplete] = useState(false);
 

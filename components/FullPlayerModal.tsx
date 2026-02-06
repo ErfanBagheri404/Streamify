@@ -18,7 +18,7 @@ import styled from "styled-components/native";
 import { FontAwesome6, Ionicons } from "@expo/vector-icons";
 import { Entypo } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
-import TrackPlayer from "react-native-track-player";
+import TrackPlayer from "../utils/safeTrackPlayer";
 import { LinearGradient } from "expo-linear-gradient";
 import { usePlayer } from "../contexts/PlayerContext";
 import { formatTime } from "../utils/formatters";
