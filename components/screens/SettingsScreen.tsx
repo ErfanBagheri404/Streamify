@@ -61,8 +61,8 @@ const SettingLeft = styled.View`
   flex: 1;
   padding-left: ${(props) =>
     props.hasIcon
-      ? '8px'
-      : '0px'}; /* 24px (icon width) + 12px (margin) = 36px */
+      ? "8px"
+      : "0px"}; /* 24px (icon width) + 12px (margin) = 36px */
 `;
 
 const SettingRight = styled.View`

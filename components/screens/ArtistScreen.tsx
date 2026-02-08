@@ -368,7 +368,9 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
   // Function to calculate font size based on artist name length
   const calculateFontSize = useCallback((name: string): number => {
-    if (!name) return 64;
+    if (!name) {
+      return 64;
+    }
 
     const baseFontSize = 64;
     const minFontSize = 32;
@@ -396,14 +398,14 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
         `${API.piped[0]}/channel/${channelId}`,
         {},
         3,
-        1000
+        1000,
       );
 
       console.log("Channel tabs data for albums:", channelData.tabs);
 
       // Look for albums tab data
       const albumsTab = channelData.tabs?.find(
-        (tab: any) => tab.name === "albums"
+        (tab: any) => tab.name === "albums",
       );
       if (albumsTab && albumsTab.data) {
         try {
@@ -414,7 +416,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
             `${API.piped[0]}/channels/tabs?data=${encodedData}`,
             {},
             3,
-            1000
+            1000,
           );
           console.log("Albums data fetched successfully:", albumsData);
 
@@ -435,7 +437,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
         } catch (apiError) {
           console.log(
             "Failed to fetch albums from tabs endpoint, using fallback:",
-            apiError
+            apiError,
           );
         }
       }
@@ -456,27 +458,27 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
         `${API.piped[0]}/channel/${channelId}`,
         {},
         3,
-        1000
+        1000,
       );
 
       console.log("Channel tabs data:", channelData.tabs);
 
       // Look for playlists tab data
       const playlistsTab = channelData.tabs?.find(
-        (tab: any) => tab.name === "playlists"
+        (tab: any) => tab.name === "playlists",
       );
       if (playlistsTab && playlistsTab.data) {
         try {
           // Use the correct GET format for the tabs endpoint
           const playlistsTabData = JSON.parse(playlistsTab.data);
           const encodedData = encodeURIComponent(
-            JSON.stringify(playlistsTabData)
+            JSON.stringify(playlistsTabData),
           );
           const playlistsData = await fetchWithRetry<any>(
             `${API.piped[0]}/channels/tabs?data=${encodedData}`,
             {},
             3,
-            1000
+            1000,
           );
           console.log("Playlists data fetched successfully:", playlistsData);
 
@@ -495,7 +497,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
               }
 
               console.log(
-                `[ArtistScreen] Extracted playlist ID: ${playlistId} from URL: ${playlist.url}`
+                `[ArtistScreen] Extracted playlist ID: ${playlistId} from URL: ${playlist.url}`,
               );
 
               return {
@@ -520,7 +522,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
         } catch (apiError) {
           console.log(
             "Failed to fetch playlists from tabs endpoint, using fallback:",
-            apiError
+            apiError,
           );
         }
       }
@@ -556,7 +558,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
           `${API.piped[0]}/channel/${artistId}`,
           {},
           3,
-          1000
+          1000,
         );
         console.log("YouTube channel API response:", channelData);
 
@@ -582,7 +584,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
             playCount: video.views || 0,
             source: "youtube",
             _isJioSaavn: false,
-          })
+          }),
         );
 
         // Process channel tabs data for albums and playlists
@@ -610,7 +612,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
         getJioSaavnArtistEndpoint(artistId),
         {},
         3,
-        1000
+        1000,
       );
       console.log("Artist info API response:", artistInfo);
 
@@ -627,7 +629,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
           getJioSaavnArtistSongsEndpoint(artistId, 0),
           {},
           3,
-          1000
+          1000,
         );
         console.log("Songs API response:", songsData);
       } catch (e) {
@@ -642,7 +644,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
           getJioSaavnArtistAlbumsEndpoint(artistId, 0),
           {},
           3,
-          1000
+          1000,
         );
         console.log("Albums API response:", albumsData);
       } catch (e) {
@@ -781,7 +783,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
         source: s.source || "jiosaavn",
         _isJioSaavn: s._isJioSaavn || false,
       })),
-      index
+      index,
     );
   };
 
@@ -922,22 +924,22 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                 <ArtistName fontSize={artistNameFontSize} numberOfLines={1}>
                   {artistData.name}
                   {artistData.verified && (
-                    <Text style={{ marginLeft: 14 }}>
-                      <MaterialIcons
-                        name="verified"
-                        size={32}
-                        color="#3b82f6"
-                      />
-                    </Text>
+                    <MaterialIcons
+                      name="verified"
+                      size={32}
+                      color="#3b82f6"
+                      style={{ marginLeft: 14 }}
+                    />
                   )}
                 </ArtistName>
               </View>
-              {artistData.monthlyListeners && (
-                <MonthlyListeners>
-                  {formatMonthlyListeners(artistData.monthlyListeners)}{" "}
-                  {t("screens.artist.monthly_listeners")}
-                </MonthlyListeners>
-              )}
+              {artistData.monthlyListeners !== undefined &&
+                artistData.monthlyListeners !== null && (
+                  <MonthlyListeners>
+                    {formatMonthlyListeners(artistData.monthlyListeners)}{" "}
+                    {t("screens.artist.monthly_listeners")}
+                  </MonthlyListeners>
+                )}
             </HeaderContent>
           </View>
 
@@ -1036,7 +1038,11 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                     >
                       <AlbumImage source={{ uri: album.thumbnail }} />
                       <AlbumTitle numberOfLines={1}>{album.title}</AlbumTitle>
-                      <AlbumYear>{album.videoCount || album.year}</AlbumYear>
+                      <AlbumYear>
+                        {album.videoCount
+                          ? `${album.videoCount} videos`
+                          : album.year}
+                      </AlbumYear>
                     </AlbumItem>
                   ))}
                 </AlbumsGrid>

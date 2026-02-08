@@ -260,8 +260,11 @@ export default function HomeScreen({ navigation }: any) {
   const [loadingFeatured, setLoadingFeatured] = useState(true);
 
   // Filter out Hindi/Indian playlists
-  // Fetch playlist data for a specific category
+  // Fetch playlist data for a specific category - COMMENTED OUT
   const fetchCategoryPlaylists = async (category: string) => {
+    // Temporarily disabled - no playlist loading
+    return;
+    /*
     try {
       const data = await fetchWithRetry<any>(
         CATEGORY_APIS[category as keyof typeof CATEGORY_APIS],
@@ -277,10 +280,15 @@ export default function HomeScreen({ navigation }: any) {
     } catch (error) {
       console.error(`Failed to fetch ${category} playlists:`, error);
     }
+    */
   };
 
-  // Fetch featured playlist
+  // Fetch featured playlist - COMMENTED OUT
   const fetchFeaturedPlaylists = async () => {
+    // Temporarily disabled - no featured playlists loading
+    setLoadingFeatured(false);
+    return;
+    /*
     try {
       setLoadingFeatured(true);
 
@@ -293,10 +301,7 @@ export default function HomeScreen({ navigation }: any) {
             3,
             1000
           );
-          console.log(
-            `[DEBUG] Playlist ${playlistId} response:`,
-            JSON.stringify(data, null, 2)
-          );
+
           if (data.success && data.data) {
             return data.data;
           }
@@ -318,11 +323,7 @@ export default function HomeScreen({ navigation }: any) {
         (playlist) => playlist !== null
       );
 
-      console.log(`[DEBUG] Valid playlists count: ${validPlaylists.length}`);
-      console.log(
-        `[DEBUG] First playlist structure:`,
-        JSON.stringify(validPlaylists[0], null, 2)
-      );
+
 
       // Transform playlist data to match expected interface
       const transformedPlaylists = validPlaylists.map((playlist) => {
@@ -368,7 +369,7 @@ export default function HomeScreen({ navigation }: any) {
 
           return playlistData;
         } catch (error) {
-          console.error(`[DEBUG] Error transforming playlist:`, error);
+
           // Return a default playlist structure if transformation fails
           return {
             id: "error",
@@ -388,10 +389,7 @@ export default function HomeScreen({ navigation }: any) {
         }
       });
 
-      console.log(
-        `[DEBUG] Transformed first playlist:`,
-        JSON.stringify(transformedPlaylists[0], null, 2)
-      );
+
 
       setFeaturedPlaylists(transformedPlaylists);
     } catch (error) {
@@ -399,10 +397,14 @@ export default function HomeScreen({ navigation }: any) {
     } finally {
       setLoadingFeatured(false);
     }
+    */
   };
 
-  // Toggle category selection
+  // Toggle category selection - COMMENTED OUT
   const toggleCategory = (category: string) => {
+    // Temporarily disabled - no category functionality
+    return;
+    /*
     setSelectedCategories((prev) => {
       // Handle "All" button logic
       if (category === "all") {
@@ -428,10 +430,14 @@ export default function HomeScreen({ navigation }: any) {
       // If no categories selected, default to "All"
       return newCategories.length === 0 ? ["all"] : newCategories;
     });
+    */
   };
 
-  // Load initial data
+  // Load initial data - COMMENTED OUT
   useEffect(() => {
+    // Temporarily disabled - no playlist loading on homescreen
+    return;
+    /*
     // Load featured playlists first (now in parallel for faster loading)
     fetchFeaturedPlaylists();
 
@@ -452,6 +458,7 @@ export default function HomeScreen({ navigation }: any) {
     }, 200); // Small delay to prioritize featured playlists
 
     return () => clearTimeout(categoryLoadTimeout);
+    */
   }, []);
 
   const handlePlayTrack = (track: any) => {
@@ -479,16 +486,11 @@ export default function HomeScreen({ navigation }: any) {
 
   const getPlaylistImageSource = (playlist: Playlist) => {
     try {
-      console.log(
-        `[DEBUG] Playlist ${playlist.id} image data:`,
-        JSON.stringify(playlist.image, null, 2)
-      );
-
       // Ensure playlist.image is an array
       const imageArray = Array.isArray(playlist.image) ? playlist.image : [];
 
       const highQualityImage = imageArray.find(
-        (img) => img && img.quality === "500x500"
+        (img) => img && img.quality === "500x500",
       );
       const imageUrl = highQualityImage?.url || imageArray[0]?.url;
 
@@ -499,10 +501,6 @@ export default function HomeScreen({ navigation }: any) {
         return require("../../assets/StreamifyLogo.png");
       }
     } catch (error) {
-      console.error(
-        `[DEBUG] Error in getPlaylistImageSource for playlist ${playlist.id}:`,
-        error
-      );
       return require("../../assets/StreamifyLogo.png");
     }
   };
@@ -554,7 +552,8 @@ export default function HomeScreen({ navigation }: any) {
             </ChipsContent>
           </ChipsScrollView>
         </ChipsContainer>
-        {/* Featured Playlists */}
+        {/* Featured Playlists - COMMENTED OUT */}
+        {/*
         <Section>
           <SectionHeader>
             <SectionTitle>Featured Playlists</SectionTitle>
@@ -578,7 +577,9 @@ export default function HomeScreen({ navigation }: any) {
             </HorizontalScroll>
           )}
         </Section>
-        {/* Selected Category Playlists */}
+        */}
+        {/* Selected Category Playlists - COMMENTED OUT */}
+        {/*
         {(selectedCategories.includes("all")
           ? Object.keys(CATEGORY_APIS)
           : selectedCategories
@@ -617,6 +618,7 @@ export default function HomeScreen({ navigation }: any) {
             </Section>
           );
         })}
+        */}
       </ScrollView>
     </SafeArea>
   );

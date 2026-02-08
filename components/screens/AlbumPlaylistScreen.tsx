@@ -293,12 +293,8 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       setIsLoading(true);
 
       if (source === "jiosaavn") {
-        console.log("[AlbumPlaylistScreen] Fetching JioSaavn album details");
-        const { searchAPI } = await import("../../modules/searchAPI");
-        const albumDetails = await searchAPI.getJioSaavnAlbumDetails(
-          albumId,
-          albumName
-        );
+        console.log("[AlbumPlaylistScreen] JioSaavn disabled - using fallback");
+        const albumDetails = null; // Disable JioSaavn album details
 
         if (
           albumDetails &&

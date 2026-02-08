@@ -215,7 +215,7 @@ function StreamItem(props: StreamItemProps) {
       authorName?: string,
       source?: string,
       type?: string,
-      channelDescription?: string
+      channelDescription?: string,
     ) => {
       if (
         !authorName ||
@@ -238,7 +238,7 @@ function StreamItem(props: StreamItemProps) {
       }
       return authorName.replace(" - Topic", "");
     },
-    []
+    [],
   );
 
   const formatSubMeta = useCallback(
@@ -250,7 +250,7 @@ function StreamItem(props: StreamItemProps) {
       videoCount?: string,
       isAlbum?: boolean,
       searchFilter?: string,
-      searchSource?: string
+      searchSource?: string,
     ) => {
       const parts = [];
 
@@ -277,7 +277,7 @@ function StreamItem(props: StreamItemProps) {
       }
       return parts.join(" • ");
     },
-    []
+    [],
   );
 
   return (
@@ -346,7 +346,7 @@ function StreamItem(props: StreamItemProps) {
               videoCount,
               isAlbum,
               searchFilter,
-              searchSource
+              searchSource,
             )}
             {/* Show blue badge for albums/playlists with video count */}
             {(isAlbum || type === "playlist") && videoCount && (

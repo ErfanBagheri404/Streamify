@@ -116,7 +116,7 @@ const fetchWithFallbacks = async (
             console.log(`[API] ✅ Successfully parsed JSON from ${baseUrl}`);
             return parsed;
           } else {
-            console.log(`[API] Response doesn't start with JSON`);
+            console.log("[API] Response doesn't start with JSON");
           }
         } catch (e) {
           console.log(`[API] Failed to parse JSON from ${baseUrl}:`, e.message);
@@ -274,12 +274,14 @@ export const searchAPI = {
     }
   },
 
+  // COMMENTED OUT: JioSaavn search disabled to focus on YouTube
+  /*
   // --- JIOSAAVN SEARCH ---
   searchWithJioSaavn: async (
     query: string,
     filter?: string,
     page?: number,
-    limit?: number
+    limit?: number,
   ) => {
     console.log(`[API] Starting JioSaavn search for: "${query}"`);
 
@@ -294,7 +296,7 @@ export const searchAPI = {
           },
         },
         3,
-        1000
+        1000,
       );
 
       if (!data || !data.success || !data.data) {
@@ -347,24 +349,24 @@ export const searchAPI = {
       });
 
       console.log(
-        `[API] Filtered ${artists.length} artists to ${filteredArtists.length} relevant artists`
+        `[API] Filtered ${artists.length} artists to ${filteredArtists.length} relevant artists`,
       );
 
       // Log exact matches for debugging
       const exactMatches = filteredArtists.filter(
         (artist: any) =>
           (artist.title || "").toLowerCase().trim() ===
-          query.toLowerCase().trim()
+          query.toLowerCase().trim(),
       );
       if (exactMatches.length > 0) {
         console.log(
           `[API] Found ${exactMatches.length} exact artist matches for "${query}":`,
-          exactMatches.map((a: any) => a.title)
+          exactMatches.map((a: any) => a.title),
         );
       }
 
       console.log(
-        `[API] 🟢 JioSaavn Success: Found ${songs.length} songs, ${albums.length} albums, ${artists.length} artists, ${topQuery.length} top queries`
+        `[API] 🟢 JioSaavn Success: Found ${songs.length} songs, ${albums.length} albums, ${artists.length} artists, ${topQuery.length} top queries`,
       );
 
       // Format all results to match SearchResult interface
@@ -498,7 +500,8 @@ export const searchAPI = {
 
       // Check for exact artist matches in the filtered artists
       const exactArtistMatches = artistsResults.filter(
-        (item) => item.title.toLowerCase().trim() === query.toLowerCase().trim()
+        (item) =>
+          item.title.toLowerCase().trim() === query.toLowerCase().trim(),
       );
 
       // Build final result array in the correct order: Top Results (with artist first if exact match), Songs, Albums
@@ -526,7 +529,8 @@ export const searchAPI = {
 
       // Add remaining artists (non-exact matches)
       const remainingArtists = artistsResults.filter(
-        (item) => item.title.toLowerCase().trim() !== query.toLowerCase().trim()
+        (item) =>
+          item.title.toLowerCase().trim() !== query.toLowerCase().trim(),
       );
       if (remainingArtists.length > 0) {
         finalResults = [...finalResults, ...remainingArtists];
@@ -539,7 +543,10 @@ export const searchAPI = {
       return [];
     }
   },
+  */
 
+  // COMMENTED OUT: JioSaavn song details disabled to focus on YouTube
+  /*
   // --- JIOSAAVN SONG DETAILS ---
   getJioSaavnSongDetails: async (songId: string) => {
     console.log(`[API] Fetching JioSaavn song details for: "${songId}"`);
@@ -608,7 +615,10 @@ export const searchAPI = {
       return null;
     }
   },
+  */
 
+  // COMMENTED OUT: JioSaavn album details disabled to focus on YouTube
+  /*
   // --- JIOSAAVN ALBUM DETAILS ---
   getJioSaavnAlbumDetails: async (albumId: string, albumName: string) => {
     console.log(
@@ -746,6 +756,7 @@ export const searchAPI = {
       return null;
     }
   },
+  */
 
   // --- YOUTUBE PLAYLIST DETAILS ---
   getYouTubePlaylistDetails: async (playlistId: string) => {
@@ -768,7 +779,7 @@ export const searchAPI = {
       );
       const data = await fetchWithFallbacks([...PIPED_INSTANCES], endpoint);
       console.log(
-        `[API] fetchWithFallbacks returned:`,
+        "[API] fetchWithFallbacks returned:",
         data ? "data object" : "null"
       );
 
@@ -1283,7 +1294,9 @@ export const searchAPI = {
         return result;
       })
       .filter((item): item is SearchResult => {
-        if (item === null || item.id === "") return false;
+        if (item === null || item.id === "") {
+          return false;
+        }
 
         // Filter out album items for YouTube and YouTube Music sources
         if (

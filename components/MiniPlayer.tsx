@@ -154,13 +154,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
   const displayTheme = colorTheme;
 
   // Debug: Log the current color theme
-  console.log("[MiniPlayer] Current theme:", {
-    isGradient: displayTheme.isGradient,
-    hasGradient: !!displayTheme.gradient,
-    gradient: displayTheme.gradient,
-    background: displayTheme.background,
-    primary: displayTheme.primary,
-  });
+  
 
   return (
     <MiniPlayerContainer

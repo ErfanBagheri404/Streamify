@@ -614,13 +614,9 @@ export default function SearchScreen({ navigation }: any) {
             20
           );
         } else if (selectedSource === "jiosaavn") {
-          // JioSaavn Search
-          results = await searchAPI.searchWithJioSaavn(
-            queryToUse,
-            selectedFilter,
-            paginationRef.current.page,
-            20
-          );
+          // JioSaavn Search - disabled
+          console.log("[\SearchScreen] JioSaavn search disabled");
+          results = [];
         } else if (selectedSource === "spotify") {
           // Placeholder for Spotify
           console.log(t("search.spotify_not_implemented"));
@@ -1151,12 +1147,11 @@ export default function SearchScreen({ navigation }: any) {
       }
 
       try {
-        // Fetch album details to get all songs
-        const { searchAPI } = await import("../../modules/searchAPI");
-        const albumDetails = await searchAPI.getJioSaavnAlbumDetails(
-          item.albumId,
-          item.albumName
+        // Fetch album details to get all songs - JioSaavn disabled
+        console.log(
+          "[SearchScreen] JioSaavn album details disabled - using fallback"
         );
+        const albumDetails = null; // Disable JioSaavn album details
 
         if (
           albumDetails &&

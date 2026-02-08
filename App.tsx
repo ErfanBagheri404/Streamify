@@ -24,7 +24,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { PlayerProvider } from "./contexts/PlayerContext";
 
 // API
-import { updateInvidiousInstancesFromUma } from "./components/core/api";
+import { initializeDynamicInstances } from "./components/core/api";
 
 // Components
 import { MiniPlayer } from "./components/MiniPlayer";
@@ -385,7 +385,7 @@ export default function App() {
   useEffect(() => {
     const fetchInstances = async () => {
       console.log("[App] Fetching Invidious instances from Uma repository...");
-      await updateInvidiousInstancesFromUma();
+      await initializeDynamicInstances();
       console.log("[App] Invidious instances update complete");
     };
 

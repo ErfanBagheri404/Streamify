@@ -545,10 +545,10 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     setRepeatMode,
     isShuffled,
     toggleShuffle,
+    position,
+    duration,
   } = usePlayer();
 
-  const [currentPosition, setCurrentPosition] = useState(0);
-  const [duration, setDuration] = useState(0);
   const [cacheInfo, setCacheInfo] = useState<{
     percentage: number;
     fileSize: number;
@@ -812,36 +812,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     }
   }, [cacheProgress, currentTrack?.id]);
 
-  // Reset position when track changes
-  useEffect(() => {
-    setCurrentPosition(0);
-    setDuration(0);
-  }, [currentTrack?.id]);
-
-  // Track position and duration
-  useEffect(() => {
-    if (!currentTrack?.audioUrl) {
-      return;
-    }
-
-    const updatePosition = async () => {
-      try {
-        const position = await TrackPlayer.getPosition();
-        const duration = await TrackPlayer.getDuration();
-        setCurrentPosition(position * 1000); // Convert to milliseconds
-        setDuration(duration * 1000); // Convert to milliseconds
-      } catch (error) {
-        if (!error?.toString().includes("Player does not exist")) {
-          // Silently ignore player not existing errors
-        }
-      }
-    };
-
-    const interval = setInterval(updatePosition, 1000);
-    updatePosition();
-
-    return () => clearInterval(interval);
-  }, [currentTrack?.id]); // Reset when track changes
+  // Position and duration are now managed by PlayerContext via PlaybackProgressUpdated events
+  // This provides real-time updates instead of 1-second intervals
 
   // Cache info update effect
   useEffect(() => {
@@ -869,12 +841,13 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const handleSeek = async (value: number) => {
     try {
       if (currentTrack?.audioUrl) {
-        await seekTo(value);
+        // Convert milliseconds to seconds for seekTo
+        await seekTo(value / 1000);
       }
-      setCurrentPosition(value);
+      // Position is now managed by PlayerContext via PlaybackProgressUpdated events
     } catch (error) {
       // Silently ignore seek errors
-      setCurrentPosition(value);
+      // Position is now managed by PlayerContext via PlaybackProgressUpdated events
     }
   };
 
@@ -1073,8 +1046,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
             <ProgressContainer>
               <ProgressBarContainer>
                 <ProgressSlider
-                  value={currentPosition}
-                  maximumValue={duration}
+                  value={position * 1000} // Convert seconds to milliseconds
+                  maximumValue={duration * 1000} // Convert seconds to milliseconds
                   minimumValue={0}
                   onSlidingComplete={handleSeek}
                   minimumTrackTintColor="#fff"
@@ -1083,8 +1056,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 />
               </ProgressBarContainer>
               <TimeContainer>
-                <TimeText>{formatTime(currentPosition)}</TimeText>
-                <TimeText>{formatTime(duration)}</TimeText>
+                <TimeText>{formatTime(position * 1000)}</TimeText>
+                <TimeText>{formatTime(duration * 1000)}</TimeText>
               </TimeContainer>
             </ProgressContainer>
 

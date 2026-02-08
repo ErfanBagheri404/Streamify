@@ -26,18 +26,12 @@ export const extractColorsFromImage = async (
 
     if (imageUrl) {
       const colors = await extractDominantColors(imageUrl);
-      console.log("[extractColorsFromImage] Extracted colors:", colors); // eslint-disable-line no-console
 
       if (colors && colors.length > 0) {
         const primaryColor = colors[0] || defaultTheme.primary;
         const secondaryColor = colors[1] || defaultTheme.secondary;
         const accentColor = colors[2] || defaultTheme.accent;
-        console.log("[extractColorsFromImage] Using colors:", {
-          primaryColor,
-          secondaryColor,
-          accentColor,
-        });
-
+        
         // Find the closest matching predefined theme based on extracted colors
         const closestTheme = findClosestPredefinedTheme(
           primaryColor,
@@ -46,10 +40,7 @@ export const extractColorsFromImage = async (
         );
 
         if (closestTheme) {
-          console.log(
-            "[extractColorsFromImage] Found closest theme:",
-            closestTheme,
-          );
+          
           return closestTheme;
         }
 
@@ -968,19 +959,11 @@ const findClosestPredefinedTheme = (
 
   // Only return a predefined theme if it's reasonably close (threshold: 150)
   if (minDistance < 150) {
-    console.log(
-      "[findClosestPredefinedTheme] Found theme with distance:",
-      minDistance,
-      "Theme:",
-      closestTheme,
-    );
+    
     return closestTheme;
   }
 
-  console.log(
-    "[findClosestPredefinedTheme] No close theme found, minDistance:",
-    minDistance,
-  );
+  
   return null;
 };
 

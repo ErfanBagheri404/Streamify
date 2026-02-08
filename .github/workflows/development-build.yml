@@ -87,12 +87,12 @@ jobs:
       - name: 📱 Build Debug APK (development profile)
         run: |
           export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
-          
+
           echo "Building debug APK for development branch using EAS cloud build..."
-          
+
           # Build and wait for completion
           eas build --platform android --profile debug-apk --non-interactive --wait
-          
+
           echo "Development debug APK build completed! 🎉"
           echo ""
           echo "The development APK has been built successfully!"

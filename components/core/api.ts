@@ -5,18 +5,12 @@ export const API = {
 
   // Invidious instances for YouTube content (will be updated dynamically)
   invidious: [
-    "https://inv-veltrix.zeabur.app/api/v1",
-    "https://inv-veltrix-2.zeabur.app/api/v1",
-    "https://inv-veltrix-3.zeabur.app/api/v1",
-    "https://yt.omada.cafe/api/v1",
-    "https://invidious.f5.si/api/v1",
+    "https://inv-veltrix.zeabur.app",
+    "https://inv-veltrix-2.zeabur.app",
+    "https://inv-veltrix-3.zeabur.app",
+    "https://yt.omada.cafe",
+    "https://invidious.f5.si",
   ],
-
-  // HLS streaming endpoints
-  hls: ["https://api.piped.private.coffee"],
-
-  // Hyperpipe API for additional functionality
-  hyperpipe: ["https://hyperpipeapi.onrender.com"],
 
   // JioSaavn API endpoints
   jiosaavn: {
@@ -296,6 +290,33 @@ export async function fetchStreamFromInvidiousWithFallback(id: string) {
   }
 
   throw new Error(`All Invidious instances failed: ${errors.join(", ")}`);
+}
+
+// Initialize dynamic instances on app startup
+export async function initializeDynamicInstances(): Promise<void> {
+  try {
+    console.log("[API] Fetching dynamic Invidious instances from Uma...");
+    const umaInstances = await fetchUma();
+
+    if (umaInstances.length > 0) {
+      // Add /api/v1 suffix to instances if not present
+      const formattedInstances = umaInstances.map((instance) => {
+        if (!instance.includes("/api/v1")) {
+          return `${instance}/api/v1`;
+        }
+        return instance;
+      }) as InvidiousInstance[];
+
+      updateInvidiousInstances(formattedInstances);
+      console.log(
+        `[API] Updated with ${formattedInstances.length} dynamic instances from Uma`
+      );
+    } else {
+      console.log("[API] No dynamic instances fetched, using defaults");
+    }
+  } catch (error) {
+    console.error("[API] Error initializing dynamic instances:", error);
+  }
 }
 
 export async function getStreamData(

@@ -1,7 +1,11 @@
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
 import { toByteArray, fromByteArray } from "base64-js";
-import { API, fetchWithRetry } from "../components/core/api";
+import {
+  API,
+  fetchWithRetry,
+  DYNAMIC_INVIDIOUS_INSTANCES,
+} from "../components/core/api";
 
 // Cache directory configuration
 const CACHE_CONFIG = {
@@ -3021,23 +3025,32 @@ export class AudioStreamManager {
   }
 
   private setupFallbackStrategies() {
-    // Strategy 1: YouTube Omada (fastest for YouTube - added for priority)
-    this.fallbackStrategies.push(this.tryYouTubeOmada.bind(this));
-    // Strategy 2: Local extraction server (if available)
-    this.fallbackStrategies.push(this.tryLocalExtraction.bind(this));
-    // Strategy 3: SoundCloud API (high priority for music)
-    // this.fallbackStrategies.push(this.trySoundCloud.bind(this));
-    // Strategy 4: YouTube Music extraction
-    this.fallbackStrategies.push(this.tryYouTubeMusic.bind(this));
-    // Strategy 5: Spotify Web API (requires auth but has good coverage)
-    // this.fallbackStrategies.push(this.trySpotifyWebApi.bind(this));
-    // Strategy 6: Hyperpipe API
-    this.fallbackStrategies.push(this.tryHyperpipe.bind(this));
-    // Strategy 7: Piped API (alternative to Invidious)
+    // Strategy 1: Invidious API (with dynamic instances - highest priority for YouTube)
+    this.fallbackStrategies.push(this.tryInvidious.bind(this));
+
+    // Strategy 2: Piped API (alternative to Invidious)
     this.fallbackStrategies.push(this.tryPiped.bind(this));
-    // Strategy 8: YouTube embed extraction (last resort)
+
+    // Strategy 3: YouTube Omada (fast fallback)
+    this.fallbackStrategies.push(this.tryYouTubeOmada.bind(this));
+
+    // Strategy 4: Local extraction server (if available)
+    this.fallbackStrategies.push(this.tryLocalExtraction.bind(this));
+
+    // Strategy 5: SoundCloud API (high priority for music)
+    // this.fallbackStrategies.push(this.trySoundCloud.bind(this));
+
+    // Strategy 6: YouTube Music extraction
+    this.fallbackStrategies.push(this.tryYouTubeMusic.bind(this));
+
+    // Strategy 7: Spotify Web API (requires auth but has good coverage)
+    // this.fallbackStrategies.push(this.trySpotifyWebApi.bind(this));
+
+    // Strategy 8: Hyperpipe API
+    this.fallbackStrategies.push(this.tryHyperpipe.bind(this));
+
+    // Strategy 9: YouTube embed extraction (last resort)
     this.fallbackStrategies.push(this.tryYouTubeEmbed.bind(this));
-    // Note: YouTube Omada is handled exclusively in getAudioUrl for youtube/yt sources
   }
 
   async getAudioUrl(
@@ -3056,6 +3069,16 @@ export class AudioStreamManager {
       source,
       trackTitle,
       trackArtist,
+    });
+
+    // Log available strategies for debugging
+    console.log(
+      `[AudioStreamManager] Available strategies: ${this.fallbackStrategies.length}`
+    );
+    this.fallbackStrategies.forEach((strategy, index) => {
+      console.log(
+        `[AudioStreamManager] Strategy ${index + 1}: ${this.getStrategyName(strategy)}`
+      );
     });
 
     // Check if we have a prefetched result
@@ -3113,45 +3136,44 @@ export class AudioStreamManager {
       }
     }
 
-    // --- YOUTUBE EXCLUSIVE HANDLING (only use YouTube Omada API) ---
+    // --- YOUTUBE EXCLUSIVE HANDLING (try multiple strategies) ---
     if (source === "youtube" || source === "yt") {
-      onStatusUpdate?.("Using YouTube Omada API (exclusive)");
+      onStatusUpdate?.("Using YouTube strategies");
       console.log(
         `[AudioStreamManager] YouTube mode activated for: ${videoId}`
       );
-      try {
-        console.log(
-          `[Audio] Attempting YouTube Omada extraction for track: ${videoId}`
-        );
-        const youtubeUrl = await this.tryYouTubeOmada(videoId);
 
-        if (youtubeUrl) {
+      // Try fallback strategies for YouTube (including Invidious)
+      for (let i = 0; i < this.fallbackStrategies.length; i++) {
+        const strategy = this.fallbackStrategies[i];
+        const strategyName = this.getStrategyName(strategy);
+
+        try {
           console.log(
-            `[AudioStreamManager] YouTube Omada returned URL: ${youtubeUrl.substring(0, 100)}...`
+            `[AudioStreamManager] Trying ${strategyName} for YouTube: ${videoId}`
           );
-          // Cache the YouTube stream and return cached file path
-          onStatusUpdate?.("Caching YouTube audio...");
-          const controller = new AbortController();
-          const cachedUrl = await this.cacheYouTubeStream(
-            youtubeUrl,
-            videoId,
-            controller
+          onStatusUpdate?.(`Trying ${strategyName}...`);
+
+          const url = await strategy(videoId);
+          if (url) {
+            console.log(
+              `[AudioStreamManager] ${strategyName} returned URL: ${url.substring(0, 100)}...`
+            );
+            // Return the raw stream URL - caching will be handled by PlayerContext if needed
+            return url;
+          }
+        } catch (error) {
+          console.warn(
+            `[AudioStreamManager] ${strategyName} failed for YouTube ${videoId}:`,
+            error instanceof Error ? error.message : error
           );
-          return cachedUrl;
-        } else {
-          console.error("[AudioStreamManager] YouTube Omada returned no URL");
-          throw new Error("YouTube Omada extraction returned no URL");
+          // Continue to next strategy
+          continue;
         }
-      } catch (error) {
-        // YouTube Omada strategy failed, do not try fallback strategies
-        console.error(
-          "[AudioStreamManager] YouTube Omada extraction failed:",
-          error
-        );
-        throw new Error(
-          `YouTube playback failed: ${error instanceof Error ? error.message : "Unknown error"}`
-        );
       }
+
+      // All strategies failed
+      throw new Error("All YouTube strategies failed");
     }
 
     // --- JIOSAAVN HANDLING (exclusive - no fallbacks) ---
@@ -3210,8 +3232,11 @@ export class AudioStreamManager {
     const concurrentPromises = this.fallbackStrategies
       .slice(0, 3)
       .map(async (strategy, index) => {
-        const strategyName = strategy.name || `Strategy ${index + 1}`;
+        const strategyName = this.getStrategyName(strategy);
         const startTime = Date.now();
+        console.log(
+          `[AudioStreamManager] Concurrent test: ${strategyName} for ${videoId}`
+        );
         try {
           const url = await Promise.race([
             strategy(videoId),
@@ -3220,8 +3245,14 @@ export class AudioStreamManager {
             ),
           ]);
           const latency = Date.now() - startTime;
+          console.log(
+            `[AudioStreamManager] Concurrent test ${strategyName}: ${url ? "SUCCESS" : "FAILED"} (${latency}ms)`
+          );
           return { url, latency, strategy: strategyName };
         } catch (error) {
+          console.log(
+            `[AudioStreamManager] Concurrent test ${strategyName}: ERROR - ${error}`
+          );
           return null;
         }
       });
@@ -3237,6 +3268,10 @@ export class AudioStreamManager {
       // Sort by latency and return fastest result
       successfulResults.sort((a, b) => a.latency - b.latency);
       const fastest = successfulResults[0];
+      console.log(
+        `[AudioStreamManager] Concurrent test found fastest strategy: ${fastest.strategy} (${fastest.latency}ms)`
+      );
+      console.log(`[AudioStreamManager] Fastest URL: ${fastest.url}`);
       onStatusUpdate?.(`Fastest: ${fastest.strategy} (${fastest.latency}ms)`);
 
       // Apply caching based on the strategy type
@@ -3283,11 +3318,17 @@ export class AudioStreamManager {
 
     for (let i = 0; i < this.fallbackStrategies.length; i++) {
       const strategy = this.fallbackStrategies[i];
-      const strategyName = strategy.name || `Strategy ${i + 1}`;
+      const strategyName = this.getStrategyName(strategy);
 
       try {
         onStatusUpdate?.(`Trying ${strategyName}...`);
+        console.log(
+          `[AudioStreamManager] Attempting strategy: ${strategyName} for videoId: ${videoId}`
+        );
         const url = await strategy(videoId);
+        console.log(
+          `[AudioStreamManager] Strategy ${strategyName} returned: ${url ? "SUCCESS" : "FAILED"}`
+        );
         if (url) {
           onStatusUpdate?.(`Success with ${strategyName}`);
 
@@ -3318,6 +3359,9 @@ export class AudioStreamManager {
             }
           }
 
+          console.log(
+            `[AudioStreamManager] Strategy ${strategyName} succeeded with URL: ${url}`
+          );
           return url;
         }
       } catch (error) {
@@ -3330,9 +3374,15 @@ export class AudioStreamManager {
       }
     }
 
-    throw new Error(
-      `All audio extraction strategies failed. Errors: ${errors.join("; ")}`
+    const finalError = `All audio extraction strategies failed. Errors: ${errors.join("; ")}`;
+    console.error(`[AudioStreamManager] ${finalError}`);
+    console.error(
+      `[AudioStreamManager] Total strategies attempted: ${errors.length}`
     );
+    console.error(
+      `[AudioStreamManager] Failed strategies: ${errors.map((e) => e.split(":")[0]).join(", ")}`
+    );
+    throw new Error(finalError);
   }
 
   // Queue prefetch functionality (ytify v8 concept)
@@ -3389,7 +3439,9 @@ export class AudioStreamManager {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-        const response = await fetch(url, {
+        // Try direct request first (for YouTube/Invidious instances that work)
+        console.log(`[AudioStreamManager] Attempting direct request: ${url}`);
+        let response = await fetch(url, {
           ...options,
           signal: controller.signal,
           headers: {
@@ -3400,6 +3452,41 @@ export class AudioStreamManager {
             ...options.headers,
           },
         });
+
+        // If direct request fails or is blocked, try with proxy
+        if (
+          !response.ok ||
+          response.status === 403 ||
+          response.status === 429
+        ) {
+          console.log(
+            `[AudioStreamManager] Direct request failed (${response.status}), trying proxy...`
+          );
+          clearTimeout(timeoutId);
+
+          const proxyUrl = this.getNextProxy();
+          const proxiedUrl = proxyUrl + encodeURIComponent(url);
+          console.log(`[AudioStreamManager] Fetching via proxy: ${proxiedUrl}`);
+
+          const proxyController = new AbortController();
+          const proxyTimeoutId = setTimeout(
+            () => proxyController.abort(),
+            timeout
+          );
+
+          response = await fetch(proxiedUrl, {
+            ...options,
+            signal: proxyController.signal,
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+              Accept: "application/json, text/plain, * / *",
+              "Accept-Language": "en-US,en;q=0.9",
+              ...options.headers,
+            },
+          });
+          clearTimeout(proxyTimeoutId);
+        }
         clearTimeout(timeoutId);
 
         // Enhanced blocking detection
@@ -3848,19 +3935,12 @@ export class AudioStreamManager {
 
         if (audioFormats.length > 0 && audioFormats[0].url) {
           // Resolve relative URLs to full URLs
-          let audioUrl = audioFormats[0].url;
-          if (audioUrl.startsWith("/")) {
-            audioUrl = `${instance}${audioUrl}`;
-          }
+          let audioUrl = this.resolveRelativeUrl(instance, audioFormats[0].url);
           console.log(
             "[AudioStreamManager] Found audio via Invidious adaptiveFormats"
           );
-          // Cache the YouTube stream and return cached file path
-          return this.cacheYouTubeStream(
-            audioUrl,
-            videoId,
-            new AbortController()
-          );
+          // Return direct stream URL (caching should be handled at PlayerContext level for liked songs only)
+          return audioUrl;
         }
       }
 
@@ -3886,10 +3966,7 @@ export class AudioStreamManager {
 
         if (audioStreams.length > 0 && audioStreams[0].url) {
           // Resolve relative URLs to full URLs
-          let audioUrl = audioStreams[0].url;
-          if (audioUrl.startsWith("/")) {
-            audioUrl = `${instance}${audioUrl}`;
-          }
+          let audioUrl = this.resolveRelativeUrl(instance, audioStreams[0].url);
           console.log("[AudioStreamManager] Found audio via formatStreams");
           // Cache the YouTube stream and return cached file path
           return this.cacheYouTubeStream(
@@ -3916,10 +3993,7 @@ export class AudioStreamManager {
 
         if (videoStreamsWithAudio.length > 0 && videoStreamsWithAudio[0].url) {
           // Resolve relative URLs to full URLs
-          let audioUrl = videoStreamsWithAudio[0].url;
-          if (audioUrl.startsWith("/")) {
-            audioUrl = `${instance}${audioUrl}`;
-          }
+          let audioUrl = this.resolveRelativeUrl(instance, videoStreamsWithAudio[0].url);
           console.log(
             "[AudioStreamManager] Found video stream with audio via formatStreams"
           );
@@ -3942,10 +4016,7 @@ export class AudioStreamManager {
 
         if (anyVideoStream) {
           // Resolve relative URLs to full URLs
-          let audioUrl = anyVideoStream.url;
-          if (audioUrl.startsWith("/")) {
-            audioUrl = `${instance}${audioUrl}`;
-          }
+          let audioUrl = this.resolveRelativeUrl(instance, anyVideoStream.url);
           console.log(
             "[AudioStreamManager] Using video stream for audio extraction via formatStreams"
           );
@@ -3981,10 +4052,7 @@ export class AudioStreamManager {
       if (data.formatStreams && data.formatStreams.length > 0) {
         const bestStream = data.formatStreams[0];
         if (bestStream.url) {
-          let streamUrl = bestStream.url;
-          if (streamUrl.startsWith("/")) {
-            streamUrl = `${instance}${streamUrl}`;
-          }
+          let streamUrl = this.resolveRelativeUrl(instance, bestStream.url);
 
           // Convert video stream to MP3 format using a conversion service
           console.log(
@@ -4009,11 +4077,159 @@ export class AudioStreamManager {
     );
   }
 
+  private resolveRelativeUrl(instance: string, relativeUrl: string): string {
+    if (relativeUrl.startsWith("//")) {
+      // Handle double slash URLs (common from Invidious API)
+      // Remove one slash to make it a proper relative URL
+      const cleanRelativeUrl = relativeUrl.substring(1);
+      const cleanInstance = instance.endsWith("/")
+        ? instance.slice(0, -1)
+        : instance;
+      return `${cleanInstance}${cleanRelativeUrl}`;
+    } else if (relativeUrl.startsWith("/")) {
+      // Handle single slash URLs
+      const cleanInstance = instance.endsWith("/")
+        ? instance.slice(0, -1)
+        : instance;
+      return `${cleanInstance}${relativeUrl}`;
+    }
+    return relativeUrl;
+  }
+
+  private async tryInvidious(videoId: string): Promise<string> {
+    // Use dynamic instances if available, otherwise fall back to hardcoded ones
+    const instances =
+      DYNAMIC_INVIDIOUS_INSTANCES.length > 0
+        ? DYNAMIC_INVIDIOUS_INSTANCES
+        : ["https://echostreamz.com"];
+
+    console.log(
+      `[AudioStreamManager] Invidious trying ${instances.length} instances for video: ${videoId}`
+    );
+    console.log(
+      `[AudioStreamManager] Available instances: ${instances.join(", ")}`
+    );
+
+    for (const instance of instances) {
+      try {
+        console.log(
+          `[AudioStreamManager] Trying Invidious instance: ${instance}`
+        );
+        // Use ?local=true to get proxied URLs that bypass some blocks
+        const requestUrl = `${instance}/api/v1/videos/${videoId}?local=true`;
+        console.log(`[AudioStreamManager] Invidious request: ${requestUrl}`);
+
+        const response = await this.fetchWithProxy(
+          requestUrl,
+          {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+              Accept: "application/json, text/plain, *\/\*",
+              "Accept-Language": "en-US,en;q=0.9",
+            },
+          },
+          2, // 2 retries
+          12000 // 12 second timeout
+        );
+
+        console.log(
+          `[AudioStreamManager] Invidious response status: ${response.status}`
+        );
+
+        if (!response.ok) {
+          console.warn(
+            `[AudioStreamManager] Invidious instance ${instance} returned ${response.status}`
+          );
+          continue;
+        }
+
+        // Check if response is HTML (blocked) instead of JSON
+        const contentType = response.headers.get("content-type");
+        if (!contentType?.includes("json")) {
+          console.warn(
+            `[AudioStreamManager] Invidious instance ${instance} returned HTML instead of JSON (blocked)`
+          );
+          continue;
+        }
+
+        const data = await response.json();
+        console.log(
+          `[AudioStreamManager] Invidious response data keys: ${Object.keys(data).join(", ")}`
+        );
+
+        // Check for adaptive formats (primary method)
+        if (data.adaptiveFormats) {
+          const audioFormats = data.adaptiveFormats
+            .filter(
+              (f: any) =>
+                f.type?.startsWith("audio/") || f.mimeType?.startsWith("audio/")
+            )
+            .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+
+          if (audioFormats.length > 0 && audioFormats[0].url) {
+            // Resolve relative URLs to full URLs
+            let audioUrl = this.resolveRelativeUrl(
+              instance,
+              audioFormats[0].url
+            );
+            console.log(
+              `[AudioStreamManager] Found audio via Invidious instance ${instance} adaptiveFormats`
+            );
+            // Return direct stream URL (caching should be handled at PlayerContext level for liked songs only)
+            return audioUrl;
+          }
+        }
+
+        // Fallback to formatStreams if adaptiveFormats not available
+        if (data.formatStreams) {
+          console.log(
+            `[AudioStreamManager] Found formatStreams: ${data.formatStreams.length} streams from ${instance}`
+          );
+          // First try to find audio-only streams
+          const audioStreams = data.formatStreams
+            .filter(
+              (f: any) =>
+                f.type?.startsWith("audio/") || f.mimeType?.startsWith("audio/")
+            )
+            .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+
+          if (audioStreams.length > 0 && audioStreams[0].url) {
+            // Resolve relative URLs to full URLs
+            let audioUrl = this.resolveRelativeUrl(
+              instance,
+              audioStreams[0].url
+            );
+            console.log(
+              `[AudioStreamManager] Found audio via formatStreams from ${instance}`
+            );
+            // Return direct stream URL (caching should be handled at PlayerContext level for liked songs only)
+            return audioUrl;
+          }
+        }
+
+        console.warn(
+          `[AudioStreamManager] No audio formats found from Invidious instance ${instance}`
+        );
+      } catch (error) {
+        console.warn(
+          `[AudioStreamManager] Invidious instance ${instance} failed:`,
+          error
+        );
+        continue;
+      }
+    }
+
+    throw new Error("All Invidious instances failed");
+  }
+
   private async tryYouTubeOmada(videoId: string): Promise<string> {
     const instance = this.getOmadaProxyUrl();
+    console.log(`[YouTube Omada] Using instance: ${instance}`);
 
     try {
       const requestUrl = `${instance}/api/v1/videos/${videoId}`;
+      console.log(`[YouTube Omada] Requesting: ${requestUrl}`);
 
       // Use the new yt.omada.cafe endpoint for YouTube playback
       const response = await this.fetchWithProxy(
@@ -4031,8 +4247,11 @@ export class AudioStreamManager {
       );
 
       if (!response.ok) {
+        console.error(`[YouTube Omada] HTTP error: ${response.status}`);
         throw new Error(`YouTube Omada returned ${response.status}`);
       }
+
+      console.log(`[YouTube Omada] Response status: ${response.status}`);
 
       // Check if response is HTML (blocked) instead of JSON
       const contentType = response.headers.get("content-type");
@@ -4043,6 +4262,9 @@ export class AudioStreamManager {
       }
 
       const data = await response.json();
+      console.log(
+        `[YouTube Omada] Response data keys: ${Object.keys(data).join(", ")}`
+      );
 
       // Check for adaptive formats (primary method)
       if (data.adaptiveFormats) {
@@ -4076,10 +4298,7 @@ export class AudioStreamManager {
           const audioFormat = audioFormats[i];
           if (audioFormat.url) {
             // Resolve relative URLs to full URLs
-            let audioUrl = audioFormat.url;
-            if (audioUrl.startsWith("/")) {
-              audioUrl = `${instance}${audioUrl}`;
-            }
+            let audioUrl = this.resolveRelativeUrl(instance, audioFormat.url);
 
             // Check if this is a GoogleVideo URL that might need proxying
             let useOmadaProxy = false;
@@ -4139,10 +4358,7 @@ export class AudioStreamManager {
           const audioStream = audioStreams[i];
           if (audioStream.url) {
             // Resolve relative URLs to full URLs
-            let audioUrl = audioStream.url;
-            if (audioUrl.startsWith("/")) {
-              audioUrl = `${instance}${audioUrl}`;
-            }
+            let audioUrl = this.resolveRelativeUrl(instance, audioStream.url);
 
             // Check if this is a GoogleVideo URL that needs proxying through Omada
             if (audioUrl.includes("googlevideo.com")) {
@@ -4195,10 +4411,7 @@ export class AudioStreamManager {
         for (let i = 0; i < videoStreams.length; i++) {
           const videoStream = videoStreams[i];
           if (videoStream.url) {
-            let videoUrl = videoStream.url;
-            if (videoUrl.startsWith("/")) {
-              videoUrl = `${instance}${videoUrl}`;
-            }
+            let videoUrl = this.resolveRelativeUrl(instance, videoStream.url);
 
             // Check if this is a GoogleVideo URL that needs proxying through Omada
             if (videoUrl.includes("googlevideo.com")) {
@@ -5026,6 +5239,23 @@ export class AudioStreamManager {
       }
     }
     return {};
+  }
+
+  // Helper method to get strategy name from function
+  private getStrategyName(strategy: Function): string {
+    const strategyMap = new Map<Function, string>([
+      [this.tryInvidious, "Invidious"],
+      [this.tryPiped, "Piped"],
+      [this.tryYouTubeOmada, "YouTube Omada"],
+      [this.tryLocalExtraction, "Local Extraction"],
+      [this.trySoundCloud, "SoundCloud"],
+      [this.tryYouTubeMusic, "YouTube Music"],
+      [this.trySpotifyWebApi, "Spotify Web API"],
+      [this.tryHyperpipe, "Hyperpipe"],
+      [this.tryYouTubeEmbed, "YouTube Embed"],
+    ]);
+
+    return strategyMap.get(strategy) || "Unknown Strategy";
   }
 
   // Cleanup method

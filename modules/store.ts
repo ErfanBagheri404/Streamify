@@ -70,7 +70,7 @@ if (savedStore) {
 
 export function setState<K extends keyof AppSettings>(
   key: K,
-  val: AppSettings[K]
+  val: AppSettings[K],
 ) {
   state[key] = val;
   const str = JSON.stringify(state);
