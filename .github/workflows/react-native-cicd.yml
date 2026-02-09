@@ -105,15 +105,10 @@ jobs:
       #  PRODUCTION build (standalone, offline, no Metro required)
       # ----------------------------------------------------------
 
-<<<<<<< HEAD
-      - name: 📱 Build Production APK (main/master)
+      - name: 📱 Build Production APK
         if: >
           (github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push')
           && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-=======
-      - name: 📱 Build Production APK
-        if: github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push'
->>>>>>> 2477e6e38407734f1c6cfbcb833da731b0594232
         run: |
           export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
            
