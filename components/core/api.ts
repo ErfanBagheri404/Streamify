@@ -29,17 +29,34 @@ export type InvidiousInstance = (typeof API.invidious)[number];
 export type PipedInstance = (typeof API.piped)[number];
 
 // Dynamic Invidious instances array (mutable)
-export let DYNAMIC_INVIDIOUS_INSTANCES = [...API.invidious];
+export let DYNAMIC_INVIDIOUS_INSTANCES: string[] = [...API.invidious];
 
 // Update function for dynamic Invidious instances
-export function updateInvidiousInstances(
-  newInstances: readonly InvidiousInstance[]
-) {
+export function updateInvidiousInstances(newInstances: readonly string[]) {
+  const normalizedExisting = DYNAMIC_INVIDIOUS_INSTANCES.map((instance) =>
+    normalizeInvidiousInstance(instance)
+  );
+  const normalizedNew = newInstances.map((instance) =>
+    normalizeInvidiousInstance(instance)
+  );
   const uniqueInstances = [
-    ...new Set([...DYNAMIC_INVIDIOUS_INSTANCES, ...newInstances]),
+    ...new Set([...normalizedExisting, ...normalizedNew]),
   ];
   DYNAMIC_INVIDIOUS_INSTANCES = uniqueInstances;
   return uniqueInstances;
+}
+export function setInvidiousInstances(instances: readonly string[]) {
+  DYNAMIC_INVIDIOUS_INSTANCES = [
+    ...new Set(
+      instances.map((instance) => normalizeInvidiousInstance(instance))
+    ),
+  ];
+  return DYNAMIC_INVIDIOUS_INSTANCES;
+}
+export function normalizeInvidiousInstance(instance: string): string {
+  const trimmed = instance.trim();
+  const withoutApi = trimmed.replace(/\/api\/v1\/?$/i, "");
+  return withoutApi.replace(/\/+$/g, "");
 }
 
 // Helper functions for instance management
@@ -101,7 +118,11 @@ export async function updateInvidiousInstancesFromUma(): Promise<void> {
   try {
     const umaInstances = await fetchUma();
     if (umaInstances.length > 0) {
-      updateInvidiousInstances(umaInstances as InvidiousInstance[]);
+      updateInvidiousInstances(
+        umaInstances.map((instance) =>
+          normalizeInvidiousInstance(instance)
+        ) as string[]
+      );
       console.log(
         `[API] Updated Invidious instances from Uma. Total: ${DYNAMIC_INVIDIOUS_INSTANCES.length}`
       );
@@ -233,6 +254,56 @@ export async function getHealthyInstances(
     .map((result) => result.instance);
 }
 
+async function fastCheckInvidiousInstance(
+  baseUrl: string,
+  timeoutMs: number = 3000
+): Promise<{ instance: string; ok: boolean; latency: number }> {
+  const start = Date.now();
+  try {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), timeoutMs);
+    const normalizedBaseUrl = normalizeInvidiousInstance(baseUrl);
+    const url = `${normalizedBaseUrl}/api/v1/videos/dQw4w9WgXcQ?local=true`;
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(t);
+    if (!res.ok) {
+      return {
+        instance: normalizedBaseUrl,
+        ok: false,
+        latency: Date.now() - start,
+      };
+    }
+    const ct = res.headers.get("content-type") || "";
+    if (!ct.includes("json")) {
+      return { instance: baseUrl, ok: false, latency: Date.now() - start };
+    }
+    const text = await res.text();
+    const ok =
+      text.includes("adaptiveFormats") ||
+      text.includes("formatStreams") ||
+      text.includes("lengthSeconds");
+    return { instance: normalizedBaseUrl, ok, latency: Date.now() - start };
+  } catch {
+    return {
+      instance: normalizeInvidiousInstance(baseUrl),
+      ok: false,
+      latency: Date.now() - start,
+    };
+  }
+}
+
+export async function getHealthyInvidiousInstancesSorted(
+  instances: string[],
+  timeoutMs: number = 3000
+): Promise<string[]> {
+  const checks = await Promise.all(
+    instances.map((i) => fastCheckInvidiousInstance(i, timeoutMs))
+  );
+  const healthy = checks.filter((c) => c.ok);
+  healthy.sort((a, b) => a.latency - b.latency);
+  return healthy.map((c) => c.instance);
+}
+
 // Original streaming functions
 export async function fetchStreamFromPiped(id: string, api: string) {
   const res = await fetch(`${api}/streams/${id}`);
@@ -299,18 +370,22 @@ export async function initializeDynamicInstances(): Promise<void> {
     const umaInstances = await fetchUma();
 
     if (umaInstances.length > 0) {
-      // Add /api/v1 suffix to instances if not present
-      const formattedInstances = umaInstances.map((instance) => {
-        if (!instance.includes("/api/v1")) {
-          return `${instance}/api/v1`;
-        }
-        return instance;
-      }) as InvidiousInstance[];
+      const formattedInstances = umaInstances.map((instance) =>
+        normalizeInvidiousInstance(instance)
+      ) as string[];
 
       updateInvidiousInstances(formattedInstances);
-      console.log(
-        `[API] Updated with ${formattedInstances.length} dynamic instances from Uma`
+      const healthy = await getHealthyInvidiousInstancesSorted(
+        DYNAMIC_INVIDIOUS_INSTANCES
       );
+      if (healthy.length > 0) {
+        setInvidiousInstances(healthy as string[]);
+        console.log(
+          `[API] Healthy Invidious instances ready: ${healthy.length}`
+        );
+      } else {
+        console.log("[API] No healthy instances detected, keeping defaults");
+      }
     } else {
       console.log("[API] No dynamic instances fetched, using defaults");
     }

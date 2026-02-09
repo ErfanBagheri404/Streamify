@@ -374,6 +374,71 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           setAlbumArtist(routeArtist || "Unknown Artist");
           setErrorMessage("Failed to load playlist");
         }
+      } else if (source === "soundcloud") {
+        try {
+          const playlistUrlParam =
+            typeof albumId === "string" ? albumId : String(albumId);
+          const endpoint = `https://beatseek.io/api/playlist?url=${encodeURIComponent(
+            playlistUrlParam
+          )}`;
+          const res = await fetch(endpoint, {
+            headers: {
+              Accept: "application/json",
+            },
+          });
+          if (!res.ok) {
+            setAlbumSongs([]);
+            setAlbumTitle(albumName);
+            setAlbumArtist(routeArtist || "Unknown Artist");
+            setErrorMessage("Failed to load SoundCloud playlist");
+          } else {
+            const data = await res.json();
+            const tracks: any[] = Array.isArray(data?.tracks)
+              ? data.tracks
+              : [];
+            const songs = tracks.map((t: any) => {
+              const artwork = t.artwork_url
+                ? t.artwork_url.replace("large.jpg", "t500x500.jpg")
+                : t.user?.avatar_url || "";
+              return {
+                id: String(t.id || t.track_id || t.permalink || t.url || ""),
+                title: t.title || "Unknown Title",
+                artist:
+                  t.user?.username ||
+                  t.artist ||
+                  routeArtist ||
+                  "Unknown Artist",
+                duration: t.duration ? Math.floor(t.duration / 1000) : 0,
+                thumbnail: artwork,
+                source: "soundcloud",
+                _isSoundCloud: true,
+                albumId: playlistUrlParam,
+                albumName: albumName,
+              };
+            });
+            setAlbumSongs(songs);
+            setAlbumTitle(data?.title || albumName);
+            setAlbumArtist(
+              routeArtist ||
+                data?.artist ||
+                data?.user?.username ||
+                "Unknown Artist"
+            );
+            const cover =
+              data?.artwork ||
+              data?.image ||
+              data?.thumbnail ||
+              songs[0]?.thumbnail ||
+              "";
+            setAlbumArtUrl(cover || "");
+            setErrorMessage("");
+          }
+        } catch (err) {
+          setAlbumSongs([]);
+          setAlbumTitle(albumName);
+          setAlbumArtist(routeArtist || "Unknown Artist");
+          setErrorMessage("Failed to load SoundCloud playlist");
+        }
       } else if (source === "youtube" || source === "youtubemusic") {
         // Handle YouTube/YouTube Music playlists
         console.log(

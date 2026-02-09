@@ -130,6 +130,7 @@ const AlbumTitle = styled.Text`
   font-size: 24px;
   font-family: GoogleSansBold;
   line-height: 28px;
+  flex-shrink: 1;
 `;
 
 const AlbumArtist = styled.Text`
@@ -137,6 +138,7 @@ const AlbumArtist = styled.Text`
   font-size: 16px;
   font-family: GoogleSansRegular;
   line-height: 20px;
+  flex-shrink: 1;
 `;
 
 const ShuffleButton = styled.TouchableOpacity`
@@ -303,9 +305,15 @@ export const Playlist: React.FC<PlaylistProps> = ({
       </AlbumArtContainer>
 
       <AlbumInfoContainer>
-        <View>
-          <AlbumTitle>{title}</AlbumTitle>
-          {artist && <AlbumArtist>{artist}</AlbumArtist>}
+        <View style={{ flex: 1, paddingRight: 16 }}>
+          <AlbumTitle numberOfLines={1} ellipsizeMode="tail">
+            {title}
+          </AlbumTitle>
+          {artist && (
+            <AlbumArtist numberOfLines={1} ellipsizeMode="tail">
+              {artist}
+            </AlbumArtist>
+          )}
         </View>
         <ShuffleButton onPress={onShuffle}>
           <Ionicons name="shuffle" size={24} color="#fff" />

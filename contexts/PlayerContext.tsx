@@ -146,6 +146,19 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   // Audio monitoring listeners for cleanup
   const audioMonitoringListenersRef = useRef<any[]>([]);
 
+  const updateIsPlayingFromState = useCallback(async () => {
+    try {
+      const playbackState = await TrackPlayer.getPlaybackState();
+      const resolvedState =
+        (playbackState as any)?.state ?? (playbackState as any);
+      const nextIsPlaying =
+        resolvedState === State.Playing ||
+        resolvedState === State.Buffering ||
+        resolvedState === State.Connecting;
+      setIsPlaying(nextIsPlaying);
+    } catch (error) {}
+  }, []);
+
   // Initialize TrackPlayer on startup
   useEffect(() => {
     const initializeTrackPlayer = async () => {
@@ -169,6 +182,23 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     };
 
     initializeTrackPlayer();
+  }, []);
+
+  useEffect(() => {
+    const subscription = TrackPlayer.addEventListener(
+      Event.PlaybackState,
+      (event: any) => {
+        const resolvedState = event?.state ?? event;
+        const nextIsPlaying =
+          resolvedState === State.Playing ||
+          resolvedState === State.Buffering ||
+          resolvedState === State.Connecting;
+        setIsPlaying(nextIsPlaying);
+      }
+    );
+    return () => {
+      subscription?.remove?.();
+    };
   }, []);
 
   // Load liked songs from storage on startup
@@ -205,7 +235,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           // Track Player handles background playback automatically
         } else if (nextAppState === "active") {
           console.log("[PlayerContext] App coming to foreground");
-          // Keep the service running in case user switches tracks
+          updateIsPlayingFromState();
         }
       }
     };
@@ -217,7 +247,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => {
       subscription.remove();
     };
-  }, [isPlaying, currentTrack]);
+  }, [isPlaying, currentTrack, updateIsPlayingFromState]);
 
   // Load previously played songs from storage on startup
   useEffect(() => {
@@ -288,77 +318,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     updateTheme();
   }, [currentTrack?.thumbnail]);
 
-  // Monitor stream health and refresh if needed
+  // Monitor stream health and refresh if needed (legacy polling disabled in favor of TrackPlayer events)
   useEffect(() => {
-    console.log(
-      `[PlayerContext] Stream monitor check - isPlaying: ${isPlaying}, currentTrack?.audioUrl: ${!!currentTrack?.audioUrl}`
-    );
-
-    if (!isPlaying || !currentTrack?.audioUrl) {
-      return;
-    }
-
-    const streamMonitor = setInterval(async () => {
-      try {
-        const position = await trackPlayerService.getPosition();
-        const duration = await trackPlayerService.getDuration();
-        setPosition(position);
-        setDuration(duration);
-        console.log(
-          `[PlayerContext] Stream status - position: ${position}s, duration: ${duration}s`
-        );
-
-        if (position >= 0) {
-          // Check if position is advancing
-          const currentTime = Date.now();
-          const currentPosition = position;
-
-          // Store last known position and time
-          if (!streamCheckRef.current) {
-            streamCheckRef.current = {
-              position: currentPosition,
-              time: currentTime,
-            };
-            return;
-          }
-
-          const timeDiff = currentTime - streamCheckRef.current.time;
-          const positionDiff =
-            currentPosition - streamCheckRef.current.position;
-
-          // If position hasn't changed in 5+ seconds, stream might be stuck
-          if (timeDiff > 5000 && positionDiff === 0) {
-            if (currentTrack) {
-              console.warn(
-                "[PlayerContext] Stream appears stuck, attempting refresh"
-              );
-              handleStreamFailure();
-            } else {
-              console.warn(
-                "[PlayerContext] Stream appears stuck but no current track, skipping refresh"
-              );
-            }
-            streamCheckRef.current = null;
-          } else {
-            streamCheckRef.current = { position, time: currentTime };
-          }
-        } else {
-          console.log(
-            `[PlayerContext] Stream not in valid state - position: ${position}`
-          );
-        }
-      } catch (error) {
-        // Only log if it's not a "Player does not exist" error (which is expected during cleanup)
-        if (error?.toString().includes("Player does not exist")) {
-          clearInterval(streamMonitor);
-        }
-      }
-    }, 3000); // Check every 3 seconds
-
-    return () => {
-      clearInterval(streamMonitor);
-      streamCheckRef.current = null;
-    };
+    streamCheckRef.current = null;
   }, [isPlaying, currentTrack?.audioUrl]);
 
   const playTrack = useCallback(
@@ -491,20 +453,21 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               audioUrl = originalStreamUrl;
               console.log(`[PlayerContext] Got SoundCloud URL: ${audioUrl}`);
             } else if (track._isJioSaavn || track.source === "jiosaavn") {
-              // JioSaavn disabled - skip fetching additional details
               console.log(
-                "[PlayerContext] JioSaavn song details disabled - using existing data"
+                `[PlayerContext] Getting JioSaavn streaming URL for track: ${track.id}`
               );
-              audioUrl = track.audioUrl;
-              originalStreamUrl = audioUrl;
-              if (!audioUrl) {
-                console.log(
-                  `[PlayerContext] JioSaavn track has no audio URL, playback failed for: ${track.title}`
-                );
-                throw new Error(
-                  `Unable to get audio stream for JioSaavn track: ${track.title}`
-                );
-              }
+              originalStreamUrl = await getAudioStreamUrl(
+                track.id,
+                (status) =>
+                  console.log(
+                    `[PlayerContext] JioSaavn streaming status: ${status}`
+                  ),
+                "jiosaavn",
+                track.title,
+                track.artist
+              );
+              audioUrl = originalStreamUrl;
+              console.log(`[PlayerContext] Got JioSaavn URL: ${audioUrl}`);
             } else {
               // Only fetch streaming URL if we don't already have one
               if (!track.audioUrl) {
@@ -677,6 +640,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             const position = event.position;
             const duration = event.duration;
 
+            setPosition(position);
+            setDuration(duration);
+
             // Check if we've been in this position for too long (indicating silent playback)
             // Be more lenient for YouTube streams during initial buffering
             const timeSinceStart = Date.now() - initialBufferTime;
@@ -721,24 +687,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               // Could implement pre-emptive refresh here if needed
             }
 
-            // Check if position is stuck (indicates stream failure)
-            if (position === lastPosition) {
-              positionStuckCounter++;
-
-              // Different thresholds for different stream types and phases
-              const threshold =
-                isYouTubeStream && isInitialBufferPhase ? 5 : STUCK_THRESHOLD;
-
-              if (positionStuckCounter >= threshold && currentTrack) {
-                console.warn(
-                  `[PlayerContext] Audio position stuck at ${position}s, possible stream failure (${isYouTubeStream ? "YouTube" : "SoundCloud"}, threshold: ${threshold})`
-                );
-                // Try to reload the stream
-                handleStreamFailure();
-              }
-            } else {
-              positionStuckCounter = 0;
-            }
             lastPosition = position;
           }
         );
@@ -1027,9 +975,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   ]);
 
   const seekTo = useCallback(
-    async (position: number) => {
+    async (positionSeconds: number) => {
       console.log(
-        `[PlayerContext] seekTo called - position: ${position}, currentTrack?.audioUrl: ${!!currentTrack?.audioUrl}`
+        `[PlayerContext] seekTo called - positionSeconds: ${positionSeconds}, currentTrack?.audioUrl: ${!!currentTrack?.audioUrl}`
       );
 
       if (!currentTrack?.audioUrl) {
@@ -1038,6 +986,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       try {
+        const positionMs = positionSeconds * 1000;
+
         // Store current playing state to restore later
         const wasPlaying = isPlaying;
 
@@ -1058,7 +1008,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             currentTrack.source === "jiosaavn")
         ) {
           console.log(
-            `[PlayerContext] Checking if position ${position}ms is cached for track: ${currentTrack.id}`
+            `[PlayerContext] Checking if position ${positionMs}ms is cached for track: ${currentTrack.id}`
           );
 
           try {
@@ -1068,7 +1018,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
             const positionCheck = await manager.isPositionCached(
               currentTrack.id,
-              position
+              positionMs
             );
             console.log(
               `[PlayerContext] Position cache check: isCached=${positionCheck.isCached}, cacheEnd=${positionCheck.estimatedCacheEndMs}ms`
@@ -1076,7 +1026,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
             if (!positionCheck.isCached) {
               console.warn(
-                `[PlayerContext] Position ${position}ms is not cached (cache ends at ${positionCheck.estimatedCacheEndMs}ms). Attempting to cache more...`
+                `[PlayerContext] Position ${positionMs}ms is not cached (cache ends at ${positionCheck.estimatedCacheEndMs}ms). Attempting to cache more...`
               );
 
               // Set loading state to indicate we're caching
@@ -1086,7 +1036,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               // For YouTube tracks, use position-based caching
               if (currentTrack.source === "youtube") {
                 console.log(
-                  `[PlayerContext] Starting position-based caching from ${position}ms for YouTube track: ${currentTrack.id}`
+                  `[PlayerContext] Starting position-based caching from ${positionMs}ms for YouTube track: ${currentTrack.id}`
                 );
                 try {
                   const { cacheYouTubeStreamFromPosition } =
@@ -1099,7 +1049,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                   const cachedUrl = await cacheYouTubeStreamFromPosition(
                     currentTrack.audioUrl,
                     currentTrack.id,
-                    position / 1000, // Convert ms to seconds
+                    positionSeconds,
                     seekCacheController
                   );
 
@@ -1163,7 +1113,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               );
             } else {
               console.log(
-                `[PlayerContext] Position ${position}ms is within cached range`
+                `[PlayerContext] Position ${positionMs}ms is within cached range`
               );
             }
           } catch (cacheCheckError) {
@@ -1182,8 +1132,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           return;
         }
 
-        console.log(`[PlayerContext] Seeking to position: ${position}`);
-        await trackPlayerService.seekTo(position);
+        console.log(
+          `[PlayerContext] Seeking to positionSeconds: ${positionSeconds}`
+        );
+        await trackPlayerService.seekTo(positionSeconds);
         console.log("[PlayerContext] Seek completed successfully");
 
         // Only resume playback if it was playing before the seek

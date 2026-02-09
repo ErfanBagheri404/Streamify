@@ -13,7 +13,6 @@ import {
   TouchableWithoutFeedback,
   Platform,
   ScrollView,
-  FlatList,
   ActivityIndicator,
   Text,
 } from "react-native";
@@ -271,62 +270,45 @@ const SearchSection = memo(
       return null;
     }
 
-    const renderItem = useCallback(
-      ({ item }: { item: any }) => (
-        <TouchableOpacity
-          key={`${item.source || "yt"}-${item.id}`}
-          onPress={() => onItemPress(item)}
-        >
-          <MemoizedStreamItem
-            id={item.id}
-            title={item.title}
-            author={item.author}
-            duration={formatDuration(parseInt(item.duration) || 0, item.source)}
-            views={
-              item.source === "jiosaavn" ||
-              (selectedSource === "youtubemusic" &&
-                selectedFilter === "songs") ||
-              item.views === "-1" ||
-              item.views === "0"
-                ? undefined
-                : item.views
-            }
-            videoCount={item.videoCount}
-            uploaded={item.uploaded}
-            thumbnailUrl={item.thumbnailUrl}
-            isAlbum={!!item.albumId}
-            albumYear={item.albumYear}
-            source={item.source}
-            type={item.type}
-            channelDescription={item.description}
-            verified={item.verified}
-            searchFilter={selectedFilter}
-            searchSource={selectedSource}
-          />
-        </TouchableOpacity>
-      ),
-      [onItemPress]
-    );
-
     return (
       <SectionContainer>
         <SectionTitle>{title}</SectionTitle>
-        <FlatList
-          data={items}
-          renderItem={renderItem}
-          keyExtractor={(item) => `${item.source || "yt"}-${item.id}`}
-          scrollEnabled={false}
-          showsVerticalScrollIndicator={false}
-          windowSize={5}
-          initialNumToRender={5}
-          maxToRenderPerBatch={5}
-          removeClippedSubviews={true}
-          getItemLayout={(data, index) => ({
-            length: 80,
-            offset: 80 * index,
-            index,
-          })}
-        />
+        {items.map((item) => (
+          <TouchableOpacity
+            key={`${item.source || "yt"}-${item.id}`}
+            onPress={() => onItemPress(item)}
+          >
+            <MemoizedStreamItem
+              id={item.id}
+              title={item.title}
+              author={item.author}
+              duration={formatDuration(
+                parseInt(item.duration) || 0,
+                item.source
+              )}
+              views={
+                item.source === "jiosaavn" ||
+                (selectedSource === "youtubemusic" &&
+                  selectedFilter === "songs") ||
+                item.views === "-1" ||
+                item.views === "0"
+                  ? undefined
+                  : item.views
+              }
+              videoCount={item.videoCount}
+              uploaded={item.uploaded}
+              thumbnailUrl={item.thumbnailUrl || item.artworkUrl || item.img}
+              isAlbum={!!item.albumId}
+              albumYear={item.albumYear}
+              source={item.source}
+              type={item.type}
+              channelDescription={item.description}
+              verified={item.verified}
+              searchFilter={selectedFilter}
+              searchSource={selectedSource}
+            />
+          </TouchableOpacity>
+        ))}
       </SectionContainer>
     );
   }
@@ -614,9 +596,14 @@ export default function SearchScreen({ navigation }: any) {
             20
           );
         } else if (selectedSource === "jiosaavn") {
-          // JioSaavn Search - disabled
-          console.log("[\SearchScreen] JioSaavn search disabled");
-          results = [];
+          // JioSaavn Search
+          console.log("[SearchScreen] Starting JioSaavn search");
+          results = await searchAPI.searchWithJioSaavn(
+            queryToUse,
+            selectedFilter,
+            paginationRef.current.page,
+            20
+          );
         } else if (selectedSource === "spotify") {
           // Placeholder for Spotify
           console.log(t("search.spotify_not_implemented"));
@@ -1118,7 +1105,16 @@ export default function SearchScreen({ navigation }: any) {
   const handleAlbumPress = useCallback(
     async (item: any) => {
       // Navigate to album playlist screen
-      if (item.source === "jiosaavn") {
+      if (item.source === "soundcloud") {
+        navigation.navigate("AlbumPlaylist", {
+          albumId: item.id,
+          albumName: item.title,
+          albumArtist: item.author,
+          source: item.source,
+          href: item.href,
+          type: item.type,
+        });
+      } else if (item.source === "jiosaavn") {
         navigation.navigate("AlbumPlaylist", {
           albumId: item.id,
           albumName: item.title,
@@ -1471,7 +1467,7 @@ export default function SearchScreen({ navigation }: any) {
         <ResultsContainer
           ref={scrollViewRef}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 120 }} // Increased padding for last items accessibility
+          contentContainerStyle={{ paddingBottom: 120 }}
           onScroll={(event) => {
             scrollPositionRef.current = event.nativeEvent.contentOffset.y;
           }}

@@ -5,6 +5,8 @@ import {
   API,
   fetchWithRetry,
   DYNAMIC_INVIDIOUS_INSTANCES,
+  normalizeInvidiousInstance,
+  getJioSaavnSongEndpoint,
 } from "../components/core/api";
 
 // Cache directory configuration
@@ -80,8 +82,8 @@ export class AudioStreamManager {
   > = new Map();
 
   // Maximum retry attempts for failed downloads
-  private readonly MAX_RETRY_ATTEMPTS = 3;
-  private readonly RETRY_DELAY = 2000; // 2 seconds
+  private readonly MAX_RETRY_ATTEMPTS = 1;
+  private readonly RETRY_DELAY = 500; // 2 seconds
   private readonly PROGRESS_UPDATE_INTERVAL = 1000; // 1 second
   private readonly MIN_PROGRESS_THRESHOLD = 0.5; // Minimum 0.5% progress per update
 
@@ -522,17 +524,7 @@ export class AudioStreamManager {
   }
 
   private getCorsProxyUrl(url: string): string {
-    // Use a simple CORS proxy to bypass CORS issues
-    const corsProxies = [
-      "https://corsproxy.io/?",
-      "https://api.allorigins.win/raw?url=",
-      "https://cors-anywhere.herokuapp.com/",
-      "https://proxy.cors.sh/",
-    ];
-
-    // Use the first available proxy
-    const proxy = corsProxies[0];
-    return proxy + encodeURIComponent(url);
+    return url;
   }
 
   /**
@@ -3427,207 +3419,71 @@ export class AudioStreamManager {
     return proxy;
   }
 
-  // Enhanced fetch with proxy rotation and retry logic
   private async fetchWithProxy(
     url: string,
     options: RequestInit = {},
     retries = 3,
     timeout = 30000
   ): Promise<Response> {
+    let lastError: unknown = null;
+
     for (let i = 0; i <= retries; i++) {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-        // Try direct request first (for YouTube/Invidious instances that work)
-        console.log(`[AudioStreamManager] Attempting direct request: ${url}`);
-        let response = await fetch(url, {
+        console.log(
+          `[AudioStreamManager] Attempting request (${i + 1}/${retries + 1}): ${url}`
+        );
+
+        const response = await fetch(url, {
           ...options,
           signal: controller.signal,
           headers: {
             "User-Agent":
               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            Accept: "application/json, text/plain, * / *",
+            Accept: "application/json, text/plain, */*",
             "Accept-Language": "en-US,en;q=0.9",
             ...options.headers,
           },
         });
 
-        // If direct request fails or is blocked, try with proxy
-        if (
-          !response.ok ||
-          response.status === 403 ||
-          response.status === 429
-        ) {
-          console.log(
-            `[AudioStreamManager] Direct request failed (${response.status}), trying proxy...`
-          );
-          clearTimeout(timeoutId);
-
-          const proxyUrl = this.getNextProxy();
-          const proxiedUrl = proxyUrl + encodeURIComponent(url);
-          console.log(`[AudioStreamManager] Fetching via proxy: ${proxiedUrl}`);
-
-          const proxyController = new AbortController();
-          const proxyTimeoutId = setTimeout(
-            () => proxyController.abort(),
-            timeout
-          );
-
-          response = await fetch(proxiedUrl, {
-            ...options,
-            signal: proxyController.signal,
-            headers: {
-              "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-              Accept: "application/json, text/plain, * / *",
-              "Accept-Language": "en-US,en;q=0.9",
-              ...options.headers,
-            },
-          });
-          clearTimeout(proxyTimeoutId);
-        }
         clearTimeout(timeoutId);
 
-        // Enhanced blocking detection
-        const contentType = response.headers.get("content-type");
-        const responseText = await response.text();
-
-        // Check for various blocking indicators
-        const isHtmlResponse = contentType?.includes("text/html");
-        const isApiRequest = url.includes("/api/");
-        const hasCloudflare =
-          responseText.includes("cf-browser-verification") ||
-          responseText.includes("cloudflare") ||
-          responseText.includes("Checking your browser") ||
-          responseText.includes("DDoS protection by Cloudflare");
-        const hasBlockingPage =
-          responseText.includes("blocked") ||
-          responseText.includes("access denied") ||
-          responseText.includes("forbidden");
-
-        if (
-          (isHtmlResponse && isApiRequest) ||
-          hasCloudflare ||
-          hasBlockingPage
-        ) {
-          throw new Error(
-            `Cloudflare/blocked API request: ${hasCloudflare ? "Cloudflare detected" : hasBlockingPage ? "Blocking page" : "HTML response to API request"}`
-          );
-        }
-
-        // Re-create response since we consumed the body
-        const recreatedResponse = new Response(responseText, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: response.headers,
-        });
-
         if (response.ok) {
-          return recreatedResponse;
+          return response;
         }
 
-        // Handle specific HTTP error codes
-        if (response.status === 429) {
-          throw new Error("Rate limited (429): Too many requests");
-        } else if (response.status === 503) {
-          throw new Error(
-            "Service unavailable (503): Instance may be overloaded"
-          );
-        } else if (response.status === 502) {
-          throw new Error("Bad gateway (502): Instance proxy error");
-        } else if (response.status === 404) {
-          throw new Error("Not found (404): Resource not available");
-        } else if (response.status >= 500) {
-          throw new Error(
-            `Server error (${response.status}): Instance may be down`
-          );
-        }
-
-        if (i < retries) {
-          const proxyUrl = this.getNextProxy() + encodeURIComponent(url);
-          const proxyController = new AbortController();
-          const proxyTimeoutId = setTimeout(
-            () => proxyController.abort(),
-            timeout
-          );
-
-          const proxyResponse = await fetch(proxyUrl, {
-            ...options,
-            signal: proxyController.signal,
-            headers: {
-              "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-              Accept: "application/json, text/plain, *\/\/*",
-              "Accept-Language": "en-US,en;q=0.9",
-              ...options.headers,
-            },
-          });
-          clearTimeout(proxyTimeoutId);
-
-          const proxyContentType = proxyResponse.headers.get("content-type");
-          const proxyResponseText = await proxyResponse.text();
-
-          // Check for blocking indicators in proxy response
-          const proxyHasCloudflare =
-            proxyResponseText.includes("cf-browser-verification") ||
-            proxyResponseText.includes("cloudflare") ||
-            proxyResponseText.includes("Checking your browser") ||
-            proxyResponseText.includes("DDoS protection by Cloudflare");
-
-          if (
-            (proxyContentType?.includes("text/html") &&
-              url.includes("/api/")) ||
-            proxyHasCloudflare
-          ) {
-            throw new Error(
-              `Cloudflare/blocked API request via proxy: ${proxyHasCloudflare ? "Cloudflare detected" : "HTML response to API request"}`
-            );
-          }
-
-          // Re-create proxy response
-          const recreatedProxyResponse = new Response(proxyResponseText, {
-            status: proxyResponse.status,
-            statusText: proxyResponse.statusText,
-            headers: proxyResponse.headers,
-          });
-
-          if (proxyResponse.ok) {
-            return recreatedProxyResponse;
-          }
-        }
+        lastError = new Error(
+          `HTTP ${response.status}: ${response.statusText}`
+        );
       } catch (error) {
-        if (i === retries) {
-          throw error;
-        }
+        lastError = error;
+      }
 
-        // Enhanced error logging
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
+      if (i < retries) {
+        const message =
+          lastError instanceof Error ? lastError.message : String(lastError);
         console.warn(
-          `[AudioStreamManager] fetchWithProxy attempt ${i + 1} failed for ${url}: ${errorMessage}`
+          `[AudioStreamManager] fetchWithProxy attempt ${i + 1} failed for ${url}: ${message}`
         );
 
-        // Don't retry on certain errors (blocking, auth, etc.)
-        if (
-          errorMessage.includes("Cloudflare") ||
-          errorMessage.includes("blocked") ||
-          errorMessage.includes("forbidden") ||
-          errorMessage.includes("401") ||
-          errorMessage.includes("403")
-        ) {
-          throw error; // Don't retry on blocking/auth errors
-        }
-
-        // Exponential backoff with jitter
         const backoffMs = 2000 * Math.pow(2, i) + Math.random() * 1000;
         console.log(
-          `[AudioStreamManager] Waiting ${Math.round(backoffMs)}ms before retry ${i + 2}`
+          `[AudioStreamManager] Waiting ${Math.round(
+            backoffMs
+          )}ms before retry ${i + 2}`
         );
         await new Promise((resolve) => setTimeout(resolve, backoffMs));
       }
     }
-    throw new Error(`Failed to fetch ${url} after ${retries + 1} attempts`);
+
+    if (lastError instanceof Error) {
+      throw lastError;
+    }
+    throw new Error(
+      lastError ? String(lastError) : `Failed to fetch ${url} after retries`
+    );
   }
 
   private async tryLocalExtraction(videoId: string): Promise<string> {
@@ -3665,21 +3521,34 @@ export class AudioStreamManager {
 
   private async tryJioSaavn(videoId: string): Promise<string> {
     try {
-      // Get video info with extended timeout
+      const directDetailsUrl = getJioSaavnSongEndpoint(videoId);
+      try {
+        const directData = await this.fetchWithProxy(
+          directDetailsUrl,
+          {},
+          2,
+          15000
+        );
+        if (directData.ok) {
+          const json = await directData.json();
+          const song = Array.isArray(json?.data) ? json.data[0] : null;
+          const downloads = song?.downloadUrl || [];
+          const q320 = downloads.find((d: any) => d.quality === "320kbps")?.url;
+          const q160 = downloads.find((d: any) => d.quality === "160kbps")?.url;
+          const q96 = downloads.find((d: any) => d.quality === "96kbps")?.url;
+          const anyUrl = q320 || q160 || q96 || downloads[0]?.url || song?.url;
+          if (anyUrl) {
+            return String(anyUrl).replace("http:", "https:");
+          }
+        }
+      } catch {}
       const videoInfo = await this.getVideoInfoWithTimeout(videoId, 25000);
-      if (!videoInfo.title) {
-        throw new Error("Could not extract video title for JioSaavn search");
-      }
-
-      // Clean up title for better search results
-      const cleanTitle = videoInfo.title
+      const cleanTitle = (videoInfo.title || "")
         .replace(/\(.*?\)|\.|.*|\]/g, "")
         .trim();
       const cleanAuthor = videoInfo.author
         ? videoInfo.author.replace(/ - Topic|VEVO|Official/gi, "").trim()
         : "";
-
-      // Try multiple JioSaavn endpoints
       const jiosaavnEndpoints = [
         "https://jiosaavn-api-privatecvc.vercel.app/api/search/songs",
         "https://jiosaavn-api-v3.vercel.app/api/search/songs",
@@ -4098,10 +3967,17 @@ export class AudioStreamManager {
 
   private async tryInvidious(videoId: string): Promise<string> {
     // Use dynamic instances if available, otherwise fall back to hardcoded ones
-    const instances =
+    const baseInstances =
       DYNAMIC_INVIDIOUS_INSTANCES.length > 0
         ? DYNAMIC_INVIDIOUS_INSTANCES
-        : ["https://echostreamz.com"];
+        : API.invidious.length > 0
+          ? API.invidious
+          : ["https://echostreamz.com"];
+    const instances = [
+      ...new Set(
+        baseInstances.map((instance) => normalizeInvidiousInstance(instance))
+      ),
+    ];
 
     console.log(
       `[AudioStreamManager] Invidious trying ${instances.length} instances for video: ${videoId}`
@@ -4714,93 +4590,7 @@ export class AudioStreamManager {
         // Widget strategy failed
       }
 
-      // Strategy 3: Search for the specific track by title and artist
-      if (trackTitle || trackArtist) {
-        try {
-          const searchQuery = [trackTitle, trackArtist]
-            .filter(Boolean)
-            .join(" ");
-
-          const searchUrl = `https://proxy.searchsoundcloud.com/tracks?q=${encodeURIComponent(
-            searchQuery
-          )}&limit=10&client_id=${this.SOUNDCLOUD_CLIENT_ID}`;
-          console.log(`[Audio] Search URL: ${searchUrl}`);
-
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-          const searchResponse = await fetch(searchUrl, {
-            headers: {
-              "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            },
-            signal: controller.signal,
-          });
-
-          clearTimeout(timeoutId);
-
-          if (searchResponse.ok) {
-            const searchData = await searchResponse.json();
-
-            if (searchData.collection && searchData.collection.length > 0) {
-              // Look for exact match by track ID first
-              const exactMatch = searchData.collection.find(
-                (track: any) => String(track.id) === trackId
-              );
-
-              if (exactMatch) {
-                return await this.extractSoundCloudStream(
-                  exactMatch,
-                  controller
-                );
-              }
-
-              // Look for title/artist match
-              const titleMatch = searchData.collection.find((track: any) => {
-                const trackTitleLower = track.title?.toLowerCase() || "";
-                const searchTitleLower = trackTitle?.toLowerCase() || "";
-                const trackArtistLower =
-                  track.user?.username?.toLowerCase() || "";
-                const searchArtistLower = trackArtist?.toLowerCase() || "";
-
-                return (
-                  (searchTitleLower &&
-                    trackTitleLower.includes(searchTitleLower)) ||
-                  (searchArtistLower &&
-                    trackArtistLower.includes(searchArtistLower))
-                );
-              });
-
-              if (titleMatch) {
-                return await this.extractSoundCloudStream(
-                  titleMatch,
-                  controller
-                );
-              }
-
-              // If no exact matches, try the first track with transcodings
-              const availableTrack = searchData.collection.find(
-                (track: any) => track.media?.transcodings?.length > 0
-              );
-
-              if (availableTrack) {
-                return await this.extractSoundCloudStream(
-                  availableTrack,
-                  controller
-                );
-              }
-            }
-          }
-        } catch (searchError) {
-          console.log(
-            `[Audio] Search strategy failed: ${
-              searchError instanceof Error ? searchError.message : searchError
-            }`
-          );
-        }
-      }
-
-      // Strategy 4: Fallback - try to construct a direct stream URL
+      // Strategy 3: Fallback - try to construct a direct stream URL
       const fallbackUrl = `https://api.soundcloud.com/tracks/${trackId}/stream?client_id=${this.SOUNDCLOUD_CLIENT_ID}`;
 
       // Test if this URL works using CORS proxy

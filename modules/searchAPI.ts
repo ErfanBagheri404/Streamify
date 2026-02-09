@@ -2,7 +2,6 @@
 import {
   API,
   DYNAMIC_INVIDIOUS_INSTANCES,
-  updateInvidiousInstances,
   fetchStreamFromPipedWithFallback,
   fetchStreamFromInvidiousWithFallback,
   getJioSaavnSearchEndpoint,
@@ -45,8 +44,7 @@ export const USER_AGENT =
 // Use centralized API configuration
 export const PIPED_INSTANCES = API.piped;
 
-// Use dynamic Invidious instances from centralized config
-let INVIDIOUS_INSTANCES = DYNAMIC_INVIDIOUS_INSTANCES;
+// Use dynamic Invidious instances directly from centralized config
 
 /* ---------- HELPER FUNCTIONS ---------- */
 const units = [
@@ -199,60 +197,13 @@ export const searchAPI = {
     if (!query.trim()) {
       return [];
     }
-    try {
-      console.log(
-        `[API] Fetching SoundCloud suggestions via proxy for: "${query}"`
-      );
-      const tracks = await searchAPI.scrapeSoundCloudSearch(query);
-      if (!Array.isArray(tracks) || tracks.length === 0) {
-        const fallbackTerms = [
-          "mix",
-          "remix",
-          "live",
-          "instrumental",
-          "extended",
-        ];
-        return fallbackTerms.map((term) => `${query} ${term}`).slice(0, 5);
-      }
-      const titles = tracks
-        .map((t: any) => t && t.title)
-        .filter(
-          (t): t is string => typeof t === "string" && t.trim().length > 0
-        );
-      const uniqueTitles: string[] = [];
-      for (const title of titles) {
-        if (!uniqueTitles.includes(title)) {
-          uniqueTitles.push(title);
-        }
-        if (uniqueTitles.length >= 5) {
-          break;
-        }
-      }
-      if (uniqueTitles.length === 0) {
-        const fallbackTerms = [
-          "mix",
-          "remix",
-          "live",
-          "instrumental",
-          "extended",
-        ];
-        return fallbackTerms.map((term) => `${query} ${term}`).slice(0, 5);
-      }
-      console.log(
-        `[API] SoundCloud suggestion titles: ${uniqueTitles.length}`,
-        uniqueTitles
-      );
-      return uniqueTitles.slice(0, 5);
-    } catch (e) {
-      const fallbackTerms = [
-        "mix",
-        "remix",
-        "live",
-        "instrumental",
-        "extended",
-      ];
-      return fallbackTerms.map((term) => `${query} ${term}`).slice(0, 5);
-    }
+
+    const fallbackTerms = ["mix", "remix", "live", "instrumental", "extended"];
+
+    return [query, ...fallbackTerms.map((term) => `${query} ${term}`)].slice(
+      0,
+      5
+    );
   },
 
   getSpotifySuggestions: async (query: string): Promise<string[]> => {
@@ -274,14 +225,12 @@ export const searchAPI = {
     }
   },
 
-  // COMMENTED OUT: JioSaavn search disabled to focus on YouTube
-  /*
   // --- JIOSAAVN SEARCH ---
   searchWithJioSaavn: async (
     query: string,
     filter?: string,
     page?: number,
-    limit?: number,
+    limit?: number
   ) => {
     console.log(`[API] Starting JioSaavn search for: "${query}"`);
 
@@ -296,7 +245,7 @@ export const searchAPI = {
           },
         },
         3,
-        1000,
+        1000
       );
 
       if (!data || !data.success || !data.data) {
@@ -349,24 +298,24 @@ export const searchAPI = {
       });
 
       console.log(
-        `[API] Filtered ${artists.length} artists to ${filteredArtists.length} relevant artists`,
+        `[API] Filtered ${artists.length} artists to ${filteredArtists.length} relevant artists`
       );
 
       // Log exact matches for debugging
       const exactMatches = filteredArtists.filter(
         (artist: any) =>
           (artist.title || "").toLowerCase().trim() ===
-          query.toLowerCase().trim(),
+          query.toLowerCase().trim()
       );
       if (exactMatches.length > 0) {
         console.log(
           `[API] Found ${exactMatches.length} exact artist matches for "${query}":`,
-          exactMatches.map((a: any) => a.title),
+          exactMatches.map((a: any) => a.title)
         );
       }
 
       console.log(
-        `[API] 🟢 JioSaavn Success: Found ${songs.length} songs, ${albums.length} albums, ${artists.length} artists, ${topQuery.length} top queries`,
+        `[API] 🟢 JioSaavn Success: Found ${songs.length} songs, ${albums.length} albums, ${artists.length} artists, ${topQuery.length} top queries`
       );
 
       // Format all results to match SearchResult interface
@@ -500,8 +449,7 @@ export const searchAPI = {
 
       // Check for exact artist matches in the filtered artists
       const exactArtistMatches = artistsResults.filter(
-        (item) =>
-          item.title.toLowerCase().trim() === query.toLowerCase().trim(),
+        (item) => item.title.toLowerCase().trim() === query.toLowerCase().trim()
       );
 
       // Build final result array in the correct order: Top Results (with artist first if exact match), Songs, Albums
@@ -529,8 +477,7 @@ export const searchAPI = {
 
       // Add remaining artists (non-exact matches)
       const remainingArtists = artistsResults.filter(
-        (item) =>
-          item.title.toLowerCase().trim() !== query.toLowerCase().trim(),
+        (item) => item.title.toLowerCase().trim() !== query.toLowerCase().trim()
       );
       if (remainingArtists.length > 0) {
         finalResults = [...finalResults, ...remainingArtists];
@@ -543,7 +490,6 @@ export const searchAPI = {
       return [];
     }
   },
-  */
 
   // COMMENTED OUT: JioSaavn song details disabled to focus on YouTube
   /*
@@ -1025,7 +971,11 @@ export const searchAPI = {
     const endpoint = `/search?q=${encodeURIComponent(
       query
     )}&sort_by=${sortParam}${pageParam}`;
-    const data = await fetchWithFallbacks(INVIDIOUS_INSTANCES, endpoint);
+    const invidiousInstances =
+      DYNAMIC_INVIDIOUS_INSTANCES.length > 0
+        ? DYNAMIC_INVIDIOUS_INSTANCES
+        : [...API.invidious];
+    const data = await fetchWithFallbacks(invidiousInstances, endpoint);
     return Array.isArray(data) ? data : [];
   },
 
@@ -1036,68 +986,81 @@ export const searchAPI = {
     page?: number,
     limit?: number
   ) => {
-    // Enhanced multilingual support for SoundCloud
-    const isMultilingual = /[^\u0000-\u007F]/.test(query);
-
-    // Use SoundCloud proxy API
     try {
-      const tracks = await searchAPI.scrapeSoundCloudSearch(query);
+      const f = (filter || "").toLowerCase();
+      if (f === "playlists" || f === "albums") {
+        const type = f === "playlists" ? "playlists" : "albums";
+        const collections = await searchAPI.scrapeSoundCloudCollections(
+          query,
+          type,
+          page,
+          limit
+        );
+        if (!Array.isArray(collections)) {
+          return [];
+        }
+        return collections.map((c: any) => {
+          const thumb =
+            c.thumbnail ||
+            c.artwork ||
+            c.artworkUrl ||
+            c.image ||
+            c.thumbnailUrl ||
+            c.img ||
+            "";
+          return {
+            id: c.url || c.id || "",
+            title: c.title || c.name || "Unknown",
+            author: c.artist || c.author || c.uploader || c.user || "Unknown",
+            duration: undefined,
+            views: undefined,
+            videoCount: c.trackCount || c.tracks || undefined,
+            uploaded: undefined,
+            thumbnailUrl: thumb,
+            img: thumb,
+            href: c.url || "",
+            source: "soundcloud",
+            type: type === "playlists" ? "playlist" : "album",
+          };
+        });
+      }
 
-      // Format the results manually instead of calling formatSearchResults
+      const tracks = await searchAPI.scrapeSoundCloudSearch(query, page, limit);
       if (!Array.isArray(tracks)) {
         return [];
       }
-
-      // Deduplicate tracks by ID to prevent duplicate keys
       const seenIds = new Set<string>();
-      return (
-        tracks
-          .filter((track) => track && track._isSoundCloud)
-          .filter((track) => {
-            const trackId = String(track.id);
-            if (seenIds.has(trackId)) {
-              console.log(
-                `[API] Skipping duplicate SoundCloud track: ${trackId}`
-              );
-              return false;
-            }
-            seenIds.add(trackId);
-            return true;
-          })
-          // Filter out tracks that are likely to be unavailable
-          .filter((track) => {
-            // Skip tracks with very short duration (likely incomplete)
-            if (track.duration && track.duration < 10000) {
-              console.log(`[API] Skipping short track: ${track.id}`);
-              return false;
-            }
-            // Skip tracks with no duration info
-            if (!track.duration) {
-              console.log(`[API] Skipping track with no duration: ${track.id}`);
-              return false;
-            }
-            return true;
-          })
-          .map((track) => {
-            const artwork = track.artwork_url
-              ? track.artwork_url.replace("large.jpg", "t500x500.jpg")
-              : track.user?.avatar_url;
-            return {
-              id: String(track.id),
-              title: track.title || "Unknown Title",
-              author: track.user?.username || "Unknown Artist",
-              duration: track.duration
-                ? String(Math.floor(track.duration / 1000))
-                : "0",
-              views: String(track.playback_count || 0),
-              uploaded: fmtTimeAgo(new Date(track.created_at).getTime()),
-              thumbnailUrl: artwork,
-              img: artwork,
-              href: track.permalink_url,
-              source: "soundcloud",
-            };
-          })
-      );
+      return tracks
+        .filter((track) => track && track._isSoundCloud)
+        .filter((track) => {
+          const trackId = String(track.id);
+          if (seenIds.has(trackId)) {
+            return false;
+          }
+          seenIds.add(trackId);
+          return true;
+        })
+        .filter((track) => track.duration && track.duration >= 10000)
+        .map((track) => {
+          const artwork = track.artwork_url
+            ? track.artwork_url.replace("large.jpg", "t500x500.jpg")
+            : track.user?.avatar_url;
+          return {
+            id: String(track.id),
+            title: track.title || "Unknown Title",
+            author: track.user?.username || "Unknown Artist",
+            duration: track.duration
+              ? String(Math.floor(track.duration / 1000))
+              : "0",
+            views: String(track.playback_count || 0),
+            uploaded: fmtTimeAgo(new Date(track.created_at).getTime()),
+            thumbnailUrl: artwork,
+            img: artwork,
+            href: track.permalink_url,
+            source: "soundcloud",
+            type: "song",
+          };
+        });
     } catch (error) {
       return [];
     }
@@ -1315,53 +1278,105 @@ export const searchAPI = {
       });
   },
 
-  // --- SOUNDCLOUD PROXY API ---
-  scrapeSoundCloudSearch: async (query: string) => {
+  scrapeSoundCloudSearch: async (
+    query: string,
+    page?: number,
+    limit?: number
+  ) => {
     try {
-      // Use the SoundCloud proxy API
-      const searchUrl = `https://proxy.searchsoundcloud.com/tracks?q=${encodeURIComponent(
+      const CLIENT_ID = "gqKBMSuBw5rbN9rDRYPqKNvF17ovlObu";
+      const pageSize = limit && limit > 0 ? limit : 20;
+      const offset = page && page > 1 ? (page - 1) * pageSize : 0;
+      const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(
         query
-      )}`;
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
-      const response = await fetch(searchUrl, {
-        signal: controller.signal,
+      )}&client_id=${CLIENT_ID}&limit=${pageSize}&offset=${offset}`;
+      const res = await fetch(url, {
         headers: {
-          "User-Agent": USER_AGENT,
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
           Accept: "application/json",
         },
       });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      if (!res.ok) {
+        return [];
       }
+      const data = await res.json();
+      const collection = Array.isArray(data?.collection) ? data.collection : [];
+      return collection
+        .filter((item: any) => item && item.kind === "track")
+        .map((item: any) => ({
+          _isSoundCloud: true,
+          kind: "track",
+          id: item.id,
+          title: item.title,
+          duration: item.duration,
+          playback_count: item.playback_count,
+          created_at: item.created_at,
+          permalink_url: item.permalink_url,
+          artwork_url: item.artwork_url,
+          user: {
+            username: item.user?.username,
+            avatar_url: item.user?.avatar_url,
+          },
+        }));
+    } catch {
+      return [];
+    }
+  },
 
-      const data = await response.json();
-
-      if (!data || !data.collection || !Array.isArray(data.collection)) {
-        throw new Error("Invalid response format");
+  scrapeSoundCloudCollections: async (
+    query: string,
+    type: "playlists" | "albums",
+    page?: number,
+    limit?: number
+  ) => {
+    try {
+      const pageSize = limit && limit > 0 ? limit : 20;
+      const url = `https://beatseek.io/api/search?query=${encodeURIComponent(
+        query
+      )}&platform=soundcloud&type=${type}&sort=both&limit=${pageSize}`;
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+          Accept: "application/json",
+        },
+      });
+      if (!res.ok) {
+        return [];
       }
-
-      // Convert proxy API response to SoundCloud format
-      const tracks = data.collection.map((track: any) => ({
-        id: String(track.id),
-        title: track.title,
-        user: { username: track.user?.username || "Unknown Artist" },
-        duration: track.duration || 0,
-        playback_count: track.playback_count || 0,
-        created_at: track.created_at || new Date().toISOString(),
-        permalink_url:
-          track.permalink_url || `https://soundcloud.com/tracks/${track.id}`,
-        artwork_url: track.artwork_url || null,
-        _isSoundCloud: true,
+      const data = await res.json();
+      const items = Array.isArray(data?.results)
+        ? data.results
+        : Array.isArray(data)
+          ? data
+          : [];
+      return items.map((item: any) => ({
+        url: item.url || item.permalink || "",
+        title: item.title || item.name || "",
+        artist: item.artist || "",
+        author:
+          item.author ||
+          item.artist ||
+          item.uploader ||
+          item.user?.username ||
+          item.creator ||
+          "",
+        artwork:
+          item.artwork ||
+          item.artworkUrl ||
+          item.thumbnail ||
+          item.image ||
+          item.cover ||
+          item.img ||
+          "",
+        trackCount:
+          item.trackCount ||
+          item.tracksCount ||
+          item.tracks?.length ||
+          undefined,
       }));
-
-      return tracks;
-    } catch (e: any) {
+    } catch {
       return [];
     }
   },
