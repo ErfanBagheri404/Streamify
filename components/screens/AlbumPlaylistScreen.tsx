@@ -30,6 +30,25 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
   const [albumArtist, setAlbumArtist] = useState("");
   const [albumArtUrl, setAlbumArtUrl] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
+  // Debug logging for state changes
+  useEffect(() => {
+    console.log("[AlbumPlaylistScreen] State updated:", {
+      albumSongsLength: albumSongs.length,
+      albumTitle,
+      albumArtist,
+      albumArtUrl,
+      errorMessage,
+      isLoading,
+    });
+  }, [
+    albumSongs,
+    albumTitle,
+    albumArtist,
+    albumArtUrl,
+    errorMessage,
+    isLoading,
+  ]);
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [renameValue, setRenameValue] = useState("");
 
@@ -37,7 +56,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
   const [showSongActionSheet, setShowSongActionSheet] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [sheetMode, setSheetMode] = useState<"playlist" | "playlist-song">(
-    "playlist-song",
+    "playlist-song"
   );
   const sheetTop = useRef(new Animated.Value(SHEET_CLOSED_TOP)).current;
   const [sheetHeight, setSheetHeight] = useState(SHEET_HEIGHT);
@@ -112,7 +131,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
 
         animateSheet(target);
       },
-    }),
+    })
   ).current;
 
   const closeSongActionSheet = () => {
@@ -173,7 +192,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       }
 
       const updatedTracks = playlist.tracks.filter(
-        (track) => track.id !== selectedTrack.id,
+        (track) => track.id !== selectedTrack.id
       );
       const updatedPlaylist = {
         ...playlist,
@@ -246,7 +265,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
     const unsubscribe = navigation.addListener("focus", () => {
       if (source === "user-playlist") {
         console.log(
-          "[AlbumPlaylistScreen] Screen focused, refreshing playlist",
+          "[AlbumPlaylistScreen] Screen focused, refreshing playlist"
         );
         loadAlbumSongs();
       }
@@ -256,6 +275,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
   }, [albumId, albumName, source, navigation]);
 
   const loadAlbumSongs = async () => {
+    console.log("[AlbumPlaylistScreen] === STARTING loadAlbumSongs ===");
     console.log("[AlbumPlaylistScreen] Loading album songs for:", {
       albumId,
       albumName,
@@ -273,12 +293,8 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       setIsLoading(true);
 
       if (source === "jiosaavn") {
-        console.log("[AlbumPlaylistScreen] Fetching JioSaavn album details");
-        const { searchAPI } = await import("../../modules/searchAPI");
-        const albumDetails = await searchAPI.getJioSaavnAlbumDetails(
-          albumId,
-          albumName,
-        );
+        console.log("[AlbumPlaylistScreen] JioSaavn disabled - using fallback");
+        const albumDetails = null; // Disable JioSaavn album details
 
         if (
           albumDetails &&
@@ -286,7 +302,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           albumDetails.songs.length > 0
         ) {
           console.log(
-            `[AlbumPlaylistScreen] Found ${albumDetails.songs.length} songs in album`,
+            `[AlbumPlaylistScreen] Found ${albumDetails.songs.length} songs in album`
           );
           const songs = albumDetails.songs.map((song: any) => ({
             id: String(song.id),
@@ -331,14 +347,14 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
 
           if (playlist) {
             console.log(
-              `[AlbumPlaylistScreen] Found playlist with ${playlist.tracks.length} songs`,
+              `[AlbumPlaylistScreen] Found playlist with ${playlist.tracks.length} songs`
             );
             setAlbumSongs(playlist.tracks);
             setAlbumTitle(playlist.name);
             setAlbumArtist(
               `${playlist.tracks.length} ${
                 playlist.tracks.length === 1 ? "song" : "songs"
-              }`,
+              }`
             );
             // Use first song's thumbnail as album art if available
             if (playlist.tracks.length > 0 && playlist.tracks[0].thumbnail) {
@@ -358,6 +374,164 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           setAlbumArtist(routeArtist || "Unknown Artist");
           setErrorMessage("Failed to load playlist");
         }
+      } else if (source === "soundcloud") {
+        try {
+          const playlistUrlParam =
+            typeof albumId === "string" ? albumId : String(albumId);
+          const endpoint = `https://beatseek.io/api/playlist?url=${encodeURIComponent(
+            playlistUrlParam
+          )}`;
+          const res = await fetch(endpoint, {
+            headers: {
+              Accept: "application/json",
+            },
+          });
+          if (!res.ok) {
+            setAlbumSongs([]);
+            setAlbumTitle(albumName);
+            setAlbumArtist(routeArtist || "Unknown Artist");
+            setErrorMessage("Failed to load SoundCloud playlist");
+          } else {
+            const data = await res.json();
+            const tracks: any[] = Array.isArray(data?.tracks)
+              ? data.tracks
+              : [];
+            const songs = tracks.map((t: any) => {
+              const artwork = t.artwork_url
+                ? t.artwork_url.replace("large.jpg", "t500x500.jpg")
+                : t.user?.avatar_url || "";
+              return {
+                id: String(t.id || t.track_id || t.permalink || t.url || ""),
+                title: t.title || "Unknown Title",
+                artist:
+                  t.user?.username ||
+                  t.artist ||
+                  routeArtist ||
+                  "Unknown Artist",
+                duration: t.duration ? Math.floor(t.duration / 1000) : 0,
+                thumbnail: artwork,
+                source: "soundcloud",
+                _isSoundCloud: true,
+                albumId: playlistUrlParam,
+                albumName: albumName,
+              };
+            });
+            setAlbumSongs(songs);
+            setAlbumTitle(data?.title || albumName);
+            setAlbumArtist(
+              routeArtist ||
+                data?.artist ||
+                data?.user?.username ||
+                "Unknown Artist"
+            );
+            const cover =
+              data?.artwork ||
+              data?.image ||
+              data?.thumbnail ||
+              songs[0]?.thumbnail ||
+              "";
+            setAlbumArtUrl(cover || "");
+            setErrorMessage("");
+          }
+        } catch (err) {
+          setAlbumSongs([]);
+          setAlbumTitle(albumName);
+          setAlbumArtist(routeArtist || "Unknown Artist");
+          setErrorMessage("Failed to load SoundCloud playlist");
+        }
+      } else if (source === "youtube" || source === "youtubemusic") {
+        // Handle YouTube/YouTube Music playlists
+        console.log(
+          "[AlbumPlaylistScreen] Fetching YouTube/YouTube Music playlist details"
+        );
+        console.log(
+          `[AlbumPlaylistScreen] Playlist ID: ${albumId}, Source: ${source}`
+        );
+        try {
+          const { searchAPI } = await import("../../modules/searchAPI");
+          console.log(
+            `[AlbumPlaylistScreen] Calling getYouTubePlaylistDetails for ID: ${albumId}`
+          );
+          const playlistDetails =
+            await searchAPI.getYouTubePlaylistDetails(albumId);
+          console.log(
+            "[AlbumPlaylistScreen] Playlist details response:",
+            playlistDetails
+          );
+
+          if (
+            playlistDetails &&
+            playlistDetails.videos &&
+            playlistDetails.videos.length > 0
+          ) {
+            console.log(
+              `[AlbumPlaylistScreen] SUCCESS: Found ${playlistDetails.videos.length} videos in YouTube playlist`
+            );
+            console.log(
+              `[AlbumPlaylistScreen] First video:`,
+              playlistDetails.videos[0]
+            );
+            const songs = playlistDetails.videos.map((video: any) => ({
+              id: String(video.id),
+              title: video.title || "Unknown Title",
+              artist: video.artist || routeArtist || "Unknown Artist",
+              duration: video.duration || 0,
+              thumbnail: video.thumbnail || "",
+              source: source,
+              _isYouTube: true,
+              albumId: albumId,
+              albumName: albumName,
+            }));
+
+            console.log(
+              `[AlbumPlaylistScreen] SUCCESS: Mapped ${songs.length} songs, first song:`,
+              songs[0]
+            );
+            setAlbumSongs(songs);
+            setAlbumTitle(playlistDetails.name || albumName);
+            setAlbumArtist(routeArtist || "Various Artists");
+            setAlbumArtUrl(playlistDetails.thumbnail || "");
+            setErrorMessage(""); // Clear any previous error message
+            console.log("[AlbumPlaylistScreen] State updated successfully");
+          } else {
+            console.error(
+              "[AlbumPlaylistScreen] FAIL: No videos found in YouTube playlist"
+            );
+            console.error(
+              `[AlbumPlaylistScreen] playlistDetails:`,
+              playlistDetails
+            );
+
+            // Enhanced error message based on the response
+            let errorMsg = "No videos found in this playlist";
+            if (!playlistDetails) {
+              errorMsg =
+                "Unable to fetch playlist. The service may be temporarily unavailable.";
+            } else if (!playlistDetails.videos) {
+              errorMsg = "This playlist appears to be empty or unavailable.";
+            }
+
+            setAlbumSongs([]);
+            setAlbumTitle(albumName);
+            setAlbumArtist(routeArtist || "Unknown Artist");
+            setErrorMessage(errorMsg);
+            console.log(
+              "[AlbumPlaylistScreen] State set to empty with error message"
+            );
+          }
+        } catch (error) {
+          console.error(
+            "[AlbumPlaylistScreen] ERROR: Exception while loading YouTube playlist:",
+            error
+          );
+          setAlbumSongs([]);
+          setAlbumTitle(albumName);
+          setAlbumArtist(routeArtist || "Unknown Artist");
+          setErrorMessage(
+            "Failed to load YouTube playlist. Please check your internet connection or try again later."
+          );
+          console.log("[AlbumPlaylistScreen] State set to empty due to error");
+        }
       } else {
         // For other sources, we might need different API calls
         // For now, show empty state for non-JioSaavn albums
@@ -374,7 +548,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       setErrorMessage(
         error instanceof Error
           ? `Failed to load album: ${error.message}`
-          : "Failed to load album tracks. This album may not be available or the service is temporarily unavailable.",
+          : "Failed to load album tracks. This album may not be available or the service is temporarily unavailable."
       );
     } finally {
       setIsLoading(false);

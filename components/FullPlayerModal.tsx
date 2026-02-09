@@ -18,7 +18,7 @@ import styled from "styled-components/native";
 import { FontAwesome6, Ionicons } from "@expo/vector-icons";
 import { Entypo } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
-import TrackPlayer from "react-native-track-player";
+import TrackPlayer from "../utils/safeTrackPlayer";
 import { LinearGradient } from "expo-linear-gradient";
 import { usePlayer } from "../contexts/PlayerContext";
 import { formatTime } from "../utils/formatters";
@@ -373,7 +373,7 @@ const ProgressContainer = styled.View`
 
 const ProgressBarContainer = styled.View`
   width: 100%;
-  height: 4px;
+  height: 40px; /* Increased height for better touch target */
   justify-content: center;
 `;
 
@@ -382,7 +382,10 @@ const ProgressSlider = React.forwardRef<Slider, SliderProps>((props, ref) => {
     <Slider
       ref={ref}
       {...props}
-      style={[{ width: "100%", height: 4 }, props.style]}
+      style={[{ width: "100%", height: 40 }, props.style]}
+      minimumTrackTintColor="#ffffff"
+      maximumTrackTintColor="#666666"
+      thumbTintColor="#ffffff"
     />
   );
 });
@@ -396,9 +399,10 @@ const TimeContainer = styled.View`
 `;
 
 const TimeText = styled.Text`
-  color: #999;
-  font-size: 12px;
+  color: #ffffff;
+  font-size: 14px;
   font-family: GoogleSansRegular;
+  font-weight: 500;
 `;
 
 const Controls = styled.View`
@@ -545,10 +549,13 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     setRepeatMode,
     isShuffled,
     toggleShuffle,
+    position,
+    duration,
   } = usePlayer();
 
-  const [currentPosition, setCurrentPosition] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [seekValue, setSeekValue] = useState(0);
+
   const [cacheInfo, setCacheInfo] = useState<{
     percentage: number;
     fileSize: number;
@@ -566,13 +573,26 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [lyricsError, setLyricsError] = useState<string | null>(null);
   const [isOptionsVisible, setIsOptionsVisible] = useState(false);
   const [sheetState, setSheetState] = useState<"closed" | "half" | "full">(
-    "closed",
+    "closed"
   );
   const [showPlaylistSelection, setShowPlaylistSelection] = useState(false);
   const [userPlaylists, setUserPlaylists] = useState<Playlist[]>([]);
   const sheetTop = useRef(new Animated.Value(SHEET_CLOSED_TOP)).current;
   const [sheetHeight, setSheetHeight] = useState(SHEET_HEIGHT);
   const sheetStateRef = useRef<"closed" | "half" | "full">("closed");
+
+  const totalDurationSeconds =
+    duration > 0 ? duration : currentTrack?.duration || 0;
+
+  useEffect(() => {
+    if (!isSeeking) {
+      const clampedPosition =
+        totalDurationSeconds > 0
+          ? Math.min(position, totalDurationSeconds)
+          : position;
+      setSeekValue(clampedPosition * 1000);
+    }
+  }, [position, isSeeking, totalDurationSeconds]);
 
   const animateSheet = (state: "closed" | "half" | "full") => {
     let toValue = SHEET_CLOSED_TOP;
@@ -643,7 +663,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
         animateSheet(target);
       },
-    }),
+    })
   ).current;
 
   const openOptions = () => {
@@ -674,7 +694,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     try {
       // Check if song is already in playlist
       const isAlreadyInPlaylist = playlist.tracks.some(
-        (track) => track.id === currentTrack.id,
+        (track) => track.id === currentTrack.id
       );
 
       if (isAlreadyInPlaylist) {
@@ -741,7 +761,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       console.log("[FullPlayerModal] Starting lyrics fetch...");
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Lyrics fetch timeout")), 15000),
+        setTimeout(() => reject(new Error("Lyrics fetch timeout")), 15000)
       );
 
       try {
@@ -779,7 +799,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       } catch (error) {
         console.error(
           "[FullPlayerModal] Error or timeout fetching lyrics:",
-          error,
+          error
         );
         setLyricsData([]);
         setCurrentLyricIndex(0);
@@ -807,41 +827,13 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               fileSize: 0,
               totalFileSize: 0,
               isFullyCached: false,
-            },
+            }
       );
     }
   }, [cacheProgress, currentTrack?.id]);
 
-  // Reset position when track changes
-  useEffect(() => {
-    setCurrentPosition(0);
-    setDuration(0);
-  }, [currentTrack?.id]);
-
-  // Track position and duration
-  useEffect(() => {
-    if (!currentTrack?.audioUrl) {
-      return;
-    }
-
-    const updatePosition = async () => {
-      try {
-        const position = await TrackPlayer.getPosition();
-        const duration = await TrackPlayer.getDuration();
-        setCurrentPosition(position * 1000); // Convert to milliseconds
-        setDuration(duration * 1000); // Convert to milliseconds
-      } catch (error) {
-        if (!error?.toString().includes("Player does not exist")) {
-          // Silently ignore player not existing errors
-        }
-      }
-    };
-
-    const interval = setInterval(updatePosition, 1000);
-    updatePosition();
-
-    return () => clearInterval(interval);
-  }, [currentTrack?.id]); // Reset when track changes
+  // Position and duration are now managed by PlayerContext via PlaybackProgressUpdated events
+  // This provides real-time updates instead of 1-second intervals
 
   // Cache info update effect
   useEffect(() => {
@@ -867,15 +859,19 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   }, [currentTrack?.audioUrl, currentTrack?.id, getCacheInfo]);
 
   const handleSeek = async (value: number) => {
-    try {
-      if (currentTrack?.audioUrl) {
-        await seekTo(value);
-      }
-      setCurrentPosition(value);
-    } catch (error) {
-      // Silently ignore seek errors
-      setCurrentPosition(value);
+    console.log(`[FullPlayerModal] handleSeek called with value: ${value}`);
+    if (!currentTrack?.audioUrl) {
+      console.log("[FullPlayerModal] Cannot seek - no audio URL");
+      setIsSeeking(false);
+      return;
     }
+
+    setIsSeeking(false);
+    console.log(
+      `[FullPlayerModal] Seeking to position: ${value / 1000} seconds`
+    );
+    await seekTo(value / 1000);
+    console.log("[FullPlayerModal] Seek completed");
   };
 
   const handlePlayPause = async () => {
@@ -945,7 +941,10 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
           </Header>
 
           {/* Content with ScrollView for full screen scrollability */}
-          <ScrollView showsVerticalScrollIndicator={false} scrollEnabled={true}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            scrollEnabled={!isSeeking}
+          >
             {currentTrack.thumbnail ? (
               <AlbumArtWrapper>
                 <AlbumArtWithOpacity
@@ -1073,18 +1072,34 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
             <ProgressContainer>
               <ProgressBarContainer>
                 <ProgressSlider
-                  value={currentPosition}
-                  maximumValue={duration}
+                  value={seekValue}
+                  maximumValue={Math.max(totalDurationSeconds * 1000, 1)}
                   minimumValue={0}
-                  onSlidingComplete={handleSeek}
-                  minimumTrackTintColor="#fff"
-                  maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
-                  thumbTintColor="#fff"
+                  // @ts-ignore - TypeScript definitions don't match implementation
+                  onSlidingStart={() => {
+                    setIsSeeking(true);
+                    setSeekValue(
+                      Math.min(
+                        seekValue,
+                        Math.max(totalDurationSeconds * 1000, 1)
+                      )
+                    );
+                  }}
+                  onValueChange={(value) => {
+                    console.log(
+                      `[FullPlayerModal] Slider onValueChange: ${value}`
+                    );
+                    setSeekValue(value);
+                  }}
+                  // @ts-ignore - TypeScript definitions don't match implementation
+                  onSlidingComplete={(value) => {
+                    handleSeek(value);
+                  }}
                 />
               </ProgressBarContainer>
               <TimeContainer>
-                <TimeText>{formatTime(currentPosition)}</TimeText>
-                <TimeText>{formatTime(duration)}</TimeText>
+                <TimeText>{formatTime(position * 1000)}</TimeText>
+                <TimeText>{formatTime(totalDurationSeconds * 1000)}</TimeText>
               </TimeContainer>
             </ProgressContainer>
 

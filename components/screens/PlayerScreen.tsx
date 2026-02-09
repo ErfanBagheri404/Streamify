@@ -148,13 +148,7 @@ async function getAudioUrlWithFallback(
   trackArtist?: string,
 ): Promise<string> {
   try {
-    return await getAudioStreamUrl(
-      videoId,
-      onStatus,
-      source,
-      trackTitle,
-      trackArtist,
-    );
+    return await getAudioStreamUrl(videoId, onStatus, source);
   } catch (error) {
     console.error("[Player] All audio extraction methods failed:", error);
     throw new Error(

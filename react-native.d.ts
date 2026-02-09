@@ -9,6 +9,7 @@ declare module "react-native" {
   export class TouchableOpacity extends React.Component<any> {}
   export class TouchableWithoutFeedback extends React.Component<any> {}
   export class Image extends React.Component<any> {}
+  export class Switch extends React.Component<any> {}
   export class FlatList extends React.Component<any> {}
   export class ActivityIndicator extends React.Component<any> {}
   export class Keyboard {

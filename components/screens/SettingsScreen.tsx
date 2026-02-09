@@ -59,7 +59,10 @@ const SettingLeft = styled.View`
   flex-direction: row;
   align-items: center;
   flex: 1;
-  padding-left: ${props => props.hasIcon ? '8px' : '0px'}; /* 24px (icon width) + 12px (margin) = 36px */
+  padding-left: ${(props) =>
+    props.hasIcon
+      ? "8px"
+      : "0px"}; /* 24px (icon width) + 12px (margin) = 36px */
 `;
 
 const SettingRight = styled.View`
@@ -105,7 +108,7 @@ export default function SettingsScreen({
 
   // Account settings state
   const [accountImage, setAccountImage] = useState<string>(
-    "https://via.placeholder.com/100"
+    "https://via.placeholder.com/100",
   );
   const [username, setUsername] = useState<string>("john_doe");
   const [email, setEmail] = useState<string>("john.doe@example.com");

@@ -1,4 +1,4 @@
-import TrackPlayer, { Event } from "react-native-track-player";
+import TrackPlayer, { Event } from "../utils/safeTrackPlayer";
 
 /**
  * Playback service for React Native Track Player
