@@ -254,7 +254,6 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   const [showCreatePlaylistModal, setShowCreatePlaylistModal] =
     React.useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
-  const [selection, setSelection] = useState({ start: 0, end: 0 });
   const { likedSongs, previouslyPlayedSongs } = usePlayer();
 
   // Song action sheet state
@@ -580,7 +579,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         <Modal
           visible={showCreatePlaylistModal}
           transparent={true}
-          animationType="slide"
+          animationType="fade"
           onRequestClose={() => setShowCreatePlaylistModal(false)}
         >
           <View
@@ -629,11 +628,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                 value={newPlaylistName}
                 onChangeText={(text) => {
                   setNewPlaylistName(text);
-                  // keep cursor at the same logical place
-                  setSelection({ start: text.length, end: text.length });
                 }}
-                selection={selection}
-                onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
                 autoFocus={true}
               />
               <View

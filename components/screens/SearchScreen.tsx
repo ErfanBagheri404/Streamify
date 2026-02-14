@@ -284,7 +284,7 @@ const SearchSection = memo(
               author={item.author}
               duration={formatDuration(
                 parseInt(item.duration) || 0,
-                item.source
+                item.source,
               )}
               views={
                 item.source === "jiosaavn" ||
@@ -311,7 +311,7 @@ const SearchSection = memo(
         ))}
       </SectionContainer>
     );
-  }
+  },
 );
 
 type SourceType =
@@ -486,7 +486,7 @@ export default function SearchScreen({ navigation }: any) {
             duration: 700,
             useNativeDriver: true,
           }),
-        ])
+        ]),
       );
       skeletonAnimationRef.current = animation;
       animation.start();
@@ -554,7 +554,7 @@ export default function SearchScreen({ navigation }: any) {
           "[Search] Loading more results for page:",
           paginationRef.current.page,
           "current results:",
-          searchResults.length
+          searchResults.length,
         );
       } else {
         setIsLoading(true);
@@ -584,7 +584,7 @@ export default function SearchScreen({ navigation }: any) {
         let results: any[] = [];
 
         console.log(
-          `[Search] Making API call with page: ${paginationRef.current.page}, limit: 20`
+          `[Search] Making API call with page: ${paginationRef.current.page}, limit: 20`,
         );
 
         if (selectedSource === "soundcloud") {
@@ -593,7 +593,7 @@ export default function SearchScreen({ navigation }: any) {
             queryToUse,
             selectedFilter,
             paginationRef.current.page,
-            20
+            20,
           );
         } else if (selectedSource === "jiosaavn") {
           // JioSaavn Search
@@ -602,7 +602,7 @@ export default function SearchScreen({ navigation }: any) {
             queryToUse,
             selectedFilter,
             paginationRef.current.page,
-            20
+            20,
           );
         } else if (selectedSource === "spotify") {
           // Placeholder for Spotify
@@ -614,7 +614,7 @@ export default function SearchScreen({ navigation }: any) {
             selectedFilter,
             paginationRef.current.page,
             20,
-            paginationRef.current.nextpage || undefined
+            paginationRef.current.nextpage || undefined,
           );
           if (youtubeMusicResponse.nextpage) {
             paginationRef.current.nextpage = youtubeMusicResponse.nextpage;
@@ -629,28 +629,26 @@ export default function SearchScreen({ navigation }: any) {
               queryToUse,
               selectedFilter,
               paginationRef.current.page,
-              20
+              20,
             );
           } else {
-            // Handle Piped API response which returns {items, nextpage}
-            const pipedResponse = await searchAPI.searchWithPiped(
+            const youtubeResponse = await searchAPI.searchYouTubeWithFallback(
               queryToUse,
               selectedFilter,
               paginationRef.current.page,
               20,
-              paginationRef.current.nextpage || undefined
+              paginationRef.current.nextpage || undefined,
             );
-            // Extract nextpage token for future pagination
-            if (pipedResponse.nextpage) {
-              paginationRef.current.nextpage = pipedResponse.nextpage;
+            if (youtubeResponse.nextpage) {
+              paginationRef.current.nextpage = youtubeResponse.nextpage;
               console.log(
-                `[Search] Extracted nextpage token: ${pipedResponse.nextpage.substring(0, 50)}...`
+                `[Search] Extracted nextpage token: ${youtubeResponse.nextpage.substring(0, 50)}...`,
               );
             } else {
               paginationRef.current.nextpage = null;
               console.log("[Search] No nextpage token in response");
             }
-            results = pipedResponse.items;
+            results = youtubeResponse.items || [];
           }
         }
 
@@ -660,7 +658,7 @@ export default function SearchScreen({ navigation }: any) {
           results.slice(0, 3).map((item) => ({
             id: item.videoId || item.id,
             title: item.title,
-          }))
+          })),
         );
 
         // Common formatter (only format if not already formatted)
@@ -750,39 +748,49 @@ export default function SearchScreen({ navigation }: any) {
             formattedResults.length,
             "new items to existing",
             searchResults.length,
-            "items"
+            "items",
           );
           console.log(
             "[Search] First few new items:",
             formattedResults
               .slice(0, 3)
-              .map((item) => ({ id: item.id, title: item.title }))
+              .map((item) => ({ id: item.id, title: item.title })),
           );
           // Deduplicate results by ID to prevent duplicates
           setSearchResults((prev) => {
             const existingIds = new Set(prev.map((item) => item.id));
             const newItems = formattedResults.filter(
-              (item) => !existingIds.has(item.id)
+              (item) => !existingIds.has(item.id),
             );
             console.log(
               "[Search] Deduplication: removed",
               formattedResults.length - newItems.length,
-              "duplicates"
+              "duplicates",
             );
             console.log("[Search] Adding", newItems.length, "unique items");
 
             // Check if all results were duplicates (no unique items found)
             if (newItems.length === 0 && formattedResults.length > 0) {
-              if (retryRef.current.attempts < retryRef.current.maxAttempts) {
+              if (
+                (selectedSource === "youtube" ||
+                  selectedSource === "youtubemusic") &&
+                paginationRef.current.nextpage
+              ) {
+                console.log(
+                  "[Search] All results were duplicates but nextpage exists, keeping pagination alive",
+                );
+              } else if (
+                retryRef.current.attempts < retryRef.current.maxAttempts
+              ) {
                 retryRef.current.attempts++;
                 console.log(
-                  `[Search] ⚠️ All results were duplicates! Retrying with next page... (Attempt ${retryRef.current.attempts}/${retryRef.current.maxAttempts})`
+                  `[Search] ⚠️ All results were duplicates! Retrying with next page... (Attempt ${retryRef.current.attempts}/${retryRef.current.maxAttempts})`,
                 );
                 // Don't update the results, stay in loading state and retry
                 setTimeout(() => {
                   const nextRetryPage = paginationRef.current.page + 1;
                   console.log(
-                    `[Search] 🔄 Retrying load more with page: ${nextRetryPage}`
+                    `[Search] 🔄 Retrying load more with page: ${nextRetryPage}`,
                   );
                   paginationRef.current.page = nextRetryPage;
                   handleSearch(searchQuery, true);
@@ -790,7 +798,7 @@ export default function SearchScreen({ navigation }: any) {
                 return prev; // Return previous results without changes
               } else {
                 console.log(
-                  "[Search] ❌ Max retry attempts reached. Stopping pagination."
+                  "[Search] ❌ Max retry attempts reached. Stopping pagination.",
                 );
                 // Reset retry counter and stop pagination
                 retryRef.current.attempts = 0;
@@ -808,9 +816,10 @@ export default function SearchScreen({ navigation }: any) {
             return [...prev, ...newItems];
           });
           // Check if we have a nextpage token for pagination (Piped API uses nextpage tokens)
-          const hasMore = paginationRef.current.nextpage
-            ? true
-            : formattedResults.length >= 20 && formattedResults.length > 0;
+          const hasMore =
+            selectedSource === "youtube" || selectedSource === "youtubemusic"
+              ? !!paginationRef.current.nextpage
+              : formattedResults.length >= 20 && formattedResults.length > 0;
           setHasMoreResults(hasMore);
           paginationRef.current.hasMore = hasMore;
           paginationRef.current.isLoadingMore = false;
@@ -818,20 +827,21 @@ export default function SearchScreen({ navigation }: any) {
             "[Search] Load more complete. Total results now:",
             searchResults.length + formattedResults.length,
             "Has more:",
-            hasMore
+            hasMore,
           );
         } else {
           setSearchResults(formattedResults);
-          const hasMore = paginationRef.current.nextpage
-            ? true
-            : formattedResults.length >= 20 && formattedResults.length > 0;
+          const hasMore =
+            selectedSource === "youtube" || selectedSource === "youtubemusic"
+              ? !!paginationRef.current.nextpage
+              : formattedResults.length >= 20 && formattedResults.length > 0;
           setHasMoreResults(hasMore);
           paginationRef.current.hasMore = hasMore;
           console.log(
             "[Search] New search complete. Results:",
             formattedResults.length,
             "Has more:",
-            hasMore
+            hasMore,
           );
         }
       } catch (error) {
@@ -854,7 +864,7 @@ export default function SearchScreen({ navigation }: any) {
         }
       }
     },
-    [searchQuery, selectedFilter, selectedSource, searchResults.length]
+    [searchQuery, selectedFilter, selectedSource, searchResults.length],
   );
 
   // Load more results for pagination
@@ -997,7 +1007,7 @@ export default function SearchScreen({ navigation }: any) {
       return item.type === "album";
     });
     const playlists = searchResults.filter(
-      (item) => item.type === "playlist" || item.href?.includes("&list=")
+      (item) => item.type === "playlist" || item.href?.includes("&list="),
     );
 
     const songs = searchResults.filter((item) => {
@@ -1035,7 +1045,7 @@ export default function SearchScreen({ navigation }: any) {
         "[Filter] Sample IDs:",
         searchResults
           .slice(0, 3)
-          .map((item) => ({ id: item.id, type: item.type, title: item.title }))
+          .map((item) => ({ id: item.id, type: item.type, title: item.title })),
       );
     }
 
@@ -1086,24 +1096,36 @@ export default function SearchScreen({ navigation }: any) {
           _isSoundCloud: result.source === "soundcloud",
           _isJioSaavn: result.source === "jiosaavn",
         })),
-        searchResults.indexOf(item)
+        searchResults.indexOf(item),
       );
     },
-    [showSuggestions, setShowSuggestions, navigation, playTrack, searchResults]
+    [showSuggestions, setShowSuggestions, navigation, playTrack, searchResults],
   );
 
   const handleArtistPress = useCallback(
     (item: any) => {
+      // If suggestions are open, just close them without navigating
+      if (showSuggestions) {
+        setShowSuggestions(false);
+        return;
+      }
+
       navigation.navigate("Artist", {
         artistId: item.id,
         artistName: item.title,
       });
     },
-    [navigation]
+    [navigation, showSuggestions, setShowSuggestions],
   );
 
   const handleAlbumPress = useCallback(
     async (item: any) => {
+      // If suggestions are open, just close them without navigating
+      if (showSuggestions) {
+        setShowSuggestions(false);
+        return;
+      }
+
       // Navigate to album playlist screen
       if (item.source === "soundcloud") {
         navigation.navigate("AlbumPlaylist", {
@@ -1132,7 +1154,7 @@ export default function SearchScreen({ navigation }: any) {
         });
       }
     },
-    [navigation]
+    [navigation, showSuggestions, setShowSuggestions],
   );
 
   // Handle JioSaavn album songs - open album playlist
@@ -1145,7 +1167,7 @@ export default function SearchScreen({ navigation }: any) {
       try {
         // Fetch album details to get all songs - JioSaavn disabled
         console.log(
-          "[SearchScreen] JioSaavn album details disabled - using fallback"
+          "[SearchScreen] JioSaavn album details disabled - using fallback",
         );
         const albumDetails = null; // Disable JioSaavn album details
 
@@ -1165,7 +1187,7 @@ export default function SearchScreen({ navigation }: any) {
             artist:
               song.artists?.primary
                 ?.map((artist: any) =>
-                  artist.name?.replace(/\s*-\s*Topic$/i, "")
+                  artist.name?.replace(/\s*-\s*Topic$/i, ""),
                 )
                 .join(", ") ||
               song.singers?.replace(/\s*-\s*Topic$/i, "") ||
@@ -1183,7 +1205,7 @@ export default function SearchScreen({ navigation }: any) {
 
           // Find the index of the selected song in the album
           const selectedIndex = albumPlaylist.findIndex(
-            (song: any) => song.id === item.id
+            (song: any) => song.id === item.id,
           );
 
           // Open the album playlist without auto-playing
@@ -1201,7 +1223,7 @@ export default function SearchScreen({ navigation }: any) {
 
       return false; // Fallback to direct play
     },
-    [navigation]
+    [navigation],
   );
 
   const handleSongPress = useCallback(
@@ -1246,7 +1268,7 @@ export default function SearchScreen({ navigation }: any) {
           _isSoundCloud: result.source === "soundcloud",
           _isJioSaavn: result.source === "jiosaavn",
         })),
-        searchResults.indexOf(item)
+        searchResults.indexOf(item),
       );
     },
     [
@@ -1255,7 +1277,7 @@ export default function SearchScreen({ navigation }: any) {
       handleJioSaavnAlbumSong,
       playTrack,
       searchResults,
-    ]
+    ],
   );
 
   const handleTextChange = useCallback(
@@ -1288,7 +1310,7 @@ export default function SearchScreen({ navigation }: any) {
         try {
           const newSuggestions = await searchAPI.getSuggestions(
             text,
-            selectedSource
+            selectedSource,
           );
 
           setSuggestions(newSuggestions.slice(0, 5));
@@ -1305,7 +1327,7 @@ export default function SearchScreen({ navigation }: any) {
         }
       }, 300); // 300ms delay for faster search response
     },
-    [selectedSource, searchResults.length]
+    [selectedSource, searchResults.length],
   );
 
   const handleSourceSelect = useCallback((sourceId: SourceType) => {

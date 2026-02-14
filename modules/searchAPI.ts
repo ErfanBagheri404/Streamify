@@ -86,10 +86,10 @@ function fmtTimeAgo(stamp: number | string | undefined): string {
 // Robust fetcher for Piped/Invidious
 const fetchWithFallbacks = async (
   instances: string[],
-  endpoint: string
+  endpoint: string,
 ): Promise<any> => {
   console.log(
-    `[API] fetchWithFallbacks called with ${instances.length} instances for endpoint: ${endpoint}`
+    `[API] fetchWithFallbacks called with ${instances.length} instances for endpoint: ${endpoint}`,
   );
   for (const baseUrl of instances) {
     const startTime = Date.now();
@@ -139,7 +139,7 @@ export const searchAPI = {
       | "youtubemusic"
       | "soundcloud"
       | "spotify"
-      | "jiosaavn" = "youtube"
+      | "jiosaavn" = "youtube",
   ): Promise<string[]> => {
     if (!query.trim()) {
       return [];
@@ -149,7 +149,7 @@ export const searchAPI = {
     const isMultilingual = /[^\u0000-\u007F]/.test(query);
     if (isMultilingual) {
       console.log(
-        `[API] Detected multilingual query for suggestions: "${query}"`
+        `[API] Detected multilingual query for suggestions: "${query}"`,
       );
     }
 
@@ -172,16 +172,16 @@ export const searchAPI = {
     if (Array.isArray(data)) {
       if (data.length > 1 && Array.isArray(data[1])) {
         suggestions = (data[1] as any[]).filter(
-          (v): v is string => typeof v === "string"
+          (v): v is string => typeof v === "string",
         );
       } else {
         suggestions = (data as any[]).filter(
-          (v): v is string => typeof v === "string"
+          (v): v is string => typeof v === "string",
         );
       }
     } else if (data && Array.isArray((data as any).suggestions)) {
       suggestions = (data as any).suggestions.filter(
-        (v: any) => typeof v === "string"
+        (v: any) => typeof v === "string",
       );
     }
 
@@ -202,7 +202,7 @@ export const searchAPI = {
 
     return [query, ...fallbackTerms.map((term) => `${query} ${term}`)].slice(
       0,
-      5
+      5,
     );
   },
 
@@ -230,7 +230,7 @@ export const searchAPI = {
     query: string,
     filter?: string,
     page?: number,
-    limit?: number
+    limit?: number,
   ) => {
     console.log(`[API] Starting JioSaavn search for: "${query}"`);
 
@@ -245,7 +245,7 @@ export const searchAPI = {
           },
         },
         3,
-        1000
+        1000,
       );
 
       if (!data || !data.success || !data.data) {
@@ -298,24 +298,24 @@ export const searchAPI = {
       });
 
       console.log(
-        `[API] Filtered ${artists.length} artists to ${filteredArtists.length} relevant artists`
+        `[API] Filtered ${artists.length} artists to ${filteredArtists.length} relevant artists`,
       );
 
       // Log exact matches for debugging
       const exactMatches = filteredArtists.filter(
         (artist: any) =>
           (artist.title || "").toLowerCase().trim() ===
-          query.toLowerCase().trim()
+          query.toLowerCase().trim(),
       );
       if (exactMatches.length > 0) {
         console.log(
           `[API] Found ${exactMatches.length} exact artist matches for "${query}":`,
-          exactMatches.map((a: any) => a.title)
+          exactMatches.map((a: any) => a.title),
         );
       }
 
       console.log(
-        `[API] 🟢 JioSaavn Success: Found ${songs.length} songs, ${albums.length} albums, ${artists.length} artists, ${topQuery.length} top queries`
+        `[API] 🟢 JioSaavn Success: Found ${songs.length} songs, ${albums.length} albums, ${artists.length} artists, ${topQuery.length} top queries`,
       );
 
       // Format all results to match SearchResult interface
@@ -449,7 +449,8 @@ export const searchAPI = {
 
       // Check for exact artist matches in the filtered artists
       const exactArtistMatches = artistsResults.filter(
-        (item) => item.title.toLowerCase().trim() === query.toLowerCase().trim()
+        (item) =>
+          item.title.toLowerCase().trim() === query.toLowerCase().trim(),
       );
 
       // Build final result array in the correct order: Top Results (with artist first if exact match), Songs, Albums
@@ -477,7 +478,8 @@ export const searchAPI = {
 
       // Add remaining artists (non-exact matches)
       const remainingArtists = artistsResults.filter(
-        (item) => item.title.toLowerCase().trim() !== query.toLowerCase().trim()
+        (item) =>
+          item.title.toLowerCase().trim() !== query.toLowerCase().trim(),
       );
       if (remainingArtists.length > 0) {
         finalResults = [...finalResults, ...remainingArtists];
@@ -707,26 +709,31 @@ export const searchAPI = {
   // --- YOUTUBE PLAYLIST DETAILS ---
   getYouTubePlaylistDetails: async (playlistId: string) => {
     console.log(
-      `[API] Fetching YouTube playlist details for ID: ${playlistId}`
+      `[API] Fetching YouTube playlist details for ID: ${playlistId}`,
     );
 
     // Extract playlist ID from URL format if needed
     let actualPlaylistId = playlistId;
-    if (playlistId.includes("/playlist?list=")) {
+    if (
+      playlistId.includes("/playlist?list=") ||
+      playlistId.includes("/mix?list=")
+    ) {
       actualPlaylistId = playlistId.split("list=")[1] || playlistId;
-      console.log(`[API] Extracted playlist ID from URL: ${actualPlaylistId}`);
+      console.log(
+        `[API] Extracted playlist/mix ID from URL: ${actualPlaylistId}`,
+      );
     }
 
     try {
       // First, try Piped API
       const endpoint = `/playlists/${actualPlaylistId}`;
       console.log(
-        `[API] Calling fetchWithFallbacks with endpoint: ${endpoint}`
+        `[API] Calling fetchWithFallbacks with endpoint: ${endpoint}`,
       );
       const data = await fetchWithFallbacks([...PIPED_INSTANCES], endpoint);
       console.log(
         "[API] fetchWithFallbacks returned:",
-        data ? "data object" : "null"
+        data ? "data object" : "null",
       );
 
       // If no data returned from any instance, return null (no fallback)
@@ -762,7 +769,7 @@ export const searchAPI = {
       ) {
         videos = data.relatedStreams;
         console.log(
-          `[API] Using 'relatedStreams' field with ${videos.length} videos`
+          `[API] Using 'relatedStreams' field with ${videos.length} videos`,
         );
       } else if (
         data.items &&
@@ -784,7 +791,7 @@ export const searchAPI = {
       if (videos && videos.length > 0) {
         console.log(
           "[API] First video structure:",
-          JSON.stringify(videos[0], null, 2)
+          JSON.stringify(videos[0], null, 2),
         );
 
         // Filter out invalid videos and map to standard format
@@ -830,7 +837,7 @@ export const searchAPI = {
 
         if (validVideos.length > 0) {
           console.log(
-            `[API] 🟢 YouTube Playlist Success: Found ${validVideos.length} valid videos`
+            `[API] 🟢 YouTube Playlist Success: Found ${validVideos.length} valid videos`,
           );
 
           // Use first valid video's thumbnail if playlist thumbnail is not available
@@ -847,7 +854,7 @@ export const searchAPI = {
           };
 
           console.log(
-            `[API] Returning playlist with ${result.videos.length} videos`
+            `[API] Returning playlist with ${result.videos.length} videos`,
           );
           return result;
         } else {
@@ -862,7 +869,7 @@ export const searchAPI = {
       console.warn("[API] Available data keys:", Object.keys(data));
       console.warn(
         "[API] Data structure preview:",
-        JSON.stringify(data).substring(0, 500)
+        JSON.stringify(data).substring(0, 500),
       );
       return null;
     } catch (e: any) {
@@ -876,10 +883,10 @@ export const searchAPI = {
     filter: string,
     page?: number,
     limit?: number,
-    nextpage?: string
+    nextpage?: string,
   ) => {
     console.log(
-      `[API] Searching Piped: "${query}", page: ${page}, nextpage: ${nextpage ? "present" : "none"}`
+      `[API] Searching Piped: "${query}", page: ${page}, nextpage: ${nextpage ? "present" : "none"}`,
     );
 
     // Enhanced multilingual search - preserve original query but also try transliterated version
@@ -898,7 +905,7 @@ export const searchAPI = {
     let endpoint: string;
     if (nextpage) {
       console.log(
-        `[API] Using nextpage endpoint with token: ${nextpage.substring(0, 50)}...`
+        `[API] Using nextpage endpoint with token: ${nextpage.substring(0, 50)}...`,
       );
       endpoint = `/nextpage/search?nextpage=${encodeURIComponent(nextpage)}`;
     } else {
@@ -915,12 +922,12 @@ export const searchAPI = {
       !nextpage
     ) {
       console.log(
-        "[API] No results for multilingual query, trying broader search"
+        "[API] No results for multilingual query, trying broader search",
       );
       const broadEndpoint = `/search?q=${encodeURIComponent(query)}&filter=all`;
       const broadData = await fetchWithFallbacks(
         [...PIPED_INSTANCES],
-        broadEndpoint
+        broadEndpoint,
       );
       return {
         items:
@@ -936,12 +943,12 @@ export const searchAPI = {
       !nextpage
     ) {
       console.log(
-        `[API] No results with filter "${filterParam}", trying with "all" filter`
+        `[API] No results with filter "${filterParam}", trying with "all" filter`,
       );
       const fallbackEndpoint = `/search?q=${encodeURIComponent(query)}&filter=all`;
       const fallbackData = await fetchWithFallbacks(
         [...PIPED_INSTANCES],
-        fallbackEndpoint
+        fallbackEndpoint,
       );
       return {
         items:
@@ -963,13 +970,13 @@ export const searchAPI = {
     query: string,
     sortType: string,
     page?: number,
-    limit?: number
+    limit?: number,
   ) => {
     console.log(`[API] Searching Invidious: "${query}", page: ${page || 1}`);
     const sortParam = sortType === "date" ? "upload_date" : "view_count";
     const pageParam = page && page > 1 ? `&page=${page}` : "";
     const endpoint = `/search?q=${encodeURIComponent(
-      query
+      query,
     )}&sort_by=${sortParam}${pageParam}`;
     const invidiousInstances =
       DYNAMIC_INVIDIOUS_INSTANCES.length > 0
@@ -984,7 +991,7 @@ export const searchAPI = {
     query: string,
     filter?: string,
     page?: number,
-    limit?: number
+    limit?: number,
   ) => {
     try {
       const f = (filter || "").toLowerCase();
@@ -994,7 +1001,7 @@ export const searchAPI = {
           query,
           type,
           page,
-          limit
+          limit,
         );
         if (!Array.isArray(collections)) {
           return [];
@@ -1071,7 +1078,7 @@ export const searchAPI = {
     filter: string,
     page?: number,
     limit?: number,
-    nextpage?: string
+    nextpage?: string,
   ) => {
     // Map YouTube Music filter names to Piped music filter names
     const musicFilterMap: Record<string, string> = {
@@ -1089,7 +1096,7 @@ export const searchAPI = {
     const musicFilter = musicFilterMap[filter] || filter;
 
     console.log(
-      `[API] YouTube Music search: "${query}", filter: "${filter}" -> "${musicFilter}"`
+      `[API] YouTube Music search: "${query}", filter: "${filter}" -> "${musicFilter}"`,
     );
 
     return searchAPI.searchWithPiped(query, musicFilter, page, limit, nextpage);
@@ -1135,8 +1142,12 @@ export const searchAPI = {
         if (item.url && item.url.includes("/channel/")) {
           // Channel ID
           id = item.url.split("/channel/")[1] || item.channelId || "";
-        } else if (item.url && item.url.includes("/playlist?list=")) {
-          // Playlist ID
+        } else if (
+          item.url &&
+          (item.url.includes("/playlist?list=") ||
+            item.url.includes("/mix?list="))
+        ) {
+          // Playlist ID or Mix ID
           id = item.url.split("list=")[1] || item.playlistId || "";
         } else if (isPiped) {
           // Video ID
@@ -1168,9 +1179,11 @@ export const searchAPI = {
         } else if (
           item.playlistId ||
           item.type === "playlist" ||
-          (item.url && item.url.includes("/playlist?list="))
+          (item.url &&
+            (item.url.includes("/playlist?list=") ||
+              item.url.includes("/mix?list=")))
         ) {
-          itemType = "playlist"; // Playlist
+          itemType = "playlist"; // Playlist or Mix
         } else if (
           item.duration ||
           item.lengthSeconds ||
@@ -1191,7 +1204,7 @@ export const searchAPI = {
             views: String(item.views || item.viewCount || "0"),
             videoCount: undefined, // Channels don't have video count
             uploaded: fmtTimeAgo(
-              Number(item.published || item.uploaded || Date.now())
+              Number(item.published || item.uploaded || Date.now()),
             ),
             thumbnailUrl,
             img: thumbnailUrl,
@@ -1219,10 +1232,10 @@ export const searchAPI = {
                 ? item.videoCount
                 : item.videos && item.videos > 0
                   ? item.videos
-                  : ""
+                  : "",
             ), // Keep for visual layers but hide badge
             uploaded: fmtTimeAgo(
-              Number(item.published || item.uploaded || Date.now())
+              Number(item.published || item.uploaded || Date.now()),
             ),
             thumbnailUrl,
             img: thumbnailUrl,
@@ -1246,7 +1259,7 @@ export const searchAPI = {
           views: String(item.views || item.viewCount || "0"),
           videoCount: undefined,
           uploaded: fmtTimeAgo(
-            Number(item.published || item.uploaded || Date.now())
+            Number(item.published || item.uploaded || Date.now()),
           ),
           thumbnailUrl,
           img: thumbnailUrl,
@@ -1281,14 +1294,14 @@ export const searchAPI = {
   scrapeSoundCloudSearch: async (
     query: string,
     page?: number,
-    limit?: number
+    limit?: number,
   ) => {
     try {
       const CLIENT_ID = "gqKBMSuBw5rbN9rDRYPqKNvF17ovlObu";
       const pageSize = limit && limit > 0 ? limit : 20;
       const offset = page && page > 1 ? (page - 1) * pageSize : 0;
       const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(
-        query
+        query,
       )}&client_id=${CLIENT_ID}&limit=${pageSize}&offset=${offset}`;
       const res = await fetch(url, {
         headers: {
@@ -1328,12 +1341,12 @@ export const searchAPI = {
     query: string,
     type: "playlists" | "albums",
     page?: number,
-    limit?: number
+    limit?: number,
   ) => {
     try {
       const pageSize = limit && limit > 0 ? limit : 20;
       const url = `https://beatseek.io/api/search?query=${encodeURIComponent(
-        query
+        query,
       )}&platform=soundcloud&type=${type}&sort=both&limit=${pageSize}`;
       const res = await fetch(url, {
         headers: {
@@ -1391,10 +1404,11 @@ export const searchAPI = {
     query: string,
     filter: string = "all",
     page?: number,
-    limit?: number
+    limit?: number,
+    nextpage?: string,
   ) => {
     console.log(
-      `[API] YouTube fallback search: "${query}", filter: "${filter}"`
+      `[API] YouTube fallback search: "${query}", filter: "${filter}"`,
     );
 
     // Try Piped first
@@ -1404,7 +1418,8 @@ export const searchAPI = {
         query,
         filter,
         page,
-        limit
+        limit,
+        nextpage,
       );
       if (
         pipedResults &&
@@ -1412,12 +1427,12 @@ export const searchAPI = {
         pipedResults.items.length > 0
       ) {
         console.log(
-          `[API] Piped search successful, found ${pipedResults.items.length} results`
+          `[API] Piped search successful, found ${pipedResults.items.length} results`,
         );
-        return pipedResults.items;
+        return pipedResults;
       }
       console.log(
-        "[API] Piped search returned no results, trying Invidious..."
+        "[API] Piped search returned no results, trying Invidious...",
       );
     } catch (error) {
       console.log("[API] Piped search failed:", error.message);
@@ -1430,13 +1445,16 @@ export const searchAPI = {
         query,
         "relevance",
         page,
-        limit
+        limit,
       );
       if (invidiousResults && invidiousResults.length > 0) {
         console.log(
-          `[API] Invidious search successful, found ${invidiousResults.length} results`
+          `[API] Invidious search successful, found ${invidiousResults.length} results`,
         );
-        return invidiousResults;
+        return {
+          items: invidiousResults,
+          nextpage: null,
+        };
       }
       console.log("[API] Invidious search also returned no results");
     } catch (error) {
@@ -1444,7 +1462,10 @@ export const searchAPI = {
     }
 
     console.log("[API] Both Piped and Invidious searches failed");
-    return [];
+    return {
+      items: [],
+      nextpage: null,
+    };
   },
 
   /**

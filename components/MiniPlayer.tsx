@@ -3,6 +3,7 @@ import { TouchableOpacity, ActivityIndicator } from "react-native";
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
 import { usePlayer } from "../contexts/PlayerContext";
 
 const MiniPlayerContainer = styled.View<{ bottomPosition: number }>`
@@ -75,6 +76,39 @@ const PlaceholderThumbnail = styled.View`
   background-color: #333;
   justify-content: center;
   align-items: center;
+`;
+
+const BackgroundContainer = styled.View`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 10px;
+  overflow: hidden;
+`;
+
+const BackgroundImage = styled.Image`
+  width: 100%;
+  height: 100%;
+  transform: scale(1.5);
+`;
+
+const BlurOverlay = styled(BlurView)`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+`;
+
+const DarkOverlay = styled.View`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
 `;
 
 interface MiniPlayerProps {
@@ -154,37 +188,36 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
   const displayTheme = colorTheme;
 
   // Debug: Log the current color theme
-  
 
   return (
     <MiniPlayerContainer
       bottomPosition={currentBottomPosition}
       style={{
-        backgroundColor: displayTheme.isGradient
-          ? "transparent"
-          : displayTheme.background,
+        backgroundColor: "transparent",
         borderTopColor: displayTheme.text + "20" /* 12% opacity */,
       }}
     >
-      {displayTheme.isGradient && displayTheme.gradient ? (
-        <LinearGradient
-          colors={displayTheme.gradient.colors}
-          start={displayTheme.gradient.start || [0, 0]}
-          end={displayTheme.gradient.end || [1, 1]}
-          locations={displayTheme.gradient.locations || undefined}
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            borderRadius: 10,
+      <BackgroundContainer>
+        <BackgroundImage
+          source={{
+            uri:
+              currentTrack.thumbnail ||
+              "https://placehold.co/400x400/000000/ffffff?text=Music",
           }}
+          resizeMode="cover"
+          blurRadius={20}
         />
-      ) : null}
+        <BlurOverlay intensity={5} tint="dark" />
+        <DarkOverlay />
+      </BackgroundContainer>
       <TouchableOpacity
         onPress={onExpand}
-        style={{ flexDirection: "row", alignItems: "center", flex: 1 }}
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          flex: 1,
+          zIndex: 1,
+        }}
       >
         {currentTrack.thumbnail ? (
           <Thumbnail source={{ uri: currentTrack.thumbnail }} />
@@ -201,13 +234,13 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
         )}
 
         <TrackInfo>
-          <TrackTitle numberOfLines={1} style={{ color: displayTheme.text }}>
+          <TrackTitle numberOfLines={1} style={{ color: "#fff" }}>
             {currentTrack.title}
           </TrackTitle>
           {currentTrack.artist && (
             <TrackArtist
               numberOfLines={1}
-              style={{ color: displayTheme.text, opacity: 0.7 }}
+              style={{ color: "#fff", opacity: 0.7 }}
             >
               {currentTrack.artist}
             </TrackArtist>
@@ -215,32 +248,29 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
         </TrackInfo>
       </TouchableOpacity>
 
-      <ControlsContainer>
+      <ControlsContainer style={{ zIndex: 1 }}>
         <ControlButton onPress={handlePrevious}>
-          <Ionicons name="play-back" size={20} color={displayTheme.text} />
+          <Ionicons name="play-back" size={20} color="#fff" />
         </ControlButton>
 
-        <ControlButton
-          onPress={handlePlayPause}
-          disabled={isLoading || isTransitioning}
-        >
+        <ControlButton onPress={handlePlayPause} disabled={isTransitioning}>
           {isLoading || isTransitioning ? (
             <ActivityIndicator
               size="small"
-              color={displayTheme.text}
+              color="#fff"
               style={{ width: 24, height: 24 }}
             />
           ) : (
             <Ionicons
               name={isPlaying ? "pause" : "play"}
               size={24}
-              color={displayTheme.text}
+              color="#fff"
             />
           )}
         </ControlButton>
 
         <ControlButton onPress={handleNext}>
-          <Ionicons name="play-forward" size={20} color={displayTheme.text} />
+          <Ionicons name="play-forward" size={20} color="#fff" />
         </ControlButton>
       </ControlsContainer>
     </MiniPlayerContainer>

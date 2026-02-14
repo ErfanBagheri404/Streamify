@@ -46,7 +46,7 @@ enableScreens();
 // Register the playback service for proper media session integration
 try {
   TrackPlayer.registerPlaybackService(() =>
-    require("./services/playbackService")
+    require("./services/playbackService"),
   );
   console.log("[App] Playback service registered successfully");
 } catch (error) {
@@ -390,6 +390,30 @@ export default function App() {
     };
 
     fetchInstances();
+  }, []);
+
+  // Create Streamify directory on app first launch
+  useEffect(() => {
+    const createStreamifyDirectory = async () => {
+      try {
+        const { AudioStreamManager } = await import("./modules/audioStreaming");
+        const manager = AudioStreamManager.getInstance();
+        
+        // This will automatically create the Streamify directory
+        // The getCacheDirectory method in AudioStreamManager handles directory creation
+        const cacheDir = await manager.getCacheDirectory();
+        
+        if (cacheDir) {
+          console.log(`[App] Streamify directory created/verified at: ${cacheDir}`);
+        } else {
+          console.warn("[App] Could not create Streamify directory");
+        }
+      } catch (error) {
+        console.error("[App] Error creating Streamify directory:", error);
+      }
+    };
+
+    createStreamifyDirectory();
   }, []);
 
   // const [showLoadingScreen, setShowLoadingScreen] = useState(true);

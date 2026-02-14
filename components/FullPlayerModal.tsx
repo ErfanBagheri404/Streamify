@@ -10,6 +10,7 @@ import {
   Text,
   ScrollView,
   View,
+  AppState,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Slider from "@react-native-community/slider";
@@ -556,6 +557,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekValue, setSeekValue] = useState(0);
 
+  const appState = useRef(AppState.currentState);
   const [cacheInfo, setCacheInfo] = useState<{
     percentage: number;
     fileSize: number;
@@ -586,13 +588,29 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
   useEffect(() => {
     if (!isSeeking) {
-      const clampedPosition =
-        totalDurationSeconds > 0
-          ? Math.min(position, totalDurationSeconds)
-          : position;
-      setSeekValue(clampedPosition * 1000);
+      // Ensure position doesn't exceed duration and handle edge cases
+      const effectiveDuration = Math.max(totalDurationSeconds, 1); // Minimum 1 second to avoid division by zero
+      const clampedPosition = Math.min(
+        Math.max(position, 0),
+        effectiveDuration
+      );
+      setSeekValue(clampedPosition);
+      console.log(
+        `[FullPlayerModal] Progress update - position: ${position}, duration: ${totalDurationSeconds}, seekValue: ${clampedPosition}`
+      );
     }
   }, [position, isSeeking, totalDurationSeconds]);
+
+  // Reset seek value when track changes to prevent stuck progress bar
+  useEffect(() => {
+    if (currentTrack) {
+      console.log(
+        `[FullPlayerModal] Track changed to: ${currentTrack.title}, resetting seek value`
+      );
+      setSeekValue(0);
+      setIsSeeking(false);
+    }
+  }, [currentTrack?.id]);
 
   const animateSheet = (state: "closed" | "half" | "full") => {
     let toValue = SHEET_CLOSED_TOP;
@@ -858,19 +876,33 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     return () => clearInterval(cacheInterval);
   }, [currentTrack?.audioUrl, currentTrack?.id, getCacheInfo]);
 
-  const handleSeek = async (value: number) => {
-    console.log(`[FullPlayerModal] handleSeek called with value: ${value}`);
-    if (!currentTrack?.audioUrl) {
-      console.log("[FullPlayerModal] Cannot seek - no audio URL");
-      setIsSeeking(false);
-      return;
-    }
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      appState.current = nextState;
+      if (nextState === "active" && currentTrack?.id && currentTrack.audioUrl) {
+        getCacheInfo(currentTrack.id)
+          .then((info) => {
+            if (info) {
+              setCacheInfo(info);
+            }
+          })
+          .catch(() => {});
+      }
+    });
+    return () => sub.remove();
+  }, [currentTrack?.id, currentTrack?.audioUrl, getCacheInfo]);
+
+  const handleSeek = async (valueSeconds: number) => {
+    console.log(
+      `[FullPlayerModal] handleSeek called with valueSeconds: ${valueSeconds}`
+    );
 
     setIsSeeking(false);
+    const targetSeconds = valueSeconds;
     console.log(
-      `[FullPlayerModal] Seeking to position: ${value / 1000} seconds`
+      `[FullPlayerModal] Seeking to position: ${targetSeconds} seconds`
     );
-    await seekTo(value / 1000);
+    await seekTo(targetSeconds);
     console.log("[FullPlayerModal] Seek completed");
   };
 
@@ -1073,16 +1105,17 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               <ProgressBarContainer>
                 <ProgressSlider
                   value={seekValue}
-                  maximumValue={Math.max(totalDurationSeconds * 1000, 1)}
+                  maximumValue={Math.max(totalDurationSeconds, 1)}
                   minimumValue={0}
+                  disabled={
+                    totalDurationSeconds <= 0 || isLoading || isTransitioning
+                  }
                   // @ts-ignore - TypeScript definitions don't match implementation
                   onSlidingStart={() => {
                     setIsSeeking(true);
+                    const effectiveDuration = Math.max(totalDurationSeconds, 1);
                     setSeekValue(
-                      Math.min(
-                        seekValue,
-                        Math.max(totalDurationSeconds * 1000, 1)
-                      )
+                      Math.min(Math.max(seekValue, 0), effectiveDuration)
                     );
                   }}
                   onValueChange={(value) => {
@@ -1093,6 +1126,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   }}
                   // @ts-ignore - TypeScript definitions don't match implementation
                   onSlidingComplete={(value) => {
+                    setIsSeeking(false);
+                    setSeekValue(value);
                     handleSeek(value);
                   }}
                 />
@@ -1120,7 +1155,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
               <PlayPauseButton
                 onPress={handlePlayPause}
-                disabled={isLoading || isTransitioning}
+                disabled={isTransitioning}
               >
                 {isLoading || isTransitioning ? (
                   <ActivityIndicator

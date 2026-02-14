@@ -12,12 +12,7 @@ import {
   AudioStreamManager,
   getAudioStreamUrl,
 } from "../modules/audioStreaming";
-import {
-  extractColorsFromImage,
-  ColorTheme,
-  ExtendedColorTheme,
-  predefinedThemes,
-} from "../utils/imageColors";
+
 import { StorageService } from "../utils/storage";
 import { Platform, AppState } from "react-native";
 import { trackPlayerService } from "../services/TrackPlayerService";
@@ -46,7 +41,20 @@ interface PlayerContextType {
   isShuffled: boolean;
   likedSongs: Track[];
   previouslyPlayedSongs: Track[];
-  colorTheme: ExtendedColorTheme;
+  colorTheme: {
+    primary: string;
+    secondary: string;
+    background: string;
+    text: string;
+    accent: string;
+    isGradient: boolean;
+    gradient?: {
+      colors: string[];
+      start?: [number, number];
+      end?: [number, number];
+      locations?: number[];
+    };
+  };
   cacheProgress: {
     trackId: string;
     percentage: number;
@@ -108,7 +116,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [previouslyPlayedSongs, setPreviouslyPlayedSongs] = useState<Track[]>(
     []
   );
-  const [colorTheme, setColorTheme] = useState<ExtendedColorTheme>({
+  const [colorTheme, setColorTheme] = useState({
     primary: "#a3e635",
     secondary: "#22d3ee",
     background: "#000000",
@@ -131,6 +139,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const streamCheckRef = useRef<{ position: number; time: number } | null>(
     null
   );
+  const playRequestIdRef = useRef(0);
 
   const audioManager = useRef(new AudioStreamManager()).current;
 
@@ -159,6 +168,93 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch (error) {}
   }, []);
 
+  const rehydrateFromTrackPlayer = async () => {
+    try {
+      if (playlist.length > 0 || currentTrack) {
+        return;
+      }
+
+      const queue = await TrackPlayer.getQueue();
+      if (!queue || queue.length === 0) {
+        return;
+      }
+
+      const currentTrackIndex = await TrackPlayer.getCurrentTrack();
+      if (
+        currentTrackIndex === null ||
+        currentTrackIndex < 0 ||
+        currentTrackIndex >= queue.length
+      ) {
+        return;
+      }
+
+      const playbackState = await TrackPlayer.getPlaybackState();
+      const resolvedState =
+        (playbackState as any)?.state ?? (playbackState as any);
+      const nextIsPlaying =
+        resolvedState === State.Playing ||
+        resolvedState === State.Buffering ||
+        resolvedState === State.Connecting;
+
+      const [positionSeconds, durationSeconds] = await Promise.all([
+        TrackPlayer.getPosition(),
+        TrackPlayer.getDuration(),
+      ]);
+
+      const mappedPlaylist: Track[] = queue.map((item: any) => {
+        const id =
+          item.id != null
+            ? String(item.id)
+            : item.url || item.title || "unknown";
+        return {
+          id,
+          title: item.title || "Unknown Title",
+          artist: item.artist || item.author || "Unknown Artist",
+          duration: item.duration || 0,
+          thumbnail: item.artwork || item.thumbnail || "",
+          audioUrl: item.url,
+          source: (item as any).source,
+          _isSoundCloud: (item as any)._isSoundCloud,
+          _isJioSaavn: (item as any)._isJioSaavn,
+        };
+      });
+
+      const safeIndex =
+        currentTrackIndex >= 0 && currentTrackIndex < mappedPlaylist.length
+          ? currentTrackIndex
+          : 0;
+      const nextCurrentTrack = mappedPlaylist[safeIndex];
+
+      setPlaylist(mappedPlaylist);
+      setCurrentIndex(safeIndex);
+      setCurrentTrack(nextCurrentTrack);
+      setIsPlaying(nextIsPlaying);
+      setPosition(positionSeconds);
+      setDuration(durationSeconds || nextCurrentTrack?.duration || 0);
+      currentPlaylistContextRef.current = mappedPlaylist;
+      setIsInPlaylistContext(mappedPlaylist.length > 1);
+
+      if (audioMonitoringListenersRef.current.length === 0) {
+        const progressListener = TrackPlayer.addEventListener(
+          Event.PlaybackProgressUpdated,
+          (event: any) => {
+            setPosition(event.position);
+            setDuration(event.duration);
+          }
+        );
+        audioMonitoringListenersRef.current.push(progressListener);
+
+        const queueEndedListener = TrackPlayer.addEventListener(
+          Event.PlaybackQueueEnded,
+          () => {
+            setIsPlaying(false);
+          }
+        );
+        audioMonitoringListenersRef.current.push(queueEndedListener);
+      }
+    } catch (error) {}
+  };
+
   // Initialize TrackPlayer on startup
   useEffect(() => {
     const initializeTrackPlayer = async () => {
@@ -173,6 +269,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log(
           "[PlayerContext] TrackPlayer service initialized successfully"
         );
+
+        await rehydrateFromTrackPlayer();
       } catch (error) {
         console.error(
           "[PlayerContext] Failed to initialize TrackPlayer service:",
@@ -222,20 +320,28 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     loadLikedSongs();
   }, []);
 
-  // Track Player handles background playback automatically, no need for manual foreground service
-
-  // Handle app state changes for background audio
+  // Handle app state changes
   useEffect(() => {
     const handleAppStateChange = (nextAppState: string) => {
       if (Platform.OS === "android") {
-        if (nextAppState === "background" && isPlaying && currentTrack) {
-          console.log(
-            "[PlayerContext] App going to background, continuing playback"
-          );
-          // Track Player handles background playback automatically
+        if (nextAppState === "background" || nextAppState === "inactive") {
+          if (isPlaying && currentTrack) {
+            console.log(
+              "[PlayerContext] App going to background/inactive, pausing playback"
+            );
+            TrackPlayer.pause().catch((error) => {
+              console.log(
+                "[PlayerContext] Error pausing on app background:",
+                error
+              );
+            });
+          }
         } else if (nextAppState === "active") {
           console.log("[PlayerContext] App coming to foreground");
           updateIsPlayingFromState();
+          if (!currentTrack) {
+            rehydrateFromTrackPlayer();
+          }
         }
       }
     };
@@ -294,28 +400,27 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Update color theme immediately when track changes (before loading completes)
   useEffect(() => {
-    const updateTheme = async () => {
-      if (!currentTrack?.thumbnail) {
-        setColorTheme({
-          primary: "#ffffff",
-          secondary: "#ffffff",
-          background: "#000000",
-          text: "#ffffff",
-          accent: "#ffffff",
-          isGradient: false,
-        });
-        return;
-      }
+    if (!currentTrack?.thumbnail) {
+      setColorTheme({
+        primary: "#ffffff",
+        secondary: "#ffffff",
+        background: "#000000",
+        text: "#ffffff",
+        accent: "#ffffff",
+        isGradient: false,
+      });
+      return;
+    }
 
-      try {
-        const theme = await extractColorsFromImage(currentTrack.thumbnail);
-        setColorTheme(theme);
-      } catch (error) {
-        console.error("[PlayerContext] Error extracting theme colors:", error);
-      }
-    };
-
-    updateTheme();
+    // Use a simple default theme instead of extracting colors from image
+    setColorTheme({
+      primary: "#a3e635",
+      secondary: "#22d3ee",
+      background: "#000000",
+      text: "#ffffff",
+      accent: "#f59e0b",
+      isGradient: false,
+    });
   }, [currentTrack?.thumbnail]);
 
   // Monitor stream health and refresh if needed (legacy polling disabled in favor of TrackPlayer events)
@@ -323,22 +428,162 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     streamCheckRef.current = null;
   }, [isPlaying, currentTrack?.audioUrl]);
 
+  const getCacheInfo = useCallback(
+    async (trackId: string) => {
+      return await audioManager.getCacheInfo(trackId);
+    },
+    [audioManager]
+  );
+
+  const clearAudioMonitoring = useCallback(() => {
+    console.log("[PlayerContext] Clearing audio monitoring listeners");
+    audioMonitoringListenersRef.current.forEach((listener) => {
+      listener.remove();
+    });
+    audioMonitoringListenersRef.current = [];
+  }, []);
+
+  const nextTrack = useCallback(async () => {
+    console.log("[PlayerContext] nextTrack() called");
+    console.log(
+      `[PlayerContext] Playlist length: ${playlist.length}, current index: ${currentIndex}, repeat mode: ${repeatMode}`
+    );
+
+    // Use current playlist context if available, otherwise fall back to global playlist
+    const currentPlaylist =
+      currentPlaylistContextRef.current.length > 0
+        ? currentPlaylistContextRef.current
+        : playlist;
+
+    // Basic validation
+    if (currentPlaylist.length === 0) {
+      console.log("[PlayerContext] nextTrack() - No playlist, returning");
+      return;
+    }
+
+    // Clear audio monitoring to prevent interference during transition
+    clearAudioMonitoring();
+
+    // Stop any ongoing continuous caching for the current track
+    if (currentTrack && cacheControllersRef.current.has(currentTrack.id)) {
+      const controller = cacheControllersRef.current.get(currentTrack.id);
+      controller?.abort();
+      cacheControllersRef.current.delete(currentTrack.id);
+    }
+
+    setIsTransitioning(true);
+
+    try {
+      // Handle repeat one mode - replay current track
+      if (repeatMode === "one" && currentTrack) {
+        console.log(
+          "[PlayerContext] nextTrack() - Repeat one mode, replaying current track"
+        );
+        await playTrack(currentTrack, currentPlaylist, currentIndex);
+        return;
+      }
+
+      // Handle single song playlist
+      if (currentPlaylist.length === 1) {
+        console.log("[PlayerContext] nextTrack() - Single song playlist");
+        if (repeatMode === "one" || repeatMode === "all") {
+          console.log(
+            "[PlayerContext] nextTrack() - Single song with repeat, replaying"
+          );
+          await playTrack(currentTrack!, currentPlaylist, 0);
+        } else {
+          console.log(
+            "[PlayerContext] nextTrack() - Single song, no repeat, stopping"
+          );
+          await trackPlayerService.stop();
+          setIsPlaying(false);
+        }
+        return;
+      }
+
+      // Calculate next index
+      const nextIndex = (currentIndex + 1) % currentPlaylist.length;
+      const nextTrackItem = currentPlaylist[nextIndex];
+
+      if (nextTrackItem) {
+        console.log(
+          `[PlayerContext] nextTrack() - Playing next track at index ${nextIndex}: ${nextTrackItem.title}`
+        );
+        await playTrack(nextTrackItem, currentPlaylist, nextIndex);
+      } else {
+        console.log(
+          `[PlayerContext] nextTrack() - No track found at index ${nextIndex}`
+        );
+        // If no track found, try to stop playback gracefully
+        await trackPlayerService.stop();
+        setIsPlaying(false);
+      }
+    } catch (error) {
+      console.error(`[PlayerContext] Failed to play next track: ${error}`);
+
+      // If track fails to play, pause playback
+      await trackPlayerService.stop();
+      setIsPlaying(false);
+    } finally {
+      setIsTransitioning(false);
+    }
+  }, [playlist, currentIndex, repeatMode, currentTrack, clearAudioMonitoring]);
+
+  const cancelLoadingState = useCallback(async () => {
+    console.log("[PlayerContext] Cancelling loading state");
+    setIsLoading(false);
+    setIsTransitioning(false);
+
+    // Stop any ongoing caching operations
+    cacheControllersRef.current.forEach((controller, trackId) => {
+      console.log(`[PlayerContext] Aborting caching for track: ${trackId}`);
+      controller.abort();
+    });
+    cacheControllersRef.current.clear();
+
+    // Stop current playback
+    try {
+      await trackPlayerService.stop();
+    } catch (error) {
+      console.log(
+        "[PlayerContext] Error stopping playback during cancellation:",
+        error
+      );
+    }
+
+    // Reset position and cache progress
+    setPosition(0);
+    setCacheProgress(null);
+    setIsPlaying(false);
+  }, []);
+
   const playTrack = useCallback(
     async (track: Track, playlistData: Track[] = [], index: number = 0) => {
       console.log(
         `[PlayerContext] playTrack() called with track: ${track.title}, index: ${index}, playlist length: ${playlistData.length}, isLoading: ${isLoading}, isTransitioning: ${isTransitioning}`
       );
 
-      // Prevent multiple simultaneous play attempts (but allow transitions)
-      if (isLoading) {
-        console.log("[PlayerContext] Play track blocked - already loading");
-        return;
+      const playRequestId = ++playRequestIdRef.current;
+
+      // Cancel any ongoing loading/transitioning state
+      if (isLoading || isTransitioning) {
+        console.log("[PlayerContext] Cancelling ongoing loading state");
+        await cancelLoadingState();
       }
 
-      // Use current playlist and index if not provided
-      const effectivePlaylist =
-        playlistData.length > 0 ? playlistData : playlist;
-      const effectiveIndex = index >= 0 ? index : currentIndex;
+      // Determine effective playlist and index based on context
+      let effectivePlaylist: Track[];
+      let effectiveIndex: number;
+
+      if (playlistData.length > 0) {
+        // Explicit playlist provided (e.g. search results, album, artist)
+        effectivePlaylist = playlistData;
+        effectiveIndex = index >= 0 ? index : 0;
+      } else {
+        // No explicit playlist: treat this track as a single-track playlist
+        effectivePlaylist = [track];
+        effectiveIndex = 0;
+      }
 
       // Reset stream retry counter when starting a new track
       setStreamRetryCount(0);
@@ -349,19 +594,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsLoading(true);
         setIsTransitioning(true);
 
-        // Clear any existing playback and reset state
-        try {
-          await trackPlayerService.stop();
-          await trackPlayerService.reset();
-        } catch (error) {
-          console.log(
-            "[PlayerContext] Error cleaning up previous playback:",
-            error
-          );
-        }
-
-        // Reset position tracking
+        // Reset position and cache tracking for the new track
         setCacheProgress(null);
+        setPosition(0);
+        setDuration(track.duration || 0);
 
         // Set the track immediately so MiniPlayer can appear
         console.log(
@@ -369,24 +605,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         );
         setCurrentTrack(track);
 
-        // Preserve original playlist context when playing from a specific playlist
-        if (playlistData.length > 0) {
-          // We're playing from a specific playlist (like Previously Played)
-          currentPlaylistContextRef.current = playlistData;
-        } else if (currentPlaylistContextRef.current.length === 0) {
-          // No specific playlist context, use the current global playlist
-          currentPlaylistContextRef.current = playlist;
-        }
-
-        // Only update global playlist if we're not in a specific playlist context
-        // or if the effectivePlaylist is different from current context
-        if (
-          playlistData.length > 0 ||
-          currentPlaylistContextRef.current.length === 0
-        ) {
-          setPlaylist(effectivePlaylist);
-        }
-
+        // Update playlist context to reflect the effective playlist
+        currentPlaylistContextRef.current = effectivePlaylist;
+        setPlaylist(effectivePlaylist);
         setCurrentIndex(effectiveIndex);
         setIsPlaying(false);
 
@@ -402,12 +623,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           track._isJioSaavn ||
           (track.id && track.title) // Include library tracks that have basic identifying info
         ) {
-          const updatedPreviouslyPlayed = [
-            track,
-            ...previouslyPlayedSongs.filter((t) => t.id !== track.id),
-          ].slice(0, 100); // Keep max 100 songs
-          setPreviouslyPlayedSongs(updatedPreviouslyPlayed);
-          StorageService.savePreviouslyPlayedSongs(updatedPreviouslyPlayed);
+          setPreviouslyPlayedSongs((prev) => {
+            const updatedPreviouslyPlayed = [
+              track,
+              ...prev.filter((t) => t.id !== track.id),
+            ].slice(0, 100);
+            StorageService.savePreviouslyPlayedSongs(updatedPreviouslyPlayed);
+            return updatedPreviouslyPlayed;
+          });
         }
 
         // Stop current playback if any
@@ -524,19 +747,21 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           const isLiked = likedSongs.some((song) => song.id === track.id);
           if (isLiked) {
             console.log(
-              `[PlayerContext] Song is liked, starting caching: ${track.title}`
+              `[PlayerContext] Song is liked, starting MP3 caching: ${track.title}`
             );
             try {
               import("../modules/audioStreaming")
-                .then(({ continueCachingTrack }) => {
+                .then(({ downloadCompleteSongAsMP3 }) => {
                   const cacheController = new AbortController();
-                  continueCachingTrack(
+
+                  // Use the new MP3 download functionality for liked songs
+                  downloadCompleteSongAsMP3(
                     finalAudioUrl,
                     track.id,
                     cacheController,
                     (percentage) => {
                       console.log(
-                        `[PlayerContext] Caching progress for liked song: ${percentage}%`
+                        `[PlayerContext] MP3 caching progress for liked song: ${percentage}%`
                       );
                       setCacheProgress({
                         trackId: track.id,
@@ -544,22 +769,58 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                         fileSize: 0, // We don't have file size info here
                       });
                     }
-                  ).catch((error) => {
-                    console.error(
-                      `[PlayerContext] Failed to cache liked song ${track.id}:`,
-                      error
-                    );
-                  });
+                  )
+                    .then((cachedPath) => {
+                      console.log(
+                        `[PlayerContext] MP3 caching completed for liked song ${track.id}: ${cachedPath}`
+                      );
+                    })
+                    .catch((error) => {
+                      console.error(
+                        `[PlayerContext] Failed to MP3 cache liked song ${track.id}:`,
+                        error
+                      );
+                      // Fallback to regular caching if MP3 fails
+                      import("../modules/audioStreaming")
+                        .then(({ continueCachingTrack }) => {
+                          continueCachingTrack(
+                            finalAudioUrl,
+                            track.id,
+                            cacheController,
+                            (percentage) => {
+                              console.log(
+                                `[PlayerContext] Fallback caching progress for liked song: ${percentage}%`
+                              );
+                              setCacheProgress({
+                                trackId: track.id,
+                                percentage: percentage,
+                                fileSize: 0,
+                              });
+                            }
+                          ).catch((fallbackError) => {
+                            console.error(
+                              `[PlayerContext] Fallback caching also failed for liked song ${track.id}:`,
+                              fallbackError
+                            );
+                          });
+                        })
+                        .catch((importError) => {
+                          console.error(
+                            "[PlayerContext] Failed to import fallback caching module:",
+                            importError
+                          );
+                        });
+                    });
                 })
                 .catch((error) => {
                   console.error(
-                    `[PlayerContext] Failed to import audioStreaming module:`,
+                    "[PlayerContext] Failed to import audioStreaming module:",
                     error
                   );
                 });
             } catch (error) {
               console.error(
-                `[PlayerContext] Error starting cache for liked song:`,
+                "[PlayerContext] Error starting MP3 cache for liked song:",
                 error
               );
             }
@@ -568,7 +829,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
         try {
           if (finalAudioUrl) {
-            // Update the current track in the playlist with the fetched audio URL
             const updatedPlaylist = effectivePlaylist.map(
               (playlistTrack, index) => {
                 if (index === effectiveIndex) {
@@ -578,31 +838,34 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               }
             );
 
-            // Ensure TrackPlayer is initialized before adding tracks
+            if (playRequestId !== playRequestIdRef.current) {
+              return;
+            }
+
             console.log(
               "[PlayerContext] Checking TrackPlayer initialization status..."
             );
 
-            // Add tracks to Track Player and start playback
             await trackPlayerService.addTracks(updatedPlaylist, effectiveIndex);
             await trackPlayerService.play();
-            setIsPlaying(true);
-            console.log(
-              `[PlayerContext] Playback started for track: ${track.title}`
-            );
+            if (playRequestId === playRequestIdRef.current) {
+              setIsPlaying(true);
+              console.log(
+                `[PlayerContext] Playback started for track: ${track.title}`
+              );
+            }
           } else {
             console.warn(
               `[PlayerContext] No audio URL available for track: ${track.title}`
             );
-            setIsPlaying(false);
+            if (playRequestId === playRequestIdRef.current) {
+              setIsPlaying(false);
+            }
           }
 
-          setIsLoading(false);
-          setCurrentTrack({ ...track, audioUrl: finalAudioUrl });
-
-          // Show user feedback if we had to use fallback
-          if (!finalAudioUrl && track.source === "soundcloud") {
-            // You could add a toast notification here to inform the user
+          if (playRequestId === playRequestIdRef.current) {
+            setIsLoading(false);
+            setCurrentTrack({ ...track, audioUrl: finalAudioUrl });
           }
         } catch (playbackError) {
           console.error(
@@ -610,10 +873,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             playbackError
           );
 
-          // Even if everything fails, ensure UI remains functional
-          setIsPlaying(false);
-          setIsLoading(false);
-          setCurrentTrack({ ...track, audioUrl: "" }); // Mark as invalid
+          if (playRequestId === playRequestIdRef.current) {
+            setIsPlaying(false);
+            setIsLoading(false);
+            setCurrentTrack({ ...track, audioUrl: "" });
+          }
         }
 
         // Set up playback monitoring (only if track was successfully added)
@@ -738,7 +1002,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
             // Auto play next track when current finishes
             if (!isTransitioning && !isLoading) {
-              nextTrack();
+              nextTrackRef.current();
             } else {
               console.log(
                 "[PlayerContext] Skipping auto-next due to ongoing transition/loading"
@@ -751,14 +1015,27 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         audioMonitoringListenersRef.current.push(queueEndedListener);
       } catch (error) {
         console.error("[PlayerContext] Error playing track:", error);
-        setIsLoading(false);
-        setIsTransitioning(false);
-        setIsPlaying(false);
+        if (playRequestId === playRequestIdRef.current) {
+          setIsLoading(false);
+          setIsTransitioning(false);
+          setIsPlaying(false);
+        }
       } finally {
-        setIsTransitioning(false);
+        if (playRequestId === playRequestIdRef.current) {
+          setIsTransitioning(false);
+        }
       }
     },
-    [audioManager, isLoading, isTransitioning]
+    [
+      audioManager,
+      isLoading,
+      isTransitioning,
+      likedSongs,
+      currentTrack,
+      getCacheInfo,
+      nextTrackRef,
+      cancelLoadingState,
+    ]
   );
 
   const playPause = useCallback(async () => {
@@ -768,6 +1045,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     try {
+      // Handle loading state - allow stopping loading
+      if (isLoading) {
+        console.log("[PlayerContext] Stopping loading state");
+        await cancelLoadingState();
+        return;
+      }
+
       if (isPlaying) {
         await trackPlayerService.pause();
         setIsPlaying(false);
@@ -780,103 +1064,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch (error) {
       console.error("[PlayerContext] Error toggling play/pause:", error);
     }
-  }, [isPlaying, currentTrack?.audioUrl]);
-
-  const clearAudioMonitoring = useCallback(() => {
-    console.log("[PlayerContext] Clearing audio monitoring");
-    // Track Player doesn't use playback status updates like Expo AV
-    console.log(
-      "[PlayerContext] Audio monitoring cleared (Track Player handles this internally)"
-    );
-  }, []);
-
-  const nextTrack = useCallback(async () => {
-    console.log("[PlayerContext] nextTrack() called");
-    console.log(
-      `[PlayerContext] Playlist length: ${playlist.length}, current index: ${currentIndex}, repeat mode: ${repeatMode}`
-    );
-
-    // Basic validation
-    if (playlist.length === 0) {
-      console.log("[PlayerContext] nextTrack() - No playlist, returning");
-      return;
-    }
-
-    // Clear audio monitoring to prevent interference during transition
-    clearAudioMonitoring();
-
-    // Stop any ongoing continuous caching for the current track
-    if (currentTrack && cacheControllersRef.current.has(currentTrack.id)) {
-      const controller = cacheControllersRef.current.get(currentTrack.id);
-      controller?.abort();
-      cacheControllersRef.current.delete(currentTrack.id);
-    }
-
-    setIsTransitioning(true);
-
-    try {
-      // Handle repeat one mode - replay current track
-      if (repeatMode === "one" && currentTrack) {
-        console.log(
-          "[PlayerContext] nextTrack() - Repeat one mode, replaying current track"
-        );
-        await playTrack(currentTrack, playlist, currentIndex);
-        return;
-      }
-
-      // Handle single song playlist
-      if (playlist.length === 1) {
-        console.log("[PlayerContext] nextTrack() - Single song playlist");
-        if (repeatMode === "one" || repeatMode === "all") {
-          console.log(
-            "[PlayerContext] nextTrack() - Single song with repeat, replaying"
-          );
-          await playTrack(currentTrack!, playlist, 0);
-        } else {
-          console.log(
-            "[PlayerContext] nextTrack() - Single song, no repeat, stopping"
-          );
-          await trackPlayerService.stop();
-          setIsPlaying(false);
-        }
-        return;
-      }
-
-      // Calculate next index
-      const nextIndex = (currentIndex + 1) % playlist.length;
-      const nextTrackItem = playlist[nextIndex];
-
-      if (nextTrackItem) {
-        console.log(
-          `[PlayerContext] nextTrack() - Playing next track at index ${nextIndex}: ${nextTrackItem.title}`
-        );
-        await playTrack(nextTrackItem, playlist, nextIndex);
-      } else {
-        console.log(
-          `[PlayerContext] nextTrack() - No track found at index ${nextIndex}`
-        );
-        // If no track found, try to stop playback gracefully
-        await trackPlayerService.stop();
-        setIsPlaying(false);
-      }
-    } catch (error) {
-      console.error(`[PlayerContext] Failed to play next track: ${error}`);
-
-      // If track fails to play, pause playback
-      await trackPlayerService.stop();
-      setIsPlaying(false);
-    } finally {
-      setIsTransitioning(false);
-    }
-  }, [
-    playlist,
-    currentIndex,
-    playTrack,
-    repeatMode,
-    currentTrack,
-    setIsTransitioning,
-    clearAudioMonitoring,
-  ]);
+  }, [isPlaying, currentTrack?.audioUrl, isLoading, cancelLoadingState]);
 
   const previousTrack = useCallback(async () => {
     console.log("[PlayerContext] previousTrack() called");
@@ -979,12 +1167,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       console.log(
         `[PlayerContext] seekTo called - positionSeconds: ${positionSeconds}, currentTrack?.audioUrl: ${!!currentTrack?.audioUrl}`
       );
-
-      if (!currentTrack?.audioUrl) {
-        console.warn("[PlayerContext] Cannot seek: Player not ready");
+      if (!currentTrack) {
+        console.warn("[PlayerContext] Cannot seek: No current track");
         return;
       }
-
       try {
         const positionMs = positionSeconds * 1000;
 
@@ -1001,6 +1187,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         // Check if the target position is cached before seeking
         if (
           currentTrack.id &&
+          currentTrack.audioUrl &&
           (currentTrack._isSoundCloud ||
             currentTrack.source === "soundcloud" ||
             currentTrack.source === "youtube" ||
@@ -1128,14 +1315,21 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         // Verify player is ready before seeking
         const state = await TrackPlayer.getPlaybackState();
         if (state.state === State.None) {
-          console.warn("[PlayerContext] Cannot seek: Player not ready");
+          console.warn(
+            "[PlayerContext] Cannot seek: Player not ready (likely still loading)"
+          );
           return;
         }
 
+        const safePositionSeconds =
+          duration > 0
+            ? Math.max(0, Math.min(positionSeconds, duration))
+            : Math.max(0, positionSeconds);
+
         console.log(
-          `[PlayerContext] Seeking to positionSeconds: ${positionSeconds}`
+          `[PlayerContext] Seeking to positionSeconds: ${safePositionSeconds}`
         );
-        await trackPlayerService.seekTo(positionSeconds);
+        await trackPlayerService.seekTo(safePositionSeconds);
         console.log("[PlayerContext] Seek completed successfully");
 
         // Only resume playback if it was playing before the seek
@@ -1657,13 +1851,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [likedSongs]
   );
 
-  const getCacheInfo = useCallback(
-    async (trackId: string) => {
-      return await audioManager.getCacheInfo(trackId);
-    },
-    [audioManager]
-  );
-
   // Handle notification responses for media controls
   useEffect(() => {
     // Skip notification handling since expo-notifications is removed
@@ -1674,7 +1861,27 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [playPause, nextTrack, previousTrack, clearPlayer]);
 
   const applyPredefinedTheme = (themeName: string) => {
-    const theme = predefinedThemes[themeName];
+    // Simple theme mapping without imageColors dependency
+    const simpleThemes: Record<string, any> = {
+      default: {
+        primary: "#a3e635",
+        secondary: "#22d3ee",
+        background: "#000000",
+        text: "#ffffff",
+        accent: "#f59e0b",
+        isGradient: false,
+      },
+      dark: {
+        primary: "#ffffff",
+        secondary: "#ffffff",
+        background: "#000000",
+        text: "#ffffff",
+        accent: "#ffffff",
+        isGradient: false,
+      },
+    };
+
+    const theme = simpleThemes[themeName];
     if (theme) {
       setColorTheme(theme);
     }

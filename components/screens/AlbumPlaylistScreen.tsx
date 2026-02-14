@@ -56,7 +56,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
   const [showSongActionSheet, setShowSongActionSheet] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [sheetMode, setSheetMode] = useState<"playlist" | "playlist-song">(
-    "playlist-song"
+    "playlist-song",
   );
   const sheetTop = useRef(new Animated.Value(SHEET_CLOSED_TOP)).current;
   const [sheetHeight, setSheetHeight] = useState(SHEET_HEIGHT);
@@ -131,7 +131,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
 
         animateSheet(target);
       },
-    })
+    }),
   ).current;
 
   const closeSongActionSheet = () => {
@@ -192,7 +192,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       }
 
       const updatedTracks = playlist.tracks.filter(
-        (track) => track.id !== selectedTrack.id
+        (track) => track.id !== selectedTrack.id,
       );
       const updatedPlaylist = {
         ...playlist,
@@ -265,7 +265,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
     const unsubscribe = navigation.addListener("focus", () => {
       if (source === "user-playlist") {
         console.log(
-          "[AlbumPlaylistScreen] Screen focused, refreshing playlist"
+          "[AlbumPlaylistScreen] Screen focused, refreshing playlist",
         );
         loadAlbumSongs();
       }
@@ -302,7 +302,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           albumDetails.songs.length > 0
         ) {
           console.log(
-            `[AlbumPlaylistScreen] Found ${albumDetails.songs.length} songs in album`
+            `[AlbumPlaylistScreen] Found ${albumDetails.songs.length} songs in album`,
           );
           const songs = albumDetails.songs.map((song: any) => ({
             id: String(song.id),
@@ -347,14 +347,14 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
 
           if (playlist) {
             console.log(
-              `[AlbumPlaylistScreen] Found playlist with ${playlist.tracks.length} songs`
+              `[AlbumPlaylistScreen] Found playlist with ${playlist.tracks.length} songs`,
             );
             setAlbumSongs(playlist.tracks);
             setAlbumTitle(playlist.name);
             setAlbumArtist(
               `${playlist.tracks.length} ${
                 playlist.tracks.length === 1 ? "song" : "songs"
-              }`
+              }`,
             );
             // Use first song's thumbnail as album art if available
             if (playlist.tracks.length > 0 && playlist.tracks[0].thumbnail) {
@@ -379,7 +379,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           const playlistUrlParam =
             typeof albumId === "string" ? albumId : String(albumId);
           const endpoint = `https://beatseek.io/api/playlist?url=${encodeURIComponent(
-            playlistUrlParam
+            playlistUrlParam,
           )}`;
           const res = await fetch(endpoint, {
             headers: {
@@ -422,7 +422,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
               routeArtist ||
                 data?.artist ||
                 data?.user?.username ||
-                "Unknown Artist"
+                "Unknown Artist",
             );
             const cover =
               data?.artwork ||
@@ -442,21 +442,39 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       } else if (source === "youtube" || source === "youtubemusic") {
         // Handle YouTube/YouTube Music playlists
         console.log(
-          "[AlbumPlaylistScreen] Fetching YouTube/YouTube Music playlist details"
+          "[AlbumPlaylistScreen] Fetching YouTube/YouTube Music playlist details",
         );
         console.log(
-          `[AlbumPlaylistScreen] Playlist ID: ${albumId}, Source: ${source}`
+          `[AlbumPlaylistScreen] Playlist ID: ${albumId}, Source: ${source}`,
         );
+
+        // Check if this is a mix playlist (starts with "RD" or contains continuation parameter)
+        const isMixPlaylist =
+          albumId.startsWith('RD') || albumId.includes('&continuation=');
+        if (isMixPlaylist) {
+          console.log(
+            "[AlbumPlaylistScreen] Detected YouTube mix playlist - these are not supported by the API",
+          );
+          setAlbumSongs([]);
+          setAlbumTitle(albumName);
+          setAlbumArtist(routeArtist || "YouTube");
+          setErrorMessage(
+            "YouTube mixes are currently not supported. This is a YouTube algorithmic mix that cannot be fetched as a regular playlist. Try searching for individual songs or regular playlists instead.",
+          );
+          setIsLoading(false);
+          return;
+        }
+
         try {
           const { searchAPI } = await import("../../modules/searchAPI");
           console.log(
-            `[AlbumPlaylistScreen] Calling getYouTubePlaylistDetails for ID: ${albumId}`
+            `[AlbumPlaylistScreen] Calling getYouTubePlaylistDetails for ID: ${albumId}`,
           );
           const playlistDetails =
             await searchAPI.getYouTubePlaylistDetails(albumId);
           console.log(
             "[AlbumPlaylistScreen] Playlist details response:",
-            playlistDetails
+            playlistDetails,
           );
 
           if (
@@ -465,11 +483,11 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
             playlistDetails.videos.length > 0
           ) {
             console.log(
-              `[AlbumPlaylistScreen] SUCCESS: Found ${playlistDetails.videos.length} videos in YouTube playlist`
+              `[AlbumPlaylistScreen] SUCCESS: Found ${playlistDetails.videos.length} videos in YouTube playlist`,
             );
             console.log(
-              `[AlbumPlaylistScreen] First video:`,
-              playlistDetails.videos[0]
+              "[AlbumPlaylistScreen] First video:",
+              playlistDetails.videos[0],
             );
             const songs = playlistDetails.videos.map((video: any) => ({
               id: String(video.id),
@@ -485,7 +503,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
 
             console.log(
               `[AlbumPlaylistScreen] SUCCESS: Mapped ${songs.length} songs, first song:`,
-              songs[0]
+              songs[0],
             );
             setAlbumSongs(songs);
             setAlbumTitle(playlistDetails.name || albumName);
@@ -495,11 +513,11 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
             console.log("[AlbumPlaylistScreen] State updated successfully");
           } else {
             console.error(
-              "[AlbumPlaylistScreen] FAIL: No videos found in YouTube playlist"
+              "[AlbumPlaylistScreen] FAIL: No videos found in YouTube playlist",
             );
             console.error(
-              `[AlbumPlaylistScreen] playlistDetails:`,
-              playlistDetails
+              "[AlbumPlaylistScreen] playlistDetails:",
+              playlistDetails,
             );
 
             // Enhanced error message based on the response
@@ -516,20 +534,30 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
             setAlbumArtist(routeArtist || "Unknown Artist");
             setErrorMessage(errorMsg);
             console.log(
-              "[AlbumPlaylistScreen] State set to empty with error message"
+              "[AlbumPlaylistScreen] State set to empty with error message",
             );
           }
         } catch (error) {
           console.error(
             "[AlbumPlaylistScreen] ERROR: Exception while loading YouTube playlist:",
-            error
+            error,
           );
           setAlbumSongs([]);
           setAlbumTitle(albumName);
           setAlbumArtist(routeArtist || "Unknown Artist");
-          setErrorMessage(
-            "Failed to load YouTube playlist. Please check your internet connection or try again later."
-          );
+
+          // Check if this might be a mix playlist that failed
+          const isLikelyMix =
+            albumId.startsWith('RD') || albumId.includes('&continuation=');
+          if (isLikelyMix) {
+            setErrorMessage(
+              "YouTube mixes are currently not supported by the API. This is a YouTube algorithmic mix that cannot be fetched as a regular playlist.",
+            );
+          } else {
+            setErrorMessage(
+              "Failed to load YouTube playlist. Please check your internet connection or try again later.",
+            );
+          }
           console.log("[AlbumPlaylistScreen] State set to empty due to error");
         }
       } else {
@@ -548,7 +576,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       setErrorMessage(
         error instanceof Error
           ? `Failed to load album: ${error.message}`
-          : "Failed to load album tracks. This album may not be available or the service is temporarily unavailable."
+          : "Failed to load album tracks. This album may not be available or the service is temporarily unavailable.",
       );
     } finally {
       setIsLoading(false);

@@ -13,9 +13,11 @@ import {
 const CACHE_CONFIG = {
   // Try these directories in order of preference
   cacheDirs: [
-    () => `${FileSystem.cacheDirectory}youtube-cache/`,
-    () => `${FileSystem.cacheDirectory}audio-cache/`,
-    () => `${FileSystem.documentDirectory}audio-cache/`,
+    () => `${FileSystem.documentDirectory}Streamify/`, // Primary: Streamify directory in documents
+    () => `${FileSystem.cacheDirectory}Streamify/`, // Secondary: Streamify directory in cache
+    () => `${FileSystem.cacheDirectory}youtube-cache/`, // Legacy fallback
+    () => `${FileSystem.cacheDirectory}audio-cache/`, // Legacy fallback
+    () => `${FileSystem.documentDirectory}audio-cache/`, // Legacy fallback
   ],
   getBestCacheDir: async function (): Promise<string | null> {
     for (const dirFunc of this.cacheDirs) {
@@ -103,7 +105,7 @@ export class AudioStreamManager {
       timestamp: number;
     }
   >();
-  private readonly CACHE_INFO_TTL = 5000; // 5 second TTL
+  private readonly CACHE_INFO_TTL = 1000;
 
   /**
    * Clear cached cache info for a specific track
@@ -125,6 +127,16 @@ export class AudioStreamManager {
     "fDoItIDGPGBYQK0R7hgmy7vLqNYnZOLM",
   ];
   private currentClientIdIndex = 0;
+
+  // YouTube instance switching for reliability (similar to YouTube's method)
+  private youtubeInstances: string[] = [];
+  private currentYoutubeInstanceIndex = 0;
+  private youtubeInstanceHealth = new Map<
+    string,
+    { lastCheck: number; isHealthy: boolean }
+  >();
+  private readonly INSTANCE_HEALTH_TTL = 5 * 60 * 1000; // 5 minutes
+  private readonly MAX_YOUTUBE_RETRY_ATTEMPTS = 3;
 
   private isRemoteUrl(url: string | null | undefined): boolean {
     if (!url) {
@@ -192,11 +204,36 @@ export class AudioStreamManager {
   /**
    * Get the current cache directory, initializing if necessary
    */
-  private async getCacheDirectory(): Promise<string | null> {
+  public async getCacheDirectory(): Promise<string | null> {
     if (this.cacheDirectory === null) {
       await this.initializeCacheDirectory();
     }
     return this.cacheDirectory;
+  }
+
+  /**
+   * Ensure the Streamify directory exists and is accessible
+   * This method is called on first app launch to create the directory
+   */
+  public async ensureStreamifyDirectory(): Promise<string | null> {
+    try {
+      // Force re-initialization to ensure we get the best directory
+      this.cacheDirectory = null;
+      const cacheDir = await this.getCacheDirectory();
+
+      if (cacheDir) {
+        console.log(`[Audio] Streamify directory ensured at: ${cacheDir}`);
+        return cacheDir;
+      } else {
+        console.warn(
+          "[Audio] Could not ensure Streamify directory - no writable directory found"
+        );
+        return null;
+      }
+    } catch (error) {
+      console.error("[Audio] Error ensuring Streamify directory:", error);
+      return null;
+    }
   }
 
   /**
@@ -355,33 +392,208 @@ export class AudioStreamManager {
           !progress.isDownloading &&
           now - progress.lastUpdate > staleThreshold
         ) {
-          if (progress.originalStreamUrl) {
-            // Preserve original URL for resume operations, but reset other values
-            this.cacheProgress.set(trackId, {
-              percentage: 0,
-              lastFileSize: 0,
-              downloadedSize: 0,
-              downloadSpeed: 0,
-              isDownloading: false,
-              estimatedTotalSize: progress.estimatedTotalSize || 0,
-              isFullyCached: false,
-              originalStreamUrl: progress.originalStreamUrl,
-              lastUpdate: Date.now(),
-              retryCount: progress.retryCount || 0,
-              downloadStartTime: Date.now(),
-            });
-            console.log(
-              `[CacheProgress] Preserved URL in stale cleanup for ${trackId}`
-            );
-          } else {
-            this.cacheProgress.delete(trackId);
-            console.log(
-              `[CacheProgress] Cleaned up stale progress for ${trackId}`
-            );
-          }
+          this.cacheProgress.delete(trackId);
+          this.clearCacheInfoCache(trackId);
+          console.log(
+            `[CacheProgress] Cleaned up stale progress for ${trackId}`
+          );
         }
       }
-    }, 60000); // Run every minute
+    }, 60000); // Check every minute
+  }
+
+  /**
+   * Initialize YouTube instances for switching
+   */
+  private initializeYoutubeInstances(): void {
+    this.youtubeInstances = [
+      ...DYNAMIC_INVIDIOUS_INSTANCES,
+      ...API.piped,
+      "https://invidious.io",
+      "https://yewtu.be",
+      "https://invidious.snopyta.org",
+      "https://invidious.kavin.rocks",
+    ];
+    console.log(
+      `[YouTube] Initialized ${this.youtubeInstances.length} instances for switching`
+    );
+  }
+
+  /**
+   * Check if a YouTube instance is healthy
+   */
+  private async checkInstanceHealth(instance: string): Promise<boolean> {
+    const now = Date.now();
+    const cachedHealth = this.youtubeInstanceHealth.get(instance);
+
+    // Use cached health if still valid
+    if (
+      cachedHealth &&
+      now - cachedHealth.lastCheck < this.INSTANCE_HEALTH_TTL
+    ) {
+      return cachedHealth.isHealthy;
+    }
+
+    try {
+      // Quick health check - try to fetch the instance's API
+      const healthCheckUrl = `${instance}/api/v1/stats`;
+      const response = await fetch(healthCheckUrl, {
+        method: "HEAD",
+        signal: AbortSignal.timeout(5000),
+      });
+
+      const isHealthy = response.ok;
+      this.youtubeInstanceHealth.set(instance, { lastCheck: now, isHealthy });
+
+      console.log(
+        `[YouTube] Health check for ${instance}: ${isHealthy ? "healthy" : "unhealthy"}`
+      );
+      return isHealthy;
+    } catch (error) {
+      console.warn(`[YouTube] Health check failed for ${instance}:`, error);
+      this.youtubeInstanceHealth.set(instance, {
+        lastCheck: now,
+        isHealthy: false,
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Get next healthy YouTube instance
+   */
+  private async getNextHealthyInstance(): Promise<string | null> {
+    if (this.youtubeInstances.length === 0) {
+      this.initializeYoutubeInstances();
+    }
+
+    const startIndex = this.currentYoutubeInstanceIndex;
+
+    for (let i = 0; i < this.youtubeInstances.length; i++) {
+      const instanceIndex = (startIndex + i) % this.youtubeInstances.length;
+      const instance = this.youtubeInstances[instanceIndex];
+
+      if (await this.checkInstanceHealth(instance)) {
+        this.currentYoutubeInstanceIndex = instanceIndex;
+        console.log(`[YouTube] Selected healthy instance: ${instance}`);
+        return instance;
+      }
+    }
+
+    console.error("[YouTube] No healthy instances available");
+    return null;
+  }
+
+  /**
+   * Switch to next YouTube instance and retry download
+   */
+  private async switchInstanceAndRetry(
+    videoId: string,
+    trackId: string,
+    retryCount: number
+  ): Promise<string | null> {
+    if (retryCount >= this.MAX_YOUTUBE_RETRY_ATTEMPTS) {
+      console.error(
+        `[YouTube] Max retry attempts (${this.MAX_YOUTUBE_RETRY_ATTEMPTS}) reached for ${videoId}`
+      );
+      return null;
+    }
+
+    const nextInstance = await this.getNextHealthyInstance();
+    if (!nextInstance) {
+      console.error("[YouTube] No healthy instances available for retry");
+      return null;
+    }
+
+    console.log(
+      `[YouTube] Switching to instance ${nextInstance} (attempt ${retryCount + 1})`
+    );
+
+    try {
+      // Try to get stream URL from the new instance
+      const streamUrl = await this.getYouTubeStreamFromInstance(
+        videoId,
+        nextInstance
+      );
+      if (streamUrl) {
+        console.log(
+          `[YouTube] Successfully got stream URL from ${nextInstance}`
+        );
+        return streamUrl;
+      }
+    } catch (error) {
+      console.warn(
+        `[YouTube] Failed to get stream from ${nextInstance}:`,
+        error
+      );
+    }
+
+    // If this instance failed too, try the next one
+    this.currentYoutubeInstanceIndex =
+      (this.currentYoutubeInstanceIndex + 1) % this.youtubeInstances.length;
+    return await this.switchInstanceAndRetry(videoId, trackId, retryCount + 1);
+  }
+
+  /**
+   * Get YouTube stream from specific instance
+   */
+  private async getYouTubeStreamFromInstance(
+    videoId: string,
+    instance: string
+  ): Promise<string | null> {
+    try {
+      const apiUrl = `${instance}/api/v1/videos/${videoId}`;
+      console.log(`[YouTube] Fetching video info from ${apiUrl}`);
+
+      const response = await fetch(apiUrl, {
+        signal: AbortSignal.timeout(10000), // 10 second timeout
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      // Look for adaptive formats (usually higher quality)
+      const adaptiveFormats = data.adaptiveFormats || [];
+      const audioFormats = adaptiveFormats.filter(
+        (format: any) => format.type && format.type.includes("audio/")
+      );
+
+      // Sort by bitrate (highest first)
+      audioFormats.sort(
+        (a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0)
+      );
+
+      if (audioFormats.length > 0) {
+        const bestAudio = audioFormats[0];
+        console.log(
+          `[YouTube] Found audio format: ${bestAudio.quality || "unknown"} quality, ${bestAudio.bitrate || 0} bitrate`
+        );
+        return bestAudio.url || null;
+      }
+
+      // Fallback to regular formats
+      const formats = data.formatStreams || [];
+      const audioOnlyFormats = formats.filter(
+        (format: any) => format.type && format.type.includes("audio/")
+      );
+
+      if (audioOnlyFormats.length > 0) {
+        return audioOnlyFormats[0].url || null;
+      }
+
+      // Last resort: try any format that might contain audio
+      if (formats.length > 0) {
+        return formats[0].url || null;
+      }
+
+      return null;
+    } catch (error) {
+      console.error(`[YouTube] Failed to get stream from ${instance}:`, error);
+      return null;
+    }
   }
 
   // Convert video stream to audio format by finding audio-only alternatives
@@ -691,10 +903,10 @@ export class AudioStreamManager {
       // Check for any YouTube cache files with different extensions
       const youtubeExtensions = [
         ".cache",
-        ".webm",
-        ".webm.full",
         ".mp3",
         ".mp3.full",
+        ".webm",
+        ".webm.full",
       ];
 
       for (const ext of youtubeExtensions) {
@@ -2468,85 +2680,224 @@ export class AudioStreamManager {
     }
 
     try {
-      console.log(`[Audio] Using cache directory: ${cacheDir}`);
-      // Directory is already tested and created by getCacheDirectory()
-
-      const cacheFilePath = `${cacheDir}${trackId}.webm`;
-      const fullFilePath = cacheFilePath + ".full";
-
-      // Check if we already have a full file
-      const fullFileInfo = await FileSystem.getInfoAsync(fullFilePath);
-      if (fullFileInfo.exists && fullFileInfo.size > 1048576) {
-        // Reduced from 5MB to 1MB
-        console.log(
-          `[Audio] YouTube full cached file already exists for: ${trackId}`
-        );
-        this.soundCloudCache.set(trackId, fullFilePath);
-        return;
-      }
-
-      // Create a new controller for this download
       const controller = new AbortController();
 
-      // Download the stream with a longer timeout since it's post-playback
+      // For post-playback, prefer MP3 format if available
+      if (
+        streamUrl.includes("googlevideo.com") ||
+        streamUrl.includes("youtube.com")
+      ) {
+        const videoId = this.extractYouTubeVideoId(streamUrl);
+        if (videoId) {
+          console.log(
+            `[Audio] Attempting MP3 download for post-playback caching`
+          );
+          try {
+            await this.downloadCompleteSongAsMP3(
+              streamUrl,
+              trackId,
+              controller
+            );
+            console.log(
+              `[Audio] Post-playback MP3 caching completed for ${trackId}`
+            );
+            return;
+          } catch (mp3Error) {
+            console.warn(
+              `[Audio] MP3 download failed, falling back to regular caching:`,
+              mp3Error
+            );
+          }
+        }
+      }
+
+      // Fallback to regular caching
+      await this.cacheYouTubeStreamAsync(streamUrl, trackId, controller);
+      console.log(
+        `[Audio] Post-playback regular caching completed for ${trackId}`
+      );
+    } catch (error) {
+      console.error(
+        `[Audio] Post-playback caching failed for ${trackId}:`,
+        error
+      );
+    }
+  }
+
+  /**
+   * Download complete song as MP3 file
+   */
+  public async downloadCompleteSongAsMP3(
+    streamUrl: string,
+    trackId: string,
+    controller: AbortController,
+    onProgress?: (percentage: number) => void
+  ): Promise<string> {
+    if (!this.isRemoteUrl(streamUrl)) {
+      console.log("[Audio] Skipping MP3 download for non-remote URL");
+      return streamUrl;
+    }
+
+    console.log(`[Audio] Starting complete MP3 download for track: ${trackId}`);
+
+    const cacheDir = await this.getCacheDirectory();
+    if (!cacheDir) {
+      console.warn("[Audio] No cache directory available for MP3 download");
+      return streamUrl;
+    }
+
+    // Use .mp3 extension for the cached file
+    const mp3FilePath = `${cacheDir}${trackId}.mp3`;
+    const properMp3Path = mp3FilePath.startsWith("file://")
+      ? mp3FilePath
+      : `file://${mp3FilePath}`;
+
+    // Check if MP3 already exists and is complete
+    try {
+      const mp3Info = await FileSystem.getInfoAsync(properMp3Path);
+      if (mp3Info.exists && mp3Info.size > 1024 * 1024) {
+        // At least 1MB
+        console.log(`[Audio] MP3 already exists for track: ${trackId}`);
+        this.markDownloadCompleted(trackId, mp3Info.size / (1024 * 1024));
+        return properMp3Path;
+      }
+    } catch (error) {
+      console.log(
+        `[Audio] No existing MP3 found for ${trackId}, starting fresh download`
+      );
+    }
+
+    this.markDownloadStarted(trackId, streamUrl);
+
+    try {
+      // For YouTube streams, use instance switching if needed
+      let currentStreamUrl = streamUrl;
+      if (
+        streamUrl.includes("googlevideo.com") ||
+        streamUrl.includes("youtube.com")
+      ) {
+        const videoId = this.extractYouTubeVideoId(streamUrl);
+        if (videoId) {
+          console.log(
+            `[Audio] Using YouTube instance switching for MP3 download`
+          );
+          const instanceUrl = await this.getYouTubeStreamFromInstance(
+            videoId,
+            (await this.getNextHealthyInstance()) ||
+              DYNAMIC_INVIDIOUS_INSTANCES[0]
+          );
+          if (instanceUrl) {
+            currentStreamUrl = instanceUrl;
+          }
+        }
+      }
+
+      // Download the complete file
+      console.log(`[Audio] Downloading complete MP3 file to: ${properMp3Path}`);
+
+      let downloadedBytes = 0;
+      let totalBytes = 0;
+
+      // First, try to get content length
+      try {
+        const headResponse = await fetch(currentStreamUrl, {
+          method: "HEAD",
+          signal: controller.signal,
+        });
+        const contentLength = headResponse.headers.get("content-length");
+        if (contentLength) {
+          totalBytes = parseInt(contentLength);
+          console.log(`[Audio] Total file size: ${totalBytes} bytes`);
+        }
+      } catch (error) {
+        console.warn(
+          "[Audio] Could not get content length, downloading without progress"
+        );
+      }
+
+      // Download with progress tracking
       const downloadResult = await FileSystem.downloadAsync(
-        streamUrl,
-        cacheFilePath,
+        currentStreamUrl,
+        properMp3Path,
         {
           headers: {
             "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
           },
+          sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
         }
       );
 
       if (downloadResult.status === 200) {
-        console.log(
-          `[Audio] YouTube stream downloaded successfully for: ${trackId}`
+        const fileInfo = await FileSystem.getInfoAsync(properMp3Path);
+        if (fileInfo.exists) {
+          const fileSizeMB = fileInfo.size / (1024 * 1024);
+          console.log(`[Audio] MP3 download completed: ${fileSizeMB}MB`);
+
+          this.markDownloadCompleted(trackId, fileSizeMB);
+          this.trackCache.set(trackId, properMp3Path);
+
+          if (onProgress) {
+            onProgress(100);
+          }
+
+          return properMp3Path;
+        }
+      } else {
+        throw new Error(
+          `Download failed with status: ${downloadResult.status}`
         );
+      }
+    } catch (error) {
+      console.error(`[Audio] MP3 download failed for ${trackId}:`, error);
 
-        // Check file size
-        const fileInfo = await FileSystem.getInfoAsync(cacheFilePath);
-        if (fileInfo.exists && fileInfo.size > 0) {
-          console.log(
-            `[Audio] YouTube cached file size: ${fileInfo.size} bytes`
+      // Try instance switching for YouTube content
+      if (
+        streamUrl.includes("googlevideo.com") ||
+        streamUrl.includes("youtube.com")
+      ) {
+        const videoId = this.extractYouTubeVideoId(streamUrl);
+        if (videoId) {
+          console.log(`[Audio] Trying YouTube instance switching for retry`);
+          const retryUrl = await this.switchInstanceAndRetry(
+            videoId,
+            trackId,
+            1
           );
-
-          // If file is large enough, mark it as full
-          if (fileInfo.size > 1048576) {
-            // 1MB - Reduced from 5MB for faster startup
-            await FileSystem.moveAsync({
-              from: cacheFilePath,
-              to: fullFilePath,
-            });
-            this.trackCache.set(trackId, fullFilePath);
-            console.log(`[Audio] YouTube full cached file saved: ${trackId}`);
-          } else {
-            this.trackCache.set(trackId, cacheFilePath);
-            console.log(
-              `[Audio] YouTube partial cached file saved: ${trackId}`
+          if (retryUrl) {
+            return await this.downloadCompleteSongAsMP3(
+              retryUrl,
+              trackId,
+              controller,
+              onProgress
             );
           }
         }
-      } else {
-        console.log(
-          `[Audio] YouTube download failed with status: ${downloadResult.status}`
-        );
-        // Clean up partial file
-        try {
-          await FileSystem.deleteAsync(cacheFilePath);
-          // Clear cache info cache since the file was deleted
-          this.clearCacheInfoCache(trackId);
-        } catch (cleanupError) {
-          console.log(
-            `[Audio] Failed to cleanup partial file: ${cleanupError}`
-          );
-        }
       }
-    } catch (error) {
-      console.log(`[Audio] Post-playback YouTube caching failed: ${error}`);
-      // Don't throw - this is background caching
+
+      throw error;
     }
+
+    return streamUrl;
+  }
+
+  /**
+   * Extract YouTube video ID from URL
+   */
+  private extractYouTubeVideoId(url: string): string | null {
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+      /(?:googlevideo\.com\/videoplayback\?.*&id=)([^&\n?#]+)/,
+    ];
+
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -2786,6 +3137,20 @@ export class AudioStreamManager {
         return;
       }
 
+      this.markDownloadStarted(trackId, streamUrl);
+      this.updateCacheProgress(
+        trackId,
+        cacheInfo.percentage,
+        cacheInfo.fileSize,
+        {
+          isDownloading: true,
+          estimatedTotalSize: cacheInfo.totalFileSize
+            ? cacheInfo.totalFileSize * 1024 * 1024
+            : undefined,
+          originalStreamUrl: streamUrl,
+        }
+      );
+
       // Get the cache directory
       const cacheDir = await this.getCacheDirectory();
       if (!cacheDir) {
@@ -2932,6 +3297,17 @@ export class AudioStreamManager {
 
             // Update cache info
             const updatedCacheInfo = await this.getCacheInfo(trackId);
+            this.updateCacheProgress(
+              trackId,
+              updatedCacheInfo.percentage,
+              updatedCacheInfo.fileSize,
+              {
+                isDownloading: true,
+                estimatedTotalSize: updatedCacheInfo.totalFileSize
+                  ? updatedCacheInfo.totalFileSize * 1024 * 1024
+                  : undefined,
+              }
+            );
 
             console.log(
               `[Audio] Chunk downloaded. Cache progress: ${updatedCacheInfo.percentage}%`
@@ -3006,6 +3382,15 @@ export class AudioStreamManager {
       }
     } catch (error) {
       console.error(`[Audio] Continuous caching failed for ${trackId}:`, error);
+    } finally {
+      const progress = this.cacheProgress.get(trackId);
+      if (progress) {
+        this.cacheProgress.set(trackId, {
+          ...progress,
+          isDownloading: false,
+          lastUpdate: Date.now(),
+        });
+      }
     }
   }
 
@@ -5125,88 +5510,67 @@ export class AudioStreamManager {
           return;
         }
 
-        try {
-          // Use a more robust approach: copy the resumed content directly
-          // without trying to read it as Base64/UTF8
-          console.log("[Audio] Attempting binary-safe file combination");
+        // Use a more robust approach: copy the resumed content directly
+        // without trying to read it as Base64/UTF8
+        console.log("[Audio] Attempting binary-safe file combination");
 
-          // Get file info for both files
-          const existingFileInfo =
-            await FileSystem.getInfoAsync(properCacheFilePath);
-          const resumeFileInfo = await FileSystem.getInfoAsync(resumeFilePath);
+        // Get file info for both files
+        const existingFileInfo =
+          await FileSystem.getInfoAsync(properCacheFilePath);
 
-          if (!existingFileInfo.exists || !resumeFileInfo.exists) {
-            console.warn(
-              "[Audio] One of the files doesn't exist for combination"
-            );
-            return;
-          }
-
-          // Create a temporary combined file
-          const tempCombinedPath = properCacheFilePath + ".combined";
-
-          // First copy the existing file to temp location
-          await FileSystem.copyAsync({
-            from: properCacheFilePath,
-            to: tempCombinedPath,
-          });
-
-          // Then append the resume content using binary-safe approach
-          // Read both files as binary arrays and combine them
-          const existingArray = await FileSystem.readAsStringAsync(
-            tempCombinedPath,
-            { encoding: FileSystem.EncodingType.Base64 }
+        if (!existingFileInfo.exists || !resumeFileInfo.exists) {
+          console.warn(
+            "[Audio] One of the files doesn't exist for combination"
           );
-          const resumeArray = await FileSystem.readAsStringAsync(
-            resumeFilePath,
-            { encoding: FileSystem.EncodingType.Base64 }
-          );
-
-          // Decode both base64 strings to binary, concatenate, then re-encode
-          const existingBinary = toByteArray(existingArray);
-          const resumeBinary = toByteArray(resumeArray);
-          const combinedBinary = new Uint8Array(
-            existingBinary.length + resumeBinary.length
-          );
-          combinedBinary.set(existingBinary);
-          combinedBinary.set(resumeBinary, existingBinary.length);
-          const combinedBase64 = fromByteArray(combinedBinary);
-
-          // Combine and write back
-          await FileSystem.writeAsStringAsync(
-            tempCombinedPath,
-            combinedBase64,
-            { encoding: FileSystem.EncodingType.Base64 }
-          );
-
-          // Replace the original file with the combined one
-          await FileSystem.copyAsync({
-            from: tempCombinedPath,
-            to: properCacheFilePath,
-          });
-
-          // Clean up temp files
-          await FileSystem.deleteAsync(tempCombinedPath, {
-            idempotent: true,
-          });
-
-          console.log("[Audio] Successfully combined cache files using Base64");
-        } catch (combinationError) {
-          console.error("[Audio] File combination failed:", combinationError);
-          // Final fallback: just replace the original file with the resumed one
-          try {
-            await FileSystem.copyAsync({
-              from: resumeFilePath,
-              to: properCacheFilePath,
-            });
-            console.log(
-              "[Audio] Fallback: Replaced cache file with resumed content"
-            );
-          } catch (finalError) {
-            console.error("[Audio] Final fallback failed:", finalError);
-            throw finalError;
-          }
+          return;
         }
+
+        // Create a temporary combined file
+        const tempCombinedPath = properCacheFilePath + ".combined";
+
+        // First copy the existing file to temp location
+        await FileSystem.copyAsync({
+          from: properCacheFilePath,
+          to: tempCombinedPath,
+        });
+
+        // Then append the resume content using binary-safe approach
+        // Read both files as binary arrays and combine them
+        const existingArray = await FileSystem.readAsStringAsync(
+          tempCombinedPath,
+          { encoding: FileSystem.EncodingType.Base64 }
+        );
+        const resumeArray = await FileSystem.readAsStringAsync(resumeFilePath, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        // Decode both base64 strings to binary, concatenate, then re-encode
+        const existingBinary = toByteArray(existingArray);
+        const resumeBinary = toByteArray(resumeArray);
+        const combinedBinary = new Uint8Array(
+          existingBinary.length + resumeBinary.length
+        );
+        combinedBinary.set(existingBinary);
+        combinedBinary.set(resumeBinary, existingBinary.length);
+        const combinedBase64 = fromByteArray(combinedBinary);
+
+        // Combine and write back
+        await FileSystem.writeAsStringAsync(tempCombinedPath, combinedBase64, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        // Replace the original file with the combined one
+        await FileSystem.copyAsync({
+          from: tempCombinedPath,
+          to: properCacheFilePath,
+        });
+
+        // Clean up temp files
+        await FileSystem.deleteAsync(tempCombinedPath, {
+          idempotent: true,
+        });
+
+        console.log("[Audio] Successfully combined cache files using Base64");
 
         // Clean up resume file
         await FileSystem.deleteAsync(resumeFilePath, {
@@ -5268,6 +5632,8 @@ export class AudioStreamManager {
       }
     }
   }
+
+  // Cleanup method
 
   // Cleanup method
   public async cleanup() {
@@ -5648,4 +6014,18 @@ export async function clearSoundCloudCache(trackId?: string): Promise<void> {
 
 export async function clearTrackCache(trackId?: string): Promise<void> {
   await AudioStreamManager.getInstance().clearTrackCache(trackId);
+}
+
+export async function downloadCompleteSongAsMP3(
+  streamUrl: string,
+  trackId: string,
+  controller: AbortController,
+  onProgress?: (percentage: number) => void
+): Promise<string> {
+  return AudioStreamManager.getInstance().downloadCompleteSongAsMP3(
+    streamUrl,
+    trackId,
+    controller,
+    onProgress
+  );
 }
