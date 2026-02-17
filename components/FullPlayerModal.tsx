@@ -376,6 +376,7 @@ const ProgressBarContainer = styled.View`
   width: 100%;
   height: 40px; /* Increased height for better touch target */
   justify-content: center;
+  position: relative;
 `;
 
 const ProgressSlider = React.forwardRef<Slider, SliderProps>((props, ref) => {
@@ -404,6 +405,16 @@ const TimeText = styled.Text`
   font-size: 14px;
   font-family: GoogleSansRegular;
   font-weight: 500;
+`;
+
+const ProgressOverlay = styled.View`
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  align-items: center;
+  justify-content: center;
 `;
 
 const Controls = styled.View`
@@ -552,10 +563,14 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     toggleShuffle,
     position,
     duration,
+    cancelLoadingState,
   } = usePlayer();
 
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekValue, setSeekValue] = useState(0);
+  const [seekPreviewSeconds, setSeekPreviewSeconds] = useState<number | null>(
+    null
+  );
 
   const appState = useRef(AppState.currentState);
   const [cacheInfo, setCacheInfo] = useState<{
@@ -1110,30 +1125,37 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   disabled={
                     totalDurationSeconds <= 0 || isLoading || isTransitioning
                   }
-                  // @ts-ignore - TypeScript definitions don't match implementation
-                  onSlidingStart={() => {
-                    setIsSeeking(true);
-                    const effectiveDuration = Math.max(totalDurationSeconds, 1);
-                    setSeekValue(
-                      Math.min(Math.max(seekValue, 0), effectiveDuration)
-                    );
-                  }}
+                  minimumTrackTintColor={isPlaying ? "#ffffff" : "#9ca3af"}
+                  maximumTrackTintColor="#4b5563"
+                  thumbTintColor={isPlaying ? "#ffffff" : "#9ca3af"}
                   onValueChange={(value) => {
-                    console.log(
-                      `[FullPlayerModal] Slider onValueChange: ${value}`
-                    );
+                    if (!isSeeking) {
+                      setIsSeeking(true);
+                    }
                     setSeekValue(value);
+                    setSeekPreviewSeconds(value);
                   }}
-                  // @ts-ignore - TypeScript definitions don't match implementation
                   onSlidingComplete={(value) => {
                     setIsSeeking(false);
                     setSeekValue(value);
+                    setSeekPreviewSeconds(null);
                     handleSeek(value);
                   }}
                 />
+                {isLoading || isTransitioning ? (
+                  <ProgressOverlay>
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  </ProgressOverlay>
+                ) : null}
               </ProgressBarContainer>
               <TimeContainer>
-                <TimeText>{formatTime(position * 1000)}</TimeText>
+                <TimeText>
+                  {formatTime(
+                    ((isSeeking && seekPreviewSeconds !== null
+                      ? seekPreviewSeconds
+                      : position) || 0) * 1000
+                  )}
+                </TimeText>
                 <TimeText>{formatTime(totalDurationSeconds * 1000)}</TimeText>
               </TimeContainer>
             </ProgressContainer>
@@ -1154,8 +1176,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               </ControlButton>
 
               <PlayPauseButton
-                onPress={handlePlayPause}
-                disabled={isTransitioning}
+                onPress={
+                  isLoading || isTransitioning
+                    ? cancelLoadingState
+                    : handlePlayPause
+                }
+                disabled={false}
               >
                 {isLoading || isTransitioning ? (
                   <ActivityIndicator

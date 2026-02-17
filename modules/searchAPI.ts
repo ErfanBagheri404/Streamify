@@ -1297,12 +1297,11 @@ export const searchAPI = {
     limit?: number,
   ) => {
     try {
-      const CLIENT_ID = "gqKBMSuBw5rbN9rDRYPqKNvF17ovlObu";
       const pageSize = limit && limit > 0 ? limit : 20;
       const offset = page && page > 1 ? (page - 1) * pageSize : 0;
-      const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(
+      const url = `https://proxy.searchsoundcloud.com/tracks?q=${encodeURIComponent(
         query,
-      )}&client_id=${CLIENT_ID}&limit=${pageSize}&offset=${offset}`;
+      )}&limit=${pageSize}&offset=${offset}`;
       const res = await fetch(url, {
         headers: {
           "User-Agent":
@@ -1345,9 +1344,10 @@ export const searchAPI = {
   ) => {
     try {
       const pageSize = limit && limit > 0 ? limit : 20;
-      const url = `https://beatseek.io/api/search?query=${encodeURIComponent(
+      const offset = page && page > 1 ? (page - 1) * pageSize : 0;
+      const url = `https://proxy.searchsoundcloud.com/${type}?q=${encodeURIComponent(
         query,
-      )}&platform=soundcloud&type=${type}&sort=both&limit=${pageSize}`;
+      )}&limit=${pageSize}&offset=${offset}`;
       const res = await fetch(url, {
         headers: {
           "User-Agent":
@@ -1359,15 +1359,17 @@ export const searchAPI = {
         return [];
       }
       const data = await res.json();
-      const items = Array.isArray(data?.results)
-        ? data.results
-        : Array.isArray(data)
-          ? data
-          : [];
+      const items = Array.isArray(data?.collection)
+        ? data.collection
+        : Array.isArray(data?.results)
+          ? data.results
+          : Array.isArray(data)
+            ? data
+            : [];
       return items.map((item: any) => ({
-        url: item.url || item.permalink || "",
+        url: item.permalink_url || item.url || item.permalink || "",
         title: item.title || item.name || "",
-        artist: item.artist || "",
+        artist: item.artist || item.user?.username || "",
         author:
           item.author ||
           item.artist ||
@@ -1376,14 +1378,17 @@ export const searchAPI = {
           item.creator ||
           "",
         artwork:
+          item.artwork_url ||
           item.artwork ||
           item.artworkUrl ||
           item.thumbnail ||
           item.image ||
           item.cover ||
           item.img ||
+          item.user?.avatar_url ||
           "",
         trackCount:
+          item.track_count ||
           item.trackCount ||
           item.tracksCount ||
           item.tracks?.length ||

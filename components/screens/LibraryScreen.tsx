@@ -156,6 +156,22 @@ const CollectionCover = styled.Image`
   background-color: #262626;
 `;
 
+const DownloadingCoverWrapper = styled.View`
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: #262626;
+`;
+
+const DownloadingCoverFill = styled.View`
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  overflow: hidden;
+`;
+
 const LikedCoverWrapper = styled.View`
   width: 100%;
   aspect-ratio: 1;
@@ -229,7 +245,13 @@ const ThreeDotButton = styled.TouchableOpacity`
   z-index: 10;
 `;
 
-const sections = ["Playlists", "Albums", "Artists", "Downloaded"];
+const sections = [
+  "Playlists",
+  "Albums",
+  "Artists",
+  "Downloaded",
+  "Downloading",
+];
 
 const sampleCollections = [
   {
@@ -254,7 +276,11 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   const [showCreatePlaylistModal, setShowCreatePlaylistModal] =
     React.useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
-  const { likedSongs, previouslyPlayedSongs } = usePlayer();
+  const { likedSongs, previouslyPlayedSongs, getCacheInfo, cacheProgress } =
+    usePlayer();
+  const [downloadingTracks, setDownloadingTracks] = React.useState<
+    { track: Track; percentage: number }[]
+  >([]);
 
   // Song action sheet state
   const [showSongActionSheet, setShowSongActionSheet] = useState(false);
@@ -332,7 +358,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
         animateSheet(target);
       },
-    }),
+    })
   ).current;
 
   const closeSongActionSheet = () => {
@@ -408,6 +434,82 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     return unsubscribe;
   }, [navigation]);
 
+  const loadDownloadingTracks = React.useCallback(async () => {
+    const candidates = new Map<string, Track>();
+    [...likedSongs, ...previouslyPlayedSongs].forEach((track) => {
+      if (track?.id && !candidates.has(track.id)) {
+        candidates.set(track.id, track);
+      }
+    });
+
+    const results = await Promise.all(
+      Array.from(candidates.values()).map(async (track) => {
+        try {
+          const info = await getCacheInfo(track.id);
+          if (
+            info &&
+            (info.isDownloading || (!info.isFullyCached && info.percentage > 0))
+          ) {
+            return { track, percentage: info.percentage || 0 };
+          }
+        } catch (error) {
+          return null;
+        }
+        return null;
+      })
+    );
+
+    setDownloadingTracks(
+      results.filter((item): item is { track: Track; percentage: number } =>
+        Boolean(item)
+      )
+    );
+  }, [getCacheInfo, likedSongs, previouslyPlayedSongs]);
+
+  React.useEffect(() => {
+    loadDownloadingTracks();
+    const unsubscribe = navigation.addListener("focus", () => {
+      loadDownloadingTracks();
+    });
+    return unsubscribe;
+  }, [loadDownloadingTracks, navigation]);
+
+  React.useEffect(() => {
+    if (!cacheProgress?.trackId) {
+      return;
+    }
+
+    setDownloadingTracks((prev) => {
+      const existingIndex = prev.findIndex(
+        (item) => item.track.id === cacheProgress.trackId
+      );
+
+      if (existingIndex >= 0) {
+        const next = [...prev];
+        next[existingIndex] = {
+          ...next[existingIndex],
+          percentage: cacheProgress.percentage,
+        };
+        return next;
+      }
+
+      const candidate =
+        likedSongs.find((track) => track.id === cacheProgress.trackId) ||
+        previouslyPlayedSongs.find(
+          (track) => track.id === cacheProgress.trackId
+        );
+
+      if (candidate && cacheProgress.percentage > 0) {
+        return [
+          ...prev,
+          { track: candidate, percentage: cacheProgress.percentage },
+        ];
+      }
+
+      return prev;
+    });
+  }, [cacheProgress, likedSongs, previouslyPlayedSongs]);
+
   return (
     <SafeArea>
       <Screen>
@@ -464,112 +566,183 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         </SortRow>
 
         <Grid>
-          <GridRow>
-            {sampleCollections.slice(0, 2).map((item) => (
-              <CollectionCard
-                key={item.id}
-                onPress={
-                  item.id === "liked"
-                    ? handleLikedSongsPress
-                    : item.id === "previously-played"
-                      ? handlePreviouslyPlayedPress
-                      : undefined
-                }
-              >
-                {item.id === "liked" ? (
-                  <LikedCoverWrapper>
-                    <LikedCoverGradient
-                      colors={["#3d02ae", "#6053b0", "#6c867f"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                    >
-                      <Entypo name="heart" size={42} color="white" />
-                    </LikedCoverGradient>
-                  </LikedCoverWrapper>
-                ) : item.id === "previously-played" ? (
-                  <LikedCoverWrapper>
-                    <LikedCoverGradient
-                      colors={["#1a1a1a", "#404040", "#525252"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                    >
-                      <Entypo name="back-in-time" size={42} color="white" />
-                    </LikedCoverGradient>
-                  </LikedCoverWrapper>
-                ) : (
-                  <CollectionCover source={item.cover as any} />
-                )}
-                <CollectionTitle>{item.title}</CollectionTitle>
-                {item.id === "liked" || item.id === "previously-played" ? (
-                  <>
-                    <PinRow>
-                      <PinIcon>
-                        <AntDesign name="pushpin" size={14} color="green" />
-                      </PinIcon>
-                      <PinLabel>Playlist</PinLabel>
-                      <PinDot>•</PinDot>
-                      <CollectionMeta>
-                        {item.id === "liked"
-                          ? likedSongs.length
-                          : previouslyPlayedSongs.length}{" "}
-                        songs
-                      </CollectionMeta>
-                    </PinRow>
-                  </>
-                ) : (
-                  <CollectionMeta>{item.meta}</CollectionMeta>
-                )}
-              </CollectionCard>
-            ))}
-          </GridRow>
-
-          <GridRow>
-            {sampleCollections.slice(2, 4).map((item) => (
-              <CollectionCard key={item.id}>
-                <CollectionCover source={item.cover as any} />
-                <CollectionTitle>{item.title}</CollectionTitle>
-                <CollectionMeta>{item.meta}</CollectionMeta>
-              </CollectionCard>
-            ))}
-          </GridRow>
-
-          {/* Display user-created playlists */}
-          {playlists.length > 0 && (
+          {activeSection === "Downloading" ? (
             <>
-              {Array.from({ length: Math.ceil(playlists.length / 2) }).map(
-                (_, rowIndex) => (
-                  <GridRow key={rowIndex}>
-                    {playlists
-                      .slice(rowIndex * 2, (rowIndex + 1) * 2)
-                      .map((playlist) => (
-                        <CollectionCard
-                          key={playlist.id}
-                          onPress={() => handleUserPlaylistPress(playlist)}
+              {downloadingTracks.length === 0
+                ? null
+                : Array.from({
+                    length: Math.ceil(downloadingTracks.length / 2),
+                  }).map((_, rowIndex) => (
+                    <GridRow key={`downloading-${rowIndex}`}>
+                      {downloadingTracks
+                        .slice(rowIndex * 2, (rowIndex + 1) * 2)
+                        .map(({ track, percentage }) => (
+                          <CollectionCard
+                            key={`downloading-${track.id}`}
+                            onPress={() => openSongActionSheet(track)}
+                          >
+                            {track.thumbnail ? (
+                              <DownloadingCoverWrapper>
+                                <CollectionCover
+                                  source={{ uri: track.thumbnail }}
+                                  style={{ opacity: 0.25 }}
+                                />
+                                <DownloadingCoverFill
+                                  style={{
+                                    width: `${Math.min(100, Math.max(0, percentage))}%`,
+                                  }}
+                                >
+                                  <CollectionCover
+                                    source={{ uri: track.thumbnail }}
+                                    style={{
+                                      position: "absolute",
+                                      left: 0,
+                                      top: 0,
+                                      width: "100%",
+                                      height: "100%",
+                                    }}
+                                  />
+                                </DownloadingCoverFill>
+                              </DownloadingCoverWrapper>
+                            ) : (
+                              <LikedCoverWrapper>
+                                <LikedCoverGradient
+                                  colors={["#1a1a1a", "#404040", "#525252"]}
+                                  start={{ x: 0, y: 0 }}
+                                  end={{ x: 1, y: 1 }}
+                                >
+                                  <Entypo
+                                    name="music"
+                                    size={42}
+                                    color="white"
+                                  />
+                                </LikedCoverGradient>
+                              </LikedCoverWrapper>
+                            )}
+                            <CollectionTitle numberOfLines={2}>
+                              {track.title}
+                            </CollectionTitle>
+                            <CollectionMeta>
+                              Cached {Math.round(percentage)}%
+                            </CollectionMeta>
+                          </CollectionCard>
+                        ))}
+                    </GridRow>
+                  ))}
+            </>
+          ) : (
+            <>
+              <GridRow>
+                {sampleCollections.slice(0, 2).map((item) => (
+                  <CollectionCard
+                    key={item.id}
+                    onPress={
+                      item.id === "liked"
+                        ? handleLikedSongsPress
+                        : item.id === "previously-played"
+                          ? handlePreviouslyPlayedPress
+                          : undefined
+                    }
+                  >
+                    {item.id === "liked" ? (
+                      <LikedCoverWrapper>
+                        <LikedCoverGradient
+                          colors={["#3d02ae", "#6053b0", "#6c867f"]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
                         >
-                          {playlist.tracks.length > 0 &&
-                          playlist.tracks[0].thumbnail ? (
-                            <CollectionCover
-                              source={{ uri: playlist.tracks[0].thumbnail }}
-                            />
-                          ) : (
-                            <LikedCoverWrapper>
-                              <LikedCoverGradient
-                                colors={["#1a1a1a", "#404040", "#525252"]}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                              >
-                                <Entypo name="music" size={42} color="white" />
-                              </LikedCoverGradient>
-                            </LikedCoverWrapper>
-                          )}
-                          <CollectionTitle>{playlist.name}</CollectionTitle>
+                          <Entypo name="heart" size={42} color="white" />
+                        </LikedCoverGradient>
+                      </LikedCoverWrapper>
+                    ) : item.id === "previously-played" ? (
+                      <LikedCoverWrapper>
+                        <LikedCoverGradient
+                          colors={["#1a1a1a", "#404040", "#525252"]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                        >
+                          <Entypo name="back-in-time" size={42} color="white" />
+                        </LikedCoverGradient>
+                      </LikedCoverWrapper>
+                    ) : (
+                      <CollectionCover source={item.cover as any} />
+                    )}
+                    <CollectionTitle>{item.title}</CollectionTitle>
+                    {item.id === "liked" || item.id === "previously-played" ? (
+                      <>
+                        <PinRow>
+                          <PinIcon>
+                            <AntDesign name="pushpin" size={14} color="green" />
+                          </PinIcon>
+                          <PinLabel>Playlist</PinLabel>
+                          <PinDot>•</PinDot>
                           <CollectionMeta>
-                            Playlist • {playlist.tracks.length} songs
+                            {item.id === "liked"
+                              ? likedSongs.length
+                              : previouslyPlayedSongs.length}{" "}
+                            songs
                           </CollectionMeta>
-                        </CollectionCard>
-                      ))}
-                  </GridRow>
-                ),
+                        </PinRow>
+                      </>
+                    ) : (
+                      <CollectionMeta>{item.meta}</CollectionMeta>
+                    )}
+                  </CollectionCard>
+                ))}
+              </GridRow>
+
+              <GridRow>
+                {sampleCollections.slice(2, 4).map((item) => (
+                  <CollectionCard key={item.id}>
+                    <CollectionCover source={item.cover as any} />
+                    <CollectionTitle>{item.title}</CollectionTitle>
+                    <CollectionMeta>{item.meta}</CollectionMeta>
+                  </CollectionCard>
+                ))}
+              </GridRow>
+
+              {playlists.length > 0 && (
+                <>
+                  {Array.from({ length: Math.ceil(playlists.length / 2) }).map(
+                    (_, rowIndex) => (
+                      <GridRow key={rowIndex}>
+                        {playlists
+                          .slice(rowIndex * 2, (rowIndex + 1) * 2)
+                          .map((playlist) => (
+                            <CollectionCard
+                              key={playlist.id}
+                              onPress={() => handleUserPlaylistPress(playlist)}
+                            >
+                              {playlist.tracks.length > 0 &&
+                              playlist.tracks[0].thumbnail ? (
+                                <CollectionCover
+                                  source={{ uri: playlist.tracks[0].thumbnail }}
+                                />
+                              ) : (
+                                <LikedCoverWrapper>
+                                  <LikedCoverGradient
+                                    colors={["#1a1a1a", "#404040", "#525252"]}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 1 }}
+                                  >
+                                    <Entypo
+                                      name="music"
+                                      size={42}
+                                      color="white"
+                                    />
+                                  </LikedCoverGradient>
+                                </LikedCoverWrapper>
+                              )}
+                              <CollectionTitle>{playlist.name}</CollectionTitle>
+                              <CollectionMeta>
+                                Playlist • {playlist.tracks.length} songs
+                              </CollectionMeta>
+                            </CollectionCard>
+                          ))}
+                      </GridRow>
+                    )
+                  )}
+                </>
               )}
             </>
           )}

@@ -136,7 +136,7 @@ export class AudioStreamManager {
     { lastCheck: number; isHealthy: boolean }
   >();
   private readonly INSTANCE_HEALTH_TTL = 5 * 60 * 1000; // 5 minutes
-  private readonly MAX_YOUTUBE_RETRY_ATTEMPTS = 3;
+  private readonly MAX_YOUTUBE_RETRY_ATTEMPTS = 1;
 
   private isRemoteUrl(url: string | null | undefined): boolean {
     if (!url) {

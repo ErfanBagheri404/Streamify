@@ -14,7 +14,6 @@ import {
 } from "../modules/audioStreaming";
 
 import { StorageService } from "../utils/storage";
-import { Platform, AppState } from "react-native";
 import { trackPlayerService } from "../services/TrackPlayerService";
 
 export interface Track {
@@ -82,6 +81,7 @@ interface PlayerContextType {
   clearPlayer: () => Promise<void>;
   handleStreamFailure: () => Promise<void>;
   clearAudioMonitoring: () => void;
+  cancelLoadingState: () => Promise<void>;
   toggleLikeSong: (track: Track) => void;
   isSongLiked: (trackId: string) => boolean;
   getCacheInfo: (trackId: string) => Promise<{
@@ -319,41 +319,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     };
     loadLikedSongs();
   }, []);
-
-  // Handle app state changes
-  useEffect(() => {
-    const handleAppStateChange = (nextAppState: string) => {
-      if (Platform.OS === "android") {
-        if (nextAppState === "background" || nextAppState === "inactive") {
-          if (isPlaying && currentTrack) {
-            console.log(
-              "[PlayerContext] App going to background/inactive, pausing playback"
-            );
-            TrackPlayer.pause().catch((error) => {
-              console.log(
-                "[PlayerContext] Error pausing on app background:",
-                error
-              );
-            });
-          }
-        } else if (nextAppState === "active") {
-          console.log("[PlayerContext] App coming to foreground");
-          updateIsPlayingFromState();
-          if (!currentTrack) {
-            rehydrateFromTrackPlayer();
-          }
-        }
-      }
-    };
-
-    const subscription = AppState.addEventListener(
-      "change",
-      handleAppStateChange
-    );
-    return () => {
-      subscription.remove();
-    };
-  }, [isPlaying, currentTrack, updateIsPlayingFromState]);
 
   // Load previously played songs from storage on startup
   useEffect(() => {
@@ -645,8 +610,19 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
         // Get audio URL using the streaming manager
         let audioUrl = track.audioUrl;
-        // Store original streaming URL for cache monitoring
         let originalStreamUrl: string | null = null;
+
+        if (track.id) {
+          const cachedFilePath = await audioManager.getBestCachedFilePath(
+            track.id
+          );
+          if (cachedFilePath) {
+            console.log(
+              `[PlayerContext] Using cached file for track: ${track.title}`
+            );
+            audioUrl = cachedFilePath;
+          }
+        }
 
         if (audioUrl && !audioUrl.startsWith("file://")) {
           // If we already have a streaming URL (not a cached file), use it as original
@@ -1917,6 +1893,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     clearPlayer,
     handleStreamFailure,
     clearAudioMonitoring,
+    cancelLoadingState,
     toggleLikeSong,
     isSongLiked,
     getCacheInfo,

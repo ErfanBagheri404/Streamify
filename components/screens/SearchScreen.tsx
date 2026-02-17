@@ -397,6 +397,7 @@ export default function SearchScreen({ navigation }: any) {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMoreResults, setHasMoreResults] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -547,6 +548,7 @@ export default function SearchScreen({ navigation }: any) {
       }
 
       setShowSuggestions(false);
+      setHasSearched(true);
 
       if (loadMore) {
         setIsLoadingMore(true);
@@ -1298,6 +1300,9 @@ export default function SearchScreen({ navigation }: any) {
       if (text.trim().length < 2) {
         setSuggestions([]);
         setShowSuggestions(false);
+        if (text.length === 0) {
+          setHasSearched(false);
+        }
         // Don't clear search results unless the text is completely empty
         if (text.length === 0 && searchResults.length > 0) {
           setSearchResults([]);
@@ -1359,6 +1364,7 @@ export default function SearchScreen({ navigation }: any) {
     setSuggestions([]);
     setShowSuggestions(false);
     setSearchResults([]);
+    setHasSearched(false);
     // Clear any pending timeouts
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
@@ -1511,10 +1517,14 @@ export default function SearchScreen({ navigation }: any) {
               </Animated.View>
             ))}
 
-          {!isLoading && searchResults.length === 0 && (
+          {!isLoading && !hasSearched && searchResults.length === 0 && (
             <NoResultsText>
               Start searching for artists, albums, or songs
             </NoResultsText>
+          )}
+
+          {!isLoading && hasSearched && searchResults.length === 0 && (
+            <NoResultsText>No results found</NoResultsText>
           )}
 
           {!isLoading && searchResults.length > 0 && (

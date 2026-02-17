@@ -129,6 +129,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
     playPause,
     nextTrack,
     previousTrack,
+    cancelLoadingState,
   } = usePlayer();
 
   // Set bottom position: 65px when not on playlist screen, 15px when on playlist screen or artist screen
@@ -205,7 +206,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
               "https://placehold.co/400x400/000000/ffffff?text=Music",
           }}
           resizeMode="cover"
-          blurRadius={20}
+          blurRadius={10}
         />
         <BlurOverlay intensity={5} tint="dark" />
         <DarkOverlay />
@@ -253,7 +254,12 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
           <Ionicons name="play-back" size={20} color="#fff" />
         </ControlButton>
 
-        <ControlButton onPress={handlePlayPause} disabled={isTransitioning}>
+        <ControlButton
+          onPress={
+            isLoading || isTransitioning ? cancelLoadingState : handlePlayPause
+          }
+          disabled={false}
+        >
           {isLoading || isTransitioning ? (
             <ActivityIndicator
               size="small"
