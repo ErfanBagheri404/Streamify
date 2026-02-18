@@ -407,16 +407,6 @@ const TimeText = styled.Text`
   font-weight: 500;
 `;
 
-const ProgressOverlay = styled.View`
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  align-items: center;
-  justify-content: center;
-`;
-
 const Controls = styled.View`
   flex-direction: row;
   align-items: center;
@@ -1122,9 +1112,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   value={seekValue}
                   maximumValue={Math.max(totalDurationSeconds, 1)}
                   minimumValue={0}
-                  disabled={
-                    totalDurationSeconds <= 0 || isLoading || isTransitioning
-                  }
+                  disabled={totalDurationSeconds <= 0}
                   minimumTrackTintColor={isPlaying ? "#ffffff" : "#9ca3af"}
                   maximumTrackTintColor="#4b5563"
                   thumbTintColor={isPlaying ? "#ffffff" : "#9ca3af"}
@@ -1142,11 +1130,6 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                     handleSeek(value);
                   }}
                 />
-                {isLoading || isTransitioning ? (
-                  <ProgressOverlay>
-                    <ActivityIndicator size="small" color="#ffffff" />
-                  </ProgressOverlay>
-                ) : null}
               </ProgressBarContainer>
               <TimeContainer>
                 <TimeText>

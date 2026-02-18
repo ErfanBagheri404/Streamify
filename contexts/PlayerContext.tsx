@@ -1639,6 +1639,30 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [previousTrack]);
 
   useEffect(() => {
+    const handler = async () => {
+      await nextTrackRef.current();
+    };
+    trackPlayerService.onRemoteNext = handler;
+    return () => {
+      if (trackPlayerService.onRemoteNext === handler) {
+        trackPlayerService.onRemoteNext = undefined;
+      }
+    };
+  }, [nextTrack]);
+
+  useEffect(() => {
+    const handler = async () => {
+      await previousTrackRef.current();
+    };
+    trackPlayerService.onRemotePrevious = handler;
+    return () => {
+      if (trackPlayerService.onRemotePrevious === handler) {
+        trackPlayerService.onRemotePrevious = undefined;
+      }
+    };
+  }, [previousTrack]);
+
+  useEffect(() => {
     clearPlayerRef.current = clearPlayer;
   }, [clearPlayer]);
 

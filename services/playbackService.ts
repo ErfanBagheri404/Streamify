@@ -1,4 +1,5 @@
 import TrackPlayer, { Event } from "../utils/safeTrackPlayer";
+import { trackPlayerService } from "./TrackPlayerService";
 
 /**
  * Playback service for React Native Track Player
@@ -20,11 +21,30 @@ module.exports = async function () {
   });
 
   TrackPlayer.addEventListener(Event.RemoteNext, () => {
-    TrackPlayer.skipToNext();
+    if (trackPlayerService.onRemoteNext) {
+      Promise.resolve(trackPlayerService.onRemoteNext()).catch((error) => {
+        console.error("[PlaybackService] Remote next handler failed:", error);
+      });
+      return;
+    }
+    trackPlayerService.skipToNext().catch((error) => {
+      console.error("[PlaybackService] Failed to skip to next:", error);
+    });
   });
 
   TrackPlayer.addEventListener(Event.RemotePrevious, () => {
-    TrackPlayer.skipToPrevious();
+    if (trackPlayerService.onRemotePrevious) {
+      Promise.resolve(trackPlayerService.onRemotePrevious()).catch((error) => {
+        console.error(
+          "[PlaybackService] Remote previous handler failed:",
+          error
+        );
+      });
+      return;
+    }
+    trackPlayerService.skipToPrevious().catch((error) => {
+      console.error("[PlaybackService] Failed to skip to previous:", error);
+    });
   });
 
   TrackPlayer.addEventListener(Event.RemoteSeek, (event) => {
