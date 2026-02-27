@@ -1,5 +1,7 @@
 import { Audio } from "expo-av";
+import { Platform } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { toByteArray, fromByteArray } from "base64-js";
 import {
   API,
@@ -64,6 +66,8 @@ export class AudioStreamManager {
 
   // Cache directory path (determined at runtime)
   private cacheDirectory: string | null = null;
+  private cacheDirectoryInitPromise: Promise<void> | null = null;
+  private lastCacheDirectoryInitTime = 0;
 
   // Cache progress tracking to prevent regression
   private cacheProgress: Map<
@@ -88,6 +92,7 @@ export class AudioStreamManager {
   private readonly RETRY_DELAY = 500; // 2 seconds
   private readonly PROGRESS_UPDATE_INTERVAL = 1000; // 1 second
   private readonly MIN_PROGRESS_THRESHOLD = 0.5; // Minimum 0.5% progress per update
+  private readonly CACHE_DIR_INIT_COOLDOWN = 10000;
 
   // Cache for getCacheInfo results to prevent excessive filesystem calls
   private cacheInfoCache = new Map<
@@ -179,8 +184,11 @@ export class AudioStreamManager {
     // Initialize cache progress cleanup interval
     this.startCacheProgressCleanup();
 
-    // Initialize cache directory
-    this.initializeCacheDirectory();
+    this.cacheDirectoryInitPromise = this.initializeCacheDirectory().finally(
+      () => {
+        this.cacheDirectoryInitPromise = null;
+      }
+    );
   }
 
   /**
@@ -206,7 +214,21 @@ export class AudioStreamManager {
    */
   public async getCacheDirectory(): Promise<string | null> {
     if (this.cacheDirectory === null) {
-      await this.initializeCacheDirectory();
+      const now = Date.now();
+      if (
+        !this.cacheDirectoryInitPromise &&
+        now - this.lastCacheDirectoryInitTime < this.CACHE_DIR_INIT_COOLDOWN
+      ) {
+        return null;
+      }
+      if (!this.cacheDirectoryInitPromise) {
+        this.lastCacheDirectoryInitTime = now;
+        this.cacheDirectoryInitPromise =
+          this.initializeCacheDirectory().finally(() => {
+            this.cacheDirectoryInitPromise = null;
+          });
+      }
+      await this.cacheDirectoryInitPromise;
     }
     return this.cacheDirectory;
   }
@@ -254,6 +276,19 @@ export class AudioStreamManager {
   ): boolean {
     const now = Date.now();
     const existingProgress = this.cacheProgress.get(trackId);
+    const urlEstimatedTotal = (() => {
+      try {
+        const url = options?.originalStreamUrl;
+        if (!url) return undefined;
+        const u = new URL(url);
+        const clen = u.searchParams.get("clen");
+        if (clen) {
+          const n = parseInt(clen, 10);
+          if (!Number.isNaN(n) && n > 0) return n;
+        }
+      } catch {}
+      return undefined;
+    })();
 
     // Atomic update - lock the progress to prevent race conditions
     if (existingProgress) {
@@ -301,7 +336,17 @@ export class AudioStreamManager {
         options?.downloadedSize ?? existingProgress?.downloadedSize,
       downloadSpeed: options?.downloadSpeed ?? existingProgress?.downloadSpeed,
       estimatedTotalSize:
-        options?.estimatedTotalSize ?? existingProgress?.estimatedTotalSize,
+        options?.estimatedTotalSize !== undefined
+          ? Math.max(
+              options.estimatedTotalSize,
+              existingProgress?.estimatedTotalSize ?? options.estimatedTotalSize
+            )
+          : urlEstimatedTotal !== undefined
+            ? Math.max(
+                urlEstimatedTotal,
+                existingProgress?.estimatedTotalSize ?? urlEstimatedTotal
+              )
+            : existingProgress?.estimatedTotalSize,
       isFullyCached:
         options?.isFullyCached ?? existingProgress?.isFullyCached ?? false,
       originalStreamUrl:
@@ -555,33 +600,67 @@ export class AudioStreamManager {
 
       const data = await response.json();
 
-      // Look for adaptive formats (usually higher quality)
-      const adaptiveFormats = data.adaptiveFormats || [];
-      const audioFormats = adaptiveFormats.filter(
-        (format: any) => format.type && format.type.includes("audio/")
-      );
-
-      // Sort by bitrate (highest first)
-      audioFormats.sort(
-        (a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0)
-      );
-
-      if (audioFormats.length > 0) {
-        const bestAudio = audioFormats[0];
-        console.log(
-          `[YouTube] Found audio format: ${bestAudio.quality || "unknown"} quality, ${bestAudio.bitrate || 0} bitrate`
+      // Prefer Opus WEBM (itag 249/250/251) with explicit lowest size if requested
+      const pickAudioUrl = (streams: any[]) => {
+        const valid = streams.filter((s) => s?.url);
+        const withItag = valid.map((s) => ({
+          ...s,
+          itag: s.itag ?? s.tag ?? undefined,
+          mime: s.mimeType ?? s.type ?? "",
+          clen:
+            typeof s.clen === "number"
+              ? s.clen
+              : s.clen
+                ? parseInt(String(s.clen), 10)
+                : undefined,
+        }));
+        // Filter audio-only
+        const audioOnly = withItag.filter((s) =>
+          String(s.mime).toLowerCase().includes("audio/")
         );
-        return bestAudio.url || null;
+        // Prefer opus (webm)
+        const opus = audioOnly.filter((s) =>
+          String(s.mime).toLowerCase().includes("webm")
+        );
+        // Itag preference: 249 -> 250 -> 251 -> others
+        const order = (s: any) => {
+          const i = String(s.itag || "");
+          if (i === "249") return 0;
+          if (i === "250") return 1;
+          if (i === "251") return 2;
+          return 3;
+        };
+        const sorted = (opus.length ? opus : audioOnly).sort((a, b) => {
+          const oa = order(a);
+          const ob = order(b);
+          if (oa !== ob) return oa - ob;
+          // Secondary: lowest clen if available, else lowest bitrate
+          const ca = a.clen ?? Number.MAX_SAFE_INTEGER;
+          const cb = b.clen ?? Number.MAX_SAFE_INTEGER;
+          if (ca !== cb) return ca - cb;
+          const ba = a.bitrate || 0;
+          const bb = b.bitrate || 0;
+          return ba - bb;
+        });
+        return sorted[0]?.url || null;
+      };
+
+      // Adaptive formats first
+      const adaptiveFormats = Array.isArray(data.adaptiveFormats)
+        ? data.adaptiveFormats
+        : [];
+      const chosenAdaptive = pickAudioUrl(adaptiveFormats);
+      if (chosenAdaptive) {
+        return chosenAdaptive;
       }
 
       // Fallback to regular formats
-      const formats = data.formatStreams || [];
-      const audioOnlyFormats = formats.filter(
-        (format: any) => format.type && format.type.includes("audio/")
-      );
-
-      if (audioOnlyFormats.length > 0) {
-        return audioOnlyFormats[0].url || null;
+      const formats = Array.isArray(data.formatStreams)
+        ? data.formatStreams
+        : [];
+      const chosenFormat = pickAudioUrl(formats);
+      if (chosenFormat) {
+        return chosenFormat;
       }
 
       // Last resort: try any format that might contain audio
@@ -612,8 +691,9 @@ export class AudioStreamManager {
 
       for (const itag of audioItags) {
         try {
-          // Replace the itag parameter in the URL
-          const audioOnlyUrl = videoUrl.replace(/&itag=\d+/, `&itag=${itag}`);
+          const url = new URL(videoUrl);
+          url.searchParams.set("itag", itag);
+          const audioOnlyUrl = url.toString();
 
           console.log(`[AudioStreamManager] Testing audio-only itag ${itag}`);
 
@@ -748,9 +828,18 @@ export class AudioStreamManager {
       return true;
     }
 
+    if (this.trackCache.has(trackId + "_has_full")) {
+      return true;
+    }
+
     // Check new format - look for .full in the cached path
     const cachedPath = this.soundCloudCache.get(trackId);
     if (cachedPath && cachedPath.includes(".full")) {
+      return true;
+    }
+
+    const trackCachedPath = this.trackCache.get(trackId);
+    if (trackCachedPath && trackCachedPath.includes(".full")) {
       return true;
     }
 
@@ -762,6 +851,28 @@ export class AudioStreamManager {
    */
   public async getBestCachedFilePath(trackId: string): Promise<string | null> {
     console.log(`[Audio] Checking cache for track: ${trackId}`);
+
+    const fullTrackCachePath = this.trackCache.get(trackId + "_full");
+    if (fullTrackCachePath) {
+      const cachedFileInfo = await FileSystem.getInfoAsync(fullTrackCachePath);
+      if (cachedFileInfo.exists) {
+        return fullTrackCachePath.startsWith("file://")
+          ? fullTrackCachePath
+          : `file://${fullTrackCachePath}`;
+      }
+      this.trackCache.delete(trackId + "_full");
+    }
+
+    const fullSoundCloudPath = this.soundCloudCache.get(trackId + "_full");
+    if (fullSoundCloudPath) {
+      const cachedFileInfo = await FileSystem.getInfoAsync(fullSoundCloudPath);
+      if (cachedFileInfo.exists) {
+        return fullSoundCloudPath.startsWith("file://")
+          ? fullSoundCloudPath
+          : `file://${fullSoundCloudPath}`;
+      }
+      this.soundCloudCache.delete(trackId + "_full");
+    }
 
     // First check generic track cache (for all track types)
     const genericCachedPath = this.trackCache.get(trackId);
@@ -871,9 +982,12 @@ export class AudioStreamManager {
             console.log(
               `[Audio] Found existing SoundCloud cache file: ${filePath}`
             );
-            this.soundCloudCache.set(trackId + "_full", filePath);
+            const isFull = ext.includes(".full");
+            if (isFull) {
+              this.soundCloudCache.set(trackId + "_full", filePath);
+              this.soundCloudCache.set(trackId + "_has_full", "true");
+            }
             this.soundCloudCache.set(trackId, filePath);
-            this.soundCloudCache.set(trackId + "_has_full", "true");
             // Return the path without adding file:// prefix if it already has it
             return filePath.startsWith("file://")
               ? filePath
@@ -902,11 +1016,12 @@ export class AudioStreamManager {
     try {
       // Check for any YouTube cache files with different extensions
       const youtubeExtensions = [
+        ".cache.full",
         ".cache",
-        ".mp3",
         ".mp3.full",
-        ".webm",
+        ".mp3",
         ".webm.full",
+        ".webm",
       ];
 
       for (const ext of youtubeExtensions) {
@@ -921,9 +1036,7 @@ export class AudioStreamManager {
               `[Audio] Found existing YouTube cache file: ${filePath}`
             );
 
-            // Mark as full if it has .full extension or is substantial
-            if (ext.includes(".full") || fileInfo.size > 5242880) {
-              // 5MB
+            if (ext.includes(".full")) {
               this.soundCloudCache.set(trackId + "_full", filePath);
               this.soundCloudCache.set(trackId + "_has_full", "true");
             }
@@ -946,6 +1059,84 @@ export class AudioStreamManager {
     }
 
     console.log(`[Audio] No cache files found for track: ${trackId}`);
+    return null;
+  }
+
+  public async getFullCachedFilePath(trackId: string): Promise<string | null> {
+    console.log(`[Audio] Checking full cache for track: ${trackId}`);
+
+    const cacheProgress = this.cacheProgress.get(trackId);
+    const hasFullMarker =
+      this.trackCache.has(trackId + "_has_full") ||
+      this.soundCloudCache.has(trackId + "_has_full") ||
+      cacheProgress?.isFullyCached;
+
+    const cachedFullPath =
+      this.trackCache.get(trackId + "_full") ||
+      this.soundCloudCache.get(trackId + "_full");
+    if (cachedFullPath) {
+      const isValid = await this.validateCachedFile(cachedFullPath);
+      if (isValid) {
+        return cachedFullPath.startsWith("file://")
+          ? cachedFullPath
+          : `file://${cachedFullPath}`;
+      }
+      await FileSystem.deleteAsync(cachedFullPath, { idempotent: true });
+      this.trackCache.delete(trackId + "_full");
+      this.soundCloudCache.delete(trackId + "_full");
+    }
+
+    const directPath =
+      this.trackCache.get(trackId) || this.soundCloudCache.get(trackId);
+    if (directPath && (directPath.includes(".full") || hasFullMarker)) {
+      const isValid = await this.validateCachedFile(directPath);
+      if (isValid) {
+        return directPath.startsWith("file://")
+          ? directPath
+          : `file://${directPath}`;
+      }
+      await FileSystem.deleteAsync(directPath, { idempotent: true });
+      this.trackCache.delete(trackId);
+      this.soundCloudCache.delete(trackId);
+    }
+
+    const cacheDir = await this.getCacheDirectory();
+    if (!cacheDir) {
+      return null;
+    }
+
+    const fullExtensions = [
+      ".cache.full",
+      ".mp3.full",
+      ".webm.full",
+      ".m4a.full",
+      ".ogg.full",
+      ".oga.full",
+    ];
+
+    const soundCloudCacheDir = `${cacheDir}soundcloud-cache/`;
+    for (const ext of fullExtensions) {
+      const filePath = `${soundCloudCacheDir}${trackId}${ext}`;
+      const isValid = await this.validateCachedFile(filePath);
+      if (isValid) {
+        return filePath.startsWith("file://") ? filePath : `file://${filePath}`;
+      }
+      await FileSystem.deleteAsync(filePath, { idempotent: true });
+      this.trackCache.delete(trackId + "_full");
+      this.soundCloudCache.delete(trackId + "_full");
+    }
+
+    for (const ext of fullExtensions) {
+      const filePath = `${cacheDir}${trackId}${ext}`;
+      const isValid = await this.validateCachedFile(filePath);
+      if (isValid) {
+        return filePath.startsWith("file://") ? filePath : `file://${filePath}`;
+      }
+      await FileSystem.deleteAsync(filePath, { idempotent: true });
+      this.trackCache.delete(trackId + "_full");
+      this.soundCloudCache.delete(trackId + "_full");
+    }
+
     return null;
   }
 
@@ -1044,6 +1235,9 @@ export class AudioStreamManager {
         "audio/webm",
         "audio/aac",
         "audio/x-m4a",
+        "application/vnd.apple.mpegurl",
+        "application/x-mpegurl",
+        "audio/mpegurl",
         "application/octet-stream", // Sometimes used for audio files
       ];
 
@@ -1213,6 +1407,65 @@ export class AudioStreamManager {
   }
 
   /**
+   * Public cleanup for all cached files and state for a track
+   */
+  public async cleanupTrackCache(trackId: string): Promise<void> {
+    try {
+      const cacheDir = await this.getCacheDirectory();
+      if (!cacheDir) {
+        return;
+      }
+
+      const candidates = [
+        `${cacheDir}${trackId}.cache`,
+        `${cacheDir}${trackId}.cache.full`,
+        `${cacheDir}${trackId}.cache.resume`,
+        `${cacheDir}${trackId}.cache.combined`,
+        `${cacheDir}${trackId}.mp3`,
+        `${cacheDir}${trackId}.mp3.full`,
+        `${cacheDir}${trackId}.webm`,
+        `${cacheDir}${trackId}.webm.full`,
+        `${cacheDir}${trackId}.m4a`,
+        `${cacheDir}${trackId}.m4a.full`,
+        `${cacheDir}${trackId}.ogg`,
+        `${cacheDir}${trackId}.ogg.full`,
+      ];
+
+      const soundcloudDir = `${cacheDir}soundcloud-cache/`;
+      const scCandidates = [
+        `${soundcloudDir}${trackId}.mp3`,
+        `${soundcloudDir}${trackId}.mp3.full`,
+        `${soundcloudDir}${trackId}.webm`,
+        `${soundcloudDir}${trackId}.webm.full`,
+        `${soundcloudDir}${trackId}.m4a`,
+        `${soundcloudDir}${trackId}.m4a.full`,
+        `${soundcloudDir}${trackId}.oga`,
+        `${soundcloudDir}${trackId}.oga.full`,
+      ];
+
+      for (const filePath of [...candidates, ...scCandidates]) {
+        try {
+          const info = await FileSystem.getInfoAsync(filePath);
+          if (info.exists) {
+            await FileSystem.deleteAsync(filePath, { idempotent: true });
+          }
+        } catch {}
+      }
+
+      // Clear caches and progress
+      this.trackCache.delete(trackId);
+      this.trackCache.delete(trackId + "_full");
+      this.trackCache.delete(trackId + "_has_full");
+      this.trackCache.delete(trackId + "_substantial");
+      this.soundCloudCache.delete(trackId);
+      this.soundCloudCache.delete(trackId + "_full");
+      this.soundCloudCache.delete(trackId + "_has_full");
+      this.cacheProgress.delete(trackId);
+      this.clearCacheInfoCache(trackId);
+    } catch {}
+  }
+
+  /**
    * Estimate total file size based on current downloaded size
    * Uses conservative estimates to prevent percentage drops
    */
@@ -1325,8 +1578,30 @@ export class AudioStreamManager {
           return result;
         }
 
-        // If we have substantial progress but not downloading, use stored state
+        // If we have substantial progress but not downloading, verify if a full file exists
         if (activeProgress.percentage > 0) {
+          const fullCachedPath = await this.getFullCachedFilePath(trackId);
+          if (fullCachedPath) {
+            const info = await FileSystem.getInfoAsync(fullCachedPath);
+            if (info.exists && typeof info.size === "number") {
+              const fileSizeMb = info.size / (1024 * 1024);
+              this.markDownloadCompleted(trackId, fileSizeMb);
+              const result = {
+                percentage: 100,
+                fileSize: fileSizeMb,
+                isFullyCached: true,
+                isDownloading: false,
+                downloadSpeed: 0,
+                retryCount: 0,
+              };
+              console.log(
+                `[Audio] === getCacheInfo END (promoted to full) for ${trackId} ===`,
+                result
+              );
+              return result;
+            }
+          }
+
           const result = {
             percentage: activeProgress.percentage,
             fileSize:
@@ -1783,11 +2058,16 @@ export class AudioStreamManager {
       console.log("[Audio] Skipping SoundCloud caching for non-remote URL");
       return streamUrl;
     }
+    if (streamUrl.includes(".m3u8") || streamUrl.includes("/stream/hls")) {
+      return streamUrl;
+    }
     // Check if we already have this track cached
     if (this.soundCloudCache.has(trackId)) {
       const cachedPath = this.soundCloudCache.get(trackId);
-      // Return the cached path with file:// prefix
-      return `file://${cachedPath}`;
+      if (cachedPath && cachedPath.includes(".full")) {
+        return `file://${cachedPath}`;
+      }
+      return streamUrl;
     }
 
     // Always wait for cache completion before playing
@@ -2068,6 +2348,37 @@ export class AudioStreamManager {
           );
 
           if (chunkResult.status === 200 || chunkResult.status === 206) {
+            const existingInfo = await FileSystem.getInfoAsync(tempFilePath);
+            const currentInfo = await FileSystem.getInfoAsync(
+              tempFilePath + ".current"
+            );
+            const existingSize =
+              existingInfo.exists && typeof existingInfo.size === "number"
+                ? existingInfo.size
+                : 0;
+            const currentSize =
+              currentInfo.exists && typeof currentInfo.size === "number"
+                ? currentInfo.size
+                : 0;
+            const combinedSize = existingSize + currentSize;
+            const maxCombineSize = 24 * 1024 * 1024;
+
+            if (combinedSize > maxCombineSize) {
+              console.warn(
+                `[Audio] Combined cache size ${combinedSize} bytes too large for in-memory chunk merge, switching to full download for ${trackId}`
+              );
+              await FileSystem.deleteAsync(tempFilePath + ".current", {
+                idempotent: true,
+              });
+              await this.downloadFullTrackInBackground(
+                streamUrl,
+                cacheFilePath,
+                trackId,
+                controller
+              );
+              break;
+            }
+
             // Append the chunk to our temp file
             const chunkContent = await FileSystem.readAsStringAsync(
               tempFilePath + ".current",
@@ -2462,8 +2773,8 @@ export class AudioStreamManager {
         ? cacheFilePath
         : `file://${cacheFilePath}`;
 
-      // Mark download as started with URL persistence for YouTube tracks
-      this.markDownloadStarted(trackId, streamUrl);
+      // Persist original URL for resume operations
+      this.updateCacheProgress(trackId, 0, 0, { originalStreamUrl: streamUrl });
 
       // Check if we have a full file available first
       const fullFilePath = cacheFilePath + ".full";
@@ -2484,6 +2795,7 @@ export class AudioStreamManager {
           fullFileInfo.size / (1024 * 1024),
           {
             isFullyCached: true,
+            originalStreamUrl: streamUrl,
           }
         );
         return properFullFilePath;
@@ -2506,7 +2818,8 @@ export class AudioStreamManager {
         this.updateCacheProgress(
           trackId,
           percentage,
-          partialFileInfo.size / (1024 * 1024)
+          partialFileInfo.size / (1024 * 1024),
+          { originalStreamUrl: streamUrl, isDownloading: false }
         );
         return properCacheFilePath;
       }
@@ -2597,6 +2910,28 @@ export class AudioStreamManager {
       // Store in cache (use generic track cache for YouTube tracks)
       this.trackCache.set(trackId, properCacheFilePath);
       console.log(`[Audio] Stored cache file path: ${properCacheFilePath}`);
+
+      if (
+        downloadedFileInfo?.exists &&
+        typeof downloadedFileInfo.size === "number"
+      ) {
+        const estimatedTotal = this.estimateTotalFileSize(
+          downloadedFileInfo.size
+        );
+        const percentage = Math.min(
+          95,
+          Math.round((downloadedFileInfo.size / estimatedTotal) * 100)
+        );
+        this.updateCacheProgress(
+          trackId,
+          percentage,
+          downloadedFileInfo.size / (1024 * 1024),
+          {
+            isDownloading: false,
+            originalStreamUrl: streamUrl,
+          }
+        );
+      }
 
       // Verify the file was actually created and is accessible
       // const verifyFileInfo = await FileSystem.getInfoAsync(cacheFilePath);
@@ -2690,7 +3025,7 @@ export class AudioStreamManager {
         const videoId = this.extractYouTubeVideoId(streamUrl);
         if (videoId) {
           console.log(
-            `[Audio] Attempting MP3 download for post-playback caching`
+            "[Audio] Attempting MP3 download for post-playback caching"
           );
           try {
             await this.downloadCompleteSongAsMP3(
@@ -2704,7 +3039,7 @@ export class AudioStreamManager {
             return;
           } catch (mp3Error) {
             console.warn(
-              `[Audio] MP3 download failed, falling back to regular caching:`,
+              "[Audio] MP3 download failed, falling back to regular caching:",
               mp3Error
             );
           }
@@ -2779,7 +3114,7 @@ export class AudioStreamManager {
         const videoId = this.extractYouTubeVideoId(streamUrl);
         if (videoId) {
           console.log(
-            `[Audio] Using YouTube instance switching for MP3 download`
+            "[Audio] Using YouTube instance switching for MP3 download"
           );
           const instanceUrl = await this.getYouTubeStreamFromInstance(
             videoId,
@@ -2836,6 +3171,8 @@ export class AudioStreamManager {
 
           this.markDownloadCompleted(trackId, fileSizeMB);
           this.trackCache.set(trackId, properMp3Path);
+          this.trackCache.set(trackId + "_full", properMp3Path);
+          this.trackCache.set(trackId + "_has_full", "true");
 
           if (onProgress) {
             onProgress(100);
@@ -2858,7 +3195,7 @@ export class AudioStreamManager {
       ) {
         const videoId = this.extractYouTubeVideoId(streamUrl);
         if (videoId) {
-          console.log(`[Audio] Trying YouTube instance switching for retry`);
+          console.log("[Audio] Trying YouTube instance switching for retry");
           const retryUrl = await this.switchInstanceAndRetry(
             videoId,
             trackId,
@@ -2917,7 +3254,10 @@ export class AudioStreamManager {
     // Check if we already have this track cached
     if (this.soundCloudCache.has(trackId)) {
       const cachedPath = this.soundCloudCache.get(trackId)!;
-      return `file://${cachedPath}`;
+      if (cachedPath.includes(".full")) {
+        return `file://${cachedPath}`;
+      }
+      return streamUrl;
     }
 
     // Get the best available cache directory
@@ -2957,7 +3297,13 @@ export class AudioStreamManager {
       const fileInfo = await FileSystem.getInfoAsync(cacheFilePath);
       if (fileInfo.exists) {
         this.trackCache.set(trackId, cacheFilePath);
-        return `file://${cacheFilePath}`; // Return the cached file path
+        this.downloadFullTrackInBackground(
+          streamUrl,
+          cacheFilePath,
+          trackId,
+          controller
+        );
+        return streamUrl;
       }
 
       // Download the first 5MB (5 * 1024 * 1024 bytes) of the stream
@@ -2993,8 +3339,7 @@ export class AudioStreamManager {
         controller
       );
 
-      // Return the cached file path so the player uses the local file
-      return `file://${cacheFilePath}`;
+      return streamUrl;
     } catch (error) {
       // Don't throw - this is background caching, failures shouldn't affect playback
       // Return the original stream URL as fallback
@@ -3177,7 +3522,12 @@ export class AudioStreamManager {
       }
 
       // Continue downloading in chunks until fully cached
-      let currentPosition = cacheInfo.fileSize * 1024 * 1024; // Convert MB to bytes
+      let currentPosition = 0;
+      const initialFileInfo =
+        await FileSystem.getInfoAsync(properCacheFilePath);
+      if (initialFileInfo.exists && typeof initialFileInfo.size === "number") {
+        currentPosition = initialFileInfo.size;
+      }
       const chunkSize = 512 * 1024; // 512KB chunks
       let consecutiveErrors = 0;
       const maxErrors = 3;
@@ -3214,6 +3564,77 @@ export class AudioStreamManager {
           );
 
           if (chunkResult.status === 206 || chunkResult.status === 200) {
+            const chunkInfo = await FileSystem.getInfoAsync(chunkFilePath);
+            const isLikelyFullResponse =
+              chunkResult.status === 200 &&
+              chunkInfo.exists &&
+              typeof chunkInfo.size === "number" &&
+              chunkInfo.size > chunkSize * 1.1;
+
+            if (chunkResult.status === 200 && currentPosition > 0) {
+              if (isLikelyFullResponse) {
+                await FileSystem.copyAsync({
+                  from: chunkFilePath,
+                  to: properCacheFilePath,
+                });
+                await FileSystem.deleteAsync(chunkFilePath, {
+                  idempotent: true,
+                });
+
+                this.trackCache.set(trackId, properCacheFilePath);
+                this.trackCache.set(trackId + "_full", properCacheFilePath);
+                this.trackCache.set(trackId + "_has_full", "true");
+
+                const fullInfo =
+                  await FileSystem.getInfoAsync(properCacheFilePath);
+                if (fullInfo.exists && typeof fullInfo.size === "number") {
+                  this.markDownloadCompleted(
+                    trackId,
+                    fullInfo.size / (1024 * 1024)
+                  );
+                }
+                onProgress?.(100);
+                break;
+              } else {
+                console.warn(
+                  `[Audio] Range not respected for ${trackId}, stopping continuous caching`
+                );
+                await FileSystem.deleteAsync(chunkFilePath, {
+                  idempotent: true,
+                });
+                break;
+              }
+            }
+
+            const existingInfo =
+              await FileSystem.getInfoAsync(properCacheFilePath);
+            const existingSize =
+              existingInfo.exists && typeof existingInfo.size === "number"
+                ? existingInfo.size
+                : 0;
+            const chunkSizeBytes =
+              chunkInfo.exists && typeof chunkInfo.size === "number"
+                ? chunkInfo.size
+                : 0;
+            const combinedSize = existingSize + chunkSizeBytes;
+            const maxCombineSize = 24 * 1024 * 1024;
+
+            if (combinedSize > maxCombineSize) {
+              console.warn(
+                `[Audio] Combined cache size ${combinedSize} bytes too large for in-memory append, switching to full download for ${trackId}`
+              );
+              await FileSystem.deleteAsync(chunkFilePath, {
+                idempotent: true,
+              });
+              await this.downloadFullTrackInBackground(
+                streamUrl,
+                properCacheFilePath,
+                trackId,
+                controller
+              );
+              break;
+            }
+
             // Append chunk to main file using binary-safe approach
             try {
               // Create a temporary combined file
@@ -3269,17 +3690,16 @@ export class AudioStreamManager {
                 "[Audio] Error combining chunk:",
                 chunkCombineError
               );
-              // Fallback: just copy the chunk file to replace the original
-              try {
-                await FileSystem.copyAsync({
-                  from: chunkFilePath,
-                  to: properCacheFilePath,
-                });
-                console.log("[Audio] Fallback: Replaced cache file with chunk");
-              } catch (fallbackError) {
-                console.error("[Audio] Chunk fallback failed:", fallbackError);
-                throw fallbackError;
-              }
+              await FileSystem.deleteAsync(chunkFilePath, {
+                idempotent: true,
+              });
+              await this.downloadFullTrackInBackground(
+                streamUrl,
+                properCacheFilePath,
+                trackId,
+                controller
+              );
+              break;
             }
 
             // Clean up chunk file
@@ -3291,8 +3711,16 @@ export class AudioStreamManager {
             // Clear cache info cache since we updated the file
             this.clearCacheInfoCache(trackId);
 
-            // Update position and check cache status
-            currentPosition += chunkSize;
+            const updatedFileInfo =
+              await FileSystem.getInfoAsync(properCacheFilePath);
+            if (
+              updatedFileInfo.exists &&
+              typeof updatedFileInfo.size === "number"
+            ) {
+              currentPosition = updatedFileInfo.size;
+            } else {
+              currentPosition += chunkSize;
+            }
             consecutiveErrors = 0; // Reset error counter
 
             // Update cache info
@@ -3337,13 +3765,15 @@ export class AudioStreamManager {
             if (chunkResult.status === 416) {
               // Range not satisfiable - reached end of file
               console.log(`[Audio] Reached end of file for ${trackId}`);
-              // Get final cache info and mark as completed
-              const finalCacheInfo = await this.getCacheInfo(trackId);
-              if (finalCacheInfo.percentage >= 95) {
-                console.log(
-                  `[Audio] File appears complete at ${finalCacheInfo.percentage}%, marking as fully cached`
+              // If the server says the range is not satisfiable, treat it as completion
+              const finalInfo =
+                await FileSystem.getInfoAsync(properCacheFilePath);
+              if (finalInfo.exists && typeof finalInfo.size === "number") {
+                this.markDownloadCompleted(
+                  trackId,
+                  finalInfo.size / (1024 * 1024)
                 );
-                this.markDownloadCompleted(trackId, finalCacheInfo.fileSize);
+                onProgress?.(100);
               }
               break;
             }
@@ -3807,8 +4237,8 @@ export class AudioStreamManager {
   private async fetchWithProxy(
     url: string,
     options: RequestInit = {},
-    retries = 3,
-    timeout = 30000
+    retries = 0,
+    timeout = 3000
   ): Promise<Response> {
     let lastError: unknown = null;
 
@@ -3853,7 +4283,7 @@ export class AudioStreamManager {
           `[AudioStreamManager] fetchWithProxy attempt ${i + 1} failed for ${url}: ${message}`
         );
 
-        const backoffMs = 2000 * Math.pow(2, i) + Math.random() * 1000;
+        const backoffMs = 300 * (i + 1) + Math.random() * 200;
         console.log(
           `[AudioStreamManager] Waiting ${Math.round(
             backoffMs
@@ -3911,8 +4341,8 @@ export class AudioStreamManager {
         const directData = await this.fetchWithProxy(
           directDetailsUrl,
           {},
-          2,
-          15000
+          0,
+          6000
         );
         if (directData.ok) {
           const json = await directData.json();
@@ -3927,7 +4357,7 @@ export class AudioStreamManager {
           }
         }
       } catch {}
-      const videoInfo = await this.getVideoInfoWithTimeout(videoId, 25000);
+      const videoInfo = await this.getVideoInfoWithTimeout(videoId, 8000);
       const cleanTitle = (videoInfo.title || "")
         .replace(/\(.*?\)|\.|.*|\]/g, "")
         .trim();
@@ -3951,8 +4381,8 @@ export class AudioStreamManager {
           const searchResponse = await this.fetchWithProxy(
             searchUrl,
             {},
-            2,
-            30000
+            0,
+            6000
           );
           const searchData = await searchResponse.json();
 
@@ -4117,7 +4547,7 @@ export class AudioStreamManager {
       for (const instance of hyperpipeInstances) {
         try {
           const url = `${instance}/streams/${videoId}`;
-          const response = await this.fetchWithProxy(url, {}, 2, 25000);
+          const response = await this.fetchWithProxy(url, {}, 0, 6000);
           const data = await response.json();
 
           if (data.audioStreams && data.audioStreams.length > 0) {
@@ -4390,8 +4820,8 @@ export class AudioStreamManager {
               "Accept-Language": "en-US,en;q=0.9",
             },
           },
-          2, // 2 retries
-          12000 // 12 second timeout
+          0, // 0 retries
+          6000 // 6 second timeout
         );
 
         console.log(
@@ -4503,8 +4933,8 @@ export class AudioStreamManager {
             "Accept-Language": "en-US,en;q=0.9",
           },
         },
-        2, // 2 retries
-        12000 // 12 second timeout
+        0, // 0 retries
+        6000 // 6 second timeout
       );
 
       if (!response.ok) {
@@ -4863,141 +5293,35 @@ export class AudioStreamManager {
         `[Audio] trySoundCloud called with videoId: ${videoId}, title: ${trackTitle}, artist: ${trackArtist}`
       );
 
-      // Check if this is a SoundCloud track (from our search results)
       const trackId = this.extractSoundCloudTrackId(videoId);
-      console.log(`[Audio] Extracted trackId: ${trackId}`);
-      if (!trackId) {
-        throw new Error("Not a SoundCloud track ID");
+      const isPermalink =
+        typeof videoId === "string" && videoId.includes("soundcloud.com/");
+      const appVersion = "1768986291";
+
+      let resolvedData: any | null = null;
+
+      if (isPermalink) {
+        onStatusUpdate?.("Resolving SoundCloud permalink");
+        resolvedData = await this.resolveSoundCloudTrackDataByUrl(
+          videoId,
+          appVersion
+        );
       }
 
-      // Strategy 1: Try to access the track directly via widget API
-      try {
-        // Add retry logic for better reliability
-        let retryCount = 0;
-        const maxRetries = 3;
-
-        while (retryCount < maxRetries) {
-          try {
-            const directUrl = `https://api-widget.soundcloud.com/resolve?url=https://api.soundcloud.com/tracks/${trackId}&client_id=${this.SOUNDCLOUD_CLIENT_ID}&format=json`;
-
-            // Use CORS proxy for the API call
-            const proxiedDirectUrl = this.getCorsProxyUrl(directUrl);
-
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-            const directResponse = await fetch(proxiedDirectUrl, {
-              headers: {
-                "User-Agent":
-                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-              },
-              signal: controller.signal,
-            });
-
-            clearTimeout(timeoutId);
-
-            if (directResponse.ok) {
-              const trackData = await directResponse.json();
-
-              if (trackData && trackData.media?.transcodings?.length > 0) {
-                console.log(
-                  `[Audio] Track has ${trackData.media.transcodings.length} transcodings`
-                );
-                return await this.extractSoundCloudStream(
-                  trackData,
-                  controller
-                );
-              } else {
-                console.log("[Audio] Track has no transcodings available");
-              }
-            } else {
-              console.log(
-                `[Audio] Direct widget failed with status: ${directResponse.status}`
-              );
-              const errorText = await directResponse.text();
-              console.log(`[Audio] Direct widget error: ${errorText}`);
-            }
-            break; // Success or clear failure, don't retry
-          } catch (retryError) {
-            retryCount++;
-            console.log(
-              `[Audio] Direct widget attempt ${retryCount} failed: ${
-                retryError instanceof Error ? retryError.message : retryError
-              }`
-            );
-            if (retryCount < maxRetries) {
-              await new Promise((resolve) =>
-                setTimeout(resolve, retryCount * 1000)
-              );
-            }
-          }
-        }
-      } catch (directError) {
-        // Direct widget strategy failed
+      if (!resolvedData && trackId) {
+        onStatusUpdate?.("Resolving SoundCloud track");
+        resolvedData = await this.resolveSoundCloudTrackDataByUrl(
+          `https://api.soundcloud.com/tracks/${trackId}`,
+          appVersion
+        );
       }
 
-      // Strategy 2: Try using the SoundCloud widget API directly
-      try {
-        // Use a proper SoundCloud URL format
-        const widgetUrl = `https://api-widget.soundcloud.com/resolve?url=https://api.soundcloud.com/tracks/${trackId}&client_id=${this.SOUNDCLOUD_CLIENT_ID}&format=json`;
-
-        // Use CORS proxy for the widget API call
-        const proxiedWidgetUrl = this.getCorsProxyUrl(widgetUrl);
-
+      if (resolvedData?.media?.transcodings?.length) {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-        const widgetResponse = await fetch(proxiedWidgetUrl, {
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            Referer: "https://w.soundcloud.com/",
-            Origin: "https://w.soundcloud.com",
-          },
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-        console.log(`[Audio] Widget response status: ${widgetResponse.status}`);
-
-        if (widgetResponse.ok) {
-          const widgetData = await widgetResponse.json();
-          if (widgetData && widgetData.media && widgetData.media.transcodings) {
-            return await this.extractSoundCloudStream(widgetData, controller);
-          } else if (widgetData && widgetData.id) {
-            // Even if no transcodings, we can try to use this data
-            return await this.extractSoundCloudStream(widgetData, controller);
-          }
-        } else {
-          // Widget API failed
-        }
-      } catch (widgetError) {
-        // Widget strategy failed
+        return await this.extractSoundCloudStream(resolvedData, controller);
       }
 
-      // Strategy 3: Fallback - try to construct a direct stream URL
-      const fallbackUrl = `https://api.soundcloud.com/tracks/${trackId}/stream?client_id=${this.SOUNDCLOUD_CLIENT_ID}`;
-
-      // Test if this URL works using CORS proxy
-      const proxiedFallbackUrl = this.getCorsProxyUrl(fallbackUrl);
-
-      try {
-        const testResponse = await fetch(proxiedFallbackUrl, {
-          method: "HEAD",
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-          },
-        });
-
-        if (testResponse.ok) {
-          return fallbackUrl;
-        }
-      } catch (testError) {
-        // Fallback URL test failed
-      }
-
-      throw new Error(`Track with ID ${trackId} not found or unavailable`);
+      throw new Error("Track not found or unavailable");
     } catch (error) {
       throw new Error(
         `SoundCloud playback failed: ${
@@ -5019,29 +5343,32 @@ export class AudioStreamManager {
       throw new Error("No media transcodings available");
     }
 
-    // Find the best quality stream (prefer progressive MP3, fallback to HLS)
-    const preferredTranscoding =
-      trackData.media.transcodings.find(
-        (t: any) =>
-          t.preset === "mp3_standard" && t.format?.protocol === "progressive"
-      ) ||
-      trackData.media.transcodings.find(
-        (t: any) => t.format?.protocol === "progressive"
-      ) ||
-      trackData.media.transcodings.find(
-        (t: any) => t.format?.protocol === "hls"
-      );
+    const isAndroid = Platform.OS === "android";
+    const preferredTranscoding = isAndroid
+      ? trackData.media.transcodings.find(
+          (t: any) => t.format?.protocol === "progressive"
+        ) ||
+        trackData.media.transcodings.find(
+          (t: any) => t.format?.protocol === "hls"
+        )
+      : trackData.media.transcodings.find(
+          (t: any) => t.format?.protocol === "hls"
+        ) ||
+        trackData.media.transcodings.find(
+          (t: any) => t.format?.protocol === "progressive"
+        );
 
-    if (!preferredTranscoding) {
+    if (!preferredTranscoding?.url) {
       throw new Error("No suitable audio stream found");
     }
 
-    const transcodingUrl = preferredTranscoding.url;
-    const resolveUrl = new URL(transcodingUrl);
+    const trackId = trackData.id ? String(trackData.id) : "";
+    if (!trackId) {
+      throw new Error("SoundCloud track ID missing");
+    }
 
-    // Append the client_id - this is crucial for the API to return the stream URL
+    const resolveUrl = new URL(preferredTranscoding.url);
     resolveUrl.searchParams.append("client_id", this.SOUNDCLOUD_CLIENT_ID);
-
     if (trackData.track_authorization) {
       resolveUrl.searchParams.append(
         "track_authorization",
@@ -5049,199 +5376,30 @@ export class AudioStreamManager {
       );
     }
 
-    // Try to resolve the stream URL through the API using CORS proxy
-    try {
-      // Use CORS proxy to resolve the stream URL
-      const proxyUrl = this.getCorsProxyUrl(resolveUrl.toString());
-      const streamResponse = await fetch(proxyUrl, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        },
-        signal: controller.signal,
-      });
+    const streamResponse = await fetch(resolveUrl.toString(), {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        Referer: "https://w.soundcloud.com/",
+        Origin: "https://w.soundcloud.com",
+      },
+      signal: controller.signal,
+    });
 
-      if (streamResponse.ok) {
-        const streamData = await streamResponse.json();
-        if (streamData.url) {
-          // Validate the stream URL before using it
-          const validation = await this.validateAudioStream(streamData.url);
-          if (!validation.isValid) {
-            throw new Error(`Invalid SoundCloud stream: ${validation.error}`);
-          }
-
-          console.log(
-            `[Audio] Stream validated: ${validation.contentType}, ${validation.contentLength} bytes`
-          );
-
-          // For SoundCloud, we need to use the CORS proxy for the actual stream too
-          // because the resolved URLs often have CORS restrictions
-          const proxiedStreamUrl = this.getCorsProxyUrl(streamData.url);
-
-          // Validate the proxied URL as well
-          const proxiedValidation =
-            await this.validateAudioStream(proxiedStreamUrl);
-          if (!proxiedValidation.isValid) {
-            // Try without proxy if proxied version fails
-            return await this.cacheSoundCloudStream(
-              streamData.url,
-              trackData.id.toString(),
-              controller
-            );
-          }
-
-          // Cache the first megabyte of the stream before returning
-          return await this.cacheSoundCloudStream(
-            proxiedStreamUrl,
-            trackData.id.toString(),
-            controller
-          );
-        } else {
-          // No URL in response, try alternative client IDs
-          try {
-            const altStreamUrl = await this.tryAlternativeClientIds(
-              resolveUrl.toString(),
-              trackData,
-              controller
-            );
-
-            if (altStreamUrl) {
-              return await this.cacheSoundCloudStream(
-                altStreamUrl,
-                trackData.id.toString(),
-                controller
-              );
-            }
-          } catch (altError) {
-            // All alternative client IDs failed
-          }
-        }
-      } else {
-        console.warn(
-          `[Audio] Failed to resolve stream. Status: ${streamResponse.status}`
-        );
-
-        // Try alternative client IDs if primary failed
-        if (streamResponse.status === 401 || streamResponse.status === 403) {
-          try {
-            const altStreamUrl = await this.tryAlternativeClientIds(
-              resolveUrl.toString(),
-              trackData,
-              controller
-            );
-
-            if (altStreamUrl) {
-              return await this.cacheSoundCloudStream(
-                altStreamUrl,
-                trackData.id.toString(),
-                controller
-              );
-            }
-          } catch (altError) {
-            console.error(
-              "[Audio] All alternative client IDs failed after auth failure:",
-              altError
-            );
-          }
-        }
-      }
-    } catch (streamError) {
-      // Failed to fetch stream URL
+    if (!streamResponse.ok) {
+      throw new Error(
+        `Failed to resolve SoundCloud stream: ${streamResponse.status}`
+      );
     }
 
-    // Fallback: Try using the widget API to get a working stream
-    try {
-      const widgetUrl = `https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/${trackData.id}`;
-      const proxyWidgetUrl = this.getCorsProxyUrl(widgetUrl);
-
-      const widgetResponse = await fetch(proxyWidgetUrl, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        },
-        signal: controller.signal,
-      });
-
-      if (widgetResponse.ok) {
-        const widgetHtml = await widgetResponse.text();
-
-        // Look for stream URLs in the widget HTML
-        const streamUrlMatch = widgetHtml.match(
-          /\"(https?:\/\/[^\"]*\.mp3[^\"]*)\"/
-        );
-        if (streamUrlMatch) {
-          // Validate the extracted URL
-          const validation = await this.validateAudioStream(streamUrlMatch[1]);
-          if (!validation.isValid) {
-            throw new Error(`Invalid widget stream: ${validation.error}`);
-          }
-
-          // Use CORS proxy for the stream URL too
-          const proxiedWidgetStreamUrl = this.getCorsProxyUrl(
-            streamUrlMatch[1]
-          );
-
-          // Validate the proxied URL
-          const proxiedValidation = await this.validateAudioStream(
-            proxiedWidgetStreamUrl
-          );
-          if (!proxiedValidation.isValid) {
-            console.warn(
-              `[Audio] Proxied widget stream validation failed: ${proxiedValidation.error}`
-            );
-            // Try without proxy
-            return await this.cacheSoundCloudStream(
-              streamUrlMatch[1],
-              trackData.id.toString(),
-              controller
-            );
-          }
-
-          // Cache the first megabyte of the stream before returning
-          return await this.cacheSoundCloudStream(
-            proxiedWidgetStreamUrl,
-            trackData.id.toString(),
-            controller
-          );
-        }
-      } else if (
-        widgetResponse.status === 401 ||
-        widgetResponse.status === 403
-      ) {
-        // Try alternative client IDs for widget as well
-        try {
-          // Try to construct a direct API call with alternative client IDs
-          const altStreamUrl = await this.tryAlternativeClientIds(
-            `https://api.soundcloud.com/i1/tracks/${trackData.id}/streams`,
-            trackData,
-            controller
-          );
-
-          if (altStreamUrl) {
-            console.log(
-              "[Audio] Alternative client ID provided stream URL after widget auth failure"
-            );
-            return await this.cacheSoundCloudStream(
-              altStreamUrl,
-              trackData.id.toString(),
-              controller
-            );
-          }
-        } catch (altError) {
-          // Alternative client IDs failed after widget auth failure
-        }
-      }
-    } catch (widgetError) {
-      // Widget fallback failed
+    const streamData = await streamResponse.json();
+    if (!streamData?.url) {
+      throw new Error("SoundCloud stream URL missing");
     }
 
-    // Last resort: return the transcoding URL with CORS proxy
-
-    // Cache the first megabyte of the stream before returning
-    const proxiedUrl = this.getCorsProxyUrl(resolveUrl.toString());
     return await this.cacheSoundCloudStream(
-      proxiedUrl,
-      trackData.id.toString(),
+      streamData.url,
+      trackId,
       controller
     );
   }
@@ -5251,12 +5409,93 @@ export class AudioStreamManager {
     if (/^\d+$/.test(videoId)) {
       return videoId;
     }
+    if (videoId.includes("soundcloud:tracks:")) {
+      const parts = videoId.split("soundcloud:tracks:");
+      const rawId = parts[1]?.split(/[?#/]/)[0];
+      if (rawId && /^\d+$/.test(rawId)) {
+        return rawId;
+      }
+    }
+    const apiMatch = videoId.match(/api\.soundcloud\.com\/tracks\/(\d+)/);
+    if (apiMatch && apiMatch[1]) {
+      return apiMatch[1];
+    }
     // Check if this is a SoundCloud permalink URL and extract track ID
     const soundcloudMatch = videoId.match(/soundcloud\.com\/.*\/.*?(\d+)$/);
     if (soundcloudMatch) {
       return soundcloudMatch[1];
     }
     return null;
+  }
+
+  private async fetchSoundCloudTrackDataById(
+    trackId: string
+  ): Promise<any | null> {
+    const clientIds = [
+      this.SOUNDCLOUD_CLIENT_ID,
+      ...this.FALLBACK_SOUNDCLOUD_CLIENT_IDS,
+    ];
+    for (const clientId of clientIds) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const url = `https://api-v2.soundcloud.com/tracks/${trackId}?client_id=${clientId}`;
+        const response = await fetch(url, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            Referer: "https://soundcloud.com/",
+            Origin: "https://soundcloud.com",
+          },
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (response.ok) {
+          const data = await response.json();
+          if (data?.media?.transcodings?.length) {
+            return data;
+          }
+        }
+        if (response.status !== 401 && response.status !== 403) {
+          break;
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  private async resolveSoundCloudTrackDataByUrl(
+    url: string,
+    appVersion: string
+  ): Promise<any | null> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const resolveUrl = `https://api-widget.soundcloud.com/resolve?url=${encodeURIComponent(
+        url
+      )}&client_id=${this.SOUNDCLOUD_CLIENT_ID}&format=json&app_version=${appVersion}`;
+      const response = await fetch(resolveUrl, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          Referer: "https://w.soundcloud.com/",
+          Origin: "https://w.soundcloud.com",
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (response.ok) {
+        const data = await response.json();
+        if (data?.media?.transcodings?.length) {
+          return data;
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   private async tryPiped(videoId: string): Promise<string> {
@@ -5284,10 +5523,35 @@ export class AudioStreamManager {
 
           const data = await response.json();
           if (data.audioStreams && data.audioStreams.length > 0) {
-            // Sort by quality and return highest quality stream
-            const sortedStreams = data.audioStreams
-              .filter((stream: any) => stream.url && !stream.videoOnly)
-              .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+            const streams = data.audioStreams.filter(
+              (stream: any) => stream.url && !stream.videoOnly
+            );
+            const order = (s: any) => {
+              const i = String(s.itag || s.tag || "");
+              if (i === "249") return 0;
+              if (i === "250") return 1;
+              if (i === "251") return 2;
+              return 3;
+            };
+            const sortedStreams = streams.sort((a: any, b: any) => {
+              const oa = order(a);
+              const ob = order(b);
+              if (oa !== ob) return oa - ob;
+              const ca =
+                typeof a.clen === "number"
+                  ? a.clen
+                  : a.clen
+                    ? parseInt(String(a.clen), 10)
+                    : Number.MAX_SAFE_INTEGER;
+              const cb =
+                typeof b.clen === "number"
+                  ? b.clen
+                  : b.clen
+                    ? parseInt(String(b.clen), 10)
+                    : Number.MAX_SAFE_INTEGER;
+              if (ca !== cb) return ca - cb;
+              return (a.bitrate || 0) - (b.bitrate || 0);
+            });
 
             if (sortedStreams.length > 0) {
               return sortedStreams[0].url;
@@ -5525,6 +5789,27 @@ export class AudioStreamManager {
           return;
         }
 
+        const existingSize =
+          typeof existingFileInfo.size === "number" ? existingFileInfo.size : 0;
+        const resumeSize =
+          typeof resumeFileInfo.size === "number" ? resumeFileInfo.size : 0;
+        const combinedSize = existingSize + resumeSize;
+        const maxCombineSize = 24 * 1024 * 1024;
+
+        if (combinedSize > maxCombineSize) {
+          console.warn(
+            `[Audio] Combined cache size ${combinedSize} bytes too large for in-memory resume, switching to full download for ${trackId}`
+          );
+          await FileSystem.deleteAsync(resumeFilePath, { idempotent: true });
+          await this.downloadFullTrackInBackground(
+            streamUrl,
+            properCacheFilePath,
+            trackId,
+            controller
+          );
+          return;
+        }
+
         // Create a temporary combined file
         const tempCombinedPath = properCacheFilePath + ".combined";
 
@@ -5722,6 +6007,10 @@ export async function continueCachingTrack(
     controller,
     onProgress
   );
+}
+
+export async function cleanupCacheForTrack(trackId: string): Promise<void> {
+  return AudioStreamManager.getInstance().cleanupTrackCache(trackId);
 }
 
 // Track active monitoring instances to prevent duplicates
@@ -6028,4 +6317,294 @@ export async function downloadCompleteSongAsMP3(
     controller,
     onProgress
   );
+}
+
+type AudioCacheIndexEntry = {
+  trackId: string;
+  url: string;
+  sizeBytes: number;
+  isDownloading: boolean;
+  isFullyCached: boolean;
+  updatedAt: number;
+  lastUsedAt: number;
+};
+
+type AudioCacheIndex = {
+  totalBytes: number;
+  entries: Record<string, AudioCacheIndexEntry>;
+};
+
+const AUDIO_CACHE_INDEX_KEY = "@audio_cache_index_v2";
+const CACHE_SIZE_FALLBACK_BYTES = 512 * 1024 * 1024;
+const CACHE_MIN_BYTES = 50 * 1024 * 1024;
+const CACHE_HEAD_TIMEOUT_MS = 8000;
+const CACHE_PROXY_TIMEOUT_MS = 5000;
+const CACHE_VALIDATION_DIFF_BYTES = 1024 * 1024;
+const CACHE_VALIDATION_DIFF_RATIO = 0.02;
+
+const toMB = (bytes: number) => Math.max(0, bytes / (1024 * 1024));
+
+const loadAudioCacheIndex = async (): Promise<AudioCacheIndex> => {
+  try {
+    const raw = await AsyncStorage.getItem(AUDIO_CACHE_INDEX_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as AudioCacheIndex;
+      if (parsed && parsed.entries) {
+        return {
+          totalBytes: parsed.totalBytes || 0,
+          entries: parsed.entries || {},
+        };
+      }
+    }
+  } catch {}
+  return { totalBytes: 0, entries: {} };
+};
+
+const saveAudioCacheIndex = async (index: AudioCacheIndex): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(AUDIO_CACHE_INDEX_KEY, JSON.stringify(index));
+  } catch {}
+};
+
+const getCacheLimitBytes = async (): Promise<number> => {
+  try {
+    const freeBytes = await FileSystem.getFreeDiskStorageAsync();
+    const dynamicLimit = Math.floor(freeBytes * 0.1);
+    return Math.max(
+      CACHE_MIN_BYTES,
+      Math.min(CACHE_SIZE_FALLBACK_BYTES, dynamicLimit)
+    );
+  } catch {
+    return CACHE_SIZE_FALLBACK_BYTES;
+  }
+};
+
+const parseUrlContentLength = (url: string): number | null => {
+  try {
+    const parsed = new URL(url);
+    const clen = parsed.searchParams.get("clen");
+    if (!clen) {
+      return null;
+    }
+    const value = parseInt(clen, 10);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  } catch {
+    return null;
+  }
+};
+
+const fetchHeadContentLength = async (url: string): Promise<number | null> => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), CACHE_HEAD_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      method: "HEAD",
+      signal: controller.signal,
+    });
+    const headerValue = response.headers.get("content-length");
+    if (!headerValue) {
+      return null;
+    }
+    const parsed = parseInt(headerValue, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+const resolveContentLength = async (
+  url: string
+): Promise<{ length: number | null; isValid: boolean }> => {
+  const [headLength, urlLength] = await Promise.all([
+    fetchHeadContentLength(url),
+    Promise.resolve(parseUrlContentLength(url)),
+  ]);
+
+  const resolvedLength = headLength ?? urlLength ?? null;
+  if (!resolvedLength || resolvedLength <= 0) {
+    return { length: null, isValid: false };
+  }
+
+  if (headLength && urlLength) {
+    const diff = Math.abs(headLength - urlLength);
+    const ratio = diff / Math.max(headLength, urlLength);
+    if (
+      diff > CACHE_VALIDATION_DIFF_BYTES &&
+      ratio > CACHE_VALIDATION_DIFF_RATIO
+    ) {
+      return { length: null, isValid: false };
+    }
+  }
+
+  return { length: resolvedLength, isValid: true };
+};
+
+const isRemoteStreamUrl = (url: string) =>
+  url.startsWith("http://") || url.startsWith("https://");
+
+let videoCacheConvert: ((url: string) => string) | null = null;
+let videoCacheConvertAsync: ((url: string) => Promise<string>) | null = null;
+
+try {
+  // Use require + try/catch so we don't crash if native module is missing
+  // or not correctly linked. In that case we simply disable caching.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const videoCacheModule = require("react-native-video-cache");
+  if (typeof videoCacheModule === "function") {
+    videoCacheConvert = videoCacheModule;
+  } else if (typeof videoCacheModule?.default === "function") {
+    videoCacheConvert = videoCacheModule.default;
+  }
+  if (typeof videoCacheModule?.convertAsync === "function") {
+    videoCacheConvertAsync = videoCacheModule.convertAsync;
+  }
+} catch {
+  videoCacheConvert = null;
+  videoCacheConvertAsync = null;
+}
+
+const getProxyUrl = async (
+  url: string
+): Promise<{ url: string; isProxy: boolean }> => {
+  if (videoCacheConvertAsync) {
+    try {
+      const timeout = new Promise<string>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("proxy-timeout")),
+          CACHE_PROXY_TIMEOUT_MS
+        )
+      );
+      const proxyUrl = await Promise.race([
+        videoCacheConvertAsync(url),
+        timeout,
+      ]);
+      return { url: proxyUrl, isProxy: proxyUrl !== url };
+    } catch {}
+  }
+  if (videoCacheConvert) {
+    try {
+      const proxyUrl = videoCacheConvert(url);
+      return { url: proxyUrl, isProxy: proxyUrl !== url };
+    } catch {}
+  }
+  return { url, isProxy: false };
+};
+
+export type AudioCacheInfo = {
+  percentage: number;
+  fileSize: number;
+  totalFileSize?: number;
+  isFullyCached: boolean;
+  isDownloading?: boolean;
+  downloadSpeed?: number;
+  retryCount?: number;
+};
+
+export async function prepareCachedStreamUrl(
+  url: string,
+  trackId?: string
+): Promise<{ url: string; cacheInfo: AudioCacheInfo | null }> {
+  if (!url || !isRemoteStreamUrl(url)) {
+    return { url, cacheInfo: null };
+  }
+
+  const proxyResult = await getProxyUrl(url);
+  if (!proxyResult.isProxy) {
+    return { url, cacheInfo: null };
+  }
+
+  const { length, isValid } = await resolveContentLength(url);
+
+  const index = await loadAudioCacheIndex();
+  const limitBytes = await getCacheLimitBytes();
+  const existing = trackId ? index.entries[trackId] : undefined;
+  const currentTotal = index.totalBytes - (existing?.sizeBytes || 0);
+
+  if (isValid && length && currentTotal + length > limitBytes) {
+    return { url, cacheInfo: null };
+  }
+
+  if (trackId) {
+    const updated: AudioCacheIndexEntry = {
+      trackId,
+      url,
+      sizeBytes: isValid && length ? length : 0,
+      isDownloading: true,
+      isFullyCached: false,
+      updatedAt: Date.now(),
+      lastUsedAt: Date.now(),
+    };
+    index.entries[trackId] = updated;
+    index.totalBytes = isValid && length ? currentTotal + length : currentTotal;
+    await saveAudioCacheIndex(index);
+  }
+
+  return {
+    url: proxyResult.url,
+    cacheInfo: {
+      percentage: 1,
+      fileSize: 0,
+      totalFileSize: isValid && length ? toMB(length) : undefined,
+      isFullyCached: false,
+      isDownloading: true,
+    },
+  };
+}
+
+export async function getAudioCacheInfo(
+  trackId: string
+): Promise<AudioCacheInfo> {
+  try {
+    const manager = AudioStreamManager.getInstance();
+    return await manager.getCacheInfo(trackId);
+  } catch (error) {}
+  const index = await loadAudioCacheIndex();
+  const entry = index.entries[trackId];
+  if (!entry) {
+    return {
+      percentage: 0,
+      fileSize: 0,
+      totalFileSize: 0,
+      isFullyCached: false,
+      isDownloading: false,
+    };
+  }
+
+  return {
+    percentage: entry.isFullyCached ? 100 : 1,
+    fileSize: entry.isFullyCached ? toMB(entry.sizeBytes) : 0,
+    totalFileSize: toMB(entry.sizeBytes),
+    isFullyCached: entry.isFullyCached,
+    isDownloading: entry.isDownloading,
+  };
+}
+
+export async function markAudioCacheComplete(trackId: string): Promise<void> {
+  const index = await loadAudioCacheIndex();
+  const entry = index.entries[trackId];
+  if (!entry) {
+    return;
+  }
+  index.entries[trackId] = {
+    ...entry,
+    isDownloading: false,
+    isFullyCached: true,
+    updatedAt: Date.now(),
+    lastUsedAt: Date.now(),
+  };
+  await saveAudioCacheIndex(index);
+}
+
+export async function clearAudioCacheForTrack(trackId: string): Promise<void> {
+  const index = await loadAudioCacheIndex();
+  const entry = index.entries[trackId];
+  if (entry) {
+    const nextTotal = Math.max(0, index.totalBytes - entry.sizeBytes);
+    const { [trackId]: _removed, ...rest } = index.entries;
+    index.entries = rest;
+    index.totalBytes = nextTotal;
+    await saveAudioCacheIndex(index);
+  }
 }

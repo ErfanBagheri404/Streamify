@@ -364,7 +364,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
   const [isYouTubeChannel, setIsYouTubeChannel] = useState(false);
   const [artistNameFontSize, setArtistNameFontSize] = useState(64);
 
-  const { artistId, artistName } = route.params;
+  const { artistId, artistName, artistImage } = route.params;
 
   // Function to calculate font size based on artist name length
   const calculateFontSize = useCallback((name: string): number => {
@@ -687,17 +687,31 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
         );
       };
 
-      const processedArtist: Artist = {
-        id: artistId,
-        name: (artistData.name || artistName)?.replace(/\s*-\s*Topic$/i, ""),
-        image: getBestQualityImage(artistData.image),
-        monthlyListeners: artistData.followers || artistData.followerCount || 0,
-      };
-
-      // Process songs - handle different response structures
       const songsArray = Array.isArray(songsData)
         ? songsData
         : songsData.data?.songs || songsData.data || songsData.songs || [];
+
+      const albumsArray = Array.isArray(albumsData)
+        ? albumsData
+        : albumsData.data?.albums || albumsData.data || albumsData.albums || [];
+
+      const artistImages = Array.isArray(artistData.image)
+        ? artistData.image
+        : [];
+      const artistImageUrlFromSearch =
+        typeof artistImage === "string" ? artistImage : "";
+      const fallbackImages =
+        artistImages.length > 0
+          ? artistImages
+          : songsArray[0]?.image || albumsArray[0]?.image || [];
+
+      const processedArtist: Artist = {
+        id: artistId,
+        name: (artistData.name || artistName)?.replace(/\s*-\s*Topic$/i, ""),
+        image:
+          artistImageUrlFromSearch || getBestQualityImage(fallbackImages),
+        monthlyListeners: artistData.followers || artistData.followerCount || 0,
+      };
 
       const processedSongs: Song[] = songsArray
         .slice(0, 5)
@@ -717,11 +731,6 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
           source: "jiosaavn",
           _isJioSaavn: true,
         }));
-
-      // Process albums - handle different response structures
-      const albumsArray = Array.isArray(albumsData)
-        ? albumsData
-        : albumsData.data?.albums || albumsData.data || albumsData.albums || [];
 
       console.log("Processing albums array:", albumsArray);
 

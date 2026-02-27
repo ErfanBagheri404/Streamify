@@ -38,6 +38,7 @@ import LibraryScreen from "./components/screens/LibraryScreen";
 import { LikedSongsScreen } from "./components/screens/LikedSongsScreen";
 import { PreviouslyPlayedScreen } from "./components/screens/PreviouslyPlayedScreen";
 import { AlbumPlaylistScreen } from "./components/screens/AlbumPlaylistScreen";
+import PlayerScreen from "./components/screens/PlayerScreen";
 import ArtistScreen from "./components/screens/ArtistScreen";
 import SettingsScreen from "./components/screens/SettingsScreen";
 
@@ -46,7 +47,7 @@ enableScreens();
 // Register the playback service for proper media session integration
 try {
   TrackPlayer.registerPlaybackService(() =>
-    require("./services/playbackService"),
+    require("./services/playbackService")
   );
   console.log("[App] Playback service registered successfully");
 } catch (error) {
@@ -355,6 +356,17 @@ function AppContent() {
                 cardStyle: { backgroundColor: "#000" },
               }}
             />
+            <Stack.Screen
+              name="PlayerScreen"
+              component={PlayerScreen}
+              options={{
+                animation: "slide_from_right",
+                animationDuration: 200,
+                gestureEnabled: true,
+                gestureDirection: "horizontal",
+                cardStyle: { backgroundColor: "#000" },
+              }}
+            />
           </Stack.Navigator>
         </NavigationContainer>
 
@@ -390,30 +402,6 @@ export default function App() {
     };
 
     fetchInstances();
-  }, []);
-
-  // Create Streamify directory on app first launch
-  useEffect(() => {
-    const createStreamifyDirectory = async () => {
-      try {
-        const { AudioStreamManager } = await import("./modules/audioStreaming");
-        const manager = AudioStreamManager.getInstance();
-        
-        // This will automatically create the Streamify directory
-        // The getCacheDirectory method in AudioStreamManager handles directory creation
-        const cacheDir = await manager.getCacheDirectory();
-        
-        if (cacheDir) {
-          console.log(`[App] Streamify directory created/verified at: ${cacheDir}`);
-        } else {
-          console.warn("[App] Could not create Streamify directory");
-        }
-      } catch (error) {
-        console.error("[App] Error creating Streamify directory:", error);
-      }
-    };
-
-    createStreamifyDirectory();
   }, []);
 
   // const [showLoadingScreen, setShowLoadingScreen] = useState(true);

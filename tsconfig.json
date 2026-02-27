@@ -23,7 +23,7 @@
     "alwaysStrict": false,
     "types": ["react-native", "node"]
   },
-  "include": ["**/*.ts", "**/*.tsx", "vite-env.d.ts"],
+  "include": ["**/*.ts", "**/*.tsx", "**/*.d.ts", "vite-env.d.ts"],
   "exclude": ["node_modules", "dist", "main.ts.bak"],
   "extends": "expo/tsconfig.base"
 }

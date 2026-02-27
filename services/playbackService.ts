@@ -37,7 +37,7 @@ module.exports = async function () {
       Promise.resolve(trackPlayerService.onRemotePrevious()).catch((error) => {
         console.error(
           "[PlaybackService] Remote previous handler failed:",
-          error
+          error,
         );
       });
       return;

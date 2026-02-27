@@ -32,7 +32,7 @@ export const SkeletonLoader: React.FC<SkeletonProps> = ({
           duration: 1200,
           useNativeDriver: true,
         }),
-      ]),
+      ])
     );
 
     animation.start();
@@ -125,4 +125,107 @@ export const CategoryPlaylistSkeleton: React.FC = () => (
       <PlaylistSkeletonRow count={6} />
     </CategoryPlaylistContainer>
   </CategorySkeletonContainer>
+);
+
+const PreviouslyPlayedSkeletonContainer = styled.View`
+  padding: 0 16px;
+  margin-top: 16px;
+`;
+
+export const PreviouslyPlayedSkeleton: React.FC = () => (
+  <PreviouslyPlayedSkeletonContainer>
+    <PlaylistSkeletonRow count={5} />
+  </PreviouslyPlayedSkeletonContainer>
+);
+
+// YouTube Mix skeleton
+const YouTubeMixSkeletonContainer = styled.View`
+  padding: 0 16px;
+  margin-top: 16px;
+`;
+
+export const YouTubeMixSkeleton: React.FC = () => (
+  <YouTubeMixSkeletonContainer>
+    <PlaylistSkeletonRow count={5} />
+  </YouTubeMixSkeletonContainer>
+);
+
+// JioSaavn suggestions skeleton
+const JioSaavnSuggestionsSkeletonContainer = styled.View`
+  padding: 0 16px;
+  margin-top: 16px;
+`;
+
+export const JioSaavnSuggestionsSkeleton: React.FC = () => (
+  <JioSaavnSuggestionsSkeletonContainer>
+    <PlaylistSkeletonRow count={5} />
+  </JioSaavnSuggestionsSkeletonContainer>
+);
+
+const RecommendationSkeletonContainer = styled.View`
+  padding: 0 16px;
+  margin-top: 16px;
+`;
+
+const RecommendationSkeletonColumn = styled.View`
+  width: 240px;
+  margin-right: 16px;
+`;
+
+const RecommendationSkeletonItem = styled.View`
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 12px;
+`;
+
+const RecommendationSkeletonThumb = styled(SkeletonLoader).attrs({
+  width: 54,
+  height: 54,
+})`
+  border-radius: 8px;
+`;
+
+const RecommendationSkeletonText = styled.View`
+  flex: 1;
+  margin-left: 10px;
+`;
+
+const RecommendationSkeletonTitle = styled(SkeletonLoader).attrs({
+  width: 140,
+  height: 12,
+})`
+  border-radius: 6px;
+  margin-bottom: 6px;
+`;
+
+const RecommendationSkeletonMeta = styled(SkeletonLoader).attrs({
+  width: 100,
+  height: 10,
+})`
+  border-radius: 5px;
+`;
+
+export const RecommendationsSkeleton: React.FC<{
+  columns?: number;
+  rows?: number;
+}> = ({ columns = 3, rows = 4 }) => (
+  <RecommendationSkeletonContainer>
+    <SkeletonRowContainer>
+      {Array.from({ length: columns }, (_, columnIndex) => (
+        <RecommendationSkeletonColumn key={`rec-skel-col-${columnIndex}`}>
+          {Array.from({ length: rows }, (_, rowIndex) => (
+            <RecommendationSkeletonItem
+              key={`rec-skel-${columnIndex}-${rowIndex}`}
+            >
+              <RecommendationSkeletonThumb />
+              <RecommendationSkeletonText>
+                <RecommendationSkeletonTitle />
+                <RecommendationSkeletonMeta />
+              </RecommendationSkeletonText>
+            </RecommendationSkeletonItem>
+          ))}
+        </RecommendationSkeletonColumn>
+      ))}
+    </SkeletonRowContainer>
+  </RecommendationSkeletonContainer>
 );

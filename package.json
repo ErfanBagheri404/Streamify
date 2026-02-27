@@ -46,6 +46,7 @@
     "expo-status-bar": "~3.0.9",
     "expo-task-manager": "^14.0.9",
     "hls.js": "^1.6.15",
+    "patch-package": "^6.5.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
@@ -55,14 +56,15 @@
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-svg": "15.12.1",
-    "react-native-track-player": "^4.1.2",
     "react-native-svg-transformer": "^1.5.0",
+    "react-native-track-player": "^4.1.2",
+    "react-native-video-cache": "^2.7.4",
     "sortablejs": "^1.15.6",
     "spotify-web-api-node": "^5.0.2",
     "styled-components": "^6.1.19",
     "uhtml": "^5.0.9",
     "upng-js": "^2.1.0",
-    "patch-package": "^6.5.1"
+    "zustand": "^5.0.11"
   },
   "devDependencies": {
     "@babel/core": "^7.27.0",

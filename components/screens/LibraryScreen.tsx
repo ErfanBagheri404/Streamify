@@ -77,18 +77,25 @@ const FilterChipsRow = styled.ScrollView`
   max-height: 32px;
 `;
 
-const FilterChip = styled.TouchableOpacity<{ active?: boolean }>`
+const FilterChip = styled.TouchableOpacity<{
+  active?: boolean;
+  disabled?: boolean;
+}>`
   padding: 6px 16px;
   border-radius: 999px;
-  background-color: ${(p: { active?: boolean }) =>
-    p.active ? "#404040" : "#262626"};
+  background-color: ${(p: { active?: boolean; disabled?: boolean }) =>
+    p.disabled ? "#1f1f1f" : p.active ? "#404040" : "#262626"};
   margin-right: 8px;
   align-items: center;
   justify-content: center;
+  opacity: ${(p: { disabled?: boolean }) => (p.disabled ? 0.5 : 1)};
 `;
 
-const FilterChipText = styled.Text<{ active?: boolean }>`
-  color: #fff;
+const FilterChipText = styled.Text<{
+  active?: boolean;
+  disabled?: boolean;
+}>`
+  color: ${(p: { disabled?: boolean }) => (p.disabled ? "#737373" : "#fff")};
   font-size: 13px;
   font-family: ${(p: { active?: boolean }) =>
     p.active ? "GoogleSansBold" : "GoogleSansMedium"};
@@ -166,10 +173,45 @@ const DownloadingCoverWrapper = styled.View`
 
 const DownloadingCoverFill = styled.View`
   position: absolute;
-  left: 0;
   top: 0;
   bottom: 0;
-  overflow: hidden;
+  right: 0;
+  background-color: rgba(0, 0, 0, 0.55);
+`;
+
+const StopCachingOverlay = styled.View`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.35);
+`;
+
+const StopCachingButton = styled.TouchableOpacity`
+  padding: 10px 12px;
+  border-radius: 10px;
+  background-color: rgba(0, 0, 0, 0.75);
+  border-width: 1px;
+  border-color: rgba(255, 255, 255, 0.15);
+`;
+
+const StopCachingText = styled.Text`
+  color: #fff;
+  font-size: 13px;
+  font-family: GoogleSansMedium;
+  line-height: 16px;
+`;
+
+const EmptySectionText = styled.Text`
+  color: #a3a3a3;
+  font-size: 14px;
+  font-family: GoogleSansRegular;
+  padding: 16px;
+  text-align: center;
+  line-height: 18px;
 `;
 
 const LikedCoverWrapper = styled.View`
@@ -247,11 +289,13 @@ const ThreeDotButton = styled.TouchableOpacity`
 
 const sections = [
   "Playlists",
-  "Albums",
-  "Artists",
   "Downloaded",
   "Downloading",
+  "Albums",
+  "Artists",
 ];
+
+const disabledSections = new Set(["Albums", "Artists"]);
 
 const sampleCollections = [
   {
@@ -276,11 +320,19 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   const [showCreatePlaylistModal, setShowCreatePlaylistModal] =
     React.useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
-  const { likedSongs, previouslyPlayedSongs, getCacheInfo, cacheProgress } =
-    usePlayer();
+  const {
+    likedSongs,
+    previouslyPlayedSongs,
+    getCacheInfo,
+    cacheProgress,
+    stopCachingAndUnlike,
+  } = usePlayer();
   const [downloadingTracks, setDownloadingTracks] = React.useState<
     { track: Track; percentage: number }[]
   >([]);
+  const [downloadedTracks, setDownloadedTracks] = React.useState<Track[]>([]);
+  const [expandedDownloadingTrackIds, setExpandedDownloadingTrackIds] =
+    React.useState<Set<string>>(new Set());
 
   // Song action sheet state
   const [showSongActionSheet, setShowSongActionSheet] = useState(false);
@@ -436,7 +488,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
   const loadDownloadingTracks = React.useCallback(async () => {
     const candidates = new Map<string, Track>();
-    [...likedSongs, ...previouslyPlayedSongs].forEach((track) => {
+    likedSongs.forEach((track) => {
       if (track?.id && !candidates.has(track.id)) {
         candidates.set(track.id, track);
       }
@@ -446,11 +498,9 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       Array.from(candidates.values()).map(async (track) => {
         try {
           const info = await getCacheInfo(track.id);
-          if (
-            info &&
-            (info.isDownloading || (!info.isFullyCached && info.percentage > 0))
-          ) {
-            return { track, percentage: info.percentage || 0 };
+          const percentage = info?.percentage ?? 0;
+          if (!info?.isFullyCached && (info?.isDownloading || percentage > 0)) {
+            return { track, percentage };
           }
         } catch (error) {
           return null;
@@ -464,51 +514,52 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         Boolean(item)
       )
     );
-  }, [getCacheInfo, likedSongs, previouslyPlayedSongs]);
+  }, [getCacheInfo, likedSongs]);
+
+  const loadDownloadedTracks = React.useCallback(async () => {
+    const candidates = new Map<string, Track>();
+    likedSongs.forEach((track) => {
+      if (track?.id && !candidates.has(track.id)) {
+        candidates.set(track.id, track);
+      }
+    });
+
+    const results = await Promise.all(
+      Array.from(candidates.values()).map(async (track) => {
+        try {
+          const info = await getCacheInfo(track.id);
+          if (info?.isFullyCached || (info?.percentage ?? 0) >= 100) {
+            return track;
+          }
+        } catch (error) {
+          return null;
+        }
+        return null;
+      })
+    );
+
+    setDownloadedTracks(results.filter((item): item is Track => Boolean(item)));
+  }, [getCacheInfo, likedSongs]);
 
   React.useEffect(() => {
     loadDownloadingTracks();
+    loadDownloadedTracks();
     const unsubscribe = navigation.addListener("focus", () => {
       loadDownloadingTracks();
+      loadDownloadedTracks();
     });
     return unsubscribe;
-  }, [loadDownloadingTracks, navigation]);
+  }, [loadDownloadingTracks, loadDownloadedTracks, navigation]);
 
   React.useEffect(() => {
-    if (!cacheProgress?.trackId) {
-      return;
-    }
-
-    setDownloadingTracks((prev) => {
-      const existingIndex = prev.findIndex(
-        (item) => item.track.id === cacheProgress.trackId
-      );
-
-      if (existingIndex >= 0) {
-        const next = [...prev];
-        next[existingIndex] = {
-          ...next[existingIndex],
-          percentage: cacheProgress.percentage,
-        };
-        return next;
-      }
-
-      const candidate =
-        likedSongs.find((track) => track.id === cacheProgress.trackId) ||
-        previouslyPlayedSongs.find(
-          (track) => track.id === cacheProgress.trackId
-        );
-
-      if (candidate && cacheProgress.percentage > 0) {
-        return [
-          ...prev,
-          { track: candidate, percentage: cacheProgress.percentage },
-        ];
-      }
-
-      return prev;
-    });
-  }, [cacheProgress, likedSongs, previouslyPlayedSongs]);
+    loadDownloadingTracks();
+    loadDownloadedTracks();
+  }, [
+    cacheProgress?.percentage,
+    cacheProgress?.trackId,
+    loadDownloadingTracks,
+    loadDownloadedTracks,
+  ]);
 
   return (
     <SafeArea>
@@ -538,17 +589,26 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         </Header>
 
         <FilterChipsRow horizontal showsHorizontalScrollIndicator={false}>
-          {sections.map((label) => (
-            <FilterChip
-              key={label}
-              active={label === activeSection}
-              onPress={() => setActiveSection(label)}
-            >
-              <FilterChipText active={label === activeSection}>
-                {label}
-              </FilterChipText>
-            </FilterChip>
-          ))}
+          {sections.map((label) => {
+            const isDisabled = disabledSections.has(label);
+            const isActive = !isDisabled && label === activeSection;
+            return (
+              <FilterChip
+                key={label}
+                active={isActive}
+                disabled={isDisabled}
+                onPress={() => {
+                  if (!isDisabled) {
+                    setActiveSection(label);
+                  }
+                }}
+              >
+                <FilterChipText active={isActive} disabled={isDisabled}>
+                  {label}
+                </FilterChipText>
+              </FilterChip>
+            );
+          })}
         </FilterChipsRow>
 
         <SortRow>
@@ -568,41 +628,70 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         <Grid>
           {activeSection === "Downloading" ? (
             <>
-              {downloadingTracks.length === 0
-                ? null
-                : Array.from({
-                    length: Math.ceil(downloadingTracks.length / 2),
-                  }).map((_, rowIndex) => (
-                    <GridRow key={`downloading-${rowIndex}`}>
-                      {downloadingTracks
-                        .slice(rowIndex * 2, (rowIndex + 1) * 2)
-                        .map(({ track, percentage }) => (
+              {downloadingTracks.length === 0 ? (
+                <EmptySectionText>
+                  No songs are caching right now.
+                </EmptySectionText>
+              ) : (
+                Array.from({
+                  length: Math.ceil(downloadingTracks.length / 2),
+                }).map((_, rowIndex) => (
+                  <GridRow key={`downloading-${rowIndex}`}>
+                    {downloadingTracks
+                      .slice(rowIndex * 2, (rowIndex + 1) * 2)
+                      .map(({ track, percentage }) => {
+                        const clamped = Math.min(100, Math.max(0, percentage));
+                        const isExpanded = expandedDownloadingTrackIds.has(
+                          track.id
+                        );
+                        return (
                           <CollectionCard
                             key={`downloading-${track.id}`}
-                            onPress={() => openSongActionSheet(track)}
+                            onPress={() => {
+                              setExpandedDownloadingTrackIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(track.id)) {
+                                  next.delete(track.id);
+                                } else {
+                                  next.add(track.id);
+                                }
+                                return next;
+                              });
+                            }}
+                            onLongPress={() => openSongActionSheet(track)}
                           >
                             {track.thumbnail ? (
                               <DownloadingCoverWrapper>
                                 <CollectionCover
                                   source={{ uri: track.thumbnail }}
-                                  style={{ opacity: 0.25 }}
                                 />
                                 <DownloadingCoverFill
                                   style={{
-                                    width: `${Math.min(100, Math.max(0, percentage))}%`,
+                                    left: `${clamped}%`,
                                   }}
-                                >
-                                  <CollectionCover
-                                    source={{ uri: track.thumbnail }}
-                                    style={{
-                                      position: "absolute",
-                                      left: 0,
-                                      top: 0,
-                                      width: "100%",
-                                      height: "100%",
-                                    }}
-                                  />
-                                </DownloadingCoverFill>
+                                />
+                                {isExpanded && (
+                                  <StopCachingOverlay>
+                                    <StopCachingButton
+                                      onPress={() => {
+                                        stopCachingAndUnlike(track.id);
+                                        setExpandedDownloadingTrackIds(
+                                          (prev) => {
+                                            const next = new Set(prev);
+                                            next.delete(track.id);
+                                            return next;
+                                          }
+                                        );
+                                        loadDownloadingTracks();
+                                        loadDownloadedTracks();
+                                      }}
+                                    >
+                                      <StopCachingText>
+                                        Stop caching
+                                      </StopCachingText>
+                                    </StopCachingButton>
+                                  </StopCachingOverlay>
+                                )}
                               </DownloadingCoverWrapper>
                             ) : (
                               <LikedCoverWrapper>
@@ -617,18 +706,83 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                                     color="white"
                                   />
                                 </LikedCoverGradient>
+                                {isExpanded && (
+                                  <StopCachingOverlay>
+                                    <StopCachingButton
+                                      onPress={() => {
+                                        stopCachingAndUnlike(track.id);
+                                        setExpandedDownloadingTrackIds(
+                                          (prev) => {
+                                            const next = new Set(prev);
+                                            next.delete(track.id);
+                                            return next;
+                                          }
+                                        );
+                                        loadDownloadingTracks();
+                                        loadDownloadedTracks();
+                                      }}
+                                    >
+                                      <StopCachingText>
+                                        Stop caching
+                                      </StopCachingText>
+                                    </StopCachingButton>
+                                  </StopCachingOverlay>
+                                )}
                               </LikedCoverWrapper>
                             )}
                             <CollectionTitle numberOfLines={2}>
                               {track.title}
                             </CollectionTitle>
                             <CollectionMeta>
-                              Cached {Math.round(percentage)}%
+                              Cached {Math.round(clamped)}%
                             </CollectionMeta>
                           </CollectionCard>
-                        ))}
-                    </GridRow>
-                  ))}
+                        );
+                      })}
+                  </GridRow>
+                ))
+              )}
+            </>
+          ) : activeSection === "Downloaded" ? (
+            <>
+              {downloadedTracks.length === 0 ? (
+                <EmptySectionText>No downloaded songs yet.</EmptySectionText>
+              ) : (
+                Array.from({
+                  length: Math.ceil(downloadedTracks.length / 2),
+                }).map((_, rowIndex) => (
+                  <GridRow key={`downloaded-${rowIndex}`}>
+                    {downloadedTracks
+                      .slice(rowIndex * 2, (rowIndex + 1) * 2)
+                      .map((track) => (
+                        <CollectionCard
+                          key={`downloaded-${track.id}`}
+                          onPress={() => openSongActionSheet(track)}
+                        >
+                          {track.thumbnail ? (
+                            <CollectionCover
+                              source={{ uri: track.thumbnail }}
+                            />
+                          ) : (
+                            <LikedCoverWrapper>
+                              <LikedCoverGradient
+                                colors={["#1a1a1a", "#404040", "#525252"]}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                              >
+                                <Entypo name="music" size={42} color="white" />
+                              </LikedCoverGradient>
+                            </LikedCoverWrapper>
+                          )}
+                          <CollectionTitle numberOfLines={2}>
+                            {track.title}
+                          </CollectionTitle>
+                          <CollectionMeta>Downloaded</CollectionMeta>
+                        </CollectionCard>
+                      ))}
+                  </GridRow>
+                ))
+              )}
             </>
           ) : (
             <>

@@ -625,33 +625,24 @@ export default function SearchScreen({ navigation }: any) {
           }
           results = youtubeMusicResponse.items || [];
         } else {
-          // YouTube (Default)
-          if (selectedFilter === "date" || selectedFilter === "views") {
-            results = await searchAPI.searchWithInvidious(
-              queryToUse,
-              selectedFilter,
-              paginationRef.current.page,
-              20,
+          // YouTube (Default) - Use consistent Piped API approach like YouTube Music
+          const youtubeResponse = await searchAPI.searchYouTubeWithFallback(
+            queryToUse,
+            selectedFilter,
+            paginationRef.current.page,
+            20,
+            paginationRef.current.nextpage || undefined,
+          );
+          if (youtubeResponse.nextpage) {
+            paginationRef.current.nextpage = youtubeResponse.nextpage;
+            console.log(
+              `[Search] Extracted nextpage token: ${youtubeResponse.nextpage.substring(0, 50)}...`,
             );
           } else {
-            const youtubeResponse = await searchAPI.searchYouTubeWithFallback(
-              queryToUse,
-              selectedFilter,
-              paginationRef.current.page,
-              20,
-              paginationRef.current.nextpage || undefined,
-            );
-            if (youtubeResponse.nextpage) {
-              paginationRef.current.nextpage = youtubeResponse.nextpage;
-              console.log(
-                `[Search] Extracted nextpage token: ${youtubeResponse.nextpage.substring(0, 50)}...`,
-              );
-            } else {
-              paginationRef.current.nextpage = null;
-              console.log("[Search] No nextpage token in response");
-            }
-            results = youtubeResponse.items || [];
+            paginationRef.current.nextpage = null;
+            console.log("[Search] No nextpage token in response");
           }
+          results = youtubeResponse.items || [];
         }
 
         console.log(`[Search] API returned ${results.length} results`);
@@ -1068,6 +1059,7 @@ export default function SearchScreen({ navigation }: any) {
         navigation.navigate("Artist", {
           artistId: item.id,
           artistName: item.title || item.author,
+          artistImage: item.thumbnailUrl || item.img || "",
         });
         return;
       }
@@ -1115,6 +1107,7 @@ export default function SearchScreen({ navigation }: any) {
       navigation.navigate("Artist", {
         artistId: item.id,
         artistName: item.title,
+        artistImage: item.thumbnailUrl || item.img || "",
       });
     },
     [navigation, showSuggestions, setShowSuggestions],
@@ -1146,9 +1139,24 @@ export default function SearchScreen({ navigation }: any) {
           source: item.source,
         });
       } else if (item.source === "youtube" || item.source === "youtubemusic") {
-        // Handle YouTube/YouTube Music playlists
+        const hrefList =
+          typeof item.href === "string"
+            ? item.href.match(/[?&]list=([^&]+)/)?.[1]
+            : undefined;
+        const rawId = hrefList || item.id;
+        const cleanedId =
+          typeof rawId === "string" ? rawId.split("&")[0] : rawId;
+        const isMix =
+          /^Mix\s*-/i.test(item.title || "") ||
+          (typeof item.href === "string" && item.href.includes("/mix?list=")) ||
+          (typeof cleanedId === "string" && cleanedId.startsWith("RD"));
+        const normalizedId =
+          isMix && typeof cleanedId === "string" && !cleanedId.startsWith("RD")
+            ? `RD${cleanedId}`
+            : cleanedId;
+
         navigation.navigate("AlbumPlaylist", {
-          albumId: item.id,
+          albumId: normalizedId,
           albumName: item.title,
           albumArtist: item.author,
           source: item.source,
@@ -1167,11 +1175,10 @@ export default function SearchScreen({ navigation }: any) {
       }
 
       try {
-        // Fetch album details to get all songs - JioSaavn disabled
-        console.log(
-          "[SearchScreen] JioSaavn album details disabled - using fallback",
+        const albumDetails = await searchAPI.getJioSaavnAlbumDetails(
+          String(item.albumId),
+          item.albumName,
         );
-        const albumDetails = null; // Disable JioSaavn album details
 
         if (
           albumDetails &&

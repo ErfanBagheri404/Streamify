@@ -70,3 +70,8 @@ declare global {
 }
 
 export {};
+
+declare module "react-native-video-cache" {
+  export default function convertToProxyURL(url: string): string;
+  export function convertAsync(url: string): Promise<string>;
+}

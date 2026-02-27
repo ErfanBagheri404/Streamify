@@ -5,6 +5,7 @@ import { SafeArea } from "../SafeArea";
 import { usePlayer } from "../../contexts/PlayerContext";
 import Playlist from "../Playlist";
 import { StorageService } from "../../utils/storage";
+import { searchAPI } from "../../modules/searchAPI";
 import { SliderSheet } from "../SliderSheet";
 import { Track } from "../../contexts/PlayerContext";
 
@@ -293,8 +294,10 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       setIsLoading(true);
 
       if (source === "jiosaavn") {
-        console.log("[AlbumPlaylistScreen] JioSaavn disabled - using fallback");
-        const albumDetails = null; // Disable JioSaavn album details
+        const albumDetails = await searchAPI.getJioSaavnAlbumDetails(
+          String(albumId),
+          albumName,
+        );
 
         if (
           albumDetails &&
@@ -337,6 +340,12 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
             songs[0]?.thumbnail ||
             "";
           setAlbumArtUrl(albumArt);
+        } else {
+          setAlbumSongs([]);
+          setAlbumTitle(albumName);
+          setAlbumArtist(routeArtist || "Unknown Artist");
+          setAlbumArtUrl("");
+          setErrorMessage("Failed to load JioSaavn album");
         }
       } else if (source === "user-playlist") {
         // Handle user playlists
@@ -448,23 +457,6 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           `[AlbumPlaylistScreen] Playlist ID: ${albumId}, Source: ${source}`,
         );
 
-        // Check if this is a mix playlist (starts with "RD" or contains continuation parameter)
-        const isMixPlaylist =
-          albumId.startsWith('RD') || albumId.includes('&continuation=');
-        if (isMixPlaylist) {
-          console.log(
-            "[AlbumPlaylistScreen] Detected YouTube mix playlist - these are not supported by the API",
-          );
-          setAlbumSongs([]);
-          setAlbumTitle(albumName);
-          setAlbumArtist(routeArtist || "YouTube");
-          setErrorMessage(
-            "YouTube mixes are currently not supported. This is a YouTube algorithmic mix that cannot be fetched as a regular playlist. Try searching for individual songs or regular playlists instead.",
-          );
-          setIsLoading(false);
-          return;
-        }
-
         try {
           const { searchAPI } = await import("../../modules/searchAPI");
           console.log(
@@ -546,18 +538,9 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           setAlbumTitle(albumName);
           setAlbumArtist(routeArtist || "Unknown Artist");
 
-          // Check if this might be a mix playlist that failed
-          const isLikelyMix =
-            albumId.startsWith('RD') || albumId.includes('&continuation=');
-          if (isLikelyMix) {
-            setErrorMessage(
-              "YouTube mixes are currently not supported by the API. This is a YouTube algorithmic mix that cannot be fetched as a regular playlist.",
-            );
-          } else {
-            setErrorMessage(
-              "Failed to load YouTube playlist. Please check your internet connection or try again later.",
-            );
-          }
+          setErrorMessage(
+            "Failed to load YouTube playlist. Please check your internet connection or try again later.",
+          );
           console.log("[AlbumPlaylistScreen] State set to empty due to error");
         }
       } else {

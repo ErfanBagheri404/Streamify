@@ -61,6 +61,31 @@ declare module "react-native" {
   export class TurboModuleRegistry {
     static get(moduleName: string): any;
   }
+
+  // Animated API
+  export namespace Animated {
+    export class Value {
+      constructor(value: number);
+      setValue(value: number): void;
+      addListener(callback: (value: { value: number }) => void): string;
+      removeListener(id: string): void;
+      interpolate(config: any): any;
+    }
+
+    export class AnimatedAddition extends Value {}
+    export class AnimatedMultiplication extends Value {}
+
+    export function spring(value: Value, config: any): any;
+    export function timing(value: Value, config: any): any;
+    export function parallel(animations: any[]): any;
+    export function createAnimatedComponent(Component: any): any;
+    export const View: any;
+  }
+
+  // PanResponder
+  export class PanResponder {
+    static create(config: any): any;
+  }
   export type ErrorHandlerCallback = (error: any, isFatal?: boolean) => void;
   export class PlatformOSType {}
   export class EXDevLauncher {}

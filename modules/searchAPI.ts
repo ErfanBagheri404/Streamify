@@ -13,6 +13,7 @@ import {
   idFromURL,
   convertSStoHHMMSS,
   numFormatter,
+  fetchYouTubeMix,
 } from "../components/core/api";
 
 export interface SearchResult {
@@ -98,7 +99,7 @@ const fetchWithFallbacks = async (
       const url = `${baseUrl}${endpoint}`;
       console.log(`[API] Full URL: ${url}`);
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 1500);
       const response = await fetch(url, {
         signal: controller.signal,
         headers: { "User-Agent": USER_AGENT },
@@ -244,8 +245,8 @@ export const searchAPI = {
             Accept: "application/json",
           },
         },
-        3,
-        1000
+        1,
+        200
       );
 
       if (!data || !data.success || !data.data) {
@@ -563,8 +564,6 @@ export const searchAPI = {
   },
   */
 
-  // COMMENTED OUT: JioSaavn album details disabled to focus on YouTube
-  /*
   // --- JIOSAAVN ALBUM DETAILS ---
   getJioSaavnAlbumDetails: async (albumId: string, albumName: string) => {
     console.log(
@@ -702,7 +701,6 @@ export const searchAPI = {
       return null;
     }
   },
-  */
 
   // --- YOUTUBE PLAYLIST DETAILS ---
   getYouTubePlaylistDetails: async (playlistId: string) => {
@@ -710,7 +708,6 @@ export const searchAPI = {
       `[API] Fetching YouTube playlist details for ID: ${playlistId}`
     );
 
-    // Extract playlist ID from URL format if needed
     let actualPlaylistId = playlistId;
     if (
       playlistId.includes("/playlist?list=") ||
@@ -721,9 +718,72 @@ export const searchAPI = {
         `[API] Extracted playlist/mix ID from URL: ${actualPlaylistId}`
       );
     }
+    actualPlaylistId = actualPlaylistId.split("&")[0];
+
+    const isMix = actualPlaylistId.startsWith("RD");
+    if (isMix) {
+      try {
+        const mixData = await fetchYouTubeMix(actualPlaylistId);
+        const mixVideosSource =
+          (mixData?.videos && Array.isArray(mixData.videos)
+            ? mixData.videos
+            : null) ||
+          (mixData?.items && Array.isArray(mixData.items)
+            ? mixData.items
+            : null) ||
+          (mixData?.relatedStreams && Array.isArray(mixData.relatedStreams)
+            ? mixData.relatedStreams
+            : null) ||
+          [];
+        const validVideos = mixVideosSource
+          .map((video: any) => {
+            const videoId =
+              video.videoId ||
+              video.id ||
+              (video.url && typeof video.url === "string"
+                ? video.url.split("v=")[1] || video.url
+                : "");
+            if (!videoId) {
+              return null;
+            }
+            const thumbnails = Array.isArray(video.videoThumbnails)
+              ? video.videoThumbnails
+              : [];
+            const thumbnail =
+              thumbnails[thumbnails.length - 1]?.url ||
+              video.thumbnail ||
+              video.thumbnailUrl ||
+              "";
+            return {
+              id: String(videoId),
+              title: video.title || "Unknown Title",
+              artist: video.author || video.uploaderName || "Unknown Artist",
+              duration: video.lengthSeconds || video.duration || 0,
+              thumbnail,
+              views: String(video.views || video.viewCount || 0),
+              uploaded:
+                video.published || video.uploaded || video.publishedText || "",
+            };
+          })
+          .filter((video: any) => !!video);
+        if (validVideos.length > 0) {
+          const mixThumbnail = validVideos[0]?.thumbnail || "";
+          return {
+            id: actualPlaylistId,
+            name: mixData?.title || "Mix",
+            description: "",
+            thumbnail: mixThumbnail,
+            videos: validVideos,
+          };
+        }
+        return null;
+      } catch (e: any) {
+        console.warn(`[API] 🔴 YouTube Mix Details Error: ${e.message}`);
+        return null;
+      }
+    }
 
     try {
-      // First, try Piped API
       const endpoint = `/playlists/${actualPlaylistId}`;
       console.log(
         `[API] Calling fetchWithFallbacks with endpoint: ${endpoint}`
@@ -1344,13 +1404,19 @@ export const searchAPI = {
       const pageSize = limit && limit > 0 ? limit : 20;
       const offset = page && page > 1 ? (page - 1) * pageSize : 0;
       const parseItems = (data: any) =>
-        Array.isArray(data?.collection)
-          ? data.collection
-          : Array.isArray(data?.results)
-            ? data.results
-            : Array.isArray(data)
-              ? data
-              : [];
+        Array.isArray(data?.results)
+          ? data.results
+          : Array.isArray(data?.items)
+            ? data.items
+            : Array.isArray(data?.collection)
+              ? data.collection
+              : Array.isArray(data?.data?.results)
+                ? data.data.results
+                : Array.isArray(data?.data)
+                  ? data.data
+                  : Array.isArray(data)
+                    ? data
+                    : [];
       const fetchCollections = async (url: string) => {
         const res = await fetch(url, {
           headers: {
@@ -1365,10 +1431,25 @@ export const searchAPI = {
         const data = await res.json();
         return parseItems(data);
       };
-      const baseUrl = `https://proxy.searchsoundcloud.com/${type}`;
+      const beatseekParams = new URLSearchParams({
+        query,
+        platform: "soundcloud",
+        type,
+        sort: "both",
+        limit: String(pageSize),
+      });
+      if (page && page > 1) {
+        beatseekParams.set("page", String(page));
+      }
       let items = await fetchCollections(
-        `${baseUrl}?q=${encodeURIComponent(query)}&limit=${pageSize}&offset=${offset}`
+        `https://beatseek.io/api/search?${beatseekParams.toString()}`
       );
+      const baseUrl = `https://proxy.searchsoundcloud.com/${type}`;
+      if (items.length === 0) {
+        items = await fetchCollections(
+          `${baseUrl}?q=${encodeURIComponent(query)}&limit=${pageSize}&offset=${offset}`
+        );
+      }
       if (items.length === 0) {
         items = await fetchCollections(
           `${baseUrl}?query=${encodeURIComponent(query)}&limit=${pageSize}&offset=${offset}`
@@ -1426,7 +1507,7 @@ export const searchAPI = {
 
     // Try Piped first
     try {
-      console.log("[API] Attempting Piped search first...");
+      console.log(`[API] Attempting Piped search with filter: "${filter}"...`);
       const pipedResults = await searchAPI.searchWithPiped(
         query,
         filter,
@@ -1445,18 +1526,25 @@ export const searchAPI = {
         return pipedResults;
       }
       console.log(
-        "[API] Piped search returned no results, trying Invidious..."
+        `[API] Piped search returned ${pipedResults?.items?.length || 0} results, trying Invidious...`
       );
     } catch (error) {
-      console.log("[API] Piped search failed:", error.message);
+      console.log("[API] ❌ Piped search failed:", error.message);
       console.log("[API] Trying Invidious search...");
     }
 
     // Fallback to Invidious
     try {
+      // Map filter to Invidious sort parameter
+      const invidiousSort =
+        filter === "date"
+          ? "upload_date"
+          : filter === "views"
+            ? "view_count"
+            : "relevance";
       const invidiousResults = await searchAPI.searchWithInvidious(
         query,
-        "relevance",
+        invidiousSort,
         page,
         limit
       );

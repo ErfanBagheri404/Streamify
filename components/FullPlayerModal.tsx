@@ -377,6 +377,17 @@ const ProgressBarContainer = styled.View`
   height: 40px; /* Increased height for better touch target */
   justify-content: center;
   position: relative;
+  background-color: transparent;
+  z-index: 1;
+`;
+
+const ProgressBarTouchable = styled.TouchableOpacity`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
 `;
 
 const ProgressSlider = React.forwardRef<Slider, SliderProps>((props, ref) => {
@@ -561,6 +572,11 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [seekPreviewSeconds, setSeekPreviewSeconds] = useState<number | null>(
     null
   );
+  const progressBarWidthRef = useRef(0);
+  const durationRef = useRef(0);
+  const isUpdatingPositionRef = useRef(false);
+  const progressSliderRef = useRef<Slider>(null);
+  const positionRef = useRef(position);
 
   const appState = useRef(AppState.currentState);
   const [cacheInfo, setCacheInfo] = useState<{
@@ -588,34 +604,227 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [sheetHeight, setSheetHeight] = useState(SHEET_HEIGHT);
   const sheetStateRef = useRef<"closed" | "half" | "full">("closed");
 
-  const totalDurationSeconds =
-    duration > 0 ? duration : currentTrack?.duration || 0;
+  // Memoize position calculations to prevent unnecessary re-renders
+  const displayPositionSeconds = React.useMemo(() => {
+    // Ensure we always have valid duration and position values
+    const trackDuration = currentTrack?.duration || 0;
+    const systemDuration = duration > 0 ? duration : trackDuration;
+    const effectiveDuration = Math.max(systemDuration, 1);
+
+    // Use seekValue during normal playback for smooth updates, use position only when seeking
+    const currentPosition = position >= 0 ? position : 0;
+    const displayPosition = isSeeking
+      ? seekPreviewSeconds !== null
+        ? seekPreviewSeconds
+        : seekValue
+      : seekValue > 0
+        ? seekValue
+        : currentPosition;
+
+    // Ensure position doesn't exceed duration
+    const calculatedPosition = Math.min(
+      Math.max(displayPosition, 0),
+      effectiveDuration
+    );
+
+    console.log(
+      `[FullPlayerModal] Position calculation - systemPosition: ${position}, seekValue: ${seekValue}, displayPosition: ${displayPosition}, effectiveDuration: ${effectiveDuration}, isSeeking: ${isSeeking}`
+    );
+
+    return calculatedPosition;
+  }, [
+    position,
+    duration,
+    currentTrack?.duration,
+    isSeeking,
+    seekPreviewSeconds,
+    seekValue,
+  ]);
 
   useEffect(() => {
-    if (!isSeeking) {
-      // Ensure position doesn't exceed duration and handle edge cases
-      const effectiveDuration = Math.max(totalDurationSeconds, 1); // Minimum 1 second to avoid division by zero
-      const clampedPosition = Math.min(
-        Math.max(position, 0),
-        effectiveDuration
-      );
-      setSeekValue(clampedPosition);
+    positionRef.current = position >= 0 ? position : 0;
+  }, [position]);
+
+  // Memoize effective duration to prevent unnecessary updates
+  const effectiveDurationSeconds = React.useMemo(() => {
+    // Priority: system duration > track duration > fallback 1 second
+    const systemDuration = duration > 0 ? duration : 0;
+    const trackDuration = currentTrack?.duration || 0;
+    const totalDurationSeconds = systemDuration || trackDuration || 1;
+
+    console.log(
+      `[FullPlayerModal] Duration calculation - systemDuration: ${systemDuration}, trackDuration: ${trackDuration}, totalDurationSeconds: ${totalDurationSeconds}`
+    );
+
+    return totalDurationSeconds;
+  }, [duration, currentTrack?.duration]);
+
+  useEffect(() => {
+    durationRef.current = effectiveDurationSeconds;
+  }, [effectiveDurationSeconds]);
+
+  useEffect(() => {
+    if (visible) {
       console.log(
-        `[FullPlayerModal] Progress update - position: ${position}, duration: ${totalDurationSeconds}, seekValue: ${clampedPosition}`
+        `[FullPlayerModal] Modal became visible - position: ${position}, duration: ${duration}, effectiveDurationSeconds: ${effectiveDurationSeconds}, displayPositionSeconds: ${displayPositionSeconds}`
       );
+
+      // Always initialize progress bar when modal becomes visible
+      if (currentTrack) {
+        const currentPosition = position >= 0 ? position : 0;
+        console.log(
+          `[FullPlayerModal] Setting seek value on visible: ${currentPosition}s`
+        );
+        setSeekValue(currentPosition);
+        setIsSeeking(false);
+        setSeekPreviewSeconds(null);
+
+        // Reset position tracking for fresh start
+        lastPositionRef.current = currentPosition;
+        positionUpdateCounter.current = 0;
+      }
+    } else {
+      // Reset seek state when modal closes to prevent stuck state
+      console.log("[FullPlayerModal] Modal closed - resetting seek state");
+      setIsSeeking(false);
+      setSeekPreviewSeconds(null);
+      setSeekValue(0);
+      // Reset refs for next open
+      lastPositionRef.current = 0;
+      positionUpdateCounter.current = 0;
     }
-  }, [position, isSeeking, totalDurationSeconds]);
+  }, [visible]);
+
+  // Update seek value when position changes (but not when user is seeking)
+  useEffect(() => {
+    if (!isSeeking && visible && currentTrack) {
+      // Prevent updates if we're already updating to avoid flickering
+      if (isUpdatingPositionRef.current) {
+        return;
+      }
+
+      // Only update if position has changed significantly (0.5 second threshold)
+      const positionChanged = Math.abs(position - seekValue) > 0.5;
+
+      if (positionChanged) {
+        console.log(
+          `[FullPlayerModal] Position updated - setting seek value to: ${position}`
+        );
+        isUpdatingPositionRef.current = true;
+        setSeekValue(position);
+        lastPositionRef.current = position;
+        positionUpdateCounter.current = 0;
+
+        // Reset the flag after a short delay
+        setTimeout(() => {
+          isUpdatingPositionRef.current = false;
+        }, 50);
+      }
+    }
+  }, [position, isSeeking, visible, currentTrack, seekValue]);
+
+  // Ensure smooth position updates during playback
+  useEffect(() => {
+    if (visible && !isSeeking && isPlaying && currentTrack) {
+      // Skip if we're already updating to prevent conflicts
+      if (isUpdatingPositionRef.current) {
+        return;
+      }
+
+      // Only update seekValue when position changes significantly
+      const positionChanged = Math.abs(position - seekValue) > 1.0; // 1.0 second threshold for smooth updates
+
+      if (positionChanged) {
+        console.log(
+          `[FullPlayerModal] Smooth position update: ${position}s (was ${seekValue}s)`
+        );
+        isUpdatingPositionRef.current = true;
+        setSeekValue(position);
+
+        // Reset the flag after a short delay
+        setTimeout(() => {
+          isUpdatingPositionRef.current = false;
+        }, 100);
+      }
+    }
+  }, [position, isPlaying, isSeeking, visible, currentTrack]);
+
+  useEffect(() => {
+    if (!visible || !currentTrack) {
+      return;
+    }
+    const intervalId = setInterval(() => {
+      if (isSeeking) {
+        return;
+      }
+      const currentPosition = positionRef.current;
+      setSeekValue((prev) =>
+        Math.abs(prev - currentPosition) > 0.5 ? currentPosition : prev,
+      );
+    }, 500);
+    return () => clearInterval(intervalId);
+  }, [visible, currentTrack?.id, isSeeking]);
 
   // Reset seek value when track changes to prevent stuck progress bar
   useEffect(() => {
     if (currentTrack) {
       console.log(
-        `[FullPlayerModal] Track changed to: ${currentTrack.title}, resetting seek value`
+        `[FullPlayerModal] Track changed - resetting seek state for: ${currentTrack.title}`
       );
-      setSeekValue(0);
+      const nextPosition = position >= 0 ? position : 0;
+      setSeekValue(visible ? nextPosition : 0);
       setIsSeeking(false);
+      setSeekPreviewSeconds(null);
     }
-  }, [currentTrack?.id]);
+  }, [currentTrack?.id, position, visible]);
+
+  // Immediate progress bar initialization when modal becomes visible
+  useEffect(() => {
+    if (visible && currentTrack) {
+      console.log(
+        `[FullPlayerModal] Immediate progress bar initialization - isPlaying: ${isPlaying}, position: ${position}`
+      );
+
+      // Force immediate render with available data
+      const trackDuration = currentTrack.duration || 0;
+      const currentPosition = position >= 0 ? position : 0;
+
+      // Only update if position has changed significantly or seekValue is invalid
+      const shouldUpdate =
+        Math.abs(seekValue - currentPosition) > 1.0 || seekValue < 0;
+
+      if (shouldUpdate && !isUpdatingPositionRef.current) {
+        console.log(
+          `[FullPlayerModal] Setting initial seek value: ${currentPosition}s (duration: ${trackDuration}s)`
+        );
+        isUpdatingPositionRef.current = true;
+        setSeekValue(currentPosition);
+        setIsSeeking(false);
+        setSeekPreviewSeconds(null);
+
+        // Reset the flag after a short delay
+        setTimeout(() => {
+          isUpdatingPositionRef.current = false;
+        }, 100);
+      }
+
+      // Ensure duration is set
+      if (trackDuration > 0 && duration === 0) {
+        console.log(
+          `[FullPlayerModal] Using track duration: ${trackDuration}s`
+        );
+      }
+
+      console.log(
+        `[FullPlayerModal] Progress bar initialized - position: ${currentPosition}, duration: ${trackDuration}, isPlaying: ${isPlaying}`
+      );
+    }
+  }, [visible, currentTrack?.id, isPlaying]);
+
+  // Optimize position updates to prevent excessive re-renders
+  const lastPositionRef = useRef(position);
+  const positionUpdateCounter = useRef(0);
+  const OPTIMIZED_POSITION_INTERVAL = 1; // Update every 1 second instead of every 250ms
 
   const animateSheet = (state: "closed" | "half" | "full") => {
     let toValue = SHEET_CLOSED_TOP;
@@ -841,10 +1050,15 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       // Update cache info with the new percentage
       setCacheInfo((prev) =>
         prev
-          ? {
-              ...prev,
-              percentage: cacheProgress.percentage,
-            }
+          ? prev.isFullyCached
+            ? prev
+            : {
+                ...prev,
+                percentage: Math.max(
+                  prev.percentage || 0,
+                  cacheProgress.percentage
+                ),
+              }
           : {
               percentage: cacheProgress.percentage,
               fileSize: 0,
@@ -903,12 +1117,47 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     );
 
     setIsSeeking(false);
+    setSeekValue(valueSeconds);
+    setSeekPreviewSeconds(null);
     const targetSeconds = valueSeconds;
     console.log(
       `[FullPlayerModal] Seeking to position: ${targetSeconds} seconds`
     );
-    await seekTo(targetSeconds);
-    console.log("[FullPlayerModal] Seek completed");
+    try {
+      await seekTo(targetSeconds);
+      console.log("[FullPlayerModal] Seek completed successfully");
+    } catch (error) {
+      console.error("[FullPlayerModal] Seek failed:", error);
+      // Reset seek state on error
+      setSeekValue(position);
+      setSeekPreviewSeconds(null);
+    }
+  };
+
+  const handleProgressBarTap = (event: any) => {
+    if (
+      !currentTrack ||
+      !progressBarWidthRef.current ||
+      effectiveDurationSeconds <= 0
+    ) {
+      return;
+    }
+
+    const { locationX } = event.nativeEvent;
+    const tapPercentage = locationX / progressBarWidthRef.current;
+    const tapSeconds = tapPercentage * effectiveDurationSeconds;
+
+    console.log(
+      `[FullPlayerModal] Progress bar tapped at ${locationX}px (${tapPercentage * 100}%) = ${tapSeconds}s`
+    );
+
+    // Immediately update UI
+    setSeekValue(tapSeconds);
+    setSeekPreviewSeconds(null);
+    setIsSeeking(false);
+
+    // Perform the seek
+    handleSeek(tapSeconds);
   };
 
   const handlePlayPause = async () => {
@@ -1107,39 +1356,57 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
             <Spacer size={32} />
 
             <ProgressContainer>
-              <ProgressBarContainer>
+              <ProgressBarContainer
+                onLayout={(event) => {
+                  progressBarWidthRef.current = event.nativeEvent.layout.width;
+                  console.log(
+                    `[FullPlayerModal] Progress bar layout - width: ${progressBarWidthRef.current}, effectiveDurationSeconds: ${effectiveDurationSeconds}, position: ${position}`
+                  );
+                }}
+              >
+                {/* Always render slider, even with placeholder values */}
                 <ProgressSlider
-                  value={seekValue}
-                  maximumValue={Math.max(totalDurationSeconds, 1)}
+                  key={`slider-${currentTrack?.id}`}
+                  ref={progressSliderRef}
+                  value={isSeeking ? seekValue : displayPositionSeconds || 0}
+                  maximumValue={effectiveDurationSeconds || 1} // Always provide valid maximum
                   minimumValue={0}
-                  disabled={totalDurationSeconds <= 0}
-                  minimumTrackTintColor={isPlaying ? "#ffffff" : "#9ca3af"}
-                  maximumTrackTintColor="#4b5563"
+                  disabled={!currentTrack} // Only disable if no track, not based on duration
+                  minimumTrackTintColor={isPlaying ? "#a3e635" : "#9ca3af"}
+                  maximumTrackTintColor="#6b7280"
                   thumbTintColor={isPlaying ? "#ffffff" : "#9ca3af"}
-                  onValueChange={(value) => {
+                  onValueChange={(valueSeconds) => {
+                    console.log(
+                      `[FullPlayerModal] Slider onValueChange - valueSeconds: ${valueSeconds}, isSeeking: ${isSeeking}, displayPositionSeconds: ${displayPositionSeconds}`
+                    );
                     if (!isSeeking) {
                       setIsSeeking(true);
+                      setSeekValue(valueSeconds);
+                      setSeekPreviewSeconds(valueSeconds);
+                    } else {
+                      setSeekValue(valueSeconds);
+                      setSeekPreviewSeconds(valueSeconds);
                     }
-                    setSeekValue(value);
-                    setSeekPreviewSeconds(value);
                   }}
-                  onSlidingComplete={(value) => {
-                    setIsSeeking(false);
-                    setSeekValue(value);
+                  onSlidingComplete={async (valueSeconds) => {
+                    console.log(
+                      `[FullPlayerModal] Slider onSlidingComplete - valueSeconds: ${valueSeconds}`
+                    );
+                    setSeekValue(valueSeconds);
                     setSeekPreviewSeconds(null);
-                    handleSeek(value);
+                    await handleSeek(valueSeconds);
                   }}
                 />
+                {/* Touchable overlay for tap-to-seek functionality */}
+                <ProgressBarTouchable onPress={handleProgressBarTap} />
               </ProgressBarContainer>
               <TimeContainer>
                 <TimeText>
-                  {formatTime(
-                    ((isSeeking && seekPreviewSeconds !== null
-                      ? seekPreviewSeconds
-                      : position) || 0) * 1000
-                  )}
+                  {formatTime((displayPositionSeconds || 0) * 1000)}
                 </TimeText>
-                <TimeText>{formatTime(totalDurationSeconds * 1000)}</TimeText>
+                <TimeText>
+                  {formatTime((effectiveDurationSeconds || 0) * 1000)}
+                </TimeText>
               </TimeContainer>
             </ProgressContainer>
 

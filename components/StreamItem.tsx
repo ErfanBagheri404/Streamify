@@ -192,6 +192,7 @@ function StreamItem(props: StreamItemProps) {
     source,
     type,
     isAlbum,
+    albumYear,
     channelDescription,
     verified,
     showGrayLayers = false,
@@ -215,7 +216,7 @@ function StreamItem(props: StreamItemProps) {
       authorName?: string,
       source?: string,
       type?: string,
-      channelDescription?: string,
+      channelDescription?: string
     ) => {
       if (
         !authorName ||
@@ -238,7 +239,7 @@ function StreamItem(props: StreamItemProps) {
       }
       return authorName.replace(" - Topic", "");
     },
-    [],
+    []
   );
 
   const formatSubMeta = useCallback(
@@ -251,12 +252,17 @@ function StreamItem(props: StreamItemProps) {
       isAlbum?: boolean,
       searchFilter?: string,
       searchSource?: string,
+      albumYear?: string
     ) => {
       const parts = [];
 
       // For YouTube Music songs filter, don't show view count or date
       if (searchSource === "youtubemusic" && searchFilter === "songs") {
         return "";
+      }
+
+      if (isAlbum) {
+        return albumYear ? `Album • ${albumYear}` : "Album";
       }
 
       // Skip video count for albums/playlists - shown separately with blue badge
@@ -277,7 +283,7 @@ function StreamItem(props: StreamItemProps) {
       }
       return parts.join(" • ");
     },
-    [],
+    []
   );
 
   return (
@@ -347,6 +353,7 @@ function StreamItem(props: StreamItemProps) {
               isAlbum,
               searchFilter,
               searchSource,
+              albumYear
             )}
             {/* Show blue badge for albums/playlists with video count */}
             {(isAlbum || type === "playlist") && videoCount && (
