@@ -1,20 +1,25 @@
 import React from "react";
 import {
-  View,
-  Text,
   FlatList,
-  TouchableOpacity,
   Image,
-  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import styled from "styled-components/native";
-import { Ionicons } from "@expo/vector-icons";
+import { Entypo, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { Entypo } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePlayer } from "../contexts/PlayerContext";
+import { useAppLanguage } from "../hooks/useAppLanguage";
+import { sanitizeImageUrl } from "./core/image";
+import { useTheme, withOpacity } from "../hooks/useTheme";
+import { getAppFontFamily, getTextDirectionStyle } from "../utils/fonts";
+import { BodyText, MutedText, TitleText } from "./ui/Text";
 
 interface PlaylistProps {
   title: string; // e.g., "Justice"
+  headerTitle?: string;
+  kindLabel?: string;
   artist?: string; // e.g., "Justin Bieber"
   albumArtUrl: string; // URL for the main album cover
   libraryCover?: "liked" | "previously-played"; // Use library covers instead of album art
@@ -33,189 +38,10 @@ interface PlaylistProps {
   type?: "album" | "playlist"; // Type of content being displayed
 }
 
-// Main screen container
-const Screen = styled.View`
-  flex: 1;
-`;
-
-// Header
-const Header = styled.View`
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px;
-  background-color: #000;
-`;
-
-const HeaderButton = styled.TouchableOpacity`
-  padding: 8px;
-`;
-
-const HeaderTitle = styled.Text`
-  color: #fff;
-  font-size: 18px;
-  font-family: GoogleSansSemiBold;
-  line-height: 22px;
-`;
-
-// Album Art Section
-const AlbumArtContainer = styled.View`
-  padding: 0 24px;
-  margin-bottom: 24px;
-`;
-
-const AlbumCover = styled.Image`
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 20px;
-  background-color: #333;
-  shadow-color: #ffffff;
-  shadow-offset: 0px 2px;
-  shadow-opacity: 0.1;
-  shadow-radius: 8px;
-  elevation: 3;
-`;
-
-const LibraryCoverWrapper = styled.View`
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 20px;
-  overflow: hidden;
-  shadow-color: #ffffff;
-  shadow-offset: 0px 2px;
-  shadow-opacity: 0.1;
-  shadow-radius: 8px;
-  elevation: 3;
-`;
-
-const LibraryCoverGradient = styled(LinearGradient)`
-  flex: 1;
-  align-items: center;
-  justify-content: center;
-`;
-
-const LibraryCoverIcon = styled.Text`
-  color: #fff;
-  font-size: 64px;
-`;
-
-const FloatingPlayButton = styled.TouchableOpacity`
-  position: absolute;
-  bottom: -25px;
-  right: 70px;
-  background-color: #1db954;
-  width: 60px;
-  height: 60px;
-  border-radius: 25px;
-  justify-content: center;
-  align-items: center;
-  shadow-color: #000;
-  shadow-offset: 0px 4px;
-  shadow-opacity: 0.3;
-  shadow-radius: 4px;
-  elevation: 5;
-`;
-
-// Album Info Section
-const AlbumInfoContainer = styled.View`
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 24px;
-  margin-bottom: 24px;
-`;
-
-const AlbumTitle = styled.Text`
-  color: #fff;
-  font-size: 24px;
-  font-family: GoogleSansBold;
-  line-height: 28px;
-  flex-shrink: 1;
-`;
-
-const AlbumArtist = styled.Text`
-  color: #999;
-  font-size: 16px;
-  font-family: GoogleSansRegular;
-  line-height: 20px;
-  flex-shrink: 1;
-`;
-
-const ShuffleButton = styled.TouchableOpacity`
-  background-color: #282828;
-  padding: 10px;
-  border-radius: 20px;
-`;
-
-// Song List Item
-const SongItem = styled.TouchableOpacity`
-  flex-direction: row;
-  align-items: center;
-  padding: 12px 24px;
-`;
-
-const SongThumbnail = styled.Image`
-  width: 48px;
-  height: 48px;
-  border-radius: 4px;
-  background-color: #333;
-  margin-right: 12px;
-`;
-
-const SongNumber = styled.Text`
-  color: #999;
-  font-size: 14px;
-  width: 24px;
-`;
-
-const SongInfo = styled.View`
-  flex: 1;
-  margin-left: 4px;
-`;
-
-const SongTitle = styled.Text`
-  color: #fff;
-  font-size: 16px;
-  font-family: GoogleSansMedium;
-  line-height: 20px;
-`;
-
-const SongArtist = styled.Text`
-  color: #999;
-  font-size: 14px;
-  font-family: GoogleSansRegular;
-  line-height: 18px;
-`;
-
-const SongActions = styled.View`
-  flex-direction: row;
-  align-items: center;
-`;
-
-const ActionButton = styled.TouchableOpacity`
-  padding: 8px;
-  margin-left: 8px;
-`;
-
-// Empty State
-const EmptyContainer = styled.View`
-  flex: 1;
-  justify-content: center;
-  align-items: center;
-  padding: 32px;
-`;
-
-const EmptyText = styled.Text`
-  color: #999;
-  font-size: 16px;
-  text-align: center;
-  margin-top: 16px;
-  font-family: GoogleSansRegular;
-  line-height: 20px;
-`;
-
 export const Playlist: React.FC<PlaylistProps> = ({
   title,
+  headerTitle,
+  kindLabel,
   artist,
   albumArtUrl,
   libraryCover,
@@ -234,108 +60,332 @@ export const Playlist: React.FC<PlaylistProps> = ({
   type = "album", // Default to album for backward compatibility
 }) => {
   const { playTrack } = usePlayer();
+  const { colors } = useTheme();
+  const { isRtl } = useAppLanguage();
+  const insets = useSafeAreaInsets();
+  const resolvedKindLabel =
+    kindLabel || (type === "playlist" ? "Playlist" : "Album");
+  const resolvedHeaderTitle = headerTitle || resolvedKindLabel;
+  const headerArtworkOffset = insets.top + 56;
+  const normalizedAlbumArtUrl = sanitizeImageUrl(albumArtUrl);
 
   const handlePlaySong = (song: any, index: number) => {
     playTrack(song, songs, index);
   };
 
   const renderSongItem = ({ item, index }: { item: any; index: number }) => (
-    <SongItem onPress={() => handlePlaySong(item, index)}>
-      <SongNumber>{index + 1}</SongNumber>
-      {item.thumbnail && <SongThumbnail source={{ uri: item.thumbnail }} />}
-      <SongInfo>
-        <SongTitle numberOfLines={1}>{item.title}</SongTitle>
+    <TouchableOpacity
+      onPress={() => handlePlaySong(item, index)}
+      activeOpacity={0.88}
+      style={[
+        styles.songItem,
+        {
+          flexDirection: isRtl ? "row-reverse" : "row",
+          borderBottomColor: colors.borderSubtle,
+        },
+      ]}
+    >
+      <BodyText
+        style={[
+          styles.songNumber,
+          {
+            color: colors.muted,
+            marginRight: isRtl ? 0 : 12,
+            marginLeft: isRtl ? 12 : 0,
+          },
+        ]}
+      >
+        {index + 1}
+      </BodyText>
+      {sanitizeImageUrl(item.thumbnail || "") ? (
+        <SongThumbnail
+          source={{ uri: sanitizeImageUrl(item.thumbnail || "") }}
+          isRtl={isRtl}
+        />
+      ) : null}
+      <View
+        style={[
+          styles.songInfo,
+          { alignItems: isRtl ? "flex-end" : "flex-start" },
+        ]}
+      >
+        <TitleText
+          numberOfLines={1}
+          style={[
+            styles.songTitle,
+            {
+              fontFamily: getAppFontFamily(isRtl, "semibold"),
+              ...getTextDirectionStyle(isRtl),
+            },
+          ]}
+        >
+          {item.title}
+        </TitleText>
         {item.artist && (
-          <SongArtist numberOfLines={1}>{item.artist}</SongArtist>
+          <MutedText
+            numberOfLines={1}
+            style={[
+              styles.songArtist,
+              {
+                fontFamily: getAppFontFamily(isRtl, "regular"),
+                ...getTextDirectionStyle(isRtl),
+              },
+            ]}
+          >
+            {item.artist}
+          </MutedText>
         )}
-      </SongInfo>
-      <SongActions>
+      </View>
+      <View
+        style={[
+          styles.songActions,
+          { marginLeft: isRtl ? 0 : 8, marginRight: isRtl ? 8 : 0 },
+        ]}
+      >
         {showSongOptions !== false && onSongOptionsPress && (
-          <ActionButton onPress={() => onSongOptionsPress(item)}>
-            <Ionicons name="ellipsis-vertical" size={20} color="#999" />
-          </ActionButton>
+          <TouchableOpacity
+            onPress={() => onSongOptionsPress(item)}
+            style={styles.actionButton}
+          >
+            <Ionicons name="ellipsis-vertical" size={20} color={colors.muted} />
+          </TouchableOpacity>
         )}
-      </SongActions>
-    </SongItem>
+      </View>
+    </TouchableOpacity>
   );
 
   const renderEmptyState = () => (
-    <EmptyContainer>
-      <Ionicons name={emptyIcon as any} size={64} color="#333" />
-      <EmptyText>{emptyMessage}</EmptyText>
-      <EmptyText style={{ fontSize: 14, color: "#666" }}>
-        {emptySubMessage}
-      </EmptyText>
-    </EmptyContainer>
+    <View style={styles.emptyContainer}>
+      <Ionicons name={emptyIcon as any} size={64} color={colors.surface3} />
+      <TitleText style={styles.emptyTitle}>{emptyMessage}</TitleText>
+      <MutedText style={styles.emptySubtitle}>{emptySubMessage}</MutedText>
+    </View>
   );
 
   const ListHeader = () => (
     <>
-      <AlbumArtContainer>
+      <View
+        style={[styles.albumArtContainer, { marginTop: headerArtworkOffset }]}
+      >
         {libraryCover ? (
           libraryCover === "liked" ? (
-            <LibraryCoverWrapper>
-              <LibraryCoverGradient
-                colors={["#3d02ae", "#6053b0", "#6c867f"]}
+            <View
+              style={[
+                styles.libraryCoverWrapper,
+                { shadowColor: colors.foreground },
+              ]}
+            >
+              <LinearGradient
+                style={styles.libraryCoverGradient}
+                colors={[colors.accent, colors.heroMid, colors.heroEnd]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
                 <Entypo name="heart" size={64} color="white" />
-              </LibraryCoverGradient>
-            </LibraryCoverWrapper>
+              </LinearGradient>
+            </View>
           ) : (
-            <LibraryCoverWrapper>
-              <LibraryCoverGradient
-                colors={["#1a1a1a", "#404040", "#525252"]}
+            <View
+              style={[
+                styles.libraryCoverWrapper,
+                { shadowColor: colors.foreground },
+              ]}
+            >
+              <LinearGradient
+                style={styles.libraryCoverGradient}
+                colors={[colors.surface2, colors.surface1, colors.heroEnd]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
                 <Entypo name="back-in-time" size={64} color="white" />
-              </LibraryCoverGradient>
-            </LibraryCoverWrapper>
+              </LinearGradient>
+            </View>
           )
+        ) : normalizedAlbumArtUrl ? (
+          <Image
+            source={{ uri: normalizedAlbumArtUrl }}
+            style={[
+              styles.albumCover,
+              {
+                backgroundColor: colors.surface2,
+                borderColor: colors.borderSubtle,
+                shadowColor: colors.foreground,
+              },
+            ]}
+          />
         ) : (
-          <AlbumCover source={{ uri: albumArtUrl }} />
+          <View
+            style={[
+              styles.libraryCoverWrapper,
+              {
+                backgroundColor: colors.surface2,
+                borderWidth: 1,
+                borderColor: colors.borderSubtle,
+                alignItems: "center",
+                justifyContent: "center",
+                shadowColor: colors.foreground,
+              },
+            ]}
+          >
+            <Ionicons
+              name="musical-notes-outline"
+              size={64}
+              color={withOpacity(colors.foreground, 0.72)}
+            />
+          </View>
         )}
-        <FloatingPlayButton
+        <TouchableOpacity
           onPress={onPlayAll || (() => handlePlaySong(songs[0], 0))}
+          disabled={songs.length === 0}
+          activeOpacity={0.9}
+          style={[
+            styles.floatingPlayButton,
+            {
+              backgroundColor: colors.accent,
+              shadowColor: "#000000",
+              right: isRtl ? undefined : 36,
+              left: isRtl ? 36 : undefined,
+              opacity: songs.length === 0 ? 0.55 : 1,
+            },
+          ]}
         >
-          <Ionicons name="play" size={24} color="#fff" />
-        </FloatingPlayButton>
-      </AlbumArtContainer>
+          <Ionicons name="play" size={24} color={colors.accentContrast} />
+        </TouchableOpacity>
+      </View>
 
-      <AlbumInfoContainer>
-        <View style={{ flex: 1, paddingRight: 16 }}>
-          <AlbumTitle numberOfLines={1} ellipsizeMode="tail">
+      <View
+        style={[
+          styles.albumInfoContainer,
+          {
+            flexDirection: isRtl ? "row-reverse" : "row",
+            backgroundColor: withOpacity(colors.surface1, 0.94),
+            borderColor: colors.borderSubtle,
+          },
+        ]}
+      >
+        <View
+          style={{
+            flex: 1,
+            paddingRight: isRtl ? 0 : 16,
+            paddingLeft: isRtl ? 16 : 0,
+          }}
+        >
+          <MutedText
+            style={[
+              styles.kindLabel,
+              {
+                color: withOpacity(colors.foreground, 0.72),
+                fontFamily: getAppFontFamily(isRtl, "semibold"),
+                ...getTextDirectionStyle(isRtl),
+              },
+            ]}
+          >
+            {resolvedKindLabel}
+          </MutedText>
+          <TitleText
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={[
+              styles.albumTitle,
+              {
+                fontFamily: getAppFontFamily(isRtl, "bold"),
+                ...getTextDirectionStyle(isRtl),
+              },
+            ]}
+          >
             {title}
-          </AlbumTitle>
+          </TitleText>
           {artist && (
-            <AlbumArtist numberOfLines={1} ellipsizeMode="tail">
+            <MutedText
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              style={[
+                styles.albumArtist,
+                {
+                  fontFamily: getAppFontFamily(isRtl, "regular"),
+                  ...getTextDirectionStyle(isRtl),
+                },
+              ]}
+            >
               {artist}
-            </AlbumArtist>
+            </MutedText>
           )}
         </View>
-        <ShuffleButton onPress={onShuffle}>
-          <Ionicons name="shuffle" size={24} color="#fff" />
-        </ShuffleButton>
-      </AlbumInfoContainer>
+        <TouchableOpacity
+          onPress={onShuffle}
+          activeOpacity={0.88}
+          style={[
+            styles.shuffleButton,
+            {
+              backgroundColor: colors.surface1,
+              borderColor: colors.borderSubtle,
+            },
+          ]}
+        >
+          <Ionicons name="shuffle" size={22} color={colors.foreground} />
+        </TouchableOpacity>
+      </View>
     </>
   );
 
   return (
-    <Screen>
-      <Header>
-        <HeaderButton onPress={onBack}>
-          <Ionicons name="chevron-back" size={24} color="#fff" />
-        </HeaderButton>
-        <HeaderTitle>{type === "playlist" ? "Playlist" : "Album"}</HeaderTitle>
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
+      <View
+        style={[
+          styles.header,
+          {
+            top: insets.top + 8,
+            flexDirection: isRtl ? "row-reverse" : "row",
+          },
+        ]}
+      >
+        <TouchableOpacity
+          onPress={onBack}
+          style={[
+            styles.headerButton,
+            {
+              backgroundColor: withOpacity(colors.surface1, 0.92),
+              borderColor: colors.borderSubtle,
+            },
+          ]}
+        >
+          <Ionicons
+            name={isRtl ? "chevron-forward" : "chevron-back"}
+            size={24}
+            color={colors.foreground}
+          />
+        </TouchableOpacity>
+        <TitleText
+          style={[
+            styles.headerTitle,
+            {
+              fontFamily: getAppFontFamily(isRtl, "semibold"),
+              ...getTextDirectionStyle(isRtl, "center"),
+            },
+          ]}
+        >
+          {resolvedHeaderTitle}
+        </TitleText>
         {showHeaderOptions && onHeaderOptionsPress && (
-          <HeaderButton onPress={onHeaderOptionsPress}>
-            <Ionicons name="ellipsis-vertical" size={20} color="#fff" />
-          </HeaderButton>
+          <TouchableOpacity
+            onPress={onHeaderOptionsPress}
+            style={[
+              styles.headerButton,
+              {
+                backgroundColor: withOpacity(colors.surface1, 0.92),
+                borderColor: colors.borderSubtle,
+              },
+            ]}
+          >
+            <Ionicons
+              name="ellipsis-vertical"
+              size={20}
+              color={colors.foreground}
+            />
+          </TouchableOpacity>
         )}
-        {!showHeaderOptions && <View style={{ width: 40 }} />}
-      </Header>
+        {!showHeaderOptions && <View style={styles.headerSpacer} />}
+      </View>
 
       <FlatList
         data={songs}
@@ -349,10 +399,205 @@ export const Playlist: React.FC<PlaylistProps> = ({
           </>
         }
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={contentContainerStyle || { paddingBottom: 80 }}
+        contentContainerStyle={[
+          styles.listContent,
+          contentContainerStyle || null,
+        ]}
       />
-    </Screen>
+    </View>
   );
 };
+
+const SongThumbnail = ({
+  source,
+  isRtl,
+}: {
+  source: { uri: string };
+  isRtl: boolean;
+}) => {
+  const { colors } = useTheme();
+
+  return (
+    <Image
+      source={source}
+      style={[
+        styles.songThumbnail,
+        {
+          backgroundColor: colors.surface2,
+          marginRight: isRtl ? 0 : 12,
+          marginLeft: isRtl ? 12 : 0,
+        },
+      ]}
+    />
+  );
+};
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
+  header: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  headerButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    fontSize: 18,
+    lineHeight: 22,
+    flex: 1,
+    marginHorizontal: 12,
+  },
+  headerSpacer: {
+    width: 42,
+  },
+  listContent: {
+    paddingBottom: 128,
+  },
+  albumArtContainer: {
+    paddingHorizontal: 20,
+    marginTop: 0,
+    marginBottom: 24,
+  },
+  albumCover: {
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: 24,
+    borderWidth: 1,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 6,
+  },
+  libraryCoverWrapper: {
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: 24,
+    overflow: "hidden",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 6,
+  },
+  libraryCoverGradient: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  floatingPlayButton: {
+    position: "absolute",
+    bottom: -24,
+    width: 60,
+    height: 60,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.28,
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  albumInfoContainer: {
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    marginHorizontal: 20,
+    marginBottom: 22,
+    borderRadius: 24,
+    borderWidth: 1,
+  },
+  kindLabel: {
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
+  },
+  albumTitle: {
+    marginTop: 8,
+    fontSize: 26,
+    lineHeight: 31,
+  },
+  albumArtist: {
+    marginTop: 6,
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  shuffleButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  songItem: {
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  songNumber: {
+    width: 24,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  songThumbnail: {
+    width: 50,
+    height: 50,
+    borderRadius: 10,
+  },
+  songInfo: {
+    flex: 1,
+  },
+  songTitle: {
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  songArtist: {
+    marginTop: 4,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  songActions: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionButton: {
+    padding: 8,
+  },
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+    paddingTop: 16,
+    paddingBottom: 40,
+  },
+  emptyTitle: {
+    marginTop: 16,
+    fontSize: 16,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+  emptySubtitle: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 18,
+    textAlign: "center",
+  },
+});
 
 export default Playlist;

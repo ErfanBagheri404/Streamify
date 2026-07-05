@@ -2,6 +2,9 @@ import React, { useCallback, useState } from "react";
 import { View, Text } from "react-native";
 import styled from "styled-components/native";
 import { MaterialIcons } from "@expo/vector-icons";
+import { useAppLanguage } from "../hooks/useAppLanguage";
+import { useTheme } from "../hooks/useTheme";
+import { getAppFontFamily, getTextDirectionStyle } from "../utils/fonts";
 
 export type StreamItemProps = {
   id: string;
@@ -199,6 +202,8 @@ function StreamItem(props: StreamItemProps) {
     searchFilter,
     searchSource,
   } = props;
+  const { colors } = useTheme();
+  const { isRtl } = useAppLanguage();
 
   const [imageError, setImageError] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -287,8 +292,15 @@ function StreamItem(props: StreamItemProps) {
   );
 
   return (
-    <Row>
-      <ThumbWrap source={source} type={type} isPlaylist={!!videoCount}>
+    <Row style={{ flexDirection: isRtl ? "row-reverse" : "row" }}>
+      <ThumbWrap
+        source={source}
+        type={type}
+        isPlaylist={!!videoCount}
+        style={{
+          backgroundColor: colors.surface1,
+        }}
+      >
         {!!thumbnailUrl && !imageError ? (
           <Thumbnail
             imgSource={source}
@@ -303,16 +315,34 @@ function StreamItem(props: StreamItemProps) {
           <View
             style={{
               flex: 1,
-              backgroundColor: "#262626",
+              backgroundColor: colors.surface2,
               justifyContent: "center",
               alignItems: "center",
             }}
           >
             {!imageLoaded && (
-              <Text style={{ color: "#a3a3a3", fontSize: 12 }}>Loading...</Text>
+              <Text
+                style={{
+                  color: colors.muted,
+                  fontSize: 12,
+                  fontFamily: getAppFontFamily(isRtl, "regular"),
+                  ...getTextDirectionStyle(isRtl, "center"),
+                }}
+              >
+                Loading...
+              </Text>
             )}
             {imageLoaded && imageError && (
-              <Text style={{ color: "#a3a3a3", fontSize: 12 }}>No Image</Text>
+              <Text
+                style={{
+                  color: colors.muted,
+                  fontSize: 12,
+                  fontFamily: getAppFontFamily(isRtl, "regular"),
+                  ...getTextDirectionStyle(isRtl, "center"),
+                }}
+              >
+                No Image
+              </Text>
             )}
           </View>
         )}
@@ -323,27 +353,72 @@ function StreamItem(props: StreamItemProps) {
           duration !== "0:00" &&
           source !== "jiosaavn" &&
           !videoCount && (
-            <DurationBadge>
-              <DurationText>{duration}</DurationText>
+            <DurationBadge
+              style={{
+                backgroundColor:
+                  source === "youtube" || source === "youtubemusic"
+                    ? "rgba(0, 0, 0, 0.78)"
+                    : "rgba(0, 0, 0, 0.68)",
+              }}
+            >
+              <DurationText
+                style={{ fontFamily: getAppFontFamily(isRtl, "regular") }}
+              >
+                {duration}
+              </DurationText>
             </DurationBadge>
           )}
       </ThumbWrap>
       <Content>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <Title>{title}</Title>
+        <View
+          style={{
+            flexDirection: isRtl ? "row-reverse" : "row",
+            alignItems: "center",
+          }}
+        >
+          <Title
+            style={{
+              color: colors.foreground,
+              fontFamily: getAppFontFamily(isRtl, "medium"),
+              ...getTextDirectionStyle(isRtl),
+            }}
+          >
+            {title}
+          </Title>
           {verified && (
-            <VerifiedBadge>
+            <VerifiedBadge
+              style={{
+                marginLeft: isRtl ? 0 : 4,
+                marginRight: isRtl ? 4 : 0,
+              }}
+            >
               <MaterialIcons name="verified" size={16} color="#3b82f6" />
             </VerifiedBadge>
           )}
         </View>
-        <MetaRow isChannel={source === "youtube_channel" || type === "artist"}>
+        <MetaRow
+          isChannel={source === "youtube_channel" || type === "artist"}
+          style={{ flexDirection: isRtl ? "row-reverse" : "row" }}
+        >
           {!!author && (
-            <Author numberOfLines={2}>
+            <Author
+              numberOfLines={2}
+              style={{
+                color: colors.muted,
+                fontFamily: getAppFontFamily(isRtl, "regular"),
+                ...getTextDirectionStyle(isRtl),
+              }}
+            >
               {formatAuthor(author, source, type, channelDescription)}
             </Author>
           )}
-          <SubMeta>
+          <SubMeta
+            style={{
+              color: colors.muted,
+              fontFamily: getAppFontFamily(isRtl, "regular"),
+              ...getTextDirectionStyle(isRtl),
+            }}
+          >
             {formatSubMeta(
               views,
               uploaded,
@@ -357,7 +432,17 @@ function StreamItem(props: StreamItemProps) {
             )}
             {/* Show blue badge for albums/playlists with video count */}
             {(isAlbum || type === "playlist") && videoCount && (
-              <DetailsBadge>{videoCount} videos</DetailsBadge>
+              <DetailsBadge
+                style={{
+                  color: colors.muted,
+                  fontFamily: getAppFontFamily(isRtl, "regular"),
+                  marginLeft: isRtl ? 0 : 8,
+                  marginRight: isRtl ? 8 : 0,
+                  ...getTextDirectionStyle(isRtl),
+                }}
+              >
+                {videoCount} videos
+              </DetailsBadge>
             )}
           </SubMeta>
         </MetaRow>

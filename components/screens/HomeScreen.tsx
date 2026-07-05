@@ -1,377 +1,38 @@
-import React, { useState, useEffect, useRef } from "react";
-import { ScrollView, TouchableOpacity } from "react-native";
-import styled from "styled-components/native";
-import { default as StreamItem } from "../StreamItem";
-import { SafeArea } from "../SafeArea";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  AppState,
+  Image,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { usePlayer, Track } from "../../contexts/PlayerContext";
+import { Screen } from "../ui/Screen";
+import { SectionHeader as UiSectionHeader } from "../ui/SectionHeader";
+import { BodyText, MutedText, TitleText } from "../ui/Text";
+import { usePlayer, type Track } from "../../contexts/PlayerContext";
 import {
-  FeaturedPlaylistSkeleton,
-  CategoryPlaylistSkeleton,
-  PreviouslyPlayedSkeleton,
-  RecommendationsSkeleton,
-} from "../SkeletonLoader";
-import {
-  getJioSaavnPlaylistEndpoint,
-  getJioSaavnPlaylistByIdEndpoint,
-  API,
+  extractYouTubeVideoId,
+  fetchJioSaavnSuggestions,
   fetchWithRetry,
   fetchYouTubeMix,
-  fetchJioSaavnSuggestions,
+  getPrimaryInvidiousInstance,
+  getPrimaryPipedInstance,
   getTrackSource,
-  extractYouTubeVideoId,
 } from "../core/api";
+import { getProviderEndpoints } from "../../lib/provider-endpoints";
 import { StorageService } from "../../utils/storage";
-
-// API endpoints for your Lowkey Backend
-const CATEGORY_APIS = {
-  indie: getJioSaavnPlaylistEndpoint("indie"),
-  edm: getJioSaavnPlaylistEndpoint("edm"),
-  metal: getJioSaavnPlaylistEndpoint("metal"),
-  punk: getJioSaavnPlaylistEndpoint("punk"),
-  party: getJioSaavnPlaylistEndpoint("party"),
-  jazz: getJioSaavnPlaylistEndpoint("jazz"),
-  love: getJioSaavnPlaylistEndpoint("love"),
-  rap: getJioSaavnPlaylistEndpoint("rap"),
-  workout: getJioSaavnPlaylistEndpoint("workout"),
-  pop: getJioSaavnPlaylistEndpoint("pop"),
-  hiphop: getJioSaavnPlaylistEndpoint("hiphop"),
-  rock: getJioSaavnPlaylistEndpoint("rock"),
-  melody: getJioSaavnPlaylistEndpoint("melody"),
-  lofi: getJioSaavnPlaylistEndpoint("lofi"),
-  chill: getJioSaavnPlaylistEndpoint("chill"),
-  focus: getJioSaavnPlaylistEndpoint("focus"),
-  instrumental: getJioSaavnPlaylistEndpoint("instrumental"),
-  folk: getJioSaavnPlaylistEndpoint("folk"),
-  devotional: getJioSaavnPlaylistEndpoint("devotional"),
-  ambient: getJioSaavnPlaylistEndpoint("ambient"),
-  sleep: getJioSaavnPlaylistEndpoint("sleep"),
-  soul: getJioSaavnPlaylistEndpoint("soul"),
-};
-
-// Featured playlist IDs
-const FEATURED_PLAYLIST_IDS = [
-  "1265154514",
-  "1223482895",
-  "2252904",
-  "158206266",
-  "1210453303",
-];
-
-const SOUNDCLOUD_GENRE_CACHE_KEY = "@soundcloud_genre_cache";
-
-const DEFAULT_SOUNDCLOUD_GENRES = [
-  "Afro House",
-  "Ambient",
-  "Deep House",
-  "Downtempo",
-  "Drum & Bass",
-  "Dubstep",
-  "Hard Techno",
-  "House",
-  "Melodic House",
-  "Melodic Techno",
-  "Minimal",
-  "Progressive House",
-  "Progressive Trance",
-  "Tech House",
-  "Techno",
-  "Trance",
-  "Uplifting Trance",
-];
-
-// Existing styled components
-const Section = styled.View`
-  margin-bottom: 12px;
-  margin-top: 12px;
-`;
-
-const ChipsContainer = styled.View`
-  flex-direction: row;
-  align-items: center;
-  padding: 16px 0;
-`;
-
-const ProfileContainer = styled(LinearGradient).attrs({
-  colors: ["rgba(0, 0, 0, 1)", "rgba(0, 0, 0, 0.3)", "rgba(0, 0, 0, 0.0)"],
-  start: { x: 0, y: 0 },
-  end: { x: 1, y: 0 },
-})`
-  width: 28px;
-  height: 28px;
-  border-radius: 16px;
-  margin-left: 16px;
-  margin-right: 10px;
-  shadow-color: #000;
-  shadow-offset: 3px 3px;
-  shadow-opacity: 0.4;
-  shadow-radius: 6px;
-  elevation: 8;
-`;
-
-const UserProfileImage = styled.Image`
-  width: 100%;
-  height: 100%;
-  border-radius: 20px;
-`;
-
-const ChipsScrollView = styled.ScrollView`
-  flex: 1;
-  padding-right: 16px;
-`;
-
-const ChipsContent = styled.View`
-  flex-direction: row;
-  align-items: center;
-`;
-
-const Chip = styled.TouchableOpacity<{ active?: boolean }>`
-  padding: 8px 16px;
-  border-radius: 999px;
-  background-color: ${(p: { active?: boolean }) =>
-    p.active ? "#a3e635" : "#262626"};
-  margin-right: 8px;
-`;
-
-const ChipText = styled.Text<{ active?: boolean }>`
-  color: ${(p: { active?: boolean }) => (p.active ? "#000" : "#fff")};
-  font-size: 14px;
-  font-family: GoogleSansMedium;
-  line-height: 18px;
-`;
-
-const SectionHeader = styled.View`
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 16px;
-  margin-bottom: 16px;
-`;
-
-const SectionTitle = styled.Text`
-  color: #fff;
-  font-size: 18px;
-  font-family: GoogleSansSemiBold;
-  line-height: 22px;
-`;
-
-const HorizontalScroll = styled.ScrollView`
-  padding: 0 16px;
-`;
-
-const Card = styled.TouchableOpacity`
-  width: 160px;
-  margin-right: 16px;
-`;
-
-const CardImage = styled.Image`
-  width: 160px;
-  height: 160px;
-  border-radius: 12px;
-`;
-
-const CardTitle = styled.Text`
-  color: #fff;
-  margin-top: 8px;
-  font-size: 14px;
-  font-family: GoogleSansMedium;
-  line-height: 18px;
-`;
-
-const CardMeta = styled.Text`
-  color: #a3a3a3;
-  font-size: 12px;
-  margin-top: 2px;
-  font-family: GoogleSansRegular;
-  line-height: 16px;
-`;
-
-const Row = styled.View`
-  padding: 0 16px;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-`;
-
-const Title = styled.Text`
-  color: #fff;
-  font-size: 18px;
-  font-family: GoogleSansSemiBold;
-  line-height: 22px;
-`;
-
-const SubtitleBtn = styled.TouchableOpacity``;
-
-const SubtitleText = styled.Text`
-  color: #a3e635;
-  font-family: GoogleSansRegular;
-`;
-
-const Horizontal = styled.ScrollView`
-  padding: 16px 0 0 16px;
-`;
-
-const RecommendationScroll = styled.ScrollView`
-  padding: 0 16px;
-`;
-
-const RecommendationColumn = styled.View`
-  width: 240px;
-  margin-right: 16px;
-`;
-
-const RecommendationItem = styled.TouchableOpacity`
-  flex-direction: row;
-  align-items: center;
-  margin-bottom: 12px;
-`;
-
-const RecommendationThumb = styled.Image`
-  width: 88px;
-  height: 88px;
-  border-radius: 12px;
-`;
-
-const TopRecommendationThumb = styled.Image`
-  width: 72px;
-  height: 72px;
-  border-radius: 10px;
-`;
-
-const RecommendationTextWrap = styled.View`
-  flex: 1;
-  margin-left: 10px;
-`;
-
-const RecommendationTitle = styled.Text`
-  color: #fff;
-  font-size: 13px;
-  font-family: GoogleSansMedium;
-  line-height: 18px;
-`;
-
-const RecommendationMeta = styled.Text`
-  color: #a3a3a3;
-  font-size: 11px;
-  font-family: GoogleSansRegular;
-  line-height: 14px;
-`;
-
-const TopRecommendationTitle = styled.Text`
-  color: #fff;
-  font-size: 14px;
-  font-family: GoogleSansMedium;
-  line-height: 20px;
-`;
-
-const TopRecommendationMeta = styled.Text`
-  color: #a3a3a3;
-  font-size: 12px;
-  font-family: GoogleSansRegular;
-  line-height: 16px;
-`;
-
-const GenreRecommendationThumb = styled.Image`
-  width: 54px;
-  height: 54px;
-  border-radius: 10px;
-`;
-
-const ArtistTileWrap = styled.TouchableOpacity`
-  width: 160px;
-  min-height: 204px;
-  margin-right: 16px;
-  align-items: center;
-`;
-
-const ArtistAvatar = styled.Image`
-  width: 160px;
-  height: 160px;
-  border-radius: 80px;
-`;
-
-const ArtistName = styled.Text`
-  color: #fff;
-  font-size: 13px;
-  font-family: GoogleSansMedium;
-  line-height: 18px;
-  margin-top: 8px;
-  text-align: center;
-`;
-const EmptySectionText = styled.Text`
-  color: #a3a3a3;
-  font-size: 13px;
-  font-family: GoogleSansRegular;
-  padding: 0 16px;
-  line-height: 18px;
-`;
-
-const CollectionWrap = styled.View`
-  padding: 0 16px;
-  flex-direction: row;
-`;
-
-const CollectionCard = styled.View`
-  flex: 1;
-  flex-direction: row;
-  align-items: center;
-  background-color: #171717;
-  border-radius: 12px;
-  padding: 16px;
-`;
-
-const CollectionInfo = styled.View`
-  flex: 1;
-`;
-
-const CollectionTitle = styled.Text`
-  color: #fff;
-  font-family: GoogleSansSemiBold;
-  line-height: 20px;
-`;
-
-const CollectionSub = styled.Text`
-  color: #a3a3a3;
-  margin-top: 4px;
-  font-family: GoogleSansRegular;
-  line-height: 16px;
-`;
-
-const Arrow = styled.Text`
-  color: #a3e635;
-  margin-top: 8px;
-  font-family: GoogleSansMedium;
-  line-height: 16px;
-`;
-
-const LoadingContainer = styled.View`
-  flex: 1;
-  justify-content: center;
-  align-items: center;
-  background-color: #000;
-  padding: 40px 0;
-`;
-
-const ErrorText = styled.Text`
-  color: #ff4444;
-  text-align: center;
-  padding: 20px;
-  font-family: GoogleSansRegular;
-`;
-
-interface Playlist {
-  id: string;
-  name: string;
-  type: string;
-  image: Array<{
-    quality: string;
-    url: string;
-  }>;
-  url: string;
-  songCount: number;
-  language: string;
-  explicitContent: boolean;
-}
+import { useAppLanguage } from "../../hooks/useAppLanguage";
+import { useTheme, withOpacity } from "../../hooks/useTheme";
+import { useAuth } from "../../hooks/useAuth";
+import { getAppFontFamily, getTextDirectionStyle } from "../../utils/fonts";
+import {
+  pickBestImageUrl as pickBestArtworkUrl,
+  sanitizeImageUrl,
+} from "../core/image";
 
 interface SuggestedTrack {
   id: string;
@@ -382,570 +43,722 @@ interface SuggestedTrack {
   source: "youtube" | "jiosaavn" | "soundcloud";
 }
 
-interface RecentlyPlayedArtist {
-  id?: string;
-  title: string;
-  thumbnailUrl: string;
+interface PlayedArtistSummary {
+  key: string;
+  name: string;
+  artistId?: string;
+  image?: string;
+  banner?: string;
   source: "youtube" | "jiosaavn" | "soundcloud";
+  count: number;
+  songs: Track[];
+  playCountLabel: string;
+}
+
+function getUserDisplayName(
+  user: { email?: string | null; user_metadata?: any } | null
+) {
+  if (!user) {
+    return "";
+  }
+
+  return (
+    user.user_metadata?.full_name ||
+    user.user_metadata?.name ||
+    user.user_metadata?.preferred_username ||
+    user.email ||
+    ""
+  );
+}
+
+function getUserAvatarUrl(user: { user_metadata?: any } | null) {
+  if (!user) {
+    return "";
+  }
+
+  return sanitizeImageUrl(
+    user.user_metadata?.avatar_url ||
+      user.user_metadata?.picture ||
+      user.user_metadata?.image ||
+      ""
+  );
+}
+
+function dedupeTracksById(tracks: Track[]): Track[] {
+  const seen = new Set<string>();
+  const output: Track[] = [];
+
+  for (const track of tracks) {
+    if (!track?.id || seen.has(track.id)) {
+      continue;
+    }
+
+    seen.add(track.id);
+    output.push(track);
+  }
+
+  return output;
+}
+
+function formatDuration(seconds: number | undefined, fallback: string): string {
+  if (!seconds || Number.isNaN(seconds)) {
+    return fallback;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function shortenLabel(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
+}
+
+function pickBestImageUrl(value: unknown, base: string): string {
+  return pickBestArtworkUrl(value, base);
+}
+
+function normalizeArtistSource(
+  source?: string
+): "youtube" | "jiosaavn" | "soundcloud" {
+  const normalized = source?.trim().toLowerCase();
+  if (normalized === "jiosaavn") {
+    return "jiosaavn";
+  }
+  if (normalized === "soundcloud") {
+    return "soundcloud";
+  }
+  return "youtube";
+}
+
+function canOpenArtistRoute(artist: {
+  artistId?: string;
+  source?: string;
+}): boolean {
+  if (!artist.artistId?.trim()) {
+    return false;
+  }
+
+  const source = normalizeArtistSource(artist.source);
+  return source === "youtube" || source === "jiosaavn";
+}
+
+function toPlayableTrack(track: SuggestedTrack): Track {
+  return {
+    id: track.id,
+    title: track.title,
+    artist: track.artist,
+    thumbnail: track.thumbnail,
+    duration: track.duration,
+    source: track.source,
+    _isJioSaavn: track.source === "jiosaavn",
+    _isSoundCloud: track.source === "soundcloud",
+  };
+}
+
+function toSuggestedTrack(track: Track): SuggestedTrack | null {
+  if (!track?.id || !track.title) {
+    return null;
+  }
+
+  return {
+    id: track.id,
+    title: track.title,
+    artist: track.artist || "Unknown Artist",
+    thumbnail: track.thumbnail || track.artistImage || "",
+    duration: track.duration,
+    source:
+      getTrackSource(track) === "youtube"
+        ? "youtube"
+        : track._isSoundCloud || track.source === "soundcloud"
+          ? "soundcloud"
+          : "jiosaavn",
+  };
+}
+
+function rankMadeForYouCandidates(tracks: Track[]): Track[] {
+  const artistCounts = new Map<string, number>();
+
+  for (const track of tracks) {
+    const artistKey = track.artist?.trim().toLowerCase();
+    if (!artistKey) {
+      continue;
+    }
+
+    artistCounts.set(artistKey, (artistCounts.get(artistKey) || 0) + 1);
+  }
+
+  return dedupeTracksById(tracks)
+    .filter((track) => {
+      const source = getTrackSource(track);
+      return source === "youtube" || source === "jiosaavn";
+    })
+    .sort((left, right) => {
+      const sourceScore = (track: Track) => {
+        const source = getTrackSource(track);
+        if (source === "youtube") {
+          return 30;
+        }
+        if (source === "jiosaavn") {
+          return 18;
+        }
+        return 0;
+      };
+
+      const artistScore = (track: Track) => {
+        const artistKey = track.artist?.trim().toLowerCase() || "";
+        return artistCounts.get(artistKey) || 0;
+      };
+
+      return (
+        sourceScore(right) +
+        artistScore(right) -
+        (sourceScore(left) + artistScore(left))
+      );
+    })
+    .slice(0, 6);
+}
+
+function HeroCard({
+  title,
+  image,
+  colors,
+  isLight,
+  playLabel,
+  onPressPlay,
+  empty,
+  eyebrow,
+  description,
+}: {
+  title: string;
+  image?: string;
+  colors: ReturnType<typeof useTheme>["colors"];
+  isLight: boolean;
+  playLabel: string;
+  onPressPlay?: () => void;
+  empty?: boolean;
+  eyebrow?: string;
+  description?: string;
+}) {
+  const { isRtl } = useAppLanguage();
+
+  if (empty) {
+    return (
+      <View
+        style={[
+          styles.emptyHero,
+          {
+            backgroundColor: colors.surface1,
+            borderColor: colors.borderSubtle,
+          },
+        ]}
+      >
+        {eyebrow ? (
+          <MutedText style={styles.emptyHeroEyebrow}>{eyebrow}</MutedText>
+        ) : null}
+        <TitleText style={styles.emptyHeroTitle}>{title}</TitleText>
+        {description ? (
+          <MutedText style={styles.emptyHeroDescription}>
+            {description}
+          </MutedText>
+        ) : null}
+      </View>
+    );
+  }
+
+  const absoluteFill = {
+    position: "absolute" as const,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  };
+
+  const overlayColors: [string, string, string] = image
+    ? [
+        withOpacity("#000000", 0.12),
+        withOpacity("#000000", 0.4),
+        withOpacity("#000000", 0.88),
+      ]
+    : [colors.heroStart, colors.heroMid, colors.heroEnd];
+
+  return (
+    <View
+      style={[
+        styles.heroCard,
+        {
+          backgroundColor: colors.surface1,
+          borderColor: image ? "transparent" : colors.borderSubtle,
+        },
+      ]}
+    >
+      {image ? (
+        <Image
+          source={{ uri: image }}
+          resizeMode="cover"
+          style={[absoluteFill, styles.heroImage]}
+        />
+      ) : null}
+      <LinearGradient
+        colors={overlayColors}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={absoluteFill}
+      />
+      {onPressPlay ? (
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={onPressPlay}
+          accessibilityRole="button"
+          accessibilityLabel={playLabel}
+          style={[
+            styles.heroPlayButton,
+            {
+              backgroundColor: colors.accent,
+              shadowColor: isLight ? colors.foreground : "#000000",
+            },
+          ]}
+        >
+          <Ionicons name="play" size={28} color={colors.accentContrast} />
+        </TouchableOpacity>
+      ) : null}
+      <View style={styles.heroContent}>
+        <TitleText
+          style={[styles.heroTitle, { textAlign: isRtl ? "right" : "left" }]}
+        >
+          {title}
+        </TitleText>
+      </View>
+    </View>
+  );
+}
+
+function SongCard({
+  title,
+  subtitle,
+  durationLabel,
+  image,
+  colors,
+  onPress,
+}: {
+  title: string;
+  subtitle: string;
+  durationLabel: string;
+  image?: string;
+  colors: ReturnType<typeof useTheme>["colors"];
+  onPress: () => void;
+}) {
+  const { isRtl } = useAppLanguage();
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.88}
+      onPress={onPress}
+      style={[
+        styles.songCard,
+        {
+          transform: [{ scaleX: isRtl ? -1 : 1 }],
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.songArtworkFrame,
+          {
+            backgroundColor: colors.surface1,
+            shadowColor: "#000000",
+          },
+        ]}
+      >
+        {image ? (
+          <Image source={{ uri: image }} style={styles.songArtwork} />
+        ) : (
+          <View
+            style={[
+              styles.songArtwork,
+              styles.songArtworkFallback,
+              { backgroundColor: colors.surface3 },
+            ]}
+          >
+            <Ionicons
+              name="musical-notes-outline"
+              size={28}
+              color={colors.muted}
+            />
+          </View>
+        )}
+        <View
+          style={[
+            styles.songPlayBadge,
+            {
+              backgroundColor: colors.accent,
+              shadowColor: "#000000",
+              right: isRtl ? undefined : 12,
+              left: isRtl ? 12 : undefined,
+            },
+          ]}
+        >
+          <Ionicons
+            name="play"
+            size={18}
+            color={colors.accentContrast}
+            style={{ marginLeft: 1 }}
+          />
+        </View>
+      </View>
+      <TitleText
+        numberOfLines={1}
+        style={[styles.songTitle, { textAlign: isRtl ? "right" : "left" }]}
+      >
+        {title}
+      </TitleText>
+      <MutedText
+        numberOfLines={1}
+        style={[styles.songSubtitle, { textAlign: isRtl ? "right" : "left" }]}
+      >
+        {subtitle}
+      </MutedText>
+      <MutedText
+        numberOfLines={1}
+        style={[styles.songMeta, { textAlign: isRtl ? "right" : "left" }]}
+      >
+        {durationLabel}
+      </MutedText>
+    </TouchableOpacity>
+  );
+}
+
+function ArtistCard({
+  artist,
+  colors,
+  onPress,
+  playLabel,
+}: {
+  artist: PlayedArtistSummary;
+  colors: ReturnType<typeof useTheme>["colors"];
+  onPress: () => void;
+  playLabel: string;
+}) {
+  const { isRtl } = useAppLanguage();
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.88}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={playLabel}
+      style={[
+        styles.artistCard,
+        {
+          transform: [{ scaleX: isRtl ? -1 : 1 }],
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.artistArtworkFrame,
+          {
+            backgroundColor: colors.surface1,
+            shadowColor: "#000000",
+          },
+        ]}
+      >
+        {artist.image ? (
+          <Image source={{ uri: artist.image }} style={styles.artistArtwork} />
+        ) : (
+          <View
+            style={[
+              styles.artistArtwork,
+              styles.songArtworkFallback,
+              { backgroundColor: colors.surface3 },
+            ]}
+          >
+            <Ionicons name="person-outline" size={36} color={colors.muted} />
+          </View>
+        )}
+      </View>
+      <TitleText numberOfLines={1} style={styles.artistTitle}>
+        {artist.name}
+      </TitleText>
+      <MutedText numberOfLines={1} style={styles.artistSubtitle}>
+        {artist.playCountLabel}
+      </MutedText>
+    </TouchableOpacity>
+  );
+}
+
+function EmptyStateCard({
+  label,
+  colors,
+  loading = false,
+}: {
+  label: string;
+  colors: ReturnType<typeof useTheme>["colors"];
+  loading?: boolean;
+}) {
+  const { isRtl } = useAppLanguage();
+
+  return (
+    <View
+      style={[
+        styles.emptyStateCard,
+        {
+          backgroundColor: colors.surface3,
+          borderColor: colors.borderSubtle,
+        },
+      ]}
+    >
+      {loading ? (
+        <View
+          style={[
+            styles.emptyStateLoading,
+            { flexDirection: isRtl ? "row-reverse" : "row" },
+          ]}
+        >
+          <ActivityIndicator size="small" color={colors.accent} />
+          <MutedText
+            style={[
+              styles.emptyStateText,
+              {
+                marginLeft: isRtl ? 0 : 10,
+                marginRight: isRtl ? 10 : 0,
+                textAlign: isRtl ? "right" : "left",
+              },
+            ]}
+          >
+            {label}
+          </MutedText>
+        </View>
+      ) : (
+        <MutedText style={styles.emptyStateText}>{label}</MutedText>
+      )}
+    </View>
+  );
+}
+
+function HeaderPillButton({
+  label,
+  colors,
+  onPress,
+  filled = false,
+  emphasized = false,
+}: {
+  label: string;
+  colors: ReturnType<typeof useTheme>["colors"];
+  onPress: () => void;
+  filled?: boolean;
+  emphasized?: boolean;
+}) {
+  const { isRtl } = useAppLanguage();
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.88}
+      onPress={onPress}
+      style={[
+        styles.headerPillButton,
+        {
+          backgroundColor: filled ? colors.accent : colors.surface3,
+          borderColor: filled ? colors.accent : colors.borderSubtle,
+        },
+      ]}
+    >
+      <BodyText
+        numberOfLines={1}
+        style={[
+          styles.headerPillButtonText,
+          {
+            color: filled ? colors.accentContrast : colors.foreground,
+            fontFamily: isRtl
+              ? emphasized
+                ? "YekanBakhBold"
+                : "YekanBakhRegular"
+              : emphasized
+                ? "GoogleSansBold"
+                : "GoogleSansMedium",
+            fontWeight: emphasized ? "700" : "500",
+          },
+        ]}
+      >
+        {label}
+      </BodyText>
+    </TouchableOpacity>
+  );
+}
+
+function AccountPillButton({
+  label,
+  avatarUrl,
+  fallback,
+  colors,
+  onPress,
+  isRtl,
+}: {
+  label: string;
+  avatarUrl?: string;
+  fallback: string;
+  colors: ReturnType<typeof useTheme>["colors"];
+  onPress: () => void;
+  isRtl: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.88}
+      onPress={onPress}
+      style={[
+        styles.accountPillButton,
+        {
+          backgroundColor: colors.surface3,
+          borderColor: colors.borderSubtle,
+          flexDirection: isRtl ? "row-reverse" : "row",
+        },
+      ]}
+    >
+      {avatarUrl ? (
+        <Image
+          source={{ uri: avatarUrl }}
+          style={styles.accountPillAvatarImage}
+        />
+      ) : (
+        <View
+          style={[
+            styles.accountPillAvatarFallback,
+            {
+              backgroundColor: colors.surface2,
+              borderColor: colors.borderSubtle,
+            },
+          ]}
+        >
+          <BodyText style={styles.accountPillAvatarFallbackText}>
+            {fallback}
+          </BodyText>
+        </View>
+      )}
+      <BodyText numberOfLines={1} style={styles.accountPillButtonText}>
+        {label}
+      </BodyText>
+    </TouchableOpacity>
+  );
 }
 
 export default function HomeScreen({ navigation }: any) {
-  const { playTrack, previouslyPlayedSongs } = usePlayer();
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([
-    "all",
-  ]);
-  const [categoryData, setCategoryData] = useState<{
-    [key: string]: Playlist[];
-  }>({});
-  const [featuredPlaylists, setFeaturedPlaylists] = useState<Playlist[]>([]);
-  const [loadingFeatured, setLoadingFeatured] = useState(true);
-
-  // Previously played songs and suggestions
-  const [previouslyPlayedTracks, setPreviouslyPlayedTracks] = useState<Track[]>(
+  const { colors, isLight } = useTheme();
+  const { isRtl, t } = useAppLanguage();
+  const { playTrack } = usePlayer();
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const [currentHour, setCurrentHour] = useState(() => new Date().getHours());
+  const [historyTracks, setHistoryTracks] = useState<Track[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [playedArtists, setPlayedArtists] = useState<PlayedArtistSummary[]>([]);
+  const [isLoadingArtists, setIsLoadingArtists] = useState(false);
+  const [madeForYouSeedTrack, setMadeForYouSeedTrack] = useState<Track | null>(
+    null
+  );
+  const [madeForYouTracks, setMadeForYouTracks] = useState<SuggestedTrack[]>(
     []
   );
-  const [youtubeMixTracks, setYoutubeMixTracks] = useState<SuggestedTrack[]>(
-    []
-  );
-  const [jiosaavnSuggestions, setJiosaavnSuggestions] = useState<
-    SuggestedTrack[]
-  >([]);
-  const [loadingPreviouslyPlayed, setLoadingPreviouslyPlayed] = useState(true);
-  const [loadingYoutubeMix, setLoadingYoutubeMix] = useState(false);
-  const [loadingJiosaavnSuggestions, setLoadingJiosaavnSuggestions] =
-    useState(false);
-  const [soundcloudGenre, setSoundcloudGenre] = useState<string | null>(null);
-  const [soundcloudGenreTracks, setSoundcloudGenreTracks] = useState<
-    SuggestedTrack[]
-  >([]);
-  const [loadingSoundcloudGenreTracks, setLoadingSoundcloudGenreTracks] =
-    useState(false);
-  const [topArtistVideos, setTopArtistVideos] = useState<SuggestedTrack[]>([]);
-  const [loadingTopArtistVideos, setLoadingTopArtistVideos] = useState(false);
-  const [topArtistName, setTopArtistName] = useState<string>("");
-  const [recentlyPlayedArtists, setRecentlyPlayedArtists] = useState<
-    RecentlyPlayedArtist[]
-  >([]);
-  const [loadingRecentlyPlayedArtists, setLoadingRecentlyPlayedArtists] =
-    useState(false);
-  const lastRecommendationSeedRef = useRef<string | null>(null);
-  const hasLoadedSoundcloudGenre = useRef(false);
-  const hasLoadedHomeRecommendationsRef = useRef(false);
+  const [isLoadingMadeForYou, setIsLoadingMadeForYou] = useState(false);
+  const [heroTracks, setHeroTracks] = useState<SuggestedTrack[]>([]);
+  const [isLoadingHeroTracks, setIsLoadingHeroTracks] = useState(false);
 
-  const chunkRecommendations = (tracks: SuggestedTrack[], size: number) => {
-    const columns: SuggestedTrack[][] = [];
-    for (let i = 0; i < tracks.length; i += size) {
-      columns.push(tracks.slice(i, i + size));
-    }
-    return columns;
-  };
-
-  // Filter out Hindi/Indian playlists
-  // Fetch playlist data for a specific category - COMMENTED OUT
-  const fetchCategoryPlaylists = async (category: string) => {
-    // Temporarily disabled - no playlist loading
-    return;
-    /*
-    try {
-      const data = await fetchWithRetry<any>(
-        CATEGORY_APIS[category as keyof typeof CATEGORY_APIS],
-        {},
-        3,
-        1000
-      );
-
-      if (data.success && data.data?.results) {
-        const playlists = data.data.results.slice(0, 6);
-        setCategoryData((prev) => ({ ...prev, [category]: playlists }));
-      }
-    } catch (error) {
-      console.error(`Failed to fetch ${category} playlists:`, error);
-    }
-    */
-  };
-
-  // Fetch featured playlist - COMMENTED OUT
-  const fetchFeaturedPlaylists = async () => {
-    // Temporarily disabled - no featured playlists loading
-    setLoadingFeatured(false);
-    return;
-    /*
-    try {
-      setLoadingFeatured(true);
-
-      // Fetch all featured playlists in parallel for faster loading
-      const playlistPromises = FEATURED_PLAYLIST_IDS.map(async (playlistId) => {
-        try {
-          const data = await fetchWithRetry<any>(
-            getJioSaavnPlaylistByIdEndpoint(playlistId),
-            {},
-            3,
-            1000
-          );
-
-          if (data.success && data.data) {
-            return data.data;
-          }
-          return null;
-        } catch (error) {
-          console.error(
-            `Failed to fetch featured playlist ${playlistId}:`,
-            error
-          );
-          return null;
-        }
-      });
-
-      // Wait for all playlists to load in parallel
-      const featuredData = await Promise.all(playlistPromises);
-
-      // Filter out any null results (failed fetches)
-      const validPlaylists = featuredData.filter(
-        (playlist) => playlist !== null
-      );
-
-
-
-      // Transform playlist data to match expected interface
-      const transformedPlaylists = validPlaylists.map((playlist) => {
-        try {
-          // Handle different possible API response formats
-          const playlistData = {
-            id: playlist.id || playlist.playlistId || "",
-            name:
-              playlist.name ||
-              playlist.title ||
-              playlist.playlistName ||
-              "Unknown Playlist",
-            type: playlist.type || "playlist",
-            image:
-              playlist.image || playlist.images || playlist.imageUrl
-                ? Array.isArray(playlist.image)
-                  ? playlist.image
-                  : Array.isArray(playlist.images)
-                    ? playlist.images
-                    : playlist.imageUrl
-                      ? [{ quality: "500x500", url: playlist.imageUrl }]
-                      : []
-                : [],
-            url: playlist.url || playlist.permaUrl || "",
-            songCount:
-              playlist.songCount ||
-              playlist.songsCount ||
-              playlist.songs?.length ||
-              0,
-            language: playlist.language || "Unknown",
-            explicitContent: playlist.explicitContent || false,
-          };
-
-          // If no images found, add a default one
-          if (playlistData.image.length === 0) {
-            playlistData.image = [
-              {
-                quality: "500x500",
-                url: "https://via.placeholder.com/500x500.png?text=No+Image",
-              },
-            ];
-          }
-
-          return playlistData;
-        } catch (error) {
-
-          // Return a default playlist structure if transformation fails
-          return {
-            id: "error",
-            name: "Error Loading Playlist",
-            type: "playlist",
-            image: [
-              {
-                quality: "500x500",
-                url: "https://via.placeholder.com/500x500.png?text=Error",
-              },
-            ],
-            url: "",
-            songCount: 0,
-            language: "Unknown",
-            explicitContent: false,
-          };
-        }
-      });
-
-
-
-      setFeaturedPlaylists(transformedPlaylists);
-    } catch (error) {
-      console.error("Failed to fetch featured playlists:", error);
-    } finally {
-      setLoadingFeatured(false);
-    }
-    */
-  };
-
-  // Toggle category selection - COMMENTED OUT
-  const toggleCategory = (category: string) => {
-    // Temporarily disabled - no category functionality
-    return;
-    /*
-    setSelectedCategories((prev) => {
-      // Handle "All" button logic
-      if (category === "all") {
-        return ["all"];
-      }
-
-      // If "All" is currently selected, switch to only the new category
-      if (prev.includes("all")) {
-        fetchCategoryPlaylists(category);
-        return [category];
-      }
-
-      // Handle normal category toggling
-      const newCategories = prev.includes(category)
-        ? prev.filter((c) => c !== category)
-        : [...prev, category];
-
-      // Fetch data for newly selected categories
-      if (!prev.includes(category)) {
-        fetchCategoryPlaylists(category);
-      }
-
-      // If no categories selected, default to "All"
-      return newCategories.length === 0 ? ["all"] : newCategories;
-    });
-    */
-  };
-
-  // Load initial data - COMMENTED OUT
   useEffect(() => {
-    // Temporarily disabled - no playlist loading on homescreen
-    return;
-    /*
-    // Load featured playlists first (now in parallel for faster loading)
-    fetchFeaturedPlaylists();
+    const syncCurrentHour = () => {
+      setCurrentHour(new Date().getHours());
+    };
 
-    // Load categories with a small delay to prioritize featured playlists
-    // This ensures featured playlists appear to load first
-    const categoryLoadTimeout = setTimeout(() => {
-      if (selectedCategories.includes("all")) {
-        // Load all categories when "All" is selected
-        Object.keys(CATEGORY_APIS).forEach((category) => {
-          fetchCategoryPlaylists(category);
-        });
-      } else {
-        // Load only selected categories
-        selectedCategories.forEach((category) => {
-          fetchCategoryPlaylists(category);
-        });
+    syncCurrentHour();
+
+    const interval = setInterval(syncCurrentHour, 60 * 1000);
+    const appStateSubscription = AppState.addEventListener(
+      "change",
+      (nextAppState) => {
+        if (nextAppState === "active") {
+          syncCurrentHour();
+        }
       }
-    }, 200); // Small delay to prioritize featured playlists
+    );
 
-    return () => clearTimeout(categoryLoadTimeout);
-    */
+    return () => {
+      clearInterval(interval);
+      appStateSubscription.remove();
+    };
   }, []);
 
-  // Fetch previously played songs and their suggestions
-  const fetchPreviouslyPlayedSongs = async (sourceSongs?: Track[]) => {
-    try {
-      setLoadingPreviouslyPlayed(true);
-
-      const songs = sourceSongs || previouslyPlayedSongs;
-      console.log("[HomeScreen] Previously played songs:", songs);
-
-      setPreviouslyPlayedTracks(songs.slice(0, 5));
-
-      if (songs.length > 0) {
-        const randomTrack = songs[Math.floor(Math.random() * songs.length)];
-        const trackSource = getTrackSource(randomTrack);
-        if (trackSource === "youtube") {
-          await fetchYouTubeMixRecommendations(randomTrack);
-        } else if (trackSource === "jiosaavn") {
-          await fetchJioSaavnSuggestionsForTrack(randomTrack);
-        }
-      }
-    } catch (error) {
-      console.error("Failed to fetch previously played songs:", error);
-    } finally {
-      setLoadingPreviouslyPlayed(false);
+  const greeting = useMemo(() => {
+    if (currentHour < 12) {
+      return t("home.greetingMorning");
     }
-  };
-
-  const fetchYouTubeMixRecommendations = async (track: Track) => {
-    try {
-      setLoadingYoutubeMix(true);
-
-      console.log("[HomeScreen] Fetching YouTube mix for track:", track);
-
-      let videoId = track.id;
-      console.log("[HomeScreen] Initial videoId:", videoId);
-
-      if (!videoId || videoId.length !== 11) {
-        if (videoId && videoId.startsWith("RD") && videoId.length > 11) {
-          videoId = videoId.slice(2);
-        }
-        // Try to extract from audio URL
-        if (track.audioUrl) {
-          console.log(
-            "[HomeScreen] Trying to extract from audioUrl:",
-            track.audioUrl
-          );
-          const extractedId = extractYouTubeVideoId(track.audioUrl);
-          console.log("[HomeScreen] Extracted ID:", extractedId);
-          if (extractedId) {
-            videoId = extractedId;
-          } else {
-            throw new Error("Could not extract YouTube video ID");
-          }
-        }
-      }
-
-      console.log("[HomeScreen] Final videoId for Mix API:", videoId);
-
-      const mixData = await fetchYouTubeMix(videoId);
-      console.log("[HomeScreen] Mix API response:", mixData);
-
-      const mixVideos = Array.isArray(mixData?.videos) ? mixData.videos : [];
-      if (mixVideos.length > 0) {
-        console.log("[HomeScreen] Found mix videos:", mixVideos.length);
-        const suggestedTracks: SuggestedTrack[] = mixVideos
-          .filter((video: any) => (video.lengthSeconds || 0) > 0)
-          .slice(0, 12)
-          .map((video: any) => {
-            const thumbnails = Array.isArray(video.videoThumbnails)
-              ? video.videoThumbnails
-              : [];
-            const thumbnail =
-              thumbnails[thumbnails.length - 1]?.url ||
-              video.thumbnail ||
-              video.thumbnailUrl ||
-              "";
-            return {
-              id: String(video.videoId || video.id || video.url || video.title),
-              title: video.title,
-              artist: video.author || "Unknown Artist",
-              thumbnail,
-              duration: video.lengthSeconds || video.duration || 0,
-              source: "youtube" as const,
-            };
-          });
-
-        console.log(
-          "[HomeScreen] Processed YouTube suggestions:",
-          suggestedTracks
-        );
-        setYoutubeMixTracks(suggestedTracks);
-      } else {
-        console.log("[HomeScreen] No mix videos found in response");
-        setYoutubeMixTracks([]);
-      }
-    } catch (error) {
-      console.error("Failed to fetch YouTube mix:", error);
-      setYoutubeMixTracks([]);
-    } finally {
-      setLoadingYoutubeMix(false);
+    if (currentHour < 18) {
+      return t("home.greetingAfternoon");
     }
-  };
+    return t("home.greetingEvening");
+  }, [currentHour, t]);
 
-  // Fetch JioSaavn suggestions for a track
-  const fetchJioSaavnSuggestionsForTrack = async (track: Track) => {
-    try {
-      setLoadingJiosaavnSuggestions(true);
+  const uniqueRecentSongs = useMemo(
+    () => dedupeTracksById(historyTracks).slice(0, 12),
+    [historyTracks]
+  );
 
-      console.log(
-        "[HomeScreen] Fetching JioSaavn suggestions for track:",
-        track
-      );
+  const mostPlayedYoutubeArtist = useMemo(() => {
+    return (
+      playedArtists
+        .filter((artist) => artist.source === "youtube")
+        .sort((left, right) => right.count - left.count)[0] || null
+    );
+  }, [playedArtists]);
 
-      const suggestionsData = await fetchJioSaavnSuggestions(track.id);
-      console.log("[HomeScreen] JioSaavn API response:", suggestionsData);
+  const navigablePlayedArtists = useMemo(
+    () => playedArtists.filter((artist) => canOpenArtistRoute(artist)),
+    [playedArtists]
+  );
 
-      if (suggestionsData && suggestionsData.data) {
-        console.log(
-          "[HomeScreen] Found JioSaavn suggestions:",
-          suggestionsData.data.length
-        );
-        const suggestedTracks: SuggestedTrack[] = suggestionsData.data
-          .slice(0, 5)
-          .map((song: any) => ({
-            id: song.id || song.url,
-            title: song.name || song.title,
-            artist: song.primaryArtists || song.artist || "Unknown Artist",
-            thumbnail: song.image?.[0]?.url || song.thumbnail,
-            duration: song.duration,
-            source: "jiosaavn" as const,
-          }));
-
-        console.log(
-          "[HomeScreen] Processed JioSaavn suggestions:",
-          suggestedTracks
-        );
-        setJiosaavnSuggestions(suggestedTracks);
-      } else {
-        console.log("[HomeScreen] No suggestions found in response");
-        setJiosaavnSuggestions([]);
-      }
-    } catch (error) {
-      console.error("Failed to fetch JioSaavn suggestions:", error);
-      setJiosaavnSuggestions([]);
-    } finally {
-      setLoadingJiosaavnSuggestions(false);
+  const historyHeroSongs = useMemo(() => {
+    if (!mostPlayedYoutubeArtist) {
+      return [];
     }
-  };
 
-  const extractBeatseekGenre = (data: any): string | null => {
-    const candidates = [
-      data?.genre,
-      data?.primaryGenre,
-      data?.track?.genre,
-      data?.track?.primaryGenre,
-      data?.metadata?.genre,
-      data?.tag,
-      data?.tags,
-      data?.genres,
-      data?.styles,
-      data?.style,
-    ];
-    for (const candidate of candidates) {
-      if (typeof candidate === "string" && candidate.trim().length > 0) {
-        return candidate.trim();
-      }
-      if (Array.isArray(candidate) && candidate.length > 0) {
-        const first = candidate.find(
-          (value) => typeof value === "string" && value.trim().length > 0
-        );
-        if (first) {
-          return first.trim();
-        }
-      }
-    }
-    return null;
-  };
-
-  const fetchBeatseekGenreByTrackId = async (
-    trackId: string
-  ): Promise<string | null> => {
-    const endpoints = [
-      `https://beatseek.io/api/track?id=${encodeURIComponent(trackId)}`,
-      `https://beatseek.io/api/tracks/${encodeURIComponent(trackId)}`,
-    ];
-    for (const endpoint of endpoints) {
-      try {
-        const data = await fetchWithRetry<any>(endpoint, {}, 2, 300);
-        const genre = extractBeatseekGenre(data);
-        if (genre) {
-          return genre;
-        }
-      } catch (error) {}
-    }
-    return null;
-  };
-
-  const fetchSoundCloudGenreRecommendations = async (
-    genre: string
-  ): Promise<number> => {
-    try {
-      setLoadingSoundcloudGenreTracks(true);
-      const url = `https://beatseek.io/api/search?query=${encodeURIComponent(
-        genre
-      )}&platform=soundcloud&type=tracks&sort=both&limit=50`;
-      const data = await fetchWithRetry<any>(url, {}, 2, 300);
-      const items =
-        data?.results || data?.data || data?.items || data?.tracks || [];
-      const suggestedTracks: SuggestedTrack[] = (
-        Array.isArray(items) ? items : []
+    return dedupeTracksById(
+      mostPlayedYoutubeArtist.songs.filter(
+        (track) => getTrackSource(track) === "youtube"
       )
-        .map((track: any) => {
-          const id = track.id || track.trackId || track.url || track.permalink;
-          if (!id) {
-            return null;
-          }
-          const title = track.title || track.name || "Unknown Title";
-          const artist =
-            track.artist ||
-            track.user?.username ||
-            track.uploader ||
-            "Unknown Artist";
-          const artwork =
-            (track.artwork_url
-              ? String(track.artwork_url).replace("large.jpg", "t500x500.jpg")
-              : track.artwork) ||
-            track.thumbnail ||
-            track.image ||
-            "";
-          const thumbnail = artwork || track.user?.avatar_url || "";
-          const duration =
-            track.duration || track.lengthSeconds || track.length_seconds || 0;
-          return {
-            id: String(id),
-            title,
-            artist,
-            thumbnail,
-            duration,
-            source: "soundcloud" as const,
-          } as SuggestedTrack;
-        })
-        .filter((track): track is SuggestedTrack => !!track)
-        .slice(0, 16);
-      setSoundcloudGenreTracks(suggestedTracks);
-      return suggestedTracks.length;
-    } catch (error) {
-      setSoundcloudGenreTracks([]);
-      return 0;
-    } finally {
-      setLoadingSoundcloudGenreTracks(false);
-    }
-  };
+    );
+  }, [mostPlayedYoutubeArtist]);
 
-  const loadSoundcloudGenreRecommendations = async () => {
-    try {
-      const cachedGenre = await StorageService.getItem(
-        SOUNDCLOUD_GENRE_CACHE_KEY
+  const playQueue = useCallback(
+    async (queue: Track[], track: Track) => {
+      const currentIndex = Math.max(
+        queue.findIndex((entry) => entry.id === track.id),
+        0
       );
-      const genreToUse =
-        cachedGenre && cachedGenre.trim().length > 0
-          ? cachedGenre
-          : DEFAULT_SOUNDCLOUD_GENRES[
-              Math.floor(Math.random() * DEFAULT_SOUNDCLOUD_GENRES.length)
-            ];
-      if (!genreToUse) {
-        return;
-      }
-      setSoundcloudGenre(genreToUse);
-      const count = await fetchSoundCloudGenreRecommendations(genreToUse);
-      if (count === 0) {
-        const fallbackGenre = DEFAULT_SOUNDCLOUD_GENRES.find(
-          (genre) => genre !== genreToUse
-        );
-        if (fallbackGenre) {
-          setSoundcloudGenre(fallbackGenre);
-          await fetchSoundCloudGenreRecommendations(fallbackGenre);
-        }
-      }
-    } catch (error) {
-      setSoundcloudGenreTracks([]);
-    }
-  };
+      await playTrack(track, queue, currentIndex);
+    },
+    [playTrack]
+  );
 
-  const cacheSoundcloudGenreFromTrack = async (trackId: string) => {
-    if (!trackId) {
-      return;
-    }
-    try {
-      const genre = await fetchBeatseekGenreByTrackId(trackId);
-      if (genre) {
-        await StorageService.setItem(SOUNDCLOUD_GENRE_CACHE_KEY, genre);
-      }
-    } catch (error) {}
-  };
+  const playSuggestedQueue = useCallback(
+    async (queue: SuggestedTrack[], track: SuggestedTrack) => {
+      const playableQueue = queue.map(toPlayableTrack);
+      const currentIndex = Math.max(
+        playableQueue.findIndex((entry) => entry.id === track.id),
+        0
+      );
+      await playTrack(playableQueue[currentIndex], playableQueue, currentIndex);
+    },
+    [playTrack]
+  );
 
-  const formatCompactNumber = (count: number) => {
-    return Intl.NumberFormat("en", { notation: "compact" }).format(count);
-  };
-
-  const resolveYouTubeVideoId = (track: Track) => {
+  const resolveYouTubeVideoId = useCallback((track: Track): string => {
     let videoId = track.id;
+
     if (!videoId || videoId.length !== 11) {
       if (videoId && videoId.startsWith("RD") && videoId.length > 11) {
         videoId = videoId.slice(2);
       }
+
       if (track.audioUrl) {
         const extractedId = extractYouTubeVideoId(track.audioUrl);
         if (extractedId) {
@@ -953,710 +766,961 @@ export default function HomeScreen({ navigation }: any) {
         }
       }
     }
+
     return videoId && videoId.length === 11 ? videoId : "";
-  };
+  }, []);
 
-  const fetchRecentlyPlayedArtists = async (sourceSongs?: Track[]) => {
-    try {
-      setLoadingRecentlyPlayedArtists(true);
-      const artists: RecentlyPlayedArtist[] = [];
-      const seen = new Set<string>();
-      const songs = sourceSongs || previouslyPlayedSongs;
-      for (const track of songs) {
-        const isSC = track._isSoundCloud || track.source === "soundcloud";
-        const isJS = track._isJioSaavn || track.source === "jiosaavn";
-        if (!isSC && !isJS) {
+  const loadPlayedArtists = useCallback(
+    async (tracks: Track[]) => {
+      if (tracks.length === 0) {
+        setPlayedArtists([]);
+        setIsLoadingArtists(false);
+        return;
+      }
+
+      const artistMap = new Map<string, PlayedArtistSummary>();
+
+      for (const track of tracks) {
+        const artistName = track.artist?.trim();
+        if (!artistName) {
           continue;
         }
-        const source = isSC ? "soundcloud" : "jiosaavn";
-        const title = track.artist || "";
-        if (!title) {
+
+        const normalizedSource =
+          getTrackSource(track) === "youtube"
+            ? "youtube"
+            : track._isSoundCloud || track.source === "soundcloud"
+              ? "soundcloud"
+              : "jiosaavn";
+        const artistId = track.artistId?.trim() || undefined;
+        const key = artistId
+          ? `${normalizedSource}:${artistId}`
+          : `${normalizedSource}:${artistName.toLowerCase()}`;
+        const existing = artistMap.get(key);
+
+        if (existing) {
+          existing.count += 1;
+          existing.songs.push(track);
+          if (!existing.image) {
+            existing.image = track.artistImage || track.thumbnail;
+          }
+          if (!existing.artistId && artistId) {
+            existing.artistId = artistId;
+          }
           continue;
         }
-        const key = `${source}:${title.toLowerCase()}`;
-        if (seen.has(key)) {
-          continue;
-        }
-        const thumbnailUrl = track.thumbnail || "";
-        artists.push({
-          title,
-          thumbnailUrl,
-          source,
+
+        artistMap.set(key, {
+          key,
+          name:
+            normalizedSource === "youtube"
+              ? artistName.replace(/\s*-\s*Topic$/i, "") ||
+                t("home.unknownArtist")
+              : artistName,
+          artistId,
+          image: track.artistImage || track.thumbnail,
+          source: normalizedSource,
+          count: 1,
+          songs: [track],
+          playCountLabel: t("home.play", { count: 1 }),
         });
-        seen.add(key);
       }
 
-      const youtubeTracks = songs.filter(
-        (track) => getTrackSource(track) === "youtube"
+      for (const artist of artistMap.values()) {
+        artist.playCountLabel = t("home.play", { count: artist.count });
+      }
+
+      setPlayedArtists(
+        [...artistMap.values()].sort((left, right) => right.count - left.count)
       );
-      if (youtubeTracks.length > 0) {
-        const { searchAPI } = await import("../../modules/searchAPI");
-        for (const track of youtubeTracks) {
-          const videoId = resolveYouTubeVideoId(track);
-          if (!videoId) {
-            continue;
-          }
-          const info = await searchAPI.getYouTubeVideoInfoWithFallback(videoId);
-          const uploaderUrl =
-            (info?.data as any)?.uploaderUrl ||
-            (info?.data as any)?.authorUrl ||
-            "";
-          let channelId = "";
-          if (
-            typeof uploaderUrl === "string" &&
-            uploaderUrl.includes("/channel/")
-          ) {
-            const parts = uploaderUrl.split("/channel/");
-            channelId = parts[1] || "";
-          }
-          if (!channelId) {
-            continue;
-          }
-          const key = `youtube:${channelId}`;
-          if (seen.has(key)) {
-            continue;
-          }
-          const channelData = await fetchWithRetry<any>(
-            `${API.piped[0]}/channel/${channelId}`,
-            {},
-            2,
-            800
-          );
-          const channelName = (channelData?.name || "").replace(
-            /\s*-\s*Topic$/i,
-            ""
-          );
-          artists.push({
-            id: channelId,
-            title: channelName || "Unknown Channel",
-            thumbnailUrl: channelData?.avatarUrl || "",
-            source: "youtube",
-          });
-          seen.add(key);
-          if (artists.length >= 10) {
-            break;
-          }
-        }
-      }
+      setIsLoadingArtists(false);
+    },
+    [t]
+  );
 
-      setRecentlyPlayedArtists(artists);
-    } catch (error) {
-      setRecentlyPlayedArtists([]);
-    } finally {
-      setLoadingRecentlyPlayedArtists(false);
-    }
-  };
+  const loadMadeForYou = useCallback(
+    async (tracks: Track[]) => {
+      const candidates = rankMadeForYouCandidates(tracks);
 
-  const fetchTopArtistVideosForYouTubeTrack = async (track: Track) => {
-    try {
-      setLoadingTopArtistVideos(true);
-      const videoId = resolveYouTubeVideoId(track);
-      if (!videoId) {
-        setTopArtistVideos([]);
-        setTopArtistName("");
+      if (candidates.length === 0) {
+        setMadeForYouSeedTrack(null);
+        setMadeForYouTracks([]);
+        setIsLoadingMadeForYou(false);
         return;
       }
-      const { searchAPI } = await import("../../modules/searchAPI");
-      const info = await searchAPI.getYouTubeVideoInfoWithFallback(videoId);
-      const uploaderUrl =
-        (info?.data as any)?.uploaderUrl ||
-        (info?.data as any)?.authorUrl ||
-        "";
-      const uploaderName =
-        (info?.data as any)?.uploader ||
-        (info?.data as any)?.author ||
-        track.artist ||
-        "";
-      let channelId = "";
-      if (
-        typeof uploaderUrl === "string" &&
-        uploaderUrl.includes("/channel/")
-      ) {
-        const parts = uploaderUrl.split("/channel/");
-        channelId = parts[1] || "";
-      }
-      if (!channelId) {
-        setTopArtistVideos([]);
-        setTopArtistName("");
-        return;
-      }
-      const channelData = await fetchWithRetry<any>(
-        `${API.piped[0]}/channel/${channelId}`,
-        {},
-        3,
-        1000
-      );
-      const streams = Array.isArray(channelData?.relatedStreams)
-        ? channelData.relatedStreams
-        : [];
-      const getViewCount = (value: any) => {
-        if (typeof value === "number") {
-          return value;
+
+      setIsLoadingMadeForYou(true);
+
+      try {
+        for (const candidate of candidates) {
+          const source = getTrackSource(candidate);
+          if (source === "youtube") {
+            const videoId = resolveYouTubeVideoId(candidate);
+            if (!videoId) {
+              continue;
+            }
+
+            const mixData = await fetchYouTubeMix(videoId);
+            const videos = Array.isArray(mixData?.videos) ? mixData.videos : [];
+            const nextTracks = videos
+              .filter((video: any) => (video.lengthSeconds || 0) > 0)
+              .slice(0, 12)
+              .map((video: any) => {
+                const thumbnails = Array.isArray(video.videoThumbnails)
+                  ? video.videoThumbnails
+                  : [];
+                const thumbnail =
+                  thumbnails[thumbnails.length - 1]?.url ||
+                  video.thumbnail ||
+                  video.thumbnailUrl ||
+                  "";
+
+                return {
+                  id: String(
+                    video.videoId || video.id || video.url || video.title
+                  ),
+                  title: video.title,
+                  artist: video.author || t("home.unknownArtist"),
+                  thumbnail,
+                  duration: video.lengthSeconds || video.duration || 0,
+                  source: "youtube" as const,
+                };
+              });
+
+            if (nextTracks.length > 0) {
+              setMadeForYouSeedTrack(candidate);
+              setMadeForYouTracks(nextTracks);
+              return;
+            }
+          }
+
+          if (source === "jiosaavn") {
+            const suggestionsData = await fetchJioSaavnSuggestions(
+              candidate.id
+            );
+            const nextTracks = Array.isArray(suggestionsData?.data)
+              ? suggestionsData.data.slice(0, 12).map((song: any) => ({
+                  id: String(song.id || song.url || song.name),
+                  title: song.name || song.title,
+                  artist:
+                    song.primaryArtists ||
+                    song.artist ||
+                    t("home.unknownArtist"),
+                  thumbnail: song.image?.[0]?.url || song.thumbnail || "",
+                  duration: song.duration,
+                  source: "jiosaavn" as const,
+                }))
+              : [];
+
+            if (nextTracks.length > 0) {
+              setMadeForYouSeedTrack(candidate);
+              setMadeForYouTracks(nextTracks);
+              return;
+            }
+          }
         }
-        if (typeof value === "string") {
-          const numeric = Number(value.replace(/[^0-9]/g, ""));
-          return Number.isNaN(numeric) ? 0 : numeric;
-        }
-        return 0;
-      };
-      const sorted = streams
-        .slice()
-        .sort(
-          (a: any, b: any) => getViewCount(b.views) - getViewCount(a.views)
+
+        setMadeForYouSeedTrack(candidates[0] || null);
+        setMadeForYouTracks([]);
+      } catch (error) {
+        setMadeForYouTracks([]);
+      } finally {
+        setIsLoadingMadeForYou(false);
+      }
+    },
+    [resolveYouTubeVideoId, t]
+  );
+
+  const loadHeroTracks = useCallback(
+    async (artist: PlayedArtistSummary | null) => {
+      if (!artist?.artistId) {
+        setHeroTracks(
+          dedupeTracksById(artist?.songs || [])
+            .map((track) => toSuggestedTrack(track))
+            .filter((track): track is SuggestedTrack =>
+              Boolean(track?.id && track.title)
+            )
+            .slice(0, 12)
         );
-      const top = sorted.slice(0, 12).map((video: any) => {
-        const id =
-          (video.url && video.url.split("v=")[1]) ||
-          video.videoId ||
-          video.id ||
-          "";
-        const thumbnails = Array.isArray(video.videoThumbnails)
-          ? video.videoThumbnails
-          : [];
-        const thumbnail =
-          thumbnails[thumbnails.length - 1]?.url ||
-          video.thumbnail ||
-          video.thumbnailUrl ||
-          "";
-        return {
-          id: String(id || video.title),
-          title: video.title,
-          artist: uploaderName || "Unknown Artist",
-          thumbnail,
-          duration: video.lengthSeconds || video.duration || 0,
-          source: "youtube" as const,
-        } as SuggestedTrack;
-      });
-      setTopArtistVideos(
-        top.filter((t) => t.thumbnail && t.thumbnail.length > 0)
-      );
-      setTopArtistName(uploaderName);
-    } catch (error) {
-      setTopArtistVideos([]);
-      setTopArtistName("");
+        setIsLoadingHeroTracks(false);
+        return;
+      }
+
+      setIsLoadingHeroTracks(true);
+
+      try {
+        let nextBanner = artist.banner || "";
+        let nextHeroTracks: SuggestedTrack[] = [];
+
+        const providerEndpoints = await getProviderEndpoints();
+        const invidiousBases = [
+          getPrimaryInvidiousInstance(),
+          ...providerEndpoints.instances.invidious,
+        ].filter((value, index, array): value is string => {
+          return Boolean(value) && array.indexOf(value) === index;
+        });
+
+        let invidiousBase = "";
+
+        for (const candidateBase of invidiousBases) {
+          try {
+            const channelData = await fetchWithRetry<any>(
+              `${candidateBase}/api/v1/channels/${encodeURIComponent(
+                artist.artistId
+              )}`,
+              {
+                headers: {
+                  Accept: "application/json",
+                  "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                },
+              },
+              2,
+              350
+            );
+
+            invidiousBase = candidateBase;
+            const latestVideos = Array.isArray(channelData?.latestVideos)
+              ? channelData.latestVideos
+              : [];
+            nextBanner =
+              pickBestImageUrl(channelData?.authorBanners, invidiousBase) ||
+              nextBanner;
+
+            nextHeroTracks = latestVideos
+              .slice(0, 12)
+              .map((video: any) => {
+                const thumbnails = Array.isArray(video?.videoThumbnails)
+                  ? video.videoThumbnails
+                  : [];
+                const thumbnail =
+                  pickBestImageUrl(thumbnails, invidiousBase) ||
+                  video?.thumbnail ||
+                  video?.thumbnailUrl ||
+                  "";
+
+                return {
+                  id: String(video?.videoId || video?.id || video?.title || ""),
+                  title: video?.title,
+                  artist: artist.name,
+                  thumbnail,
+                  duration: video?.lengthSeconds || video?.duration || 0,
+                  source: "youtube" as const,
+                };
+              })
+              .filter((track) => track.id && track.title);
+            break;
+          } catch {}
+        }
+
+        if (nextHeroTracks.length === 0) {
+          const pipedBases = [
+            getPrimaryPipedInstance(),
+            ...providerEndpoints.instances.piped,
+          ].filter((value, index, array): value is string => {
+            return Boolean(value) && array.indexOf(value) === index;
+          });
+
+          for (const pipedBase of pipedBases) {
+            try {
+              const channelData = await fetchWithRetry<any>(
+                `${pipedBase}/channel/${artist.artistId}`,
+                {},
+                3,
+                1000
+              );
+
+              const streams = Array.isArray(channelData?.relatedStreams)
+                ? channelData.relatedStreams
+                : [];
+              nextBanner =
+                channelData?.bannerUrl ||
+                channelData?.avatarBannerUrl ||
+                nextBanner;
+              const getViewCount = (value: unknown) => {
+                if (typeof value === "number") {
+                  return value;
+                }
+                if (typeof value === "string") {
+                  const parsed = Number(value.replace(/[^0-9]/g, ""));
+                  return Number.isNaN(parsed) ? 0 : parsed;
+                }
+                return 0;
+              };
+
+              nextHeroTracks = streams
+                .slice()
+                .sort(
+                  (left: any, right: any) =>
+                    getViewCount(right.views) - getViewCount(left.views)
+                )
+                .slice(0, 12)
+                .map((video: any) => {
+                  const thumbnails = Array.isArray(video.videoThumbnails)
+                    ? video.videoThumbnails
+                    : [];
+                  const thumbnail =
+                    thumbnails[thumbnails.length - 1]?.url ||
+                    video.thumbnail ||
+                    video.thumbnailUrl ||
+                    "";
+                  const id =
+                    (typeof video.url === "string" &&
+                      video.url.split("v=")[1]) ||
+                    video.videoId ||
+                    video.id ||
+                    video.title;
+
+                  return {
+                    id: String(id),
+                    title: video.title,
+                    artist: artist.name,
+                    thumbnail,
+                    duration: video.lengthSeconds || video.duration || 0,
+                    source: "youtube" as const,
+                  };
+                })
+                .filter((track) => track.id && track.title);
+              if (nextHeroTracks.length > 0 || nextBanner) {
+                break;
+              }
+            } catch {}
+          }
+        }
+
+        if (nextBanner && nextBanner !== artist.banner) {
+          setPlayedArtists((current) =>
+            current.map((entry) =>
+              entry.key === artist.key
+                ? { ...entry, banner: nextBanner }
+                : entry
+            )
+          );
+        }
+
+        setHeroTracks(nextHeroTracks);
+      } catch (error) {
+        setHeroTracks([]);
+      } finally {
+        setIsLoadingHeroTracks(false);
+      }
+    },
+    []
+  );
+
+  const loadHome = useCallback(async () => {
+    setIsLoadingHistory(true);
+
+    try {
+      const storedHistory = await StorageService.loadPreviouslyPlayedSongs();
+      const nextHistory = Array.isArray(storedHistory) ? storedHistory : [];
+      setHistoryTracks(nextHistory);
+      await Promise.all([
+        loadPlayedArtists(nextHistory),
+        loadMadeForYou(nextHistory),
+      ]);
     } finally {
-      setLoadingTopArtistVideos(false);
+      setIsLoadingHistory(false);
     }
-  };
+  }, [loadMadeForYou, loadPlayedArtists]);
 
   useEffect(() => {
-    const loadHomeRecommendations = async () => {
-      if (hasLoadedHomeRecommendationsRef.current) {
-        return;
-      }
-      hasLoadedHomeRecommendationsRef.current = true;
-      const savedPreviouslyPlayed =
-        await StorageService.loadPreviouslyPlayedSongs();
-      if (!savedPreviouslyPlayed || savedPreviouslyPlayed.length === 0) {
-        setPreviouslyPlayedTracks([]);
-        setTopArtistVideos([]);
-        setTopArtistName("");
-        setRecentlyPlayedArtists([]);
-        setSoundcloudGenreTracks([]);
-        setSoundcloudGenre(null);
-        return;
-      }
-      const latestSeedId = savedPreviouslyPlayed[0]?.id || null;
-      if (latestSeedId) {
-        lastRecommendationSeedRef.current = latestSeedId;
-      }
-      await fetchPreviouslyPlayedSongs(savedPreviouslyPlayed);
-      const hasRecommendations = savedPreviouslyPlayed.slice(0, 5).length > 0;
-      if (!hasRecommendations) {
-        return;
-      }
-
-      const latestYoutube = savedPreviouslyPlayed.find(
-        (t) => getTrackSource(t) === "youtube"
-      );
-      if (latestYoutube) {
-        await fetchTopArtistVideosForYouTubeTrack(latestYoutube);
-      } else {
-        setTopArtistVideos([]);
-        setTopArtistName("");
-      }
-      const hasTopSongs = topArtistVideos.length > 0;
-
-      await fetchRecentlyPlayedArtists(savedPreviouslyPlayed);
-
-      const soundcloudCount = savedPreviouslyPlayed.filter(
-        (t) => t._isSoundCloud || t.source === "soundcloud"
-      ).length;
-      if (
-        hasTopSongs &&
-        soundcloudCount > 0 &&
-        !hasLoadedSoundcloudGenre.current
-      ) {
-        hasLoadedSoundcloudGenre.current = true;
-        await loadSoundcloudGenreRecommendations();
-      } else if (soundcloudCount === 0) {
-        setSoundcloudGenreTracks([]);
-        setSoundcloudGenre(null);
-      }
-    };
     const unsubscribe = navigation.addListener("focus", () => {
-      loadHomeRecommendations();
+      void loadHome();
     });
-    loadHomeRecommendations();
+    void loadHome();
     return unsubscribe;
+  }, [loadHome, navigation]);
+
+  useEffect(() => {
+    void loadHeroTracks(mostPlayedYoutubeArtist);
+  }, [loadHeroTracks, mostPlayedYoutubeArtist]);
+
+  const heroQueue = useMemo(() => {
+    if (historyHeroSongs.length > 0) {
+      return historyHeroSongs;
+    }
+    return heroTracks.map(toPlayableTrack);
+  }, [heroTracks, historyHeroSongs]);
+
+  const heroTitle = mostPlayedYoutubeArtist?.name || t("home.emptyHeroTitle");
+  const heroImage = mostPlayedYoutubeArtist?.banner || "";
+  const handleOpenSettings = useCallback(() => {
+    navigation.navigate("Settings");
   }, [navigation]);
+  const handleOpenSignUp = useCallback(() => {
+    navigation.navigate("SignUp");
+  }, [navigation]);
+  const handleOpenSignIn = useCallback(() => {
+    navigation.navigate("SignIn");
+  }, [navigation]);
+  const accountDisplayName = getUserDisplayName(user);
+  const accountAvatarUrl = getUserAvatarUrl(user);
+  const accountInitial =
+    accountDisplayName.charAt(0).toUpperCase() ||
+    user?.email?.charAt(0).toUpperCase() ||
+    "U";
 
-  const handlePlayTrack = (track: any) => {
-    if (!track) {
-      return;
+  const accountButtons = useMemo(() => {
+    if (isAuthLoading) {
+      return [
+        <HeaderPillButton
+          key="loading"
+          label={t("settings.accountLoading")}
+          colors={colors}
+          onPress={handleOpenSettings}
+        />,
+      ];
     }
-    const isSoundCloud = track._isSoundCloud || track.source === "soundcloud";
-    if (isSoundCloud && track.id) {
-      cacheSoundcloudGenreFromTrack(String(track.id));
+
+    if (!user) {
+      return [
+        <HeaderPillButton
+          key="signup"
+          label={t("home.signUp")}
+          colors={colors}
+          filled
+          emphasized
+          onPress={handleOpenSignUp}
+        />,
+        <HeaderPillButton
+          key="signin"
+          label={t("home.signIn")}
+          colors={colors}
+          emphasized
+          onPress={handleOpenSignIn}
+        />,
+      ];
     }
-    if (track.title || track.artist) {
-      playTrack({
-        id: track.id,
-        title: track.title || track.name,
-        artist: track.artist || track.artists?.[0]?.name || "Unknown Artist",
-        duration:
-          typeof track.duration === "number"
-            ? track.duration
-            : track.duration_ms || 0,
-        thumbnail:
-          track.thumbnail ||
-          track.album?.images?.[0]?.url ||
-          track.artwork_url ||
-          "",
-        audioUrl: track.audioUrl || track.preview_url,
-        source: track.source,
-        _isSoundCloud: isSoundCloud,
-        _isJioSaavn: track._isJioSaavn,
-      });
-      return;
-    }
-    if (track.name && track.artists && track.preview_url) {
-      playTrack({
-        id: track.id,
-        title: track.name,
-        artist: track.artists[0]?.name || "Unknown Artist",
-        audioUrl: track.preview_url,
-        thumbnail: track.album?.images[0]?.url || "",
-        duration: track.duration_ms,
-      });
-    }
-  };
 
-  const handleArtistPress = (artist: RecentlyPlayedArtist) => {
-    if (artist.source !== "youtube" || !artist.id) {
-      return;
-    }
-    navigation.navigate("Artist", {
-      artistId: artist.id,
-      artistName: artist.title,
-    });
-  };
-
-  const handlePlayPlaylist = (playlist: Playlist) => {
-    if (playlist && playlist.id) {
-      console.log("Playing playlist:", playlist.name);
-      navigation.navigate("Playlist", {
-        playlistId: playlist.id,
-        playlistName: playlist.name,
-      });
-    }
-  };
-
-  const handlePlaySuggestedTrack = (track: SuggestedTrack) => {
-    const trackToPlay: Track = {
-      id: track.id,
-      title: track.title,
-      artist: track.artist,
-      thumbnail: track.thumbnail,
-      duration: track.duration,
-      source: track.source,
-      _isJioSaavn: track.source === "jiosaavn",
-      _isSoundCloud: track.source === "soundcloud",
-    };
-
-    if (track.source === "soundcloud") {
-      cacheSoundcloudGenreFromTrack(track.id);
-    }
-    playTrack(trackToPlay);
-  };
-
-  const getPlaylistImageSource = (playlist: Playlist) => {
-    try {
-      // Ensure playlist.image is an array
-      const imageArray = Array.isArray(playlist.image) ? playlist.image : [];
-
-      const highQualityImage = imageArray.find(
-        (img) => img && img.quality === "500x500"
-      );
-      const imageUrl = highQualityImage?.url || imageArray[0]?.url;
-
-      // Return the image URL as URI or fallback image source
-      if (imageUrl) {
-        return { uri: imageUrl };
-      } else {
-        return require("../../assets/StreamifyLogo.png");
-      }
-    } catch (error) {
-      return require("../../assets/StreamifyLogo.png");
-    }
-  };
-
-  const formatSongCount = (count: number) => {
-    if (count >= 1000) {
-      return `${(count / 1000).toFixed(1)}k songs`;
-    }
-    return `${count} songs`;
-  };
-
-  const recommendationColumns = chunkRecommendations(youtubeMixTracks, 4);
-  const soundcloudGenreColumns = chunkRecommendations(soundcloudGenreTracks, 2);
-  const topArtistColumns = chunkRecommendations(topArtistVideos, 3);
-  const hasPreviouslyPlayed = previouslyPlayedSongs.length > 0;
-  const soundcloudPlayedCount = previouslyPlayedSongs.filter(
-    (t) => t._isSoundCloud || t.source === "soundcloud"
-  ).length;
-  const youtubePlayedCount = previouslyPlayedSongs.filter(
-    (t) => getTrackSource(t) === "youtube"
-  ).length;
+    return [
+      <AccountPillButton
+        key="account"
+        label={accountDisplayName || t("settings.account")}
+        avatarUrl={accountAvatarUrl}
+        fallback={accountInitial}
+        colors={colors}
+        onPress={handleOpenSettings}
+        isRtl={isRtl}
+      />,
+    ];
+  }, [
+    accountAvatarUrl,
+    accountDisplayName,
+    accountInitial,
+    colors,
+    handleOpenSignIn,
+    handleOpenSettings,
+    handleOpenSignUp,
+    isAuthLoading,
+    isRtl,
+    t,
+    user,
+  ]);
 
   return (
-    <SafeArea>
+    <Screen padded={false}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 140 }}
+        style={{ backgroundColor: colors.background }}
+        contentContainerStyle={styles.contentContainer}
       >
-        {/* Header with Category Chips */}
-        <ChipsContainer>
-          <ProfileContainer>
-            <UserProfileImage
-              source={require("../../assets/StreamifyLogo.png")}
-            />
-          </ProfileContainer>
-          <ChipsScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            bounces={false}
+        <View
+          style={[
+            styles.header,
+            { flexDirection: isRtl ? "row-reverse" : "row" },
+          ]}
+        >
+          <View
+            style={[
+              styles.headerTextBlock,
+              {
+                alignItems: isRtl ? "flex-end" : "flex-start",
+              },
+            ]}
           >
-            <ChipsContent>
-              {/* All Button */}
-              <Chip
-                key="all"
-                active={selectedCategories.includes("all")}
-                onPress={() => toggleCategory("all")}
-              >
-                <ChipText active={selectedCategories.includes("all")}>
-                  All
-                </ChipText>
-              </Chip>
-              {Object.keys(CATEGORY_APIS).map((category) => (
-                <Chip
-                  key={category}
-                  active={selectedCategories.includes(category)}
-                  onPress={() => toggleCategory(category)}
-                >
-                  <ChipText active={selectedCategories.includes(category)}>
-                    {category.charAt(0).toUpperCase() + category.slice(1)}
-                  </ChipText>
-                </Chip>
-              ))}
-            </ChipsContent>
-          </ChipsScrollView>
-        </ChipsContainer>
-        {/* Featured Playlists - COMMENTED OUT */}
-        {/*
-        <Section>
-          <SectionHeader>
-            <SectionTitle>Featured Playlists</SectionTitle>
-          </SectionHeader>
-          {loadingFeatured ? (
-            <FeaturedPlaylistSkeleton />
-          ) : (
-            <HorizontalScroll horizontal showsHorizontalScrollIndicator={false}>
-              {featuredPlaylists.map((playlist) => (
-                <Card
-                  key={playlist.id}
-                  onPress={() => handlePlayPlaylist(playlist)}
-                >
-                  <CardImage source={getPlaylistImageSource(playlist)} />
-                  <CardTitle numberOfLines={2}>{playlist.name}</CardTitle>
-                  <CardMeta>
-                    {formatSongCount(playlist.songCount)} • {playlist.language}
-                  </CardMeta>
-                </Card>
-              ))}
-            </HorizontalScroll>
-          )}
-        </Section>
-        */}
-        {/* Selected Category Playlists - COMMENTED OUT */}
-        {/*
-        {(selectedCategories.includes("all")
-          ? Object.keys(CATEGORY_APIS)
-          : selectedCategories
-        ).map((category) => {
-          const playlists = categoryData[category] || [];
-          return (
-            <Section key={category}>
-              <SectionHeader>
-                <SectionTitle>
-                  {category.charAt(0).toUpperCase() + category.slice(1)}{" "}
-                  Playlists
-                </SectionTitle>
-              </SectionHeader>
-              {playlists.length === 0 ? (
-                <CategoryPlaylistSkeleton />
-              ) : (
-                <HorizontalScroll
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                >
-                  {playlists.map((playlist) => (
-                    <Card
-                      key={playlist.id}
-                      onPress={() => handlePlayPlaylist(playlist)}
-                    >
-                      <CardImage source={getPlaylistImageSource(playlist)} />
-                      <CardTitle numberOfLines={2}>{playlist.name}</CardTitle>
-                      <CardMeta>
-                        {formatSongCount(playlist.songCount)} •{" "}
-                        {playlist.language}
-                      </CardMeta>
-                    </Card>
-                  ))}
-                </HorizontalScroll>
-              )}
-            </Section>
-          );
-        })}
-        */}
+            <TitleText
+              style={[
+                styles.greeting,
+                {
+                  fontFamily: getAppFontFamily(isRtl, "bold"),
+                  ...getTextDirectionStyle(isRtl),
+                },
+              ]}
+            >
+              {greeting}
+            </TitleText>
+          </View>
+          <View
+            style={[
+              styles.headerActions,
+              { flexDirection: isRtl ? "row-reverse" : "row" },
+            ]}
+          >
+            {accountButtons}
+          </View>
+        </View>
 
-        <Section>
-          <SectionHeader>
-            <SectionTitle>Recommendations</SectionTitle>
-          </SectionHeader>
-          {loadingYoutubeMix ? (
-            <RecommendationsSkeleton />
-          ) : youtubeMixTracks.length > 0 ? (
-            <RecommendationScroll
+        <View style={styles.section}>
+          <HeroCard
+            title={heroTitle}
+            image={heroImage || undefined}
+            colors={colors}
+            isLight={isLight}
+            playLabel={
+              mostPlayedYoutubeArtist
+                ? t("home.playSongsBy", { name: mostPlayedYoutubeArtist.name })
+                : t("home.emptyHeroTitle")
+            }
+            onPressPlay={
+              heroQueue.length > 0
+                ? () => {
+                    void playQueue(heroQueue, heroQueue[0]);
+                  }
+                : undefined
+            }
+            empty={!mostPlayedYoutubeArtist}
+            eyebrow={t("home.emptyHeroEyebrow")}
+            description={t("home.emptyHeroDescription")}
+          />
+        </View>
+
+        <View style={styles.section}>
+          <UiSectionHeader
+            title={t("home.recentlyPlayed")}
+            style={styles.sectionHeader}
+          />
+          {uniqueRecentSongs.length > 0 ? (
+            <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              style={isRtl ? styles.horizontalScrollRtl : undefined}
+              contentContainerStyle={[
+                styles.horizontalListContent,
+                isRtl ? styles.horizontalListContentRtl : null,
+              ]}
             >
-              {recommendationColumns.map((column, columnIndex) => (
-                <RecommendationColumn key={`rec-col-${columnIndex}`}>
-                  {column.map((track) => (
-                    <RecommendationItem
-                      key={track.id}
-                      onPress={() => handlePlaySuggestedTrack(track)}
-                    >
-                      <GenreRecommendationThumb
-                        source={
-                          track.thumbnail
-                            ? { uri: track.thumbnail }
-                            : require("../../assets/StreamifyLogo.png")
-                        }
-                      />
-                      <RecommendationTextWrap>
-                        <TopRecommendationTitle numberOfLines={2}>
-                          {track.title}
-                        </TopRecommendationTitle>
-                        <TopRecommendationMeta numberOfLines={1}>
-                          {track.artist}
-                        </TopRecommendationMeta>
-                      </RecommendationTextWrap>
-                    </RecommendationItem>
-                  ))}
-                </RecommendationColumn>
+              {uniqueRecentSongs.map((track) => (
+                <SongCard
+                  key={track.id}
+                  title={track.title}
+                  subtitle={track.artist || t("home.unknownArtist")}
+                  durationLabel={formatDuration(
+                    track.duration,
+                    t("home.recentlyPlayedFallback")
+                  )}
+                  image={track.thumbnail}
+                  colors={colors}
+                  onPress={() => {
+                    void playQueue(uniqueRecentSongs, track);
+                  }}
+                />
               ))}
-            </RecommendationScroll>
+            </ScrollView>
           ) : (
-            <EmptySectionText>
-              Stream a song from YouTube to see recommendations.
-            </EmptySectionText>
+            <EmptyStateCard
+              label={
+                isLoadingHistory
+                  ? t("common.loadingRecommendations")
+                  : t("home.noRecentSongs")
+              }
+              colors={colors}
+              loading={isLoadingHistory}
+            />
           )}
-        </Section>
+        </View>
 
-        {hasPreviouslyPlayed && (
-          <Section>
-            <SectionHeader>
-              <SectionTitle>Recently Played</SectionTitle>
-            </SectionHeader>
-            {loadingRecentlyPlayedArtists ? (
-              <RecommendationsSkeleton />
-            ) : (
-              <HorizontalScroll
-                horizontal
-                showsHorizontalScrollIndicator={false}
-              >
-                {recentlyPlayedArtists.slice(0, 3).map((artist) => (
-                  <ArtistTileWrap
-                    key={artist.id || `${artist.source}:${artist.title}`}
-                    onPress={() => handleArtistPress(artist)}
-                  >
-                    <ArtistAvatar
-                      source={
-                        artist.thumbnailUrl
-                          ? { uri: artist.thumbnailUrl }
-                          : require("../../assets/StreamifyLogo.png")
-                      }
-                    />
-                    <ArtistName numberOfLines={2}>{artist.title}</ArtistName>
-                  </ArtistTileWrap>
-                ))}
-                {previouslyPlayedTracks.map((track) => (
-                  <Card key={track.id} onPress={() => handlePlayTrack(track)}>
-                    <CardImage
-                      source={
-                        track.thumbnail
-                          ? { uri: track.thumbnail }
-                          : require("../../assets/StreamifyLogo.png")
-                      }
-                    />
-                    <CardTitle numberOfLines={2}>{track.title}</CardTitle>
-                    <CardMeta>{track.artist}</CardMeta>
-                  </Card>
-                ))}
-              </HorizontalScroll>
-            )}
-            {!loadingPreviouslyPlayed &&
-              previouslyPlayedTracks.length === 0 && (
-                <EmptySectionText>
-                  Play a song to see your recently played tracks here.
-                </EmptySectionText>
-              )}
-          </Section>
-        )}
-
-        {youtubePlayedCount > 0 && (
-          <Section>
-            <SectionHeader>
-              <SectionTitle>
-                {topArtistName ? `Top songs • ${topArtistName}` : "Top songs"}
-              </SectionTitle>
-            </SectionHeader>
-            {loadingTopArtistVideos ? (
-              <RecommendationsSkeleton />
-            ) : topArtistVideos.length > 0 ? (
-              <RecommendationScroll
-                horizontal
-                showsHorizontalScrollIndicator={false}
-              >
-                {topArtistColumns.map((column, columnIndex) => (
-                  <RecommendationColumn key={`top-col-${columnIndex}`}>
-                    {column.map((track) => (
-                      <RecommendationItem
-                        key={track.id}
-                        onPress={() => handlePlaySuggestedTrack(track)}
-                      >
-                        <TopRecommendationThumb
-                          source={
-                            track.thumbnail
-                              ? { uri: track.thumbnail }
-                              : require("../../assets/StreamifyLogo.png")
-                          }
-                        />
-                        <RecommendationTextWrap>
-                          <TopRecommendationTitle numberOfLines={2}>
-                            {track.title}
-                          </TopRecommendationTitle>
-                          <TopRecommendationMeta numberOfLines={1}>
-                            {track.artist}
-                          </TopRecommendationMeta>
-                        </RecommendationTextWrap>
-                      </RecommendationItem>
-                    ))}
-                  </RecommendationColumn>
-                ))}
-              </RecommendationScroll>
-            ) : (
-              <EmptySectionText>
-                Play a song from YouTube to see top songs by the artist.
-              </EmptySectionText>
-            )}
-          </Section>
-        )}
-
-        <Section>
-          <SectionHeader>
-            <SectionTitle>
-              {soundcloudGenre
-                ? `Similar genres to your taste • ${soundcloudGenre}`
-                : "Similar genres to your taste"}
-            </SectionTitle>
-          </SectionHeader>
-          {loadingSoundcloudGenreTracks ? (
-            <RecommendationsSkeleton />
-          ) : soundcloudGenreTracks.length > 0 ? (
-            <RecommendationScroll
+        <View style={styles.section}>
+          <UiSectionHeader
+            title={t("home.madeForYou")}
+            subtitle={
+              madeForYouSeedTrack
+                ? t("home.basedOn", {
+                    title: shortenLabel(madeForYouSeedTrack.title, 22),
+                  })
+                : undefined
+            }
+            subtitleNumberOfLines={1}
+            style={styles.sectionHeader}
+          />
+          {madeForYouTracks.length > 0 ? (
+            <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              style={isRtl ? styles.horizontalScrollRtl : undefined}
+              contentContainerStyle={[
+                styles.horizontalListContent,
+                isRtl ? styles.horizontalListContentRtl : null,
+              ]}
             >
-              {soundcloudGenreColumns.map((column, columnIndex) => (
-                <RecommendationColumn key={`genre-col-${columnIndex}`}>
-                  {column.map((track) => (
-                    <RecommendationItem
-                      key={track.id}
-                      onPress={() => handlePlaySuggestedTrack(track)}
-                    >
-                      <GenreRecommendationThumb
-                        source={
-                          track.thumbnail
-                            ? { uri: track.thumbnail }
-                            : require("../../assets/StreamifyLogo.png")
-                        }
-                      />
-                      <RecommendationTextWrap>
-                        <TopRecommendationTitle numberOfLines={2}>
-                          {track.title}
-                        </TopRecommendationTitle>
-                        <TopRecommendationMeta numberOfLines={1}>
-                          {track.artist}
-                        </TopRecommendationMeta>
-                      </RecommendationTextWrap>
-                    </RecommendationItem>
-                  ))}
-                </RecommendationColumn>
+              {madeForYouTracks.map((track) => (
+                <SongCard
+                  key={track.id}
+                  title={track.title}
+                  subtitle={track.artist}
+                  durationLabel={formatDuration(
+                    track.duration,
+                    t("home.recentlyPlayedFallback")
+                  )}
+                  image={track.thumbnail}
+                  colors={colors}
+                  onPress={() => {
+                    void playSuggestedQueue(madeForYouTracks, track);
+                  }}
+                />
               ))}
-            </RecommendationScroll>
-          ) : soundcloudPlayedCount === 0 ? (
-            <EmptySectionText>
-              Play a song from SoundCloud to see this section.
-            </EmptySectionText>
-          ) : null}
-        </Section>
+            </ScrollView>
+          ) : (
+            <EmptyStateCard
+              label={
+                isLoadingMadeForYou
+                  ? t("common.loadingRecommendations")
+                  : t("home.playYoutubeToBuildMix")
+              }
+              colors={colors}
+              loading={isLoadingMadeForYou}
+            />
+          )}
+        </View>
 
-        {/*
-          <Section>
-            <SectionHeader>
-              <SectionTitle>Recommended for You</SectionTitle>
-            </SectionHeader>
-            {loadingJiosaavnSuggestions ? (
-              <YouTubeMixSkeleton />
-            ) : (
-              <HorizontalScroll
-                horizontal
-                showsHorizontalScrollIndicator={false}
-              >
-                {jiosaavnSuggestions.map((track) => (
-                  <Card
-                    key={track.id}
-                    onPress={() => handlePlaySuggestedTrack(track)}
-                  >
-                    <CardImage
-                      source={
-                        track.thumbnail
-                          ? { uri: track.thumbnail }
-                          : require("../../assets/StreamifyLogo.png")
-                      }
-                    />
-                    <CardTitle numberOfLines={2}>{track.title}</CardTitle>
-                    <CardMeta>{track.artist}</CardMeta>
-                  </Card>
-                ))}
-              </HorizontalScroll>
-            )}
-          </Section>
-        */}
+        <View style={styles.section}>
+          <UiSectionHeader
+            title={t("home.playedArtists")}
+            style={styles.sectionHeader}
+          />
+          {navigablePlayedArtists.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={isRtl ? styles.horizontalScrollRtl : undefined}
+              contentContainerStyle={[
+                styles.horizontalListContent,
+                isRtl ? styles.horizontalListContentRtl : null,
+              ]}
+            >
+              {navigablePlayedArtists.map((artist) => (
+                <ArtistCard
+                  key={artist.key}
+                  artist={artist}
+                  colors={colors}
+                  playLabel={t("home.playSongsBy", { name: artist.name })}
+                  onPress={() => {
+                    navigation.navigate("Artist", {
+                      artistId: artist.artistId,
+                      artistName: artist.name,
+                      artistImage: artist.image || "",
+                      source: normalizeArtistSource(artist.source),
+                    });
+                  }}
+                />
+              ))}
+            </ScrollView>
+          ) : (
+            <EmptyStateCard
+              label={
+                isLoadingArtists
+                  ? t("common.loadingRecommendations")
+                  : t("home.noRecentArtists")
+              }
+              colors={colors}
+              loading={isLoadingArtists}
+            />
+          )}
+        </View>
+
+        {mostPlayedYoutubeArtist && heroTracks.length > 0 ? (
+          <View style={styles.section}>
+            <UiSectionHeader
+              title={t("home.playSongsBy", {
+                name: mostPlayedYoutubeArtist.name,
+              })}
+              style={styles.sectionHeader}
+            />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={isRtl ? styles.horizontalScrollRtl : undefined}
+              contentContainerStyle={[
+                styles.horizontalListContent,
+                isRtl ? styles.horizontalListContentRtl : null,
+              ]}
+            >
+              {heroTracks.map((track) => (
+                <SongCard
+                  key={track.id}
+                  title={track.title}
+                  subtitle={track.artist}
+                  durationLabel={formatDuration(
+                    track.duration,
+                    t("home.recentlyPlayedFallback")
+                  )}
+                  image={track.thumbnail}
+                  colors={colors}
+                  onPress={() => {
+                    void playSuggestedQueue(heroTracks, track);
+                  }}
+                />
+              ))}
+            </ScrollView>
+          </View>
+        ) : isLoadingHeroTracks ? (
+          <View style={styles.section}>
+            <UiSectionHeader
+              title={t("home.playSongsBy", {
+                name: mostPlayedYoutubeArtist?.name || t("home.unknownArtist"),
+              })}
+              style={styles.sectionHeader}
+            />
+            <EmptyStateCard
+              label={t("common.loadingRecommendations")}
+              colors={colors}
+              loading
+            />
+          </View>
+        ) : null}
       </ScrollView>
-    </SafeArea>
+    </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  contentContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 140,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 20,
+  },
+  headerTextBlock: {
+    flex: 1,
+  },
+  greeting: {
+    fontSize: 24,
+    lineHeight: 30,
+  },
+  headerActions: {
+    alignItems: "center",
+    gap: 8,
+    flexShrink: 1,
+  },
+  headerPillButton: {
+    minHeight: 40,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerPillButtonText: {
+    fontSize: 13,
+    lineHeight: 16,
+  },
+  accountPillButton: {
+    minHeight: 40,
+    maxWidth: 220,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: "center",
+    gap: 8,
+  },
+  accountPillAvatarImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+  },
+  accountPillAvatarFallback: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  accountPillAvatarFallbackText: {
+    fontSize: 12,
+    lineHeight: 14,
+    fontWeight: "700",
+  },
+  accountPillButtonText: {
+    flexShrink: 1,
+    fontSize: 13,
+    lineHeight: 16,
+    fontWeight: "600",
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    marginBottom: 16,
+  },
+  heroCard: {
+    minHeight: 220,
+    borderRadius: 24,
+    overflow: "hidden",
+    borderWidth: 1,
+  },
+  heroImage: {
+    borderRadius: 24,
+  },
+  heroContent: {
+    flex: 1,
+    padding: 18,
+    justifyContent: "flex-start",
+    alignItems: "flex-start",
+  },
+  heroTitle: {
+    color: "#ffffff",
+    fontSize: 24,
+    lineHeight: 30,
+  },
+  heroPlayButton: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    width: 64,
+    height: 64,
+    marginLeft: -32,
+    marginTop: -32,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.24,
+    shadowRadius: 28,
+    elevation: 10,
+  },
+  emptyHero: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+  },
+  emptyHeroEyebrow: {
+    fontSize: 12,
+    lineHeight: 16,
+    textTransform: "uppercase",
+    letterSpacing: 2.2,
+  },
+  emptyHeroTitle: {
+    marginTop: 12,
+    fontSize: 30,
+    lineHeight: 36,
+  },
+  emptyHeroDescription: {
+    marginTop: 12,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  horizontalListContent: {
+    paddingRight: 16,
+  },
+  horizontalListContentRtl: {
+    paddingLeft: 0,
+    paddingRight: 16,
+  },
+  horizontalScrollRtl: {
+    transform: [{ scaleX: -1 }],
+  },
+  songCard: {
+    width: 168,
+    marginRight: 16,
+  },
+  songArtworkFrame: {
+    aspectRatio: 1,
+    borderRadius: 22,
+    overflow: "hidden",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 22,
+    elevation: 8,
+  },
+  songArtwork: {
+    width: "100%",
+    height: "100%",
+  },
+  songArtworkFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  songPlayBadge: {
+    position: "absolute",
+    right: 12,
+    bottom: 12,
+    width: 42,
+    height: 42,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    elevation: 6,
+  },
+  songTitle: {
+    marginTop: 12,
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  songSubtitle: {
+    marginTop: 4,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  songMeta: {
+    marginTop: 2,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  artistCard: {
+    width: 168,
+    marginRight: 16,
+    alignItems: "center",
+  },
+  artistArtworkFrame: {
+    width: 168,
+    height: 168,
+    borderRadius: 999,
+    overflow: "hidden",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 22,
+    elevation: 8,
+  },
+  artistArtwork: {
+    width: "100%",
+    height: "100%",
+  },
+  artistTitle: {
+    marginTop: 12,
+    fontSize: 15,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+  artistSubtitle: {
+    marginTop: 4,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: "center",
+  },
+  emptyStateCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+  },
+  emptyStateLoading: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  emptyStateText: {
+    marginLeft: 10,
+  },
+});

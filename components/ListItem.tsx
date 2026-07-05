@@ -1,6 +1,9 @@
 import * as React from "react";
 import { Image } from "react-native";
 import styled from "styled-components/native";
+import { useAppLanguage } from "../hooks/useAppLanguage";
+import { useTheme } from "../hooks/useTheme";
+import { getAppFontFamily, getTextDirectionStyle } from "../utils/fonts";
 
 export type ListItemProps = {
   title: string;
@@ -49,14 +52,45 @@ const Stats = styled.Text`
 
 export default function ListItem(props: ListItemProps) {
   const { title, stats, thumbnail, uploader_data } = props;
+  const { colors } = useTheme();
+  const { isRtl } = useAppLanguage();
 
   return (
-    <Row>
+    <Row style={{ flexDirection: isRtl ? "row-reverse" : "row" }}>
       {!!thumbnail && <Thumb source={{ uri: thumbnail }} resizeMode="cover" />}
       <Content>
-        <Title numberOfLines={2}>{title}</Title>
-        {!!uploader_data && <Uploader>{uploader_data}</Uploader>}
-        {!!stats && <Stats>{stats}</Stats>}
+        <Title
+          numberOfLines={2}
+          style={{
+            color: colors.foreground,
+            fontFamily: getAppFontFamily(isRtl, "medium"),
+            ...getTextDirectionStyle(isRtl),
+          }}
+        >
+          {title}
+        </Title>
+        {!!uploader_data && (
+          <Uploader
+            style={{
+              color: colors.muted,
+              fontFamily: getAppFontFamily(isRtl, "regular"),
+              ...getTextDirectionStyle(isRtl),
+            }}
+          >
+            {uploader_data}
+          </Uploader>
+        )}
+        {!!stats && (
+          <Stats
+            style={{
+              color: colors.muted,
+              fontFamily: getAppFontFamily(isRtl, "regular"),
+              ...getTextDirectionStyle(isRtl),
+            }}
+          >
+            {stats}
+          </Stats>
+        )}
       </Content>
     </Row>
   );

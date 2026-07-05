@@ -19,6 +19,7 @@ import {
   getAudioStreamUrl,
   prefetchAudioStreamUrl,
 } from "../../modules/audioStreaming";
+import { useAppLanguage } from "../../hooks/useAppLanguage";
 /* =================================================================
    1.  STYLES  (unchanged)
 ================================================================= */
@@ -146,7 +147,7 @@ async function getAudioUrlWithFallback(
   onStatus: (msg: string) => void,
   source?: string,
   trackTitle?: string,
-  trackArtist?: string,
+  trackArtist?: string
 ): Promise<string> {
   try {
     return await getAudioStreamUrl(videoId, onStatus, source);
@@ -155,7 +156,7 @@ async function getAudioUrlWithFallback(
     throw new Error(
       `Unable to extract audio: ${
         error instanceof Error ? error.message : "Unknown error"
-      }`,
+      }`
     );
   }
 }
@@ -164,6 +165,9 @@ async function getAudioUrlWithFallback(
    3.  COMPONENT
 ================================================================= */
 export default function PlayerScreen({ route, navigation }: any) {
+  const { isRtl } = useAppLanguage();
+  const previousIconName = isRtl ? "play-skip-forward" : "play-skip-back";
+  const nextIconName = isRtl ? "play-skip-back" : "play-skip-forward";
   const item = route.params?.item;
   const playlist = route.params?.playlist || [];
   const currentIndex = route.params?.currentIndex || 0;
@@ -188,7 +192,7 @@ export default function PlayerScreen({ route, navigation }: any) {
   const [positionMillis, setPositionMillis] = useState(0);
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekPreviewMillis, setSeekPreviewMillis] = useState<number | null>(
-    null,
+    null
   );
   const [statusMsg, setStatusMsg] = useState("");
   const [error, setError] = useState("");
@@ -221,7 +225,7 @@ export default function PlayerScreen({ route, navigation }: any) {
         navigation.goBack();
       } else {
         console.log(
-          "[Player] No previous screen available, navigating to Search tab",
+          "[Player] No previous screen available, navigating to Search tab"
         );
         // Navigate to Search tab to preserve search state
         console.log("[Player] Navigating to Home -> Search");
@@ -248,11 +252,11 @@ export default function PlayerScreen({ route, navigation }: any) {
         return;
       }
       console.log(
-        `[Player] Previous item: ${previousItem.title} (${previousItem.id})`,
+        `[Player] Previous item: ${previousItem.title} (${previousItem.id})`
       );
       console.log(
         "[Player] Previous item complete data:",
-        JSON.stringify(previousItem, null, 2),
+        JSON.stringify(previousItem, null, 2)
       );
       // Stop current playback before navigation
       if (sound) {
@@ -264,7 +268,7 @@ export default function PlayerScreen({ route, navigation }: any) {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       console.log(
-        `[Player] Navigating to previous track: ${previousItem.title} (${previousItem.id})`,
+        `[Player] Navigating to previous track: ${previousItem.title} (${previousItem.id})`
       );
       navigation.push("Player", {
         item: previousItem,
@@ -289,7 +293,7 @@ export default function PlayerScreen({ route, navigation }: any) {
       console.log(`[Player] Next item: ${nextItem.title} (${nextItem.id})`);
       console.log(
         "[Player] Next item complete data:",
-        JSON.stringify(nextItem, null, 2),
+        JSON.stringify(nextItem, null, 2)
       );
 
       // Stop current playback before navigation
@@ -302,7 +306,7 @@ export default function PlayerScreen({ route, navigation }: any) {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       console.log(
-        `[Player] Navigating to next track: ${nextItem.title} (${nextItem.id})`,
+        `[Player] Navigating to next track: ${nextItem.title} (${nextItem.id})`
       );
       navigation.push("Player", {
         item: nextItem,
@@ -351,13 +355,13 @@ export default function PlayerScreen({ route, navigation }: any) {
     if (!item) {
       console.log("[Player] No item provided, skipping audio loading");
       console.log(
-        `[Player] Current state - item: ${item}, sound: ${sound}, isPlaying: ${isPlaying}`,
+        `[Player] Current state - item: ${item}, sound: ${sound}, isPlaying: ${isPlaying}`
       );
       return;
     }
 
     console.log(
-      `[Player] Item changed, loading new track: ${item.title} (${item.id})`,
+      `[Player] Item changed, loading new track: ${item.title} (${item.id})`
     );
 
     // Reset position and duration when track changes to prevent progress bar sync issues
@@ -401,18 +405,18 @@ export default function PlayerScreen({ route, navigation }: any) {
 
       try {
         console.log(
-          `[Player] Loading audio for track: ${item.title} (${item.id}), source: ${item.source}, author: ${item.author}, duration: ${item.duration}`,
+          `[Player] Loading audio for track: ${item.title} (${item.id}), source: ${item.source}, author: ${item.author}, duration: ${item.duration}`
         );
         console.log(
           "[Player] Complete track data:",
-          JSON.stringify(item, null, 2),
+          JSON.stringify(item, null, 2)
         );
         uri = await getAudioUrlWithFallback(
           item.id,
           (msg) => mounted && setStatusMsg(msg),
           item.source,
           item.title,
-          item.author,
+          item.author
         );
         if (!mounted) {
           return;
@@ -422,14 +426,14 @@ export default function PlayerScreen({ route, navigation }: any) {
       } catch (error) {
         console.error(
           `[Player] Failed to load track: ${item.title} (${item.id}):`,
-          error,
+          error
         );
 
         // failedTracks removed - no longer tracking failed tracks
         setError(
           `Unable to play this track: ${
             error instanceof Error ? error.message : "Unknown error"
-          }`,
+          }`
         );
         setStatusMsg("Track unavailable");
 
@@ -512,7 +516,7 @@ export default function PlayerScreen({ route, navigation }: any) {
                 setError(errorMessage);
               }
             }
-          },
+          }
         );
         if (mounted) {
           setSound(newSound);
@@ -525,7 +529,7 @@ export default function PlayerScreen({ route, navigation }: any) {
           const errorMessage = e.message || "Playback failed";
           console.error(
             `[Player] Audio loading failed for ${item.title}:`,
-            errorMessage,
+            errorMessage
           );
           if (uri) {
             console.error("[Player] Stream URL:", uri);
@@ -560,7 +564,7 @@ export default function PlayerScreen({ route, navigation }: any) {
     }
     const seekPositionMillis = Math.max(
       0,
-      Math.min(valueMillis, durationMillis || 0),
+      Math.min(valueMillis, durationMillis || 0)
     );
     console.log(`[PlayerScreen] Seeking to: ${seekPositionMillis}ms`);
 
@@ -579,7 +583,7 @@ export default function PlayerScreen({ route, navigation }: any) {
   console.log(
     "[Player] Render - item:",
     item ? `${item.title} (${item.id})` : "null",
-    `sound: ${sound ? "exists" : "null"}, isPlaying: ${isPlaying}`,
+    `sound: ${sound ? "exists" : "null"}, isPlaying: ${isPlaying}`
   );
 
   // Handle state sync issue: if we have a sound playing but no item data
@@ -660,7 +664,7 @@ export default function PlayerScreen({ route, navigation }: any) {
               {formatTime(
                 isSeeking && seekPreviewMillis !== null
                   ? seekPreviewMillis
-                  : positionMillis,
+                  : positionMillis
               )}
             </TimeText>
             <TimeText>{formatTime(durationMillis)}</TimeText>
@@ -670,7 +674,7 @@ export default function PlayerScreen({ route, navigation }: any) {
         <ControlsContainer>
           <Ionicons name="shuffle" size={24} color="#666" />
           <TouchableOpacity onPress={navigateToPrevious}>
-            <Ionicons name="play-skip-back" size={24} color="#fff" />
+            <Ionicons name={previousIconName} size={24} color="#fff" />
           </TouchableOpacity>
           <PlayButton onPress={handlePlayPause}>
             <Ionicons
@@ -680,7 +684,7 @@ export default function PlayerScreen({ route, navigation }: any) {
             />
           </PlayButton>
           <TouchableOpacity onPress={navigateToNext}>
-            <Ionicons name="play-skip-forward" size={24} color="#fff" />
+            <Ionicons name={nextIconName} size={24} color="#fff" />
           </TouchableOpacity>
           <Ionicons name="chatbox-ellipses-outline" size={24} color="#fff" />
         </ControlsContainer>
@@ -737,13 +741,13 @@ export default function PlayerScreen({ route, navigation }: any) {
           <ControlsContainer>
             <Ionicons name="shuffle" size={24} color="#666" />
             <TouchableOpacity disabled={true}>
-              <Ionicons name="play-skip-back" size={24} color="#666" />
+              <Ionicons name={previousIconName} size={24} color="#666" />
             </TouchableOpacity>
             <PlayButton onPress={() => {}} disabled={true}>
               <Ionicons name="play" size={28} color="#666" />
             </PlayButton>
             <TouchableOpacity disabled={true}>
-              <Ionicons name="play-skip-forward" size={24} color="#666" />
+              <Ionicons name={nextIconName} size={24} color="#666" />
             </TouchableOpacity>
             <Ionicons name="chatbox-ellipses-outline" size={24} color="#666" />
           </ControlsContainer>
@@ -825,7 +829,7 @@ export default function PlayerScreen({ route, navigation }: any) {
             {formatTime(
               isSeeking && seekPreviewMillis !== null
                 ? seekPreviewMillis
-                : positionMillis,
+                : positionMillis
             )}
           </TimeText>
           <TimeText>{formatTime(durationMillis)}</TimeText>
@@ -839,7 +843,7 @@ export default function PlayerScreen({ route, navigation }: any) {
           disabled={currentIndex === 0 || playlist.length === 0}
         >
           <Ionicons
-            name="play-skip-back"
+            name={previousIconName}
             size={24}
             color={
               currentIndex === 0 || playlist.length === 0 ? "#666" : "#fff"
@@ -860,7 +864,7 @@ export default function PlayerScreen({ route, navigation }: any) {
           }
         >
           <Ionicons
-            name="play-skip-forward"
+            name={nextIconName}
             size={24}
             color={
               currentIndex >= playlist.length - 1 || playlist.length === 0

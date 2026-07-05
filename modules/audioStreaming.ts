@@ -7,41 +7,229 @@ import {
   API,
   fetchWithRetry,
   DYNAMIC_INVIDIOUS_INSTANCES,
+  getJioSaavnFallbackSearchBase,
+  getLocalProxyBase,
+  getProviderOrigin,
+  getProviderReferer,
+  getPrimaryInvidiousInstance,
+  getSoundCloudApiBase,
+  getSoundCloudApiV2Base,
+  getSoundCloudWidgetBase,
+  getYouTubeMusicBase,
+  getYouTubeWebBase,
   normalizeInvidiousInstance,
   getJioSaavnSongEndpoint,
 } from "../components/core/api";
+import {
+  buildProviderUrlCandidates,
+  getProviderEndpoints,
+} from "../lib/provider-endpoints";
+import { getRuntimeServiceConfig } from "../lib/runtime-services";
 
 // Cache directory configuration
+const STREAMIFY_TEMP_CACHE_DIR_CANDIDATES = [
+  () => `${FileSystem.cacheDirectory}Streamify/cache/`,
+  () => `${FileSystem.documentDirectory}Streamify/cache/`,
+  () => `${FileSystem.cacheDirectory}Streamify/`,
+  () => `${FileSystem.cacheDirectory}youtube-cache/`,
+  () => `${FileSystem.cacheDirectory}audio-cache/`,
+  () => `${FileSystem.documentDirectory}audio-cache/`,
+];
+
+const STREAMIFY_OFFLINE_DIR_CANDIDATES = [
+  () => `${FileSystem.documentDirectory}Streamify/offline/`,
+  () => `${FileSystem.cacheDirectory}Streamify/offline/`,
+];
+
+async function ensureWritableDirectory(
+  dir: string,
+  label: string
+): Promise<string | null> {
+  try {
+    await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+    const testFile = `${dir}.writetest_${Date.now()}`;
+    await FileSystem.writeAsStringAsync(testFile, "test");
+    await FileSystem.deleteAsync(testFile, { idempotent: true });
+    console.log(`[Audio] Using ${label}: ${dir}`);
+    return dir;
+  } catch (error) {
+    console.warn(`[Audio] ${label} not available: ${dir}`, error);
+    return null;
+  }
+}
+
 const CACHE_CONFIG = {
   // Try these directories in order of preference
-  cacheDirs: [
-    () => `${FileSystem.documentDirectory}Streamify/`, // Primary: Streamify directory in documents
-    () => `${FileSystem.cacheDirectory}Streamify/`, // Secondary: Streamify directory in cache
-    () => `${FileSystem.cacheDirectory}youtube-cache/`, // Legacy fallback
-    () => `${FileSystem.cacheDirectory}audio-cache/`, // Legacy fallback
-    () => `${FileSystem.documentDirectory}audio-cache/`, // Legacy fallback
-  ],
+  cacheDirs: STREAMIFY_TEMP_CACHE_DIR_CANDIDATES,
   getBestCacheDir: async function (): Promise<string | null> {
     for (const dirFunc of this.cacheDirs) {
       const dir = dirFunc();
-      try {
-        // Test if we can create and write to this directory
-        await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-        const testFile = `${dir}.writetest_${Date.now()}`;
-        await FileSystem.writeAsStringAsync(testFile, "test");
-        await FileSystem.deleteAsync(testFile, { idempotent: true });
-        console.log(`[Audio] Using cache directory: ${dir}`);
-        return dir;
-      } catch (error) {
-        console.warn(`[Audio] Cache directory not available: ${dir}`, error);
-        continue;
+      const resolved = await ensureWritableDirectory(dir, "cache directory");
+      if (resolved) {
+        return resolved;
       }
     }
     return null;
   },
 };
 
+async function getBestOfflineDir(): Promise<string | null> {
+  for (const dirFunc of STREAMIFY_OFFLINE_DIR_CANDIDATES) {
+    const dir = dirFunc();
+    const resolved = await ensureWritableDirectory(dir, "offline directory");
+    if (resolved) {
+      return resolved;
+    }
+  }
+  return null;
+}
+
+function withTrailingSlash(value: string): string {
+  if (!value) {
+    return "";
+  }
+
+  return value.endsWith("/") ? value : `${value}/`;
+}
+
+function normalizeFileUri(path: string): string {
+  return path.startsWith("file://") ? path : `file://${path}`;
+}
+
+function stripFileUri(path: string): string {
+  return path.replace(/^file:\/\//, "");
+}
+
+function inferAudioFileExtension(
+  sourceUrl?: string,
+  fallbackPath?: string
+): string {
+  const candidates = [sourceUrl, fallbackPath]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => {
+      try {
+        return decodeURIComponent(String(value)).toLowerCase();
+      } catch {
+        return String(value).toLowerCase();
+      }
+    });
+
+  for (const candidate of candidates) {
+    if (
+      candidate.includes("audio/webm") ||
+      candidate.includes(".webm") ||
+      candidate.includes("mime=audio/webm")
+    ) {
+      return ".webm";
+    }
+    if (
+      candidate.includes("audio/x-m4a") ||
+      candidate.includes("audio/mp4") ||
+      candidate.includes(".m4a") ||
+      candidate.includes(".mp4") ||
+      candidate.includes("mime=audio/mp4")
+    ) {
+      return ".m4a";
+    }
+    if (
+      candidate.includes("audio/ogg") ||
+      candidate.includes(".ogg") ||
+      candidate.includes("mime=audio/ogg")
+    ) {
+      return ".ogg";
+    }
+    if (candidate.includes(".oga")) {
+      return ".oga";
+    }
+    if (
+      candidate.includes("audio/mpeg") ||
+      candidate.includes("audio/mp3") ||
+      candidate.includes(".mp3")
+    ) {
+      return ".mp3";
+    }
+    if (candidate.includes(".aac") || candidate.includes("audio/aac")) {
+      return ".aac";
+    }
+  }
+
+  return ".cache";
+}
+
+function getYouTubeHeaders() {
+  return {
+    Referer: getProviderReferer("youtube"),
+    Origin: getProviderOrigin("youtube"),
+  };
+}
+
+function getSoundCloudWidgetHeaders() {
+  const widgetBase = getSoundCloudWidgetBase();
+  return {
+    Referer: withTrailingSlash(widgetBase),
+    Origin: widgetBase,
+  };
+}
+
+function getSoundCloudHeaders() {
+  return {
+    Referer: getProviderReferer("soundcloud"),
+    Origin: getProviderOrigin("soundcloud"),
+  };
+}
+
+function normalizeForMatch(value?: string): string {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\([^)]*\)|\[[^\]]*\]/g, " ")
+    .replace(
+      /\b(feat|ft|featuring|official|video|lyrics|audio|visualizer)\b/g,
+      " "
+    )
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function titleMatchScore(expectedTitle: string, actualTitle: string): number {
+  const expected = normalizeForMatch(expectedTitle);
+  const actual = normalizeForMatch(actualTitle);
+  if (!expected || !actual) return 0;
+  if (expected === actual) return 5;
+  if (actual.includes(expected) || expected.includes(actual)) return 3;
+
+  const expectedWords = new Set(expected.split(" "));
+  const actualWords = new Set(actual.split(" "));
+  let overlap = 0;
+
+  for (const word of expectedWords) {
+    if (actualWords.has(word)) {
+      overlap += 1;
+    }
+  }
+
+  return overlap >= Math.min(2, expectedWords.size) ? 2 : 0;
+}
+
+function authorMatchScore(
+  expectedAuthor?: string,
+  actualAuthor?: string
+): number {
+  const expected = normalizeForMatch(expectedAuthor);
+  const actual = normalizeForMatch(actualAuthor);
+  if (!expected || !actual) return 0;
+  if (expected === actual) return 3;
+  if (expected.split(" ").some((part) => part && actual.includes(part))) {
+    return 1;
+  }
+  return 0;
+}
+
 // Audio streaming with multiple fallback strategies and ytify v8 concepts
+export type AudioCacheProgressUpdate = AudioCacheInfo & {
+  trackId: string;
+};
+
 export class AudioStreamManager {
   private static instance: AudioStreamManager;
 
@@ -68,6 +256,9 @@ export class AudioStreamManager {
   private cacheDirectory: string | null = null;
   private cacheDirectoryInitPromise: Promise<void> | null = null;
   private lastCacheDirectoryInitTime = 0;
+  private offlineDirectory: string | null = null;
+  private offlineDirectoryInitPromise: Promise<void> | null = null;
+  private lastOfflineDirectoryInitTime = 0;
 
   // Cache progress tracking to prevent regression
   private cacheProgress: Map<
@@ -86,6 +277,9 @@ export class AudioStreamManager {
       isFullyCached?: boolean; // Track if file is confirmed complete
     }
   > = new Map();
+  private cacheProgressListeners = new Set<
+    (update: AudioCacheProgressUpdate) => void
+  >();
 
   // Maximum retry attempts for failed downloads
   private readonly MAX_RETRY_ATTEMPTS = 1;
@@ -112,6 +306,91 @@ export class AudioStreamManager {
   >();
   private readonly CACHE_INFO_TTL = 1000;
 
+  private buildCacheProgressUpdate(trackId: string): AudioCacheProgressUpdate {
+    const progress = this.cacheProgress.get(trackId);
+    if (!progress) {
+      return {
+        trackId,
+        percentage: 0,
+        fileSize: 0,
+        totalFileSize: 0,
+        isFullyCached: false,
+        isDownloading: false,
+        downloadSpeed: 0,
+        retryCount: 0,
+      };
+    }
+
+    const totalFileSize =
+      typeof progress.estimatedTotalSize === "number" &&
+      progress.estimatedTotalSize > 0
+        ? Math.round((progress.estimatedTotalSize / (1024 * 1024)) * 100) / 100
+        : undefined;
+
+    return {
+      trackId,
+      percentage: progress.isFullyCached
+        ? 100
+        : Math.max(progress.percentage, progress.isDownloading ? 1 : 0),
+      fileSize: progress.downloadedSize || progress.lastFileSize || 0,
+      totalFileSize,
+      isFullyCached: progress.isFullyCached || false,
+      isDownloading: progress.isDownloading,
+      downloadSpeed: progress.downloadSpeed || 0,
+      retryCount: progress.retryCount || 0,
+    };
+  }
+
+  private emitCacheProgressUpdate(trackId: string): void {
+    if (this.cacheProgressListeners.size === 0) {
+      return;
+    }
+
+    const update = this.buildCacheProgressUpdate(trackId);
+    // #region debug-point A:emit-cache-progress
+    fetch("http://192.168.1.106:7777/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "cache-progress-stuck",
+        runId: "pre-fix",
+        hypothesisId: "A",
+        location: "audioStreaming:emitCacheProgressUpdate",
+        msg: "[DEBUG] cache progress emitted",
+        data: {
+          trackId,
+          percentage: update.percentage,
+          fileSize: update.fileSize,
+          totalFileSize: update.totalFileSize ?? null,
+          isDownloading: update.isDownloading ?? null,
+          isFullyCached: update.isFullyCached,
+          listenerCount: this.cacheProgressListeners.size,
+        },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    this.cacheProgressListeners.forEach((listener) => {
+      try {
+        listener(update);
+      } catch (error) {
+        console.warn(
+          `[Audio] Cache progress listener failed for ${trackId}:`,
+          error
+        );
+      }
+    });
+  }
+
+  public subscribeToCacheProgress(
+    listener: (update: AudioCacheProgressUpdate) => void
+  ): () => void {
+    this.cacheProgressListeners.add(listener);
+    return () => {
+      this.cacheProgressListeners.delete(listener);
+    };
+  }
+
   /**
    * Clear cached cache info for a specific track
    */
@@ -132,10 +411,13 @@ export class AudioStreamManager {
     "fDoItIDGPGBYQK0R7hgmy7vLqNYnZOLM",
   ];
   private currentClientIdIndex = 0;
+  private soundCloudClientId: string | null = null;
 
   // YouTube instance switching for reliability (similar to YouTube's method)
   private youtubeInstances: string[] = [];
   private currentYoutubeInstanceIndex = 0;
+  private preferredInvidiousInstance = "";
+  private preferredPipedInstance = "";
   private youtubeInstanceHealth = new Map<
     string,
     { lastCheck: number; isHealthy: boolean }
@@ -189,6 +471,20 @@ export class AudioStreamManager {
         this.cacheDirectoryInitPromise = null;
       }
     );
+    this.offlineDirectoryInitPromise =
+      this.initializeOfflineDirectory().finally(() => {
+        this.offlineDirectoryInitPromise = null;
+      });
+  }
+
+  public async warmupProviders(): Promise<void> {
+    try {
+      await getProviderEndpoints();
+      this.initializeYoutubeInstances();
+      await this.getNextHealthyInstance();
+    } catch (error) {
+      console.warn("[Audio] Provider warmup failed:", error);
+    }
   }
 
   /**
@@ -205,6 +501,21 @@ export class AudioStreamManager {
     } else {
       console.warn(
         "[Audio] No writable cache directory available, caching will be disabled"
+      );
+    }
+  }
+
+  private async initializeOfflineDirectory(): Promise<void> {
+    console.log("[Audio] Initializing offline directory...");
+    this.offlineDirectory = await getBestOfflineDir();
+
+    if (this.offlineDirectory) {
+      console.log(
+        `[Audio] Successfully initialized offline directory: ${this.offlineDirectory}`
+      );
+    } else {
+      console.warn(
+        "[Audio] No writable offline directory available, full offline files will stay in temp cache"
       );
     }
   }
@@ -233,6 +544,27 @@ export class AudioStreamManager {
     return this.cacheDirectory;
   }
 
+  public async getOfflineDirectory(): Promise<string | null> {
+    if (this.offlineDirectory === null) {
+      const now = Date.now();
+      if (
+        !this.offlineDirectoryInitPromise &&
+        now - this.lastOfflineDirectoryInitTime < this.CACHE_DIR_INIT_COOLDOWN
+      ) {
+        return null;
+      }
+      if (!this.offlineDirectoryInitPromise) {
+        this.lastOfflineDirectoryInitTime = now;
+        this.offlineDirectoryInitPromise =
+          this.initializeOfflineDirectory().finally(() => {
+            this.offlineDirectoryInitPromise = null;
+          });
+      }
+      await this.offlineDirectoryInitPromise;
+    }
+    return this.offlineDirectory;
+  }
+
   /**
    * Ensure the Streamify directory exists and is accessible
    * This method is called on first app launch to create the directory
@@ -256,6 +588,11 @@ export class AudioStreamManager {
       console.error("[Audio] Error ensuring Streamify directory:", error);
       return null;
     }
+  }
+
+  private isOfflinePath(filePath: string): boolean {
+    const normalizedPath = stripFileUri(filePath).replace(/\\/g, "/");
+    return normalizedPath.toLowerCase().includes("/streamify/offline/");
   }
 
   /**
@@ -292,6 +629,13 @@ export class AudioStreamManager {
 
     // Atomic update - lock the progress to prevent race conditions
     if (existingProgress) {
+      if (
+        !options?.isFullyCached &&
+        newPercentage < existingProgress.percentage
+      ) {
+        newPercentage = existingProgress.percentage;
+      }
+
       // Check if this is a regression (but allow for file size recalculation)
       const isSignificantRegression =
         newPercentage < existingProgress.percentage - 5;
@@ -361,6 +705,7 @@ export class AudioStreamManager {
 
     // Clear cache info cache since progress changed
     this.clearCacheInfoCache(trackId);
+    this.emitCacheProgressUpdate(trackId);
 
     return true;
   }
@@ -388,6 +733,21 @@ export class AudioStreamManager {
     };
 
     this.cacheProgress.set(trackId, updatedProgress);
+    this.clearCacheInfoCache(trackId);
+    this.emitCacheProgressUpdate(trackId);
+    void updateAudioCacheIndexEntry(trackId, {
+      isDownloading: true,
+      isFullyCached: false,
+      estimatedSizeBytes:
+        existingProgress?.estimatedTotalSize &&
+        existingProgress.estimatedTotalSize > 0
+          ? existingProgress.estimatedTotalSize
+          : undefined,
+      downloadedBytes:
+        existingProgress?.downloadedSize && existingProgress.downloadedSize > 0
+          ? Math.round(existingProgress.downloadedSize * 1024 * 1024)
+          : undefined,
+    });
     console.log(
       `[CacheProgress] Download started for ${trackId}${streamUrl ? ` from: ${streamUrl.substring(0, 50)}...` : ""}`
     );
@@ -418,9 +778,36 @@ export class AudioStreamManager {
 
     // Clear cache info cache since the file status changed
     this.clearCacheInfoCache(trackId);
+    this.emitCacheProgressUpdate(trackId);
+    void updateAudioCacheIndexEntry(trackId, {
+      sizeBytes: Math.round(fileSize * 1024 * 1024),
+      estimatedSizeBytes: Math.round(fileSize * 1024 * 1024),
+      downloadedBytes: Math.round(fileSize * 1024 * 1024),
+      isDownloading: false,
+      isFullyCached: true,
+    });
     console.log(
       `[CacheProgress] Download completed for ${trackId}: ${Math.round(fileSize * 100) / 100}MB (took ${existingProgress ? Math.round((now - existingProgress.downloadStartTime) / 1000) : 0}s)`
     );
+
+    // Promote finished files into persistent offline storage after the current
+    // synchronous cache bookkeeping completes.
+    setTimeout(() => {
+      void this.promoteCompletedTrackToOfflineStorage(trackId);
+    }, 0);
+  }
+
+  private registerValidatedFullTrackPath(
+    trackId: string,
+    filePath: string
+  ): void {
+    if (!trackId || !filePath) {
+      return;
+    }
+
+    this.trackCache.set(trackId, filePath);
+    this.trackCache.set(trackId + "_full", filePath);
+    this.trackCache.set(trackId + "_has_full", "true");
   }
 
   /**
@@ -439,6 +826,7 @@ export class AudioStreamManager {
         ) {
           this.cacheProgress.delete(trackId);
           this.clearCacheInfoCache(trackId);
+          this.emitCacheProgressUpdate(trackId);
           console.log(
             `[CacheProgress] Cleaned up stale progress for ${trackId}`
           );
@@ -452,16 +840,63 @@ export class AudioStreamManager {
    */
   private initializeYoutubeInstances(): void {
     this.youtubeInstances = [
-      ...DYNAMIC_INVIDIOUS_INSTANCES,
-      ...API.piped,
-      "https://invidious.io",
-      "https://yewtu.be",
-      "https://invidious.snopyta.org",
-      "https://invidious.kavin.rocks",
+      ...this.prioritizePreferredInstance(
+        DYNAMIC_INVIDIOUS_INSTANCES,
+        this.preferredInvidiousInstance
+      ),
+      ...this.prioritizePreferredInstance(
+        API.piped,
+        this.preferredPipedInstance
+      ),
     ];
     console.log(
       `[YouTube] Initialized ${this.youtubeInstances.length} instances for switching`
     );
+  }
+
+  private prioritizePreferredInstance(
+    instances: string[],
+    preferredInstance: string
+  ): string[] {
+    const normalizedInstances = [...new Set(instances.filter(Boolean))];
+    if (!preferredInstance) {
+      return normalizedInstances;
+    }
+
+    const preferredIndex = normalizedInstances.findIndex(
+      (instance) => instance === preferredInstance
+    );
+    if (preferredIndex <= 0) {
+      return normalizedInstances;
+    }
+
+    return [
+      normalizedInstances[preferredIndex],
+      ...normalizedInstances.slice(0, preferredIndex),
+      ...normalizedInstances.slice(preferredIndex + 1),
+    ];
+  }
+
+  private rememberWorkingYoutubeInstance(
+    type: "invidious" | "piped",
+    instance: string
+  ): void {
+    if (!instance) {
+      return;
+    }
+
+    if (type === "invidious") {
+      this.preferredInvidiousInstance = instance;
+    } else {
+      this.preferredPipedInstance = instance;
+    }
+
+    const youtubeInstanceIndex = this.youtubeInstances.findIndex(
+      (entry) => entry === instance
+    );
+    if (youtubeInstanceIndex >= 0) {
+      this.currentYoutubeInstanceIndex = youtubeInstanceIndex;
+    }
   }
 
   /**
@@ -803,16 +1238,8 @@ export class AudioStreamManager {
   }
 
   private setupProxyRotation() {
-    // Dynamic proxy rotation for network resilience
-    this.proxyRotation = [
-      "https://corsproxy.io/?",
-      "https://api.allorigins.win/raw?url=",
-      "https://cors-anywhere.herokuapp.com/",
-      "https://proxy.cors.sh/",
-      "https://corsproxy.org/?",
-      "https://cors.eu.org/?",
-      "https://corsproxy.com/?",
-    ];
+    // Proxy bases are loaded lazily from runtime config when needed.
+    this.proxyRotation = [];
   }
 
   private getCorsProxyUrl(url: string): string {
@@ -843,6 +1270,10 @@ export class AudioStreamManager {
       return true;
     }
 
+    if (trackCachedPath && this.isOfflinePath(trackCachedPath)) {
+      return true;
+    }
+
     return false;
   }
 
@@ -851,6 +1282,15 @@ export class AudioStreamManager {
    */
   public async getBestCachedFilePath(trackId: string): Promise<string | null> {
     console.log(`[Audio] Checking cache for track: ${trackId}`);
+
+    const offlineFullPath = this.trackCache.get(trackId + "_offline");
+    if (offlineFullPath) {
+      const cachedFileInfo = await FileSystem.getInfoAsync(offlineFullPath);
+      if (cachedFileInfo.exists) {
+        return normalizeFileUri(offlineFullPath);
+      }
+      this.trackCache.delete(trackId + "_offline");
+    }
 
     const fullTrackCachePath = this.trackCache.get(trackId + "_full");
     if (fullTrackCachePath) {
@@ -861,6 +1301,30 @@ export class AudioStreamManager {
           : `file://${fullTrackCachePath}`;
       }
       this.trackCache.delete(trackId + "_full");
+    }
+
+    const offlineDir = await this.getOfflineDirectory();
+    if (offlineDir) {
+      const offlineExtensions = [
+        ".mp3",
+        ".webm",
+        ".m4a",
+        ".ogg",
+        ".oga",
+        ".aac",
+        ".cache",
+      ];
+      for (const ext of offlineExtensions) {
+        const filePath = `${offlineDir}${trackId}${ext}`;
+        const isValid = await this.validateCachedFile(filePath);
+        if (isValid) {
+          this.trackCache.set(trackId, filePath);
+          this.trackCache.set(trackId + "_full", filePath);
+          this.trackCache.set(trackId + "_offline", filePath);
+          this.trackCache.set(trackId + "_has_full", "true");
+          return normalizeFileUri(filePath);
+        }
+      }
     }
 
     const fullSoundCloudPath = this.soundCloudCache.get(trackId + "_full");
@@ -1065,11 +1529,33 @@ export class AudioStreamManager {
   public async getFullCachedFilePath(trackId: string): Promise<string | null> {
     console.log(`[Audio] Checking full cache for track: ${trackId}`);
 
-    const cacheProgress = this.cacheProgress.get(trackId);
+    const offlineDir = await this.getOfflineDirectory();
+    if (offlineDir) {
+      const offlineExtensions = [
+        ".mp3",
+        ".webm",
+        ".m4a",
+        ".ogg",
+        ".oga",
+        ".aac",
+        ".cache",
+      ];
+      for (const ext of offlineExtensions) {
+        const filePath = `${offlineDir}${trackId}${ext}`;
+        const isValid = await this.validateCachedFile(filePath);
+        if (isValid) {
+          this.trackCache.set(trackId, filePath);
+          this.trackCache.set(trackId + "_full", filePath);
+          this.trackCache.set(trackId + "_offline", filePath);
+          this.trackCache.set(trackId + "_has_full", "true");
+          return normalizeFileUri(filePath);
+        }
+      }
+    }
+
     const hasFullMarker =
       this.trackCache.has(trackId + "_has_full") ||
-      this.soundCloudCache.has(trackId + "_has_full") ||
-      cacheProgress?.isFullyCached;
+      this.soundCloudCache.has(trackId + "_has_full");
 
     const cachedFullPath =
       this.trackCache.get(trackId + "_full") ||
@@ -1292,10 +1778,12 @@ export class AudioStreamManager {
     try {
       const fileInfo = await FileSystem.getInfoAsync(filePath);
 
-      if (!fileInfo.exists || !fileInfo.size || fileInfo.size === 0) {
-        console.warn(
-          "[Audio] File validation failed: file doesn't exist or is empty"
-        );
+      if (!fileInfo.exists) {
+        return false;
+      }
+
+      if (!fileInfo.size || fileInfo.size === 0) {
+        console.warn("[Audio] File validation failed: file is empty");
         return false;
       }
 
@@ -1406,44 +1894,137 @@ export class AudioStreamManager {
     }
   }
 
+  private async promoteCompletedTrackToOfflineStorage(
+    trackId: string
+  ): Promise<void> {
+    try {
+      const fullCachedPath = await this.getFullCachedFilePath(trackId);
+      if (!fullCachedPath) {
+        return;
+      }
+
+      if (this.isOfflinePath(fullCachedPath)) {
+        this.trackCache.set(trackId, fullCachedPath);
+        this.trackCache.set(trackId + "_full", fullCachedPath);
+        this.trackCache.set(trackId + "_offline", fullCachedPath);
+        this.trackCache.set(trackId + "_has_full", "true");
+        return;
+      }
+
+      const offlineDir = await this.getOfflineDirectory();
+      if (!offlineDir) {
+        return;
+      }
+
+      const sourceInfo = await FileSystem.getInfoAsync(fullCachedPath);
+      if (!sourceInfo.exists || !sourceInfo.size || sourceInfo.size < 10240) {
+        return;
+      }
+
+      const progress = this.cacheProgress.get(trackId);
+      const extension = inferAudioFileExtension(
+        progress?.originalStreamUrl,
+        fullCachedPath
+      );
+      const destinationPath = normalizeFileUri(
+        `${offlineDir}${trackId}${extension}`
+      );
+      const normalizedSourcePath = normalizeFileUri(fullCachedPath);
+
+      if (normalizedSourcePath !== destinationPath) {
+        const existingDestination =
+          await FileSystem.getInfoAsync(destinationPath);
+        if (existingDestination.exists) {
+          await FileSystem.deleteAsync(destinationPath, { idempotent: true });
+        }
+
+        try {
+          await FileSystem.moveAsync({
+            from: normalizedSourcePath,
+            to: destinationPath,
+          });
+        } catch (moveError) {
+          await FileSystem.copyAsync({
+            from: normalizedSourcePath,
+            to: destinationPath,
+          });
+          await FileSystem.deleteAsync(normalizedSourcePath, {
+            idempotent: true,
+          });
+        }
+      }
+
+      this.trackCache.set(trackId, destinationPath);
+      this.trackCache.set(trackId + "_full", destinationPath);
+      this.trackCache.set(trackId + "_offline", destinationPath);
+      this.trackCache.set(trackId + "_has_full", "true");
+      this.soundCloudCache.set(trackId, destinationPath);
+      this.soundCloudCache.set(trackId + "_full", destinationPath);
+      this.soundCloudCache.set(trackId + "_has_full", "true");
+      this.clearCacheInfoCache(trackId);
+    } catch (error) {
+      console.warn(
+        `[Audio] Failed to promote completed track ${trackId} to offline storage:`,
+        error
+      );
+    }
+  }
+
   /**
    * Public cleanup for all cached files and state for a track
    */
   public async cleanupTrackCache(trackId: string): Promise<void> {
     try {
       const cacheDir = await this.getCacheDirectory();
-      if (!cacheDir) {
-        return;
-      }
+      const candidates = cacheDir
+        ? [
+            `${cacheDir}${trackId}.cache`,
+            `${cacheDir}${trackId}.cache.full`,
+            `${cacheDir}${trackId}.cache.resume`,
+            `${cacheDir}${trackId}.cache.combined`,
+            `${cacheDir}${trackId}.mp3`,
+            `${cacheDir}${trackId}.mp3.full`,
+            `${cacheDir}${trackId}.webm`,
+            `${cacheDir}${trackId}.webm.full`,
+            `${cacheDir}${trackId}.m4a`,
+            `${cacheDir}${trackId}.m4a.full`,
+            `${cacheDir}${trackId}.ogg`,
+            `${cacheDir}${trackId}.ogg.full`,
+          ]
+        : [];
 
-      const candidates = [
-        `${cacheDir}${trackId}.cache`,
-        `${cacheDir}${trackId}.cache.full`,
-        `${cacheDir}${trackId}.cache.resume`,
-        `${cacheDir}${trackId}.cache.combined`,
-        `${cacheDir}${trackId}.mp3`,
-        `${cacheDir}${trackId}.mp3.full`,
-        `${cacheDir}${trackId}.webm`,
-        `${cacheDir}${trackId}.webm.full`,
-        `${cacheDir}${trackId}.m4a`,
-        `${cacheDir}${trackId}.m4a.full`,
-        `${cacheDir}${trackId}.ogg`,
-        `${cacheDir}${trackId}.ogg.full`,
-      ];
+      const soundcloudDir = cacheDir ? `${cacheDir}soundcloud-cache/` : null;
+      const scCandidates = soundcloudDir
+        ? [
+            `${soundcloudDir}${trackId}.mp3`,
+            `${soundcloudDir}${trackId}.mp3.full`,
+            `${soundcloudDir}${trackId}.webm`,
+            `${soundcloudDir}${trackId}.webm.full`,
+            `${soundcloudDir}${trackId}.m4a`,
+            `${soundcloudDir}${trackId}.m4a.full`,
+            `${soundcloudDir}${trackId}.oga`,
+            `${soundcloudDir}${trackId}.oga.full`,
+          ]
+        : [];
 
-      const soundcloudDir = `${cacheDir}soundcloud-cache/`;
-      const scCandidates = [
-        `${soundcloudDir}${trackId}.mp3`,
-        `${soundcloudDir}${trackId}.mp3.full`,
-        `${soundcloudDir}${trackId}.webm`,
-        `${soundcloudDir}${trackId}.webm.full`,
-        `${soundcloudDir}${trackId}.m4a`,
-        `${soundcloudDir}${trackId}.m4a.full`,
-        `${soundcloudDir}${trackId}.oga`,
-        `${soundcloudDir}${trackId}.oga.full`,
-      ];
+      const offlineDir = await this.getOfflineDirectory();
+      const offlineCandidates = offlineDir
+        ? [
+            `${offlineDir}${trackId}.mp3`,
+            `${offlineDir}${trackId}.webm`,
+            `${offlineDir}${trackId}.m4a`,
+            `${offlineDir}${trackId}.ogg`,
+            `${offlineDir}${trackId}.oga`,
+            `${offlineDir}${trackId}.aac`,
+            `${offlineDir}${trackId}.cache`,
+          ]
+        : [];
 
-      for (const filePath of [...candidates, ...scCandidates]) {
+      for (const filePath of [
+        ...candidates,
+        ...scCandidates,
+        ...offlineCandidates,
+      ]) {
         try {
           const info = await FileSystem.getInfoAsync(filePath);
           if (info.exists) {
@@ -1456,12 +2037,14 @@ export class AudioStreamManager {
       this.trackCache.delete(trackId);
       this.trackCache.delete(trackId + "_full");
       this.trackCache.delete(trackId + "_has_full");
+      this.trackCache.delete(trackId + "_offline");
       this.trackCache.delete(trackId + "_substantial");
       this.soundCloudCache.delete(trackId);
       this.soundCloudCache.delete(trackId + "_full");
       this.soundCloudCache.delete(trackId + "_has_full");
       this.cacheProgress.delete(trackId);
       this.clearCacheInfoCache(trackId);
+      this.emitCacheProgressUpdate(trackId);
     } catch {}
   }
 
@@ -1515,6 +2098,21 @@ export class AudioStreamManager {
     retryCount?: number;
   }> {
     try {
+      // #region debug-point B:get-cache-info-entry
+      fetch("http://192.168.1.106:7777/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "cache-progress-stuck",
+          runId: "pre-fix",
+          hypothesisId: "B",
+          location: "audioStreaming:getCacheInfo:entry",
+          msg: "[DEBUG] getCacheInfo called",
+          data: { trackId, hasActiveProgress: this.cacheProgress.has(trackId) },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       // Check cache first (with 5 second TTL)
       const cached = this.cacheInfoCache.get(trackId);
       if (cached && Date.now() - cached.timestamp < this.CACHE_INFO_TTL) {
@@ -1526,6 +2124,9 @@ export class AudioStreamManager {
 
       console.log(`[Audio] === getCacheInfo START for ${trackId} ===`);
 
+      const cacheIndex = await loadAudioCacheIndex();
+      const persistedEntry = cacheIndex.entries[trackId];
+
       // Check if we have any cached progress for this track (even completed downloads)
       const activeProgress = this.cacheProgress.get(trackId);
       console.log("[Audio] Active progress found:", !!activeProgress);
@@ -1536,41 +2137,168 @@ export class AudioStreamManager {
           !activeProgress.isDownloading &&
           activeProgress.isFullyCached
         ) {
+          const fullCachedPath = await this.getFullCachedFilePath(trackId);
+          if (fullCachedPath) {
+            console.log(
+              `[Audio] Track ${trackId} is fully cached (100% confirmed)`
+            );
+            const result = {
+              percentage: 100,
+              fileSize:
+                activeProgress.downloadedSize ||
+                activeProgress.lastFileSize ||
+                0,
+              isFullyCached: true,
+              isDownloading: false,
+              downloadSpeed: 0,
+              retryCount: 0,
+            };
+            console.log(
+              `[Audio] === getCacheInfo END (100% cached) for ${trackId} ===`,
+              result
+            );
+            return result;
+          }
+
+          this.cacheProgress.set(trackId, {
+            ...activeProgress,
+            isFullyCached: false,
+            percentage: Math.min(activeProgress.percentage, 99),
+            lastUpdate: Date.now(),
+          });
+          this.clearCacheInfoCache(trackId);
           console.log(
-            `[Audio] Track ${trackId} is fully cached (100% confirmed)`
+            `[Audio] Cleared stale fully-cached flag for ${trackId} because no validated full file exists`
           );
-          const result = {
-            percentage: 100,
-            fileSize:
-              activeProgress.downloadedSize || activeProgress.lastFileSize || 0,
-            isFullyCached: true,
-            isDownloading: false,
-            downloadSpeed: 0,
-            retryCount: 0,
-          };
-          console.log(
-            `[Audio] === getCacheInfo END (100% cached) for ${trackId} ===`,
-            result
-          );
-          return result;
         }
 
-        // If actively downloading, return current progress with consistency checks
+        // If actively downloading, prefer the live file size on disk so callers
+        // don't get stuck on the initial seeded percentage.
         if (activeProgress.isDownloading) {
-          // Ensure percentage doesn't decrease during active download
-          const safePercentage = Math.max(
-            activeProgress.percentage,
-            activeProgress.lastFileSize > 0 ? 1 : 0
-          );
+          let liveFileSizeMb =
+            activeProgress.downloadedSize || activeProgress.lastFileSize || 0;
+          let livePercentage = Math.max(activeProgress.percentage, 1);
+          const persistedEstimatedTotalBytes =
+            persistedEntry?.estimatedSizeBytes ||
+            persistedEntry?.sizeBytes ||
+            0;
+          let liveTotalFileSizeMb: number | undefined =
+            Math.max(
+              typeof activeProgress.estimatedTotalSize === "number"
+                ? activeProgress.estimatedTotalSize
+                : 0,
+              persistedEstimatedTotalBytes
+            ) > 0
+              ? Math.round(
+                  (Math.max(
+                    typeof activeProgress.estimatedTotalSize === "number"
+                      ? activeProgress.estimatedTotalSize
+                      : 0,
+                    persistedEstimatedTotalBytes
+                  ) /
+                    (1024 * 1024)) *
+                    100
+                ) / 100
+              : undefined;
+
+          const cachedFilePath = await this.getBestCachedFilePath(trackId);
+          if (cachedFilePath) {
+            const normalizedCachedPath = cachedFilePath.replace("file://", "");
+            let liveFileInfo =
+              await FileSystem.getInfoAsync(normalizedCachedPath);
+
+            if (!liveFileInfo.exists) {
+              liveFileInfo = await FileSystem.getInfoAsync(cachedFilePath);
+            }
+
+            if (
+              liveFileInfo.exists &&
+              typeof liveFileInfo.size === "number" &&
+              liveFileInfo.size > 0
+            ) {
+              liveFileSizeMb =
+                Math.round((liveFileInfo.size / (1024 * 1024)) * 100) / 100;
+
+              const estimatedTotalBytes = Math.max(
+                typeof activeProgress.estimatedTotalSize === "number"
+                  ? activeProgress.estimatedTotalSize
+                  : 0,
+                persistedEstimatedTotalBytes,
+                this.estimateTotalFileSize(liveFileInfo.size),
+                liveFileInfo.size
+              );
+
+              liveTotalFileSizeMb =
+                Math.round((estimatedTotalBytes / (1024 * 1024)) * 100) / 100;
+              livePercentage = Math.max(
+                livePercentage,
+                Math.min(
+                  99,
+                  Math.round((liveFileInfo.size / estimatedTotalBytes) * 100)
+                )
+              );
+
+              if (
+                livePercentage > activeProgress.percentage ||
+                liveFileSizeMb >
+                  (activeProgress.downloadedSize ||
+                    activeProgress.lastFileSize ||
+                    0)
+              ) {
+                this.updateCacheProgress(
+                  trackId,
+                  livePercentage,
+                  liveFileSizeMb,
+                  {
+                    isDownloading: true,
+                    estimatedTotalSize: estimatedTotalBytes,
+                    downloadedSize: liveFileSizeMb,
+                  }
+                );
+              }
+
+              void updateAudioCacheIndexEntry(trackId, {
+                isDownloading: true,
+                isFullyCached: false,
+                estimatedSizeBytes: estimatedTotalBytes,
+                downloadedBytes: liveFileInfo.size,
+              });
+            }
+          }
+
           const result = {
-            percentage: safePercentage,
-            fileSize:
-              activeProgress.downloadedSize || activeProgress.lastFileSize || 0,
+            percentage: livePercentage,
+            fileSize: liveFileSizeMb,
+            totalFileSize: liveTotalFileSizeMb,
             isFullyCached: false,
             isDownloading: true,
             downloadSpeed: activeProgress.downloadSpeed || 0,
             retryCount: activeProgress.retryCount || 0,
           };
+          // #region debug-point B:get-cache-info-downloading
+          fetch("http://192.168.1.106:7777/event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sessionId: "cache-progress-stuck",
+              runId: "pre-fix",
+              hypothesisId: "B",
+              location: "audioStreaming:getCacheInfo:downloading",
+              msg: "[DEBUG] getCacheInfo returning active download state",
+              data: {
+                trackId,
+                activePercentage: activeProgress.percentage,
+                safePercentage: livePercentage,
+                downloadedSize: liveFileSizeMb,
+                lastFileSize: activeProgress.lastFileSize,
+                estimatedTotalSize: liveTotalFileSizeMb ?? null,
+                downloadSpeed: activeProgress.downloadSpeed ?? null,
+                retryCount: activeProgress.retryCount || 0,
+              },
+              ts: Date.now(),
+            }),
+          }).catch(() => {});
+          // #endregion
           console.log(
             `[Audio] === getCacheInfo END (downloading) for ${trackId} ===`,
             result
@@ -1701,7 +2429,10 @@ export class AudioStreamManager {
       } else {
         // Use more accurate estimation based on actual file patterns
         // and any stored estimated total size
-        const storedEstimatedSize = activeProgress?.estimatedTotalSize;
+        const storedEstimatedSize =
+          activeProgress?.estimatedTotalSize ||
+          persistedEntry?.estimatedSizeBytes ||
+          persistedEntry?.sizeBytes;
 
         if (storedEstimatedSize && storedEstimatedSize > fileSize) {
           // Use stored estimate if available and larger than current file
@@ -1758,12 +2489,12 @@ export class AudioStreamManager {
         const existingPercentage = activeProgress?.percentage || 0;
         let stablePercentage = Math.min(99, Math.round(rawPercentage));
 
-        // Never allow percentage to decrease significantly (more than 5%)
-        if (stablePercentage < existingPercentage - 5) {
+        // Cache progress should be monotonic while a track is still downloading.
+        if (stablePercentage < existingPercentage) {
           console.log(
             `[Audio] Preventing percentage drop: ${existingPercentage}% -> ${stablePercentage}%`
           );
-          stablePercentage = Math.max(stablePercentage, existingPercentage - 2); // Allow max 2% drop
+          stablePercentage = existingPercentage;
         }
 
         // If we're close to the estimated total, boost the estimate
@@ -1803,6 +2534,14 @@ export class AudioStreamManager {
           isFullyCached: isFullyCached,
         });
       }
+
+      void updateAudioCacheIndexEntry(trackId, {
+        sizeBytes: isFullyCached ? fileSize : persistedEntry?.sizeBytes || 0,
+        estimatedSizeBytes: estimatedTotalSize,
+        downloadedBytes: fileSize,
+        isDownloading: false,
+        isFullyCached,
+      });
 
       console.log(
         `[Audio] Cache info for ${trackId}: ${percentage}% (${fileSize} bytes, ${isFullyCached ? "full" : "partial"})`
@@ -2092,7 +2831,8 @@ export class AudioStreamManager {
     streamUrl: string,
     cacheFilePath: string,
     trackId: string,
-    controller: AbortController
+    controller: AbortController,
+    options?: { skipConcurrentCheck?: boolean }
   ): Promise<void> {
     if (!this.isRemoteUrl(streamUrl)) {
       console.log("[Audio] Skipping full track download for non-remote URL");
@@ -2101,7 +2841,7 @@ export class AudioStreamManager {
     try {
       // Check if already downloading to prevent concurrent downloads
       const existingProgress = this.cacheProgress.get(trackId);
-      if (existingProgress?.isDownloading) {
+      if (existingProgress?.isDownloading && !options?.skipConcurrentCheck) {
         console.log(
           `[Audio] Download already in progress for track: ${trackId}`
         );
@@ -2231,7 +2971,8 @@ export class AudioStreamManager {
           streamUrl,
           cacheFilePath,
           trackId,
-          controller
+          controller,
+          { skipConcurrentCheck: true }
         );
       } else {
         // Mark download as failed
@@ -2374,7 +3115,8 @@ export class AudioStreamManager {
                 streamUrl,
                 cacheFilePath,
                 trackId,
-                controller
+                controller,
+                { skipConcurrentCheck: true }
               );
               break;
             }
@@ -2481,9 +3223,6 @@ export class AudioStreamManager {
           );
           this.trackCache.set(trackId + "_substantial", "true");
         }
-
-        // Mark download as completed
-        this.markDownloadCompleted(trackId, totalDownloaded / (1024 * 1024));
 
         // Clean up temp files
         try {
@@ -2612,8 +3351,7 @@ export class AudioStreamManager {
               Range: `bytes=0-${initialChunkSize - 1}`,
               "User-Agent":
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-              Referer: "https://www.youtube.com/",
-              Origin: "https://www.youtube.com/",
+              ...getYouTubeHeaders(),
             },
             sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
           }
@@ -2848,8 +3586,7 @@ export class AudioStreamManager {
             headers: {
               "User-Agent":
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-              Referer: "https://www.youtube.com/",
-              Origin: "https://www.youtube.com/",
+              ...getYouTubeHeaders(),
             },
             sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
           }
@@ -2872,8 +3609,7 @@ export class AudioStreamManager {
                 Range: "bytes=0-1048575", // Request first 1MB - REDUCED for faster startup
                 "User-Agent":
                   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-                Referer: "https://www.youtube.com/",
-                Origin: "https://www.youtube.com/",
+                ...getYouTubeHeaders(),
               },
               sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
             }
@@ -3402,8 +4138,7 @@ export class AudioStreamManager {
             Range: `bytes=${startByte}-${startByte + chunkSize - 1}`,
             "User-Agent":
               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            Referer: "https://www.youtube.com/",
-            Origin: "https://www.youtube.com/",
+            ...getYouTubeHeaders(),
           },
           sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
         }
@@ -3474,6 +4209,25 @@ export class AudioStreamManager {
     );
 
     try {
+      // #region debug-point D:continue-cache-entry
+      fetch("http://192.168.1.106:7777/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "yt-cache-stuck",
+          runId: "pre-fix",
+          hypothesisId: "D",
+          location: "audioStreaming:continueCachingTrack:entry",
+          msg: "[DEBUG] continueCachingTrack started",
+          data: {
+            trackId,
+            streamUrlStartsWithFile: streamUrl.startsWith("file://"),
+            streamUrlPrefix: streamUrl.slice(0, 80),
+          },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       // Get current cache status
       const cacheInfo = await this.getCacheInfo(trackId);
 
@@ -3548,20 +4302,50 @@ export class AudioStreamManager {
 
           // Download next chunk
           const chunkFilePath = `${properCacheFilePath}.chunk_${currentPosition}`;
-          const chunkResult = await FileSystem.downloadAsync(
-            streamUrl,
-            chunkFilePath,
-            {
+          const chunkTimeout = new Promise<never>((_, reject) => {
+            setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `Chunk download timed out after ${CACHE_CHUNK_REQUEST_TIMEOUT_MS}ms`
+                  )
+                ),
+              CACHE_CHUNK_REQUEST_TIMEOUT_MS
+            );
+          });
+          const chunkResult = (await Promise.race([
+            FileSystem.downloadAsync(streamUrl, chunkFilePath, {
               headers: {
                 Range: `bytes=${currentPosition}-${currentPosition + chunkSize - 1}`,
                 "User-Agent":
                   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-                Referer: "https://www.youtube.com/",
-                Origin: "https://www.youtube.com/",
+                ...getYouTubeHeaders(),
               },
               sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
-            }
-          );
+            }),
+            chunkTimeout,
+          ])) as Awaited<ReturnType<typeof FileSystem.downloadAsync>>;
+
+          // #region debug-point A:chunk-response
+          fetch("http://192.168.1.106:7777/event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sessionId: "yt-cache-stuck",
+              runId: "pre-fix",
+              hypothesisId: "A",
+              location: "audioStreaming:continueCachingTrack:chunk-response",
+              msg: "[DEBUG] chunk response received",
+              data: {
+                trackId,
+                currentPosition,
+                chunkSize,
+                status: chunkResult.status,
+              },
+              ts: Date.now(),
+            }),
+          }).catch(() => {});
+          // #endregion
 
           if (chunkResult.status === 206 || chunkResult.status === 200) {
             const chunkInfo = await FileSystem.getInfoAsync(chunkFilePath);
@@ -3581,9 +4365,10 @@ export class AudioStreamManager {
                   idempotent: true,
                 });
 
-                this.trackCache.set(trackId, properCacheFilePath);
-                this.trackCache.set(trackId + "_full", properCacheFilePath);
-                this.trackCache.set(trackId + "_has_full", "true");
+                this.registerValidatedFullTrackPath(
+                  trackId,
+                  properCacheFilePath
+                );
 
                 const fullInfo =
                   await FileSystem.getInfoAsync(properCacheFilePath);
@@ -3597,11 +4382,18 @@ export class AudioStreamManager {
                 break;
               } else {
                 console.warn(
-                  `[Audio] Range not respected for ${trackId}, stopping continuous caching`
+                  `[Audio] Range not respected for ${trackId}, switching to full download fallback`
                 );
                 await FileSystem.deleteAsync(chunkFilePath, {
                   idempotent: true,
                 });
+                await this.downloadFullTrackInBackground(
+                  streamUrl,
+                  properCacheFilePath,
+                  trackId,
+                  controller,
+                  { skipConcurrentCheck: true }
+                );
                 break;
               }
             }
@@ -3630,7 +4422,8 @@ export class AudioStreamManager {
                 streamUrl,
                 properCacheFilePath,
                 trackId,
-                controller
+                controller,
+                { skipConcurrentCheck: true }
               );
               break;
             }
@@ -3697,7 +4490,8 @@ export class AudioStreamManager {
                 streamUrl,
                 properCacheFilePath,
                 trackId,
-                controller
+                controller,
+                { skipConcurrentCheck: true }
               );
               break;
             }
@@ -3736,19 +4530,55 @@ export class AudioStreamManager {
                   : undefined,
               }
             );
+            void updateAudioCacheIndexEntry(trackId, {
+              isDownloading: true,
+              isFullyCached: false,
+              estimatedSizeBytes: updatedCacheInfo.totalFileSize
+                ? Math.round(updatedCacheInfo.totalFileSize * 1024 * 1024)
+                : undefined,
+              downloadedBytes: Math.round(
+                updatedCacheInfo.fileSize * 1024 * 1024
+              ),
+            });
 
             console.log(
               `[Audio] Chunk downloaded. Cache progress: ${updatedCacheInfo.percentage}%`
             );
+            // #region debug-point D:chunk-progress
+            fetch("http://192.168.1.106:7777/event", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sessionId: "yt-cache-stuck",
+                runId: "pre-fix",
+                hypothesisId: "D",
+                location: "audioStreaming:continueCachingTrack:chunk",
+                msg: "[DEBUG] chunk progress updated",
+                data: {
+                  trackId,
+                  currentPosition,
+                  updatedPercentage: updatedCacheInfo.percentage,
+                  fileSize: updatedCacheInfo.fileSize,
+                  totalFileSize: updatedCacheInfo.totalFileSize ?? null,
+                  isDownloading: updatedCacheInfo.isDownloading ?? null,
+                  isFullyCached: updatedCacheInfo.isFullyCached,
+                },
+                ts: Date.now(),
+              }),
+            }).catch(() => {});
+            // #endregion
             onProgress?.(updatedCacheInfo.percentage);
 
-            // Check if we're fully cached - allow completion at 95% to prevent getting stuck
+            // Only mark completion when we can prove a real full cached file exists.
             if (updatedCacheInfo.percentage >= 95) {
-              console.log(
-                `[Audio] Track ${trackId} is now fully cached at ${updatedCacheInfo.percentage}%!`
-              );
-              this.markDownloadCompleted(trackId, updatedCacheInfo.fileSize);
-              break;
+              const fullCachedPath = await this.getFullCachedFilePath(trackId);
+              if (fullCachedPath) {
+                console.log(
+                  `[Audio] Track ${trackId} has a validated full cached file at ${updatedCacheInfo.percentage}%`
+                );
+                this.markDownloadCompleted(trackId, updatedCacheInfo.fileSize);
+                break;
+              }
             }
 
             // Update current position for next chunk
@@ -3760,6 +4590,27 @@ export class AudioStreamManager {
             console.log(
               `[Audio] Chunk download failed with status: ${chunkResult.status}`
             );
+            // #region debug-point A:chunk-non-success
+            fetch("http://192.168.1.106:7777/event", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sessionId: "yt-cache-stuck",
+                runId: "pre-fix",
+                hypothesisId: "A",
+                location:
+                  "audioStreaming:continueCachingTrack:chunk-non-success",
+                msg: "[DEBUG] chunk returned non-success status",
+                data: {
+                  trackId,
+                  currentPosition,
+                  status: chunkResult.status,
+                  consecutiveErrors,
+                },
+                ts: Date.now(),
+              }),
+            }).catch(() => {});
+            // #endregion
             consecutiveErrors++;
 
             if (chunkResult.status === 416) {
@@ -3769,6 +4620,10 @@ export class AudioStreamManager {
               const finalInfo =
                 await FileSystem.getInfoAsync(properCacheFilePath);
               if (finalInfo.exists && typeof finalInfo.size === "number") {
+                this.registerValidatedFullTrackPath(
+                  trackId,
+                  properCacheFilePath
+                );
                 this.markDownloadCompleted(
                   trackId,
                   finalInfo.size / (1024 * 1024)
@@ -3783,6 +4638,39 @@ export class AudioStreamManager {
             `[Audio] Error downloading chunk for ${trackId}:`,
             chunkError
           );
+          // #region debug-point A:chunk-error
+          fetch("http://192.168.1.106:7777/event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sessionId: "yt-cache-stuck",
+              runId: "pre-fix",
+              hypothesisId: "A",
+              location: "audioStreaming:continueCachingTrack:chunk-error",
+              msg: "[DEBUG] chunk download threw error",
+              data: {
+                trackId,
+                currentPosition,
+                consecutiveErrors,
+                error:
+                  chunkError instanceof Error
+                    ? chunkError.message
+                    : String(chunkError),
+              },
+              ts: Date.now(),
+            }),
+          }).catch(() => {});
+          // #endregion
+
+          if (
+            chunkError instanceof Error &&
+            chunkError.message.includes("Chunk download timed out")
+          ) {
+            console.warn(
+              `[Audio] Chunk download timed out for ${trackId}, ending this pass so the queue can refresh the stream URL`
+            );
+            break;
+          }
           consecutiveErrors++;
 
           // Wait a bit longer before retrying
@@ -3792,10 +4680,35 @@ export class AudioStreamManager {
 
       console.log(`[Audio] Continuous caching completed for track: ${trackId}`);
 
-      // Final check: if we're very close to completion, force mark as 100%
+      // Final check: only finalize when a validated full cached file exists.
       try {
         const finalCacheInfo = await this.getCacheInfo(trackId);
+        const fullCachedPath = await this.getFullCachedFilePath(trackId);
+        // #region debug-point B:continue-cache-final-state
+        fetch("http://192.168.1.106:7777/event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: "yt-cache-stuck",
+            runId: "pre-fix",
+            hypothesisId: "B",
+            location: "audioStreaming:continueCachingTrack:final-state",
+            msg: "[DEBUG] continueCachingTrack final state",
+            data: {
+              trackId,
+              percentage: finalCacheInfo.percentage,
+              fileSize: finalCacheInfo.fileSize,
+              totalFileSize: finalCacheInfo.totalFileSize ?? null,
+              isDownloading: finalCacheInfo.isDownloading ?? null,
+              isFullyCached: finalCacheInfo.isFullyCached,
+              hasFullCachedPath: Boolean(fullCachedPath),
+            },
+            ts: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
         if (
+          fullCachedPath &&
           finalCacheInfo.percentage >= 95 &&
           finalCacheInfo.percentage < 100
         ) {
@@ -3814,6 +4727,27 @@ export class AudioStreamManager {
       console.error(`[Audio] Continuous caching failed for ${trackId}:`, error);
     } finally {
       const progress = this.cacheProgress.get(trackId);
+      // #region debug-point C:continue-cache-finally
+      fetch("http://192.168.1.106:7777/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "yt-cache-stuck",
+          runId: "pre-fix",
+          hypothesisId: "C",
+          location: "audioStreaming:continueCachingTrack:finally",
+          msg: "[DEBUG] continueCachingTrack finally state",
+          data: {
+            trackId,
+            hasProgress: Boolean(progress),
+            progressPercentage: progress?.percentage ?? null,
+            progressIsDownloading: progress?.isDownloading ?? null,
+            progressIsFullyCached: progress?.isFullyCached ?? null,
+          },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       if (progress) {
         this.cacheProgress.set(trackId, {
           ...progress,
@@ -3821,6 +4755,9 @@ export class AudioStreamManager {
           lastUpdate: Date.now(),
         });
       }
+      void updateAudioCacheIndexEntry(trackId, {
+        isDownloading: false,
+      });
     }
   }
 
@@ -3852,9 +4789,6 @@ export class AudioStreamManager {
 
     // Strategy 7: Spotify Web API (requires auth but has good coverage)
     // this.fallbackStrategies.push(this.trySpotifyWebApi.bind(this));
-
-    // Strategy 8: Hyperpipe API
-    this.fallbackStrategies.push(this.tryHyperpipe.bind(this));
 
     // Strategy 9: YouTube embed extraction (last resort)
     this.fallbackStrategies.push(this.tryYouTubeEmbed.bind(this));
@@ -3943,21 +4877,54 @@ export class AudioStreamManager {
       }
     }
 
-    // --- YOUTUBE EXCLUSIVE HANDLING (try multiple strategies) ---
-    if (source === "youtube" || source === "yt") {
-      onStatusUpdate?.("Using YouTube strategies");
+    // --- YOUTUBE / YOUTUBE MUSIC EXCLUSIVE HANDLING (try multiple strategies) ---
+    if (source === "youtube" || source === "yt" || source === "youtubemusic") {
+      const isYouTubeMusicSource = source === "youtubemusic";
+      onStatusUpdate?.(
+        isYouTubeMusicSource
+          ? "Using YouTube Music strategies"
+          : "Using YouTube strategies"
+      );
       console.log(
-        `[AudioStreamManager] YouTube mode activated for: ${videoId}`
+        `[AudioStreamManager] ${
+          isYouTubeMusicSource ? "YouTube Music" : "YouTube"
+        } mode activated for: ${videoId}`
       );
 
-      // Try fallback strategies for YouTube (including Invidious)
-      for (let i = 0; i < this.fallbackStrategies.length; i++) {
-        const strategy = this.fallbackStrategies[i];
-        const strategyName = this.getStrategyName(strategy);
+      const strategies = isYouTubeMusicSource
+        ? [
+            [
+              "JioSaavn Exact Match",
+              () =>
+                this.tryJioSaavnExactMatch(
+                  this.currentTrackTitle,
+                  this.currentTrackArtist
+                ),
+            ],
+            ["YouTube Music", this.tryYouTubeMusic.bind(this)],
+            ["Invidious", this.tryInvidious.bind(this)],
+            ["Piped", this.tryPiped.bind(this)],
+            ["YouTube Omada", this.tryYouTubeOmada.bind(this)],
+            ["Local Extraction", this.tryLocalExtraction.bind(this)],
+            ["YouTube Embed", this.tryYouTubeEmbed.bind(this)],
+          ]
+        : [
+            ["Invidious", this.tryInvidious.bind(this)],
+            ["Piped", this.tryPiped.bind(this)],
+            ["YouTube Omada", this.tryYouTubeOmada.bind(this)],
+            ["Local Extraction", this.tryLocalExtraction.bind(this)],
+            ["YouTube Music", this.tryYouTubeMusic.bind(this)],
+            ["YouTube Embed", this.tryYouTubeEmbed.bind(this)],
+          ];
+
+      for (let i = 0; i < strategies.length; i++) {
+        const [strategyName, strategy] = strategies[i];
 
         try {
           console.log(
-            `[AudioStreamManager] Trying ${strategyName} for YouTube: ${videoId}`
+            `[AudioStreamManager] Trying ${strategyName} for ${
+              isYouTubeMusicSource ? "YouTube Music" : "YouTube"
+            }: ${videoId}`
           );
           onStatusUpdate?.(`Trying ${strategyName}...`);
 
@@ -3971,7 +4938,9 @@ export class AudioStreamManager {
           }
         } catch (error) {
           console.warn(
-            `[AudioStreamManager] ${strategyName} failed for YouTube ${videoId}:`,
+            `[AudioStreamManager] ${strategyName} failed for ${
+              isYouTubeMusicSource ? "YouTube Music" : "YouTube"
+            } ${videoId}:`,
             error instanceof Error ? error.message : error
           );
           // Continue to next strategy
@@ -3980,7 +4949,11 @@ export class AudioStreamManager {
       }
 
       // All strategies failed
-      throw new Error("All YouTube strategies failed");
+      throw new Error(
+        isYouTubeMusicSource
+          ? "All YouTube Music strategies failed"
+          : "All YouTube strategies failed"
+      );
     }
 
     // --- JIOSAAVN HANDLING (exclusive - no fallbacks) ---
@@ -3993,7 +4966,11 @@ export class AudioStreamManager {
         console.log(
           `[Audio] Attempting JioSaavn extraction for track: ${videoId}`
         );
-        const jioSaavnUrl = await this.tryJioSaavn(videoId);
+        const jioSaavnUrl = await this.tryJioSaavn(
+          videoId,
+          this.currentTrackTitle,
+          this.currentTrackArtist
+        );
 
         if (jioSaavnUrl) {
           // JioSaavn URLs are typically direct streaming URLs, return as-is
@@ -4301,11 +5278,517 @@ export class AudioStreamManager {
     );
   }
 
+  private async fetchTextWithHeaders(
+    url: string,
+    headers: Record<string, string>,
+    timeout = 12000,
+    retries = 1
+  ): Promise<string> {
+    const response = await this.fetchWithProxy(
+      url,
+      {
+        headers,
+      },
+      retries,
+      timeout
+    );
+    return response.text();
+  }
+
+  private async fetchJsonWithHeaders(
+    url: string,
+    headers: Record<string, string>,
+    timeout = 12000,
+    retries = 1
+  ): Promise<any> {
+    const response = await this.fetchWithProxy(
+      url,
+      {
+        headers,
+      },
+      retries,
+      timeout
+    );
+    return response.json();
+  }
+
+  private async fetchFirstJsonWithHeaders(
+    urls: string[],
+    headers: Record<string, string>,
+    timeout = 5000,
+    retries = 0,
+    validate?: (payload: any) => boolean
+  ): Promise<any | null> {
+    const candidates = [...new Set(urls.filter(Boolean))];
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      let remaining = candidates.length;
+
+      const finish = (value: any | null) => {
+        if (!settled) {
+          settled = true;
+          resolve(value);
+        }
+      };
+
+      candidates.forEach((url) => {
+        this.fetchJsonWithHeaders(url, headers, timeout, retries)
+          .then((payload) => {
+            if (validate && !validate(payload)) {
+              throw new Error("Payload rejected");
+            }
+            finish(payload);
+          })
+          .catch(() => {
+            remaining -= 1;
+            if (remaining === 0) {
+              finish(null);
+            }
+          });
+      });
+    });
+  }
+
+  private getJioSaavnRecords(payload: unknown): Record<string, any>[] {
+    const queue: unknown[] = [payload];
+    const records: Record<string, any>[] = [];
+    const seen = new Set<unknown>();
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current || seen.has(current)) continue;
+      seen.add(current);
+
+      if (Array.isArray(current)) {
+        queue.push(...current);
+        continue;
+      }
+
+      if (typeof current !== "object") {
+        continue;
+      }
+
+      const record = current as Record<string, any>;
+      if (!Object.keys(record).length) continue;
+      records.push(record);
+
+      queue.push(
+        record.data,
+        record.song,
+        record.songs,
+        record.results,
+        record.more_info
+      );
+    }
+
+    return records;
+  }
+
+  private extractJioSaavnAudioUrl(payload: unknown): string | null {
+    const records = this.getJioSaavnRecords(payload);
+
+    for (const record of records) {
+      const downloadCandidates = [
+        record.downloadUrl,
+        record.download_url,
+        record.downloadLinks,
+        record.more_info?.download_url,
+        record.more_info?.downloadUrl,
+      ].find((value) => Array.isArray(value));
+
+      if (Array.isArray(downloadCandidates)) {
+        const best = [...downloadCandidates]
+          .map((entry) => (entry && typeof entry === "object" ? entry : {}))
+          .sort((a: any, b: any) => {
+            const score = (value: unknown) => {
+              if (typeof value === "number" && Number.isFinite(value)) {
+                return value;
+              }
+              if (typeof value === "string") {
+                const match = value.match(/(\d+)/);
+                if (match) return Number(match[1]);
+              }
+              return 0;
+            };
+
+            return (
+              score(b.quality || b.bitrate || b.kbps) -
+              score(a.quality || a.bitrate || a.kbps)
+            );
+          })
+          .map(
+            (entry: any) =>
+              entry.url || entry.link || entry.downloadUrl || entry.download_url
+          )
+          .find(Boolean);
+
+        if (best) {
+          return String(best).replace("http:", "https:");
+        }
+      }
+
+      const directUrl =
+        record.media_url ||
+        record.mediaUrl ||
+        record.vlink ||
+        record.preview_url ||
+        record.url;
+      if (typeof directUrl === "string" && /^https?:\/\//i.test(directUrl)) {
+        return directUrl.replace("http:", "https:");
+      }
+    }
+
+    return null;
+  }
+
+  private buildJioSaavnSongEndpoints(
+    apiBase: string,
+    id: string,
+    urlHint?: string
+  ): string[] {
+    const addIdCandidates = (
+      value: string,
+      output: Set<string>,
+      apiBase: string
+    ) => {
+      buildProviderUrlCandidates(apiBase, [
+        `/api/songs/${encodeURIComponent(value)}`,
+        `/songs/${encodeURIComponent(value)}`,
+      ]).forEach((candidate) => output.add(candidate));
+      buildProviderUrlCandidates(apiBase, ["/api/songs", "/songs"], {
+        ids: value,
+      }).forEach((candidate) => output.add(candidate));
+    };
+
+    const addLinkCandidates = (
+      value: string,
+      output: Set<string>,
+      apiBase: string
+    ) => {
+      buildProviderUrlCandidates(apiBase, ["/api/songs", "/songs"], {
+        link: value,
+      }).forEach((candidate) => output.add(candidate));
+    };
+
+    const candidates = new Set<string>();
+    if (!apiBase) {
+      return [];
+    }
+
+    if (id) {
+      addIdCandidates(id, candidates, apiBase);
+    }
+
+    if (urlHint) {
+      addLinkCandidates(urlHint, candidates, apiBase);
+      try {
+        const parsed = new URL(urlHint);
+        const token = parsed.pathname.split("/").filter(Boolean).pop();
+        if (token) {
+          addIdCandidates(token, candidates, apiBase);
+        }
+      } catch {
+        addIdCandidates(urlHint, candidates, apiBase);
+      }
+    }
+
+    return [...candidates];
+  }
+
+  private async fetchJioSaavnSongPayload(
+    id: string,
+    urlHint?: string
+  ): Promise<any | null> {
+    const providerEndpoints = await getProviderEndpoints();
+    const apiBase =
+      providerEndpoints.providers.jiosaavn.apiBase || API.jiosaavn.base;
+
+    return this.fetchFirstJsonWithHeaders(
+      this.buildJioSaavnSongEndpoints(apiBase, id, urlHint),
+      {
+        Accept: "application/json",
+      },
+      4500,
+      0,
+      (payload) => Boolean(this.extractJioSaavnAudioUrl(payload))
+    );
+  }
+
+  private async findJioSaavnMatch(
+    title: string,
+    artist?: string
+  ): Promise<{ id: string; url?: string } | null> {
+    const query = [title, artist].filter(Boolean).join(" ").trim();
+    if (!query) {
+      return null;
+    }
+
+    const providerEndpoints = await getProviderEndpoints();
+    const searchEndpoints = [
+      ...buildProviderUrlCandidates(
+        providerEndpoints.providers.jiosaavn.apiBase || API.jiosaavn.base,
+        ["/api/search", "/search"],
+        {
+          query,
+        }
+      ),
+      ...buildProviderUrlCandidates(
+        providerEndpoints.providers.jiosaavn.fallbackSearchBase,
+        ["/search", "/api/search"],
+        {
+          query,
+        }
+      ),
+    ];
+
+    const payload = await this.fetchFirstJsonWithHeaders(
+      searchEndpoints,
+      {
+        Accept: "application/json",
+      },
+      3500,
+      0,
+      (response) => {
+        const root = response?.data || response || {};
+        return (
+          (Array.isArray(root?.results) && root.results.length > 0) ||
+          (Array.isArray(root?.songs?.results) && root.songs.results.length > 0)
+        );
+      }
+    );
+
+    if (!payload) {
+      return null;
+    }
+
+    const root = payload?.data || payload || {};
+    const candidates = [
+      ...(Array.isArray(root?.results) ? root.results : []),
+      ...(Array.isArray(root?.songs?.results) ? root.songs.results : []),
+    ]
+      .filter((entry: any) => entry && typeof entry === "object")
+      .map((entry: any) => ({
+        id: String(entry.id || entry.identifier || ""),
+        url:
+          typeof entry.url === "string"
+            ? entry.url
+            : typeof entry.permalink_url === "string"
+              ? entry.permalink_url
+              : undefined,
+        title: String(entry.title || entry.song || entry.name || ""),
+        author: String(
+          entry.primary_artists ||
+            entry.primaryArtists ||
+            entry.singers ||
+            entry.artist ||
+            entry.description ||
+            ""
+        ),
+      }))
+      .filter((entry) => entry.id)
+      .map((entry) => ({
+        ...entry,
+        score:
+          titleMatchScore(title, entry.title) +
+          authorMatchScore(artist, entry.author),
+      }))
+      .sort((left, right) => right.score - left.score);
+
+    if (candidates[0] && candidates[0].score >= 3) {
+      return {
+        id: candidates[0].id,
+        url: candidates[0].url,
+      };
+    }
+
+    return null;
+  }
+
+  private normalizeSoundCloudUrlHint(urlHint?: string): string | undefined {
+    if (!urlHint) return undefined;
+
+    try {
+      const parsed = new URL(urlHint);
+      if (
+        parsed.hostname === "w.soundcloud.com" &&
+        parsed.pathname === "/player/"
+      ) {
+        const embeddedUrl = parsed.searchParams.get("url");
+        if (embeddedUrl) {
+          return embeddedUrl;
+        }
+      }
+      return parsed.toString();
+    } catch {
+      return urlHint;
+    }
+  }
+
+  private getSoundCloudClientIdCandidates(): string[] {
+    const prioritizedFallbacks = [
+      this.FALLBACK_SOUNDCLOUD_CLIENT_IDS[this.currentClientIdIndex],
+      this.SOUNDCLOUD_CLIENT_ID,
+      ...this.FALLBACK_SOUNDCLOUD_CLIENT_IDS,
+    ];
+
+    return prioritizedFallbacks.filter(
+      (clientId, index, list) =>
+        Boolean(clientId) && list.indexOf(clientId) === index
+    );
+  }
+
+  private async getSoundCloudClientId(reset = false): Promise<string> {
+    if (this.soundCloudClientId && !reset) {
+      return this.soundCloudClientId;
+    }
+
+    const providerEndpoints = await getProviderEndpoints();
+    const soundcloud = providerEndpoints.providers.soundcloud;
+    const baseHeaders = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    };
+
+    try {
+      const oembedUrls = buildProviderUrlCandidates(
+        soundcloud.oembedBase,
+        ["/oembed"],
+        {
+          url: `${soundcloud.origin}/lil-durk/back-again`,
+        }
+      );
+
+      for (const apiUrl of oembedUrls) {
+        try {
+          const oembedResponse = await this.fetchTextWithHeaders(
+            apiUrl,
+            {
+              ...baseHeaders,
+              Referer: `${soundcloud.origin}/`,
+              Origin: soundcloud.origin,
+            },
+            12000
+          );
+          const clientIdMatch = oembedResponse.match(
+            /client_id["\s:]+([a-zA-Z0-9]+)/
+          );
+          if (clientIdMatch?.[1]) {
+            this.soundCloudClientId = clientIdMatch[1];
+            return this.soundCloudClientId;
+          }
+        } catch {
+          continue;
+        }
+      }
+    } catch {}
+
+    try {
+      const desktopHtml = await this.fetchTextWithHeaders(
+        soundcloud.origin,
+        {
+          ...baseHeaders,
+          Referer: `${soundcloud.origin}/`,
+          Origin: soundcloud.origin,
+        },
+        12000
+      );
+      const scriptUrls = desktopHtml.match(/https?:\/\/[^\s"]+\.js/g) || [];
+
+      for (const scriptUrl of scriptUrls) {
+        try {
+          const script = await this.fetchTextWithHeaders(
+            scriptUrl,
+            {
+              ...baseHeaders,
+              Referer: `${soundcloud.origin}/`,
+            },
+            12000
+          );
+          const match = script.match(/[{,]client_id:"(\w+)"/);
+          if (match?.[1]) {
+            this.soundCloudClientId = match[1];
+            return this.soundCloudClientId;
+          }
+        } catch {
+          continue;
+        }
+      }
+    } catch {}
+
+    try {
+      const mobileHtml = await this.fetchTextWithHeaders(
+        `${soundcloud.mobileOrigin}/`,
+        {
+          "User-Agent":
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/99.0.4844.47 Mobile/15E148 Safari/604.1",
+        },
+        12000
+      );
+      const mobileMatch = mobileHtml.match(/"clientId":"(\w+?)"/);
+      if (mobileMatch?.[1]) {
+        this.soundCloudClientId = mobileMatch[1];
+        return this.soundCloudClientId;
+      }
+    } catch {}
+
+    this.soundCloudClientId =
+      this.getSoundCloudClientIdCandidates()[0] || this.SOUNDCLOUD_CLIENT_ID;
+    return this.soundCloudClientId;
+  }
+
+  private async fetchSoundCloudJson(url: string): Promise<any> {
+    const runRequest = async (clientId: string) => {
+      const requestUrl = `${url}${url.includes("?") ? "&" : "?"}client_id=${clientId}`;
+      return this.fetchJsonWithHeaders(
+        requestUrl,
+        {
+          ...getSoundCloudHeaders(),
+          Accept: "application/json",
+        },
+        12000
+      );
+    };
+
+    const primaryClientId = await this.getSoundCloudClientId();
+    try {
+      return await runRequest(primaryClientId);
+    } catch {
+      const fallbackClientIds = this.getSoundCloudClientIdCandidates().filter(
+        (clientId) => clientId !== primaryClientId
+      );
+
+      for (const clientId of fallbackClientIds) {
+        try {
+          const payload = await runRequest(clientId);
+          this.soundCloudClientId = clientId;
+          const fallbackIndex =
+            this.FALLBACK_SOUNDCLOUD_CLIENT_IDS.indexOf(clientId);
+          if (fallbackIndex >= 0) {
+            this.currentClientIdIndex = fallbackIndex;
+          }
+          return payload;
+        } catch {
+          continue;
+        }
+      }
+
+      throw await runRequest(await this.getSoundCloudClientId(true));
+    }
+  }
+
   private async tryLocalExtraction(videoId: string): Promise<string> {
     try {
+      const localProxyBase = getLocalProxyBase();
+      if (!localProxyBase) {
+        throw new Error("Local proxy base is not configured");
+      }
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
-      const response = await fetch(`http://localhost:9999/streams/${videoId}`, {
+      const response = await fetch(`${localProxyBase}/streams/${videoId}`, {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -4334,84 +5817,54 @@ export class AudioStreamManager {
     }
   }
 
-  private async tryJioSaavn(videoId: string): Promise<string> {
+  private async tryJioSaavn(
+    videoId: string,
+    trackTitle?: string,
+    trackArtist?: string
+  ): Promise<string> {
     try {
-      const directDetailsUrl = getJioSaavnSongEndpoint(videoId);
-      try {
-        const directData = await this.fetchWithProxy(
-          directDetailsUrl,
-          {},
-          0,
-          6000
+      const [directPayload, matchedSong] = await Promise.all([
+        this.fetchJioSaavnSongPayload(
+          videoId,
+          /^https?:\/\//i.test(videoId) ? videoId : undefined
+        ),
+        trackTitle?.trim()
+          ? this.findJioSaavnMatch(trackTitle, trackArtist)
+          : Promise.resolve(null),
+      ]);
+      const directAudioUrl = this.extractJioSaavnAudioUrl(directPayload);
+      if (directAudioUrl) {
+        return directAudioUrl;
+      }
+
+      if (matchedSong?.id) {
+        const matchedPayload = await this.fetchJioSaavnSongPayload(
+          matchedSong.id,
+          matchedSong.url
         );
-        if (directData.ok) {
-          const json = await directData.json();
-          const song = Array.isArray(json?.data) ? json.data[0] : null;
-          const downloads = song?.downloadUrl || [];
-          const q320 = downloads.find((d: any) => d.quality === "320kbps")?.url;
-          const q160 = downloads.find((d: any) => d.quality === "160kbps")?.url;
-          const q96 = downloads.find((d: any) => d.quality === "96kbps")?.url;
-          const anyUrl = q320 || q160 || q96 || downloads[0]?.url || song?.url;
-          if (anyUrl) {
-            return String(anyUrl).replace("http:", "https:");
-          }
-        }
-      } catch {}
-      const videoInfo = await this.getVideoInfoWithTimeout(videoId, 8000);
-      const cleanTitle = (videoInfo.title || "")
-        .replace(/\(.*?\)|\.|.*|\]/g, "")
-        .trim();
-      const cleanAuthor = videoInfo.author
-        ? videoInfo.author.replace(/ - Topic|VEVO|Official/gi, "").trim()
-        : "";
-      const jiosaavnEndpoints = [
-        "https://jiosaavn-api-privatecvc.vercel.app/api/search/songs",
-        "https://jiosaavn-api-v3.vercel.app/api/search/songs",
-        "https://jiosaavn-api-ts.vercel.app/api/search/songs",
-      ];
-
-      for (const endpoint of jiosaavnEndpoints) {
-        try {
-          const query = encodeURIComponent(
-            `${cleanTitle} ${cleanAuthor}`
-          ).trim();
-          const searchUrl = `${endpoint}?query=${query}`;
-
-          // Use our enhanced fetch method
-          const searchResponse = await this.fetchWithProxy(
-            searchUrl,
-            {},
-            0,
-            6000
-          );
-          const searchData = await searchResponse.json();
-
-          if (searchData.data?.results && searchData.data.results.length > 0) {
-            // Get the first result
-            const firstTrack = searchData.data.results[0];
-
-            if (firstTrack?.downloadUrl && firstTrack.downloadUrl.length > 0) {
-              // Get highest quality available
-              const downloadUrls = firstTrack.downloadUrl;
-              const highestQuality = downloadUrls[downloadUrls.length - 1];
-
-              if (highestQuality?.url) {
-                return highestQuality.url.replace("http:", "https:");
-              }
-            }
-
-            // Fallback: Try alternative download URL structure
-            if (firstTrack?.url) {
-              return firstTrack.url.replace("http:", "https:");
-            }
-          }
-        } catch (error) {
-          console.warn(`JioSaavn endpoint ${endpoint} failed:`, error);
-          continue;
+        const matchedAudioUrl = this.extractJioSaavnAudioUrl(matchedPayload);
+        if (matchedAudioUrl) {
+          return matchedAudioUrl;
         }
       }
 
-      throw new Error("No suitable track found in any JioSaavn endpoint");
+      const directDetailsUrl = getJioSaavnSongEndpoint(videoId);
+      const directData = await this.fetchJsonWithHeaders(
+        directDetailsUrl,
+        {
+          Accept: "application/json",
+        },
+        4500,
+        0
+      );
+      const fallbackAudioUrl = this.extractJioSaavnAudioUrl(directData);
+      if (fallbackAudioUrl) {
+        return fallbackAudioUrl;
+      }
+
+      throw new Error(
+        "No suitable JioSaavn track payload exposed a playable audio URL"
+      );
     } catch (error) {
       throw new Error(
         `JioSaavn search failed: ${
@@ -4421,13 +5874,41 @@ export class AudioStreamManager {
     }
   }
 
+  private async tryJioSaavnExactMatch(
+    trackTitle?: string,
+    trackArtist?: string
+  ): Promise<string> {
+    if (!trackTitle?.trim()) {
+      throw new Error("Missing track metadata for JioSaavn exact match");
+    }
+
+    const matchedSong = await this.findJioSaavnMatch(trackTitle, trackArtist);
+    if (!matchedSong?.id) {
+      throw new Error("No exact JioSaavn match found");
+    }
+
+    const matchedPayload = await this.fetchJioSaavnSongPayload(
+      matchedSong.id,
+      matchedSong.url
+    );
+    const matchedAudioUrl = this.extractJioSaavnAudioUrl(matchedPayload);
+
+    if (!matchedAudioUrl) {
+      throw new Error("Matched JioSaavn result had no playable audio URL");
+    }
+
+    return matchedAudioUrl;
+  }
+
   private async tryYouTubeMusic(videoId: string): Promise<string> {
     try {
+      const youTubeMusicBase = getYouTubeMusicBase();
+      const youTubeWebBase = getYouTubeWebBase();
+      const runtimeServices = await getRuntimeServiceConfig();
       // YouTube Music extraction using alternative endpoints
       const musicEndpoints = [
-        `https://music.youtube.com/watch?v=${videoId}`,
-        "https://yt1s.com/api/ajax/search/home",
-        "https://yt5s.com/api/ajax/search/home",
+        `${youTubeMusicBase}/watch?v=${videoId}`,
+        ...runtimeServices.audio.youtubeMusicExtractionEndpoints,
       ];
 
       for (const endpoint of musicEndpoints) {
@@ -4491,7 +5972,7 @@ export class AudioStreamManager {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 25000);
             const formData = new FormData();
-            formData.append("q", `https://www.youtube.com/watch?v=${videoId}`);
+            formData.append("q", `${youTubeWebBase}/watch?v=${videoId}`);
             formData.append("vt", "home");
 
             const response = await fetch(endpoint, {
@@ -4535,230 +6016,8 @@ export class AudioStreamManager {
     }
   }
 
-  private async tryHyperpipe(videoId: string): Promise<string> {
-    try {
-      // Try multiple Hyperpipe instances
-      const hyperpipeInstances = [
-        "https://hyperpipeapi.onrender.com",
-        "https://hyperpipe-api.vercel.app",
-        "https://hyperpipe.onrender.com",
-      ];
-
-      for (const instance of hyperpipeInstances) {
-        try {
-          const url = `${instance}/streams/${videoId}`;
-          const response = await this.fetchWithProxy(url, {}, 0, 6000);
-          const data = await response.json();
-
-          if (data.audioStreams && data.audioStreams.length > 0) {
-            // Sort by quality and return highest quality stream
-            const sortedStreams = data.audioStreams
-              .filter((stream: any) => stream.url && !stream.videoOnly)
-              .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-
-            if (sortedStreams.length > 0) {
-              return sortedStreams[0].url;
-            }
-          }
-        } catch (error) {
-          console.warn(`Hyperpipe instance ${instance} failed:`, error);
-          continue;
-        }
-      }
-      throw new Error("All Hyperpipe instances failed");
-    } catch (error) {
-      throw new Error(
-        `Hyperpipe failed: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-    }
-  }
-
-  // Commented out echostreamz method - using new YouTube endpoints instead
-  /*
-  private async tryInvidious(videoId: string): Promise<string> {
-    const instance = "https://echostreamz.com";
-
-    try {
-      // Use ?local=true to get proxied URLs that bypass some blocks
-      const response = await this.fetchWithProxy(
-        `${instance}/api/v1/videos/${videoId}?local=true`,
-        {
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            Accept: "application/json, text/plain, *\/\/*",
-            "Accept-Language": "en-US,en;q=0.9",
-          },
-        },
-        2, // 2 retries
-        12000 // 12 second timeout
-      );
-
-      if (!response.ok) {
-        throw new Error(`Invidious returned ${response.status}`);
-      }
-
-      // Check if response is HTML (blocked) instead of JSON
-      const contentType = response.headers.get("content-type");
-      if (!contentType?.includes("json")) {
-        throw new Error("Invidious returned HTML instead of JSON (blocked)");
-      }
-
-      const data = await response.json();
-
-      // Check for adaptive formats (primary method)
-      if (data.adaptiveFormats) {
-        const audioFormats = data.adaptiveFormats
-          .filter(
-            (f: any) =>
-              f.type?.startsWith("audio/") || f.mimeType?.startsWith("audio/")
-          )
-          .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-
-        if (audioFormats.length > 0 && audioFormats[0].url) {
-          // Resolve relative URLs to full URLs
-          let audioUrl = this.resolveRelativeUrl(instance, audioFormats[0].url);
-          console.log(
-            "[AudioStreamManager] Found audio via Invidious adaptiveFormats"
-          );
-          // Return direct stream URL (caching should be handled at PlayerContext level for liked songs only)
-          return audioUrl;
-        }
-      }
-
-      // Fallback to formatStreams if adaptiveFormats not available
-      if (data.formatStreams) {
-        console.log("[YouTube Omada] Found formatStreams:", data.formatStreams.length, "streams");
-        // First try to find audio-only streams
-        const audioStreams = data.formatStreams
-          .filter(
-            (f: any) =>
-              f.type?.startsWith("audio/") || f.mimeType?.startsWith("audio/")
-          )
-          .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-
-        console.log("[YouTube Omada] Filtered audio streams from formatStreams:", audioStreams.length);
-        if (audioStreams.length > 0) {
-          console.log("[YouTube Omada] Best audio stream:", {
-            url: audioStreams[0].url?.substring(0, 100) + "...",
-            bitrate: audioStreams[0].bitrate,
-            type: audioStreams[0].type || audioStreams[0].mimeType
-          });
-        }
-
-        if (audioStreams.length > 0 && audioStreams[0].url) {
-          // Resolve relative URLs to full URLs
-          let audioUrl = this.resolveRelativeUrl(instance, audioStreams[0].url);
-          console.log("[AudioStreamManager] Found audio via formatStreams");
-          // Cache the YouTube stream and return cached file path
-          return this.cacheYouTubeStream(
-            audioUrl,
-            videoId,
-            new AbortController()
-          );
-        }
-
-        // If no audio-only streams, try video streams that contain audio (muxed)
-        // These are video streams but they also contain audio tracks
-        const videoStreamsWithAudio = data.formatStreams
-          .filter((f: any) => {
-            const type = f.type || f.mimeType || "";
-            // Look for video streams that likely contain audio
-            return (
-              type.startsWith("video/") &&
-              (f.type?.includes("mp4") || f.mimeType?.includes("mp4")) &&
-              // Prefer streams with audio codecs
-              (type.includes("mp4a") || type.includes("audio"))
-            );
-          })
-          .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-
-        if (videoStreamsWithAudio.length > 0 && videoStreamsWithAudio[0].url) {
-          // Resolve relative URLs to full URLs
-          let audioUrl = this.resolveRelativeUrl(instance, videoStreamsWithAudio[0].url);
-          console.log(
-            "[AudioStreamManager] Found video stream with audio via formatStreams"
-          );
-          // Cache the YouTube stream and return cached file path
-          return this.cacheYouTubeStream(
-            audioUrl,
-            videoId,
-            new AbortController()
-          );
-        }
-
-        // Last resort: any video stream (can be extracted for audio)
-        const anyVideoStream = data.formatStreams
-          .filter((f: any) => {
-            const type = f.type || f.mimeType || "";
-            return type.startsWith("video/");
-          })
-          .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0))
-          .find((f: any) => f.url);
-
-        if (anyVideoStream) {
-          // Resolve relative URLs to full URLs
-          let audioUrl = this.resolveRelativeUrl(instance, anyVideoStream.url);
-          console.log(
-            "[AudioStreamManager] Using video stream for audio extraction via formatStreams"
-          );
-          // Cache the YouTube stream and return cached file path
-          return this.cacheYouTubeStream(
-            audioUrl,
-            videoId,
-            new AbortController()
-          );
-        }
-      }
-
-      // Check for direct audio URL in response
-      if (data.audioUrl) {
-        // Resolve relative URLs to full URLs
-        let audioUrl = data.audioUrl;
-        if (audioUrl.startsWith("/")) {
-          audioUrl = `${instance}${audioUrl}`;
-        }
-        console.log(
-          "[AudioStreamManager] Found direct audio URL via Invidious"
-        );
-        // Cache the YouTube stream and return cached file path
-        return this.cacheYouTubeStream(
-          audioUrl,
-          videoId,
-          new AbortController()
-        );
-      }
-
-      // If we have a video stream URL, convert it to MP3 format
-      // This handles muxed streams that contain both video and audio
-      if (data.formatStreams && data.formatStreams.length > 0) {
-        const bestStream = data.formatStreams[0];
-        if (bestStream.url) {
-          let streamUrl = this.resolveRelativeUrl(instance, bestStream.url);
-
-          // Convert video stream to MP3 format using a conversion service
-          console.log(
-            "[AudioStreamManager] Converting video stream to MP3 format"
-          );
-          return await this.convertStreamToMP3(streamUrl, videoId);
-        }
-      }
-
-      throw new Error("No audio formats found in response");
-    } catch (error) {
-      console.warn("Invidious failed:", error);
-      throw error;
-    }
-  }
-  */
-
   private getOmadaProxyUrl(): string {
-    return (
-      API.invidious.find((url) => url.includes("yt.omada.cafe")) ||
-      "https://yt.omada.cafe"
-    );
+    return this.preferredInvidiousInstance || getPrimaryInvidiousInstance();
   }
 
   private resolveRelativeUrl(instance: string, relativeUrl: string): string {
@@ -4781,18 +6040,19 @@ export class AudioStreamManager {
   }
 
   private async tryInvidious(videoId: string): Promise<string> {
-    // Use dynamic instances if available, otherwise fall back to hardcoded ones
+    // Use runtime-configured instances, preferring the health-checked list.
     const baseInstances =
       DYNAMIC_INVIDIOUS_INSTANCES.length > 0
         ? DYNAMIC_INVIDIOUS_INSTANCES
-        : API.invidious.length > 0
-          ? API.invidious
-          : ["https://echostreamz.com"];
-    const instances = [
-      ...new Set(
-        baseInstances.map((instance) => normalizeInvidiousInstance(instance))
-      ),
-    ];
+        : API.invidious;
+    const instances = this.prioritizePreferredInstance(
+      [
+        ...new Set(
+          baseInstances.map((instance) => normalizeInvidiousInstance(instance))
+        ),
+      ],
+      this.preferredInvidiousInstance
+    );
 
     console.log(
       `[AudioStreamManager] Invidious trying ${instances.length} instances for video: ${videoId}`
@@ -4864,6 +6124,7 @@ export class AudioStreamManager {
               instance,
               audioFormats[0].url
             );
+            this.rememberWorkingYoutubeInstance("invidious", instance);
             console.log(
               `[AudioStreamManager] Found audio via Invidious instance ${instance} adaptiveFormats`
             );
@@ -4891,6 +6152,7 @@ export class AudioStreamManager {
               instance,
               audioStreams[0].url
             );
+            this.rememberWorkingYoutubeInstance("invidious", instance);
             console.log(
               `[AudioStreamManager] Found audio via formatStreams from ${instance}`
             );
@@ -5001,7 +6263,7 @@ export class AudioStreamManager {
               );
               if (googlevideoMatch) {
                 const queryParams = googlevideoMatch[1];
-                audioUrl = `${this.getOmadaProxyUrl()}/videoplayback?${queryParams}`;
+                audioUrl = `${instance}/videoplayback?${queryParams}`;
                 useOmadaProxy = true;
                 console.log(
                   `[YouTube Omada] Using Omada proxy for GoogleVideo URL (format ${i + 1}/${audioFormats.length}, bitrate: ${audioFormat.bitrate})`
@@ -5059,7 +6321,7 @@ export class AudioStreamManager {
               );
               if (googlevideoMatch) {
                 const queryParams = googlevideoMatch[1];
-                audioUrl = `${this.getOmadaProxyUrl()}/videoplayback?${queryParams}`;
+                audioUrl = `${instance}/videoplayback?${queryParams}`;
                 console.log(
                   "[YouTube Omada] Converting formatStreams GoogleVideo URL to Omada proxy"
                 );
@@ -5112,7 +6374,7 @@ export class AudioStreamManager {
               );
               if (googlevideoMatch) {
                 const queryParams = googlevideoMatch[1];
-                videoUrl = `${this.getOmadaProxyUrl()}/videoplayback?${queryParams}`;
+                videoUrl = `${instance}/videoplayback?${queryParams}`;
                 console.log(
                   "[YouTube Omada] Converting video stream GoogleVideo URL to Omada proxy"
                 );
@@ -5171,9 +6433,10 @@ export class AudioStreamManager {
   private async tryYouTubeEmbed(videoId: string): Promise<string> {
     // Last resort: Try to extract from YouTube embed page
     try {
+      const youTubeWebBase = getYouTubeWebBase();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
-      const response = await fetch(`https://www.youtube.com/embed/${videoId}`, {
+      const response = await fetch(`${youTubeWebBase}/embed/${videoId}`, {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -5206,6 +6469,13 @@ export class AudioStreamManager {
   // New fallback strategies for enhanced network resilience
   private async trySpotifyWebApi(videoId: string): Promise<string> {
     try {
+      const runtimeServices = await getRuntimeServiceConfig();
+      const spotifySearchProxyBase =
+        runtimeServices.audio.spotifySearchProxyBase;
+      if (!spotifySearchProxyBase) {
+        throw new Error("Spotify search proxy is not configured");
+      }
+
       // First, get video info to extract title and artist
       const videoInfo = await this.getVideoInfo(videoId);
       if (!videoInfo.title) {
@@ -5220,14 +6490,12 @@ export class AudioStreamManager {
         ? videoInfo.author.replace(/ - Topic|VEVO|Official/gi, "").trim()
         : "";
 
-      // Search using Spotify's public search endpoint (no auth required for basic search)
       const query = encodeURIComponent(`${cleanTitle} ${cleanArtist}`).trim();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-      // Use a public Spotify search proxy
       const searchResponse = await fetch(
-        `https://spotify-api-wrapper.onrender.com/search?q=${query}&type=track&limit=1`,
+        `${spotifySearchProxyBase}/search?q=${query}&type=track&limit=1`,
         { signal: controller.signal }
       );
       clearTimeout(timeoutId);
@@ -5248,30 +6516,6 @@ export class AudioStreamManager {
         return track.preview_url;
       }
 
-      // Fallback: Try to get external URL and extract audio
-      if (track.external_urls?.spotify) {
-        // Use a service to extract audio from Spotify track
-        const extractResponse = await fetch(
-          `https://spotify-downloader1.p.rapidapi.com/download-track?track_url=${encodeURIComponent(
-            track.external_urls.spotify
-          )}`,
-          {
-            method: "GET",
-            headers: {
-              "X-RapidAPI-Key": "demo-key", // This would need a real API key
-              "X-RapidAPI-Host": "spotify-downloader1.p.rapidapi.com",
-            },
-            signal: controller.signal,
-          }
-        );
-
-        if (extractResponse.ok) {
-          const extractData = await extractResponse.json();
-          if (extractData.download_link) {
-            return extractData.download_link;
-          }
-        }
-      }
       throw new Error("No audio stream available for Spotify track");
     } catch (error) {
       throw new Error(
@@ -5294,25 +6538,32 @@ export class AudioStreamManager {
       );
 
       const trackId = this.extractSoundCloudTrackId(videoId);
+      const normalizedUrlHint = this.normalizeSoundCloudUrlHint(videoId);
       const isPermalink =
-        typeof videoId === "string" && videoId.includes("soundcloud.com/");
-      const appVersion = "1768986291";
+        typeof normalizedUrlHint === "string" &&
+        normalizedUrlHint.includes("soundcloud.com/");
 
       let resolvedData: any | null = null;
 
       if (isPermalink) {
         onStatusUpdate?.("Resolving SoundCloud permalink");
         resolvedData = await this.resolveSoundCloudTrackDataByUrl(
-          videoId,
-          appVersion
+          normalizedUrlHint!
         );
       }
 
       if (!resolvedData && trackId) {
         onStatusUpdate?.("Resolving SoundCloud track");
+        resolvedData = await this.fetchSoundCloudTrackDataById(trackId);
+      }
+
+      if (!resolvedData && trackId) {
+        const soundCloudApiBase = getSoundCloudApiBase();
+        if (!soundCloudApiBase) {
+          throw new Error("SoundCloud API base is not configured");
+        }
         resolvedData = await this.resolveSoundCloudTrackDataByUrl(
-          `https://api.soundcloud.com/tracks/${trackId}`,
-          appVersion
+          `${soundCloudApiBase}/tracks/${trackId}`
         );
       }
 
@@ -5331,6 +6582,24 @@ export class AudioStreamManager {
     }
   }
 
+  private getSoundCloudTranscodingScore(transcoding: any): number {
+    const protocol = String(transcoding?.format?.protocol || "").toLowerCase();
+    const mimeType = String(transcoding?.format?.mime_type || "").toLowerCase();
+    let score = 0;
+
+    // Match the web player ordering so we hit the same upstream requests.
+    if (protocol === "progressive") score += 100;
+    if (protocol === "ctr-encrypted-hls") score += 90;
+    if (protocol === "cbc-encrypted-hls") score += 80;
+    if (protocol.includes("encrypted")) score += 20;
+    if (protocol === "hls") score += 10;
+    if (!transcoding?.is_legacy_transcoding) score += 5;
+    if (mimeType.includes("audio/mp4")) score += 2;
+    if (String(transcoding?.quality || "").toLowerCase() === "sq") score += 1;
+
+    return score;
+  }
+
   private async extractSoundCloudStream(
     trackData: any,
     controller: AbortController
@@ -5343,72 +6612,70 @@ export class AudioStreamManager {
       throw new Error("No media transcodings available");
     }
 
-    const isAndroid = Platform.OS === "android";
-    const preferredTranscoding = isAndroid
-      ? trackData.media.transcodings.find(
-          (t: any) => t.format?.protocol === "progressive"
-        ) ||
-        trackData.media.transcodings.find(
-          (t: any) => t.format?.protocol === "hls"
-        )
-      : trackData.media.transcodings.find(
-          (t: any) => t.format?.protocol === "hls"
-        ) ||
-        trackData.media.transcodings.find(
-          (t: any) => t.format?.protocol === "progressive"
-        );
-
-    if (!preferredTranscoding?.url) {
-      throw new Error("No suitable audio stream found");
-    }
-
     const trackId = trackData.id ? String(trackData.id) : "";
     if (!trackId) {
       throw new Error("SoundCloud track ID missing");
     }
 
-    const resolveUrl = new URL(preferredTranscoding.url);
-    resolveUrl.searchParams.append("client_id", this.SOUNDCLOUD_CLIENT_ID);
-    if (trackData.track_authorization) {
-      resolveUrl.searchParams.append(
-        "track_authorization",
-        trackData.track_authorization
+    const orderedTranscodings = [...trackData.media.transcodings]
+      .filter((transcoding: any) => typeof transcoding?.url === "string")
+      .sort(
+        (left: any, right: any) =>
+          this.getSoundCloudTranscodingScore(right) -
+          this.getSoundCloudTranscodingScore(left)
       );
-    }
 
-    const streamResponse = await fetch(resolveUrl.toString(), {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        Referer: "https://w.soundcloud.com/",
-        Origin: "https://w.soundcloud.com",
-      },
-      signal: controller.signal,
-    });
-
-    if (!streamResponse.ok) {
-      throw new Error(
-        `Failed to resolve SoundCloud stream: ${streamResponse.status}`
-      );
-    }
-
-    const streamData = await streamResponse.json();
-    if (!streamData?.url) {
-      throw new Error("SoundCloud stream URL missing");
-    }
-
-    return await this.cacheSoundCloudStream(
-      streamData.url,
-      trackId,
-      controller
+    const playableTranscodings = orderedTranscodings.filter(
+      (transcoding: any) => {
+        const protocol = String(
+          transcoding?.format?.protocol || ""
+        ).toLowerCase();
+        return !protocol.includes("encrypted");
+      }
     );
+    const transcodingsToTry =
+      playableTranscodings.length > 0
+        ? playableTranscodings
+        : orderedTranscodings;
+
+    let lastError: Error | null = null;
+
+    for (const transcoding of transcodingsToTry) {
+      try {
+        const resolveUrl = new URL(String(transcoding.url));
+        if (trackData.track_authorization) {
+          resolveUrl.searchParams.set(
+            "track_authorization",
+            String(trackData.track_authorization)
+          );
+        }
+
+        const streamData = await this.fetchSoundCloudJson(
+          resolveUrl.toString()
+        );
+        if (!streamData?.url) {
+          lastError = new Error("SoundCloud stream URL missing");
+          continue;
+        }
+
+        return await this.cacheSoundCloudStream(
+          String(streamData.url),
+          trackId,
+          controller
+        );
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+      }
+    }
+
+    throw lastError || new Error("No suitable SoundCloud stream found");
   }
 
   private extractSoundCloudTrackId(videoId: string): string | null {
-    // Check if this looks like a SoundCloud track ID (numeric)
     if (/^\d+$/.test(videoId)) {
       return videoId;
     }
+
     if (videoId.includes("soundcloud:tracks:")) {
       const parts = videoId.split("soundcloud:tracks:");
       const rawId = parts[1]?.split(/[?#/]/)[0];
@@ -5416,97 +6683,73 @@ export class AudioStreamManager {
         return rawId;
       }
     }
+
     const apiMatch = videoId.match(/api\.soundcloud\.com\/tracks\/(\d+)/);
     if (apiMatch && apiMatch[1]) {
       return apiMatch[1];
     }
-    // Check if this is a SoundCloud permalink URL and extract track ID
+
+    const apiV2Match = videoId.match(/api-v2\.soundcloud\.com\/tracks\/(\d+)/);
+    if (apiV2Match && apiV2Match[1]) {
+      return apiV2Match[1];
+    }
+
     const soundcloudMatch = videoId.match(/soundcloud\.com\/.*\/.*?(\d+)$/);
     if (soundcloudMatch) {
       return soundcloudMatch[1];
     }
+
     return null;
   }
 
   private async fetchSoundCloudTrackDataById(
     trackId: string
   ): Promise<any | null> {
-    const clientIds = [
-      this.SOUNDCLOUD_CLIENT_ID,
-      ...this.FALLBACK_SOUNDCLOUD_CLIENT_IDS,
-    ];
-    for (const clientId of clientIds) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-        const url = `https://api-v2.soundcloud.com/tracks/${trackId}?client_id=${clientId}`;
-        const response = await fetch(url, {
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            Referer: "https://soundcloud.com/",
-            Origin: "https://soundcloud.com",
-          },
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        if (response.ok) {
-          const data = await response.json();
-          if (data?.media?.transcodings?.length) {
-            return data;
-          }
-        }
-        if (response.status !== 401 && response.status !== 403) {
-          break;
-        }
-      } catch (error) {
-        continue;
-      }
+    const soundCloudApiV2Base = getSoundCloudApiV2Base();
+    if (!soundCloudApiV2Base) {
+      return null;
     }
+
+    try {
+      const payload = await this.fetchSoundCloudJson(
+        `${soundCloudApiV2Base}/tracks/${encodeURIComponent(trackId)}`
+      );
+      if (payload?.media?.transcodings?.length) {
+        return payload;
+      }
+    } catch {}
+
     return null;
   }
 
   private async resolveSoundCloudTrackDataByUrl(
-    url: string,
-    appVersion: string
+    url: string
   ): Promise<any | null> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      const resolveUrl = `https://api-widget.soundcloud.com/resolve?url=${encodeURIComponent(
-        url
-      )}&client_id=${this.SOUNDCLOUD_CLIENT_ID}&format=json&app_version=${appVersion}`;
-      const response = await fetch(resolveUrl, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-          Referer: "https://w.soundcloud.com/",
-          Origin: "https://w.soundcloud.com",
-        },
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (response.ok) {
-        const data = await response.json();
-        if (data?.media?.transcodings?.length) {
-          return data;
-        }
-      }
-      return null;
-    } catch {
+    const soundCloudApiV2Base = getSoundCloudApiV2Base();
+    if (!soundCloudApiV2Base) {
       return null;
     }
+
+    try {
+      const resolveUrl = `${soundCloudApiV2Base.replace(
+        /\/+$/g,
+        ""
+      )}/resolve?url=${encodeURIComponent(url)}`;
+      const payload = await this.fetchSoundCloudJson(resolveUrl);
+      if (payload?.media?.transcodings?.length) {
+        return payload;
+      }
+    } catch {}
+
+    return null;
   }
 
   private async tryPiped(videoId: string): Promise<string> {
     try {
-      const pipedInstances = [
-        "https://pipedapi.kavin.rocks",
-        "https://pipedapi.tokhmi.xyz",
-        "https://pipedapi.moomoo.me",
-        "https://pipedapi.syncpundit.io",
-        "https://pipedapi.rydberg.one",
-      ];
+      const pipedInstances = this.prioritizePreferredInstance(
+        [...API.piped],
+        this.preferredPipedInstance
+      );
 
       for (const instance of pipedInstances) {
         try {
@@ -5554,6 +6797,7 @@ export class AudioStreamManager {
             });
 
             if (sortedStreams.length > 0) {
+              this.rememberWorkingYoutubeInstance("piped", instance);
               return sortedStreams[0].url;
             }
           }
@@ -5580,10 +6824,11 @@ export class AudioStreamManager {
     timeout = 30000
   ): Promise<{ title?: string; author?: string }> {
     try {
+      const youTubeWebBase = getYouTubeWebBase();
       // Try multiple sources for video info
       const sources = [
-        ...API.invidious.map((url) => `${url}/videos/${videoId}`),
-        `https://www.youtube.com/embed/${videoId}`,
+        ...API.invidious.map((url) => `${url}/api/v1/videos/${videoId}`),
+        `${youTubeWebBase}/embed/${videoId}`,
       ];
 
       for (const source of sources) {
@@ -5640,11 +6885,18 @@ export class AudioStreamManager {
     videoId: string
   ): Promise<{ title?: string; author?: string }> {
     try {
+      const primaryInvidiousInstance = getPrimaryInvidiousInstance();
+      const youTubeWebBase = getYouTubeWebBase();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
+      if (!primaryInvidiousInstance) {
+        throw new Error("No Invidious instance is configured");
+      }
       const response = await fetch(
-        `https://invidious.nerdvpn.de/api/v1/videos/${videoId}`,
-        { signal: controller.signal }
+        `${primaryInvidiousInstance}/api/v1/videos/${videoId}`,
+        {
+          signal: controller.signal,
+        }
       );
       clearTimeout(timeoutId);
 
@@ -5658,7 +6910,7 @@ export class AudioStreamManager {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
         const response = await fetch(
-          `https://www.youtube.com/embed/${videoId}`,
+          `${getYouTubeWebBase()}/embed/${videoId}`,
           {
             signal: controller.signal,
           }
@@ -5690,7 +6942,6 @@ export class AudioStreamManager {
       [this.trySoundCloud, "SoundCloud"],
       [this.tryYouTubeMusic, "YouTube Music"],
       [this.trySpotifyWebApi, "Spotify Web API"],
-      [this.tryHyperpipe, "Hyperpipe"],
       [this.tryYouTubeEmbed, "YouTube Embed"],
     ]);
 
@@ -5714,6 +6965,25 @@ export class AudioStreamManager {
     let resumeFilePath: string;
 
     try {
+      // #region debug-point D:resume-entry
+      fetch("http://192.168.1.106:7777/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "yt-cache-stuck",
+          runId: "pre-fix",
+          hypothesisId: "D",
+          location: "audioStreaming:resumeCacheDownload:entry",
+          msg: "[DEBUG] resumeCacheDownload started",
+          data: {
+            trackId,
+            startPosition,
+            streamUrlPrefix: streamUrl.slice(0, 80),
+          },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       console.log(
         `[Audio] Resuming cache download from position ${startPosition} for track: ${trackId}`
       );
@@ -5743,20 +7013,49 @@ export class AudioStreamManager {
       console.log(`[Audio] Resume download to: ${resumeFilePath}`);
 
       // Try to download the rest of the file starting from the current position
-      const resumeResult = await FileSystem.downloadAsync(
-        streamUrl,
-        resumeFilePath,
-        {
+      const resumeTimeout = new Promise<never>((_, reject) => {
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                `Resume download timed out after ${CACHE_RESUME_REQUEST_TIMEOUT_MS}ms`
+              )
+            ),
+          CACHE_RESUME_REQUEST_TIMEOUT_MS
+        );
+      });
+      const resumeResult = (await Promise.race([
+        FileSystem.downloadAsync(streamUrl, resumeFilePath, {
           headers: {
             Range: `bytes=${startPosition}-`,
             "User-Agent":
               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            Referer: "https://www.youtube.com/",
-            Origin: "https://www.youtube.com/",
+            ...getYouTubeHeaders(),
           },
           sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
-        }
-      );
+        }),
+        resumeTimeout,
+      ])) as Awaited<ReturnType<typeof FileSystem.downloadAsync>>;
+
+      // #region debug-point D:resume-response
+      fetch("http://192.168.1.106:7777/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "yt-cache-stuck",
+          runId: "pre-fix",
+          hypothesisId: "D",
+          location: "audioStreaming:resumeCacheDownload:response",
+          msg: "[DEBUG] resumeCacheDownload response received",
+          data: {
+            trackId,
+            startPosition,
+            status: resumeResult.status,
+          },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
 
       if (resumeResult.status === 200 || resumeResult.status === 206) {
         console.log(`[Audio] Resume download successful for track: ${trackId}`);
@@ -5805,7 +7104,8 @@ export class AudioStreamManager {
             streamUrl,
             properCacheFilePath,
             trackId,
-            controller
+            controller,
+            { skipConcurrentCheck: true }
           );
           return;
         }
@@ -5867,8 +7167,31 @@ export class AudioStreamManager {
         // Report updated progress
         // Add a small delay to ensure filesystem has updated the file size
         await new Promise((resolve) => setTimeout(resolve, 1000));
+        this.registerValidatedFullTrackPath(trackId, properCacheFilePath);
         const updatedCacheInfo = await this.getCacheInfo(trackId);
         onProgress?.(updatedCacheInfo.percentage);
+        // #region debug-point E:resume-updated-cache
+        fetch("http://192.168.1.106:7777/event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: "yt-cache-stuck",
+            runId: "pre-fix",
+            hypothesisId: "E",
+            location: "audioStreaming:resumeCacheDownload:updated-cache",
+            msg: "[DEBUG] resumeCacheDownload updated cache info",
+            data: {
+              trackId,
+              percentage: updatedCacheInfo.percentage,
+              fileSize: updatedCacheInfo.fileSize,
+              totalFileSize: updatedCacheInfo.totalFileSize ?? null,
+              isDownloading: updatedCacheInfo.isDownloading ?? null,
+              isFullyCached: updatedCacheInfo.isFullyCached,
+            },
+            ts: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
         console.log(
           `[Audio] Updated cache progress after resume: ${updatedCacheInfo.percentage}%`
         );
@@ -5881,6 +7204,25 @@ export class AudioStreamManager {
         );
       }
     } catch (error) {
+      // #region debug-point D:resume-error
+      fetch("http://192.168.1.106:7777/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "yt-cache-stuck",
+          runId: "pre-fix",
+          hypothesisId: "D",
+          location: "audioStreaming:resumeCacheDownload:error",
+          msg: "[DEBUG] resumeCacheDownload threw error",
+          data: {
+            trackId,
+            startPosition,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       console.error(
         `[Audio] Failed to resume cache download for track ${trackId}:`,
         error
@@ -5896,6 +7238,15 @@ export class AudioStreamManager {
         );
         // Don't retry resume for permission errors - just continue with streaming
         return;
+      }
+
+      if (
+        error instanceof Error &&
+        error.message.includes("Resume download timed out")
+      ) {
+        console.warn(
+          `[Audio] Resume timed out for ${trackId}, deferring to the next queue pass for a fresh stream URL`
+        );
       }
 
       // Clean up resume file on error
@@ -6009,12 +7360,37 @@ export async function continueCachingTrack(
   );
 }
 
+export function subscribeToAudioCacheProgress(
+  listener: (update: AudioCacheProgressUpdate) => void
+): () => void {
+  return AudioStreamManager.getInstance().subscribeToCacheProgress(listener);
+}
+
 export async function cleanupCacheForTrack(trackId: string): Promise<void> {
   return AudioStreamManager.getInstance().cleanupTrackCache(trackId);
 }
 
 // Track active monitoring instances to prevent duplicates
 const activeMonitors = new Set<string>();
+
+async function getFileSizeWithUriFallback(
+  filePathOrUri: string
+): Promise<number> {
+  if (!filePathOrUri) {
+    return 0;
+  }
+
+  const normalizedPath = filePathOrUri.replace(/^file:\/\//, "");
+  let fileInfo = await FileSystem.getInfoAsync(normalizedPath);
+
+  if (!fileInfo.exists) {
+    fileInfo = await FileSystem.getInfoAsync(filePathOrUri);
+  }
+
+  return fileInfo.exists && typeof fileInfo.size === "number"
+    ? fileInfo.size
+    : 0;
+}
 
 /**
  * Monitor cache progress during playback and resume if stuck
@@ -6075,9 +7451,8 @@ export async function monitorAndResumeCache(
           // Check if we have any cached file to resume from
           const cachedFilePath = await manager.getBestCachedFilePath(trackId);
           if (cachedFilePath) {
-            const filePath = cachedFilePath.replace("file://", "");
-            const fileInfo = await FileSystem.getInfoAsync(filePath);
-            const currentSize = fileInfo.exists ? fileInfo.size : 0;
+            const currentSize =
+              await getFileSizeWithUriFallback(cachedFilePath);
 
             if (currentSize > 0) {
               // console.log(
@@ -6089,7 +7464,7 @@ export async function monitorAndResumeCache(
               try {
                 await manager.resumeCacheDownload(
                   originalStreamUrl,
-                  filePath,
+                  cachedFilePath,
                   trackId,
                   currentSize,
                   resumeController,
@@ -6133,9 +7508,8 @@ export async function monitorAndResumeCache(
           // Check if we have any cached file to resume from
           const cachedFilePath = await manager.getBestCachedFilePath(trackId);
           if (cachedFilePath) {
-            const filePath = cachedFilePath.replace("file://", "");
-            const fileInfo = await FileSystem.getInfoAsync(filePath);
-            const currentSize = fileInfo.exists ? fileInfo.size : 0;
+            const currentSize =
+              await getFileSizeWithUriFallback(cachedFilePath);
 
             if (currentSize > 0) {
               // console.log(
@@ -6147,7 +7521,7 @@ export async function monitorAndResumeCache(
               try {
                 await manager.resumeCacheDownload(
                   originalStreamUrl,
-                  filePath,
+                  cachedFilePath,
                   trackId,
                   currentSize,
                   resumeController,
@@ -6197,9 +7571,8 @@ export async function monitorAndResumeCache(
           // Resume the cache download from the last position
           const cachedFilePath = await manager.getBestCachedFilePath(trackId);
           if (cachedFilePath) {
-            const filePath = cachedFilePath.replace("file://", "");
-            const fileInfo = await FileSystem.getInfoAsync(filePath);
-            const currentSize = fileInfo.exists ? fileInfo.size : 0;
+            const currentSize =
+              await getFileSizeWithUriFallback(cachedFilePath);
 
             console.log(
               `[CacheMonitor] Current file size: ${currentSize} bytes`
@@ -6216,7 +7589,7 @@ export async function monitorAndResumeCache(
               try {
                 await manager.resumeCacheDownload(
                   originalStreamUrl,
-                  filePath,
+                  cachedFilePath,
                   trackId,
                   currentSize,
                   resumeController,
@@ -6323,6 +7696,8 @@ type AudioCacheIndexEntry = {
   trackId: string;
   url: string;
   sizeBytes: number;
+  estimatedSizeBytes?: number;
+  downloadedBytes?: number;
   isDownloading: boolean;
   isFullyCached: boolean;
   updatedAt: number;
@@ -6341,6 +7716,8 @@ const CACHE_HEAD_TIMEOUT_MS = 8000;
 const CACHE_PROXY_TIMEOUT_MS = 5000;
 const CACHE_VALIDATION_DIFF_BYTES = 1024 * 1024;
 const CACHE_VALIDATION_DIFF_RATIO = 0.02;
+const CACHE_CHUNK_REQUEST_TIMEOUT_MS = 20000;
+const CACHE_RESUME_REQUEST_TIMEOUT_MS = 25000;
 
 const toMB = (bytes: number) => Math.max(0, bytes / (1024 * 1024));
 
@@ -6363,6 +7740,39 @@ const loadAudioCacheIndex = async (): Promise<AudioCacheIndex> => {
 const saveAudioCacheIndex = async (index: AudioCacheIndex): Promise<void> => {
   try {
     await AsyncStorage.setItem(AUDIO_CACHE_INDEX_KEY, JSON.stringify(index));
+  } catch {}
+};
+
+const updateAudioCacheIndexEntry = async (
+  trackId: string,
+  updates: Partial<AudioCacheIndexEntry>
+): Promise<void> => {
+  try {
+    const index = await loadAudioCacheIndex();
+    const existing = index.entries[trackId];
+    if (!existing) {
+      return;
+    }
+
+    const previousReservedBytes = existing.sizeBytes || 0;
+    const nextEntry: AudioCacheIndexEntry = {
+      ...existing,
+      ...updates,
+      updatedAt: Date.now(),
+      lastUsedAt: Date.now(),
+    };
+
+    index.entries[trackId] = nextEntry;
+
+    const nextReservedBytes = nextEntry.sizeBytes || 0;
+    if (nextReservedBytes !== previousReservedBytes) {
+      index.totalBytes = Math.max(
+        0,
+        index.totalBytes - previousReservedBytes + nextReservedBytes
+      );
+    }
+
+    await saveAudioCacheIndex(index);
   } catch {}
 };
 
@@ -6510,6 +7920,22 @@ export async function prepareCachedStreamUrl(
     return { url, cacheInfo: null };
   }
 
+  if (trackId) {
+    const manager = AudioStreamManager.getInstance();
+    const fullCachedPath = await manager.getFullCachedFilePath(trackId);
+    if (fullCachedPath) {
+      return {
+        url: fullCachedPath,
+        cacheInfo: {
+          percentage: 100,
+          fileSize: 0,
+          isFullyCached: true,
+          isDownloading: false,
+        },
+      };
+    }
+  }
+
   const proxyResult = await getProxyUrl(url);
   if (!proxyResult.isProxy) {
     return { url, cacheInfo: null };
@@ -6531,7 +7957,9 @@ export async function prepareCachedStreamUrl(
       trackId,
       url,
       sizeBytes: isValid && length ? length : 0,
-      isDownloading: true,
+      estimatedSizeBytes: isValid && length ? length : undefined,
+      downloadedBytes: 0,
+      isDownloading: false,
       isFullyCached: false,
       updatedAt: Date.now(),
       lastUsedAt: Date.now(),
@@ -6573,12 +8001,39 @@ export async function getAudioCacheInfo(
   }
 
   return {
-    percentage: entry.isFullyCached ? 100 : 1,
-    fileSize: entry.isFullyCached ? toMB(entry.sizeBytes) : 0,
-    totalFileSize: toMB(entry.sizeBytes),
+    percentage: entry.isFullyCached
+      ? 100
+      : entry.estimatedSizeBytes && entry.downloadedBytes
+        ? Math.min(
+            99,
+            Math.max(
+              1,
+              Math.round(
+                (entry.downloadedBytes / entry.estimatedSizeBytes) * 100
+              )
+            )
+          )
+        : 1,
+    fileSize: entry.isFullyCached
+      ? toMB(entry.sizeBytes)
+      : toMB(entry.downloadedBytes || 0),
+    totalFileSize:
+      entry.estimatedSizeBytes || entry.sizeBytes
+        ? toMB(entry.estimatedSizeBytes || entry.sizeBytes)
+        : undefined,
     isFullyCached: entry.isFullyCached,
     isDownloading: entry.isDownloading,
   };
+}
+
+export async function getFullyCachedAudioUrl(
+  trackId: string
+): Promise<string | null> {
+  if (!trackId) {
+    return null;
+  }
+
+  return AudioStreamManager.getInstance().getFullCachedFilePath(trackId);
 }
 
 export async function markAudioCacheComplete(trackId: string): Promise<void> {
@@ -6591,6 +8046,8 @@ export async function markAudioCacheComplete(trackId: string): Promise<void> {
     ...entry,
     isDownloading: false,
     isFullyCached: true,
+    estimatedSizeBytes: entry.sizeBytes || entry.estimatedSizeBytes,
+    downloadedBytes: entry.sizeBytes || entry.downloadedBytes || 0,
     updatedAt: Date.now(),
     lastUsedAt: Date.now(),
   };
@@ -6598,6 +8055,10 @@ export async function markAudioCacheComplete(trackId: string): Promise<void> {
 }
 
 export async function clearAudioCacheForTrack(trackId: string): Promise<void> {
+  try {
+    await AudioStreamManager.getInstance().cleanupTrackCache(trackId);
+  } catch {}
+
   const index = await loadAudioCacheIndex();
   const entry = index.entries[trackId];
   if (entry) {

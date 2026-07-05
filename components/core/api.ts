@@ -1,38 +1,113 @@
 import { Track } from "../../contexts/PlayerContext";
+import {
+  getProviderEndpoints,
+  type ProviderEndpoints,
+} from "../../lib/provider-endpoints";
+
+function normalizeUrl(value: string): string {
+  return value.trim().replace(/\/+$/g, "");
+}
+
+function replaceList(target: string[], nextValues: readonly string[]) {
+  target.splice(0, target.length, ...nextValues);
+}
 
 // Centralized API Configuration
 export const API = {
-  // Piped instances for YouTube content
-  piped: ["https://api.piped.private.coffee"],
-
-  // Invidious instances for YouTube content (will be updated dynamically)
-  invidious: [
-    "https://yt.omada.cafe",
-    "https://ytify.pp.ua",
-    "https://invidious.f5.si",
-    "https://inv-veltrix.zeabur.app",
-    "https://inv-veltrix-2.zeabur.app",
-    "https://inv-veltrix-3.zeabur.app",
-  ],
+  piped: [] as string[],
+  invidious: [] as string[],
 
   // JioSaavn API endpoints
   jiosaavn: {
-    base: "https://streamifyjiosaavn.vercel.app/api",
+    base: "",
     search: "/search",
     songs: "/songs",
     albums: "/albums",
     artists: "/artists",
     playlists: "/search/playlists",
   },
-} as const;
+};
 
 // Type definitions for better compatibility
 export type APIConfig = typeof API;
-export type InvidiousInstance = (typeof API.invidious)[number];
-export type PipedInstance = (typeof API.piped)[number];
+export type InvidiousInstance = string;
+export type PipedInstance = string;
 
 // Dynamic Invidious instances array (mutable)
-export let DYNAMIC_INVIDIOUS_INSTANCES: string[] = [...API.invidious];
+export let DYNAMIC_INVIDIOUS_INSTANCES: string[] = [];
+
+const EMPTY_PROVIDER_ENDPOINTS: ProviderEndpoints = {
+  instances: {
+    piped: [],
+    invidious: [],
+    server: {
+      localProxyBase: "",
+      localExpressApiUrl: "",
+      localAllowedClientOrigin: "",
+    },
+  },
+  providers: {
+    search: {
+      ytifyInstance: "",
+      searchBackendUrl: "",
+      soundcloudSearchProxyBase: "",
+    },
+    jiosaavn: {
+      apiBase: "",
+      fallbackSearchBase: "",
+      webOrigin: "",
+    },
+    beatseek: {
+      apiBase: "",
+    },
+    lyrics: {
+      lrclibBase: "",
+      lyricsOvhBase: "",
+    },
+    soundcloud: {
+      origin: "",
+      mobileOrigin: "",
+      apiBase: "",
+      apiV2Base: "",
+      widgetBase: "",
+      licenseBase: "",
+      oembedBase: "",
+    },
+    youtube: {
+      webBase: "",
+      musicBase: "",
+      oembedBase: "",
+      imageBase: "",
+    },
+  },
+  headers: {
+    origins: {
+      soundcloud: "",
+      youtube: "",
+      jiosaavn: "",
+    },
+    referers: {
+      soundcloud: "",
+      youtube: "",
+      jiosaavn: "",
+    },
+  },
+};
+
+let CURRENT_PROVIDER_ENDPOINTS: ProviderEndpoints = EMPTY_PROVIDER_ENDPOINTS;
+
+function setPipedInstances(instances: readonly string[]) {
+  const uniqueInstances = [
+    ...new Set(instances.map((instance) => normalizeUrl(instance))),
+  ];
+  replaceList(API.piped, uniqueInstances);
+  return API.piped;
+}
+
+function setJioSaavnBase(baseUrl?: string) {
+  API.jiosaavn.base = normalizeUrl(baseUrl || "");
+  return API.jiosaavn.base;
+}
 
 // Update function for dynamic Invidious instances
 export function updateInvidiousInstances(newInstances: readonly string[]) {
@@ -46,6 +121,7 @@ export function updateInvidiousInstances(newInstances: readonly string[]) {
     ...new Set([...normalizedExisting, ...normalizedNew]),
   ];
   DYNAMIC_INVIDIOUS_INSTANCES = uniqueInstances;
+  replaceList(API.invidious, uniqueInstances);
   return uniqueInstances;
 }
 export function setInvidiousInstances(instances: readonly string[]) {
@@ -54,12 +130,122 @@ export function setInvidiousInstances(instances: readonly string[]) {
       instances.map((instance) => normalizeInvidiousInstance(instance))
     ),
   ];
+  replaceList(API.invidious, DYNAMIC_INVIDIOUS_INSTANCES);
   return DYNAMIC_INVIDIOUS_INSTANCES;
 }
 export function normalizeInvidiousInstance(instance: string): string {
-  const trimmed = instance.trim();
+  const trimmed = normalizeUrl(instance);
   const withoutApi = trimmed.replace(/\/api\/v1\/?$/i, "");
   return withoutApi.replace(/\/+$/g, "");
+}
+
+export function getPrimaryPipedInstance() {
+  return API.piped[0] || "";
+}
+
+export function getPrimaryInvidiousInstance(preferredHost?: string) {
+  if (preferredHost) {
+    const preferred =
+      DYNAMIC_INVIDIOUS_INSTANCES.find((url) => url.includes(preferredHost)) ||
+      API.invidious.find((url) => url.includes(preferredHost));
+    if (preferred) {
+      return preferred;
+    }
+  }
+
+  return DYNAMIC_INVIDIOUS_INSTANCES[0] || API.invidious[0] || "";
+}
+
+export function getProviderEndpointsSnapshot() {
+  return CURRENT_PROVIDER_ENDPOINTS;
+}
+
+export function getSearchProviderBase() {
+  return CURRENT_PROVIDER_ENDPOINTS.providers.search.searchBackendUrl;
+}
+
+export function getLocalProxyBase() {
+  return CURRENT_PROVIDER_ENDPOINTS.instances.server.localProxyBase;
+}
+
+export function getLocalExpressApiUrl() {
+  return CURRENT_PROVIDER_ENDPOINTS.instances.server.localExpressApiUrl;
+}
+
+export function getLocalAllowedClientOrigin() {
+  return CURRENT_PROVIDER_ENDPOINTS.instances.server.localAllowedClientOrigin;
+}
+
+export function getYtifyInstance() {
+  return CURRENT_PROVIDER_ENDPOINTS.providers.search.ytifyInstance;
+}
+
+export function getSoundCloudSearchProxyBase() {
+  return CURRENT_PROVIDER_ENDPOINTS.providers.search.soundcloudSearchProxyBase;
+}
+
+export function getBeatseekApiBase() {
+  return CURRENT_PROVIDER_ENDPOINTS.providers.beatseek.apiBase;
+}
+
+export function getJioSaavnFallbackSearchBase() {
+  return CURRENT_PROVIDER_ENDPOINTS.providers.jiosaavn.fallbackSearchBase;
+}
+
+export function getLyricsOvhBase() {
+  return CURRENT_PROVIDER_ENDPOINTS.providers.lyrics.lyricsOvhBase;
+}
+
+export function getLrcLibBase() {
+  return CURRENT_PROVIDER_ENDPOINTS.providers.lyrics.lrclibBase;
+}
+
+export function getSoundCloudApiBase() {
+  return CURRENT_PROVIDER_ENDPOINTS.providers.soundcloud.apiBase;
+}
+
+export function getSoundCloudApiV2Base() {
+  return CURRENT_PROVIDER_ENDPOINTS.providers.soundcloud.apiV2Base;
+}
+
+export function getSoundCloudWidgetBase() {
+  return CURRENT_PROVIDER_ENDPOINTS.providers.soundcloud.widgetBase;
+}
+
+export function getSoundCloudOrigin() {
+  return CURRENT_PROVIDER_ENDPOINTS.providers.soundcloud.origin;
+}
+
+export function getSoundCloudMobileOrigin() {
+  return CURRENT_PROVIDER_ENDPOINTS.providers.soundcloud.mobileOrigin;
+}
+
+export function getSoundCloudOEmbedBase() {
+  return CURRENT_PROVIDER_ENDPOINTS.providers.soundcloud.oembedBase;
+}
+
+export function getYouTubeWebBase() {
+  return CURRENT_PROVIDER_ENDPOINTS.providers.youtube.webBase;
+}
+
+export function getYouTubeMusicBase() {
+  return CURRENT_PROVIDER_ENDPOINTS.providers.youtube.musicBase;
+}
+
+export function getYouTubeImageBase() {
+  return CURRENT_PROVIDER_ENDPOINTS.providers.youtube.imageBase;
+}
+
+export function getProviderOrigin(
+  provider: "soundcloud" | "youtube" | "jiosaavn"
+) {
+  return CURRENT_PROVIDER_ENDPOINTS.headers.origins[provider];
+}
+
+export function getProviderReferer(
+  provider: "soundcloud" | "youtube" | "jiosaavn"
+) {
+  return CURRENT_PROVIDER_ENDPOINTS.headers.referers[provider];
 }
 
 // Helper functions for instance management
@@ -78,63 +264,6 @@ export const fetchJson = async <T>(
     }
     return res.json() as Promise<T>;
   });
-
-/**
- * Fetches and decodes Invidious instances from Uma repository
- */
-export async function fetchUma(): Promise<string[]> {
-  try {
-    console.log("[API] Fetching Invidious instances from Uma repository...");
-    const response = await fetch(
-      "https://raw.githubusercontent.com/n-ce/Uma/main/iv.txt"
-    );
-    const text = await response.text();
-
-    let decompressedString = text;
-    const decodePairs: Record<string, string> = {
-      $: "invidious",
-      "&": "inv",
-      "#": "iv",
-      "~": "com",
-    };
-
-    for (const code in decodePairs) {
-      const safeCode = code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const regex = new RegExp(safeCode, "g");
-      decompressedString = decompressedString.replace(regex, decodePairs[code]);
-    }
-
-    const instances = decompressedString.split(",").map((i) => `https://${i}`);
-    console.log(
-      `[API] Successfully fetched ${instances.length} instances from Uma`
-    );
-    return instances;
-  } catch (error) {
-    console.error("[API] Failed to fetch instances from Uma:", error);
-    return [];
-  }
-}
-
-/**
- * Updates Invidious instances from Uma repository (for app startup)
- */
-export async function updateInvidiousInstancesFromUma(): Promise<void> {
-  try {
-    const umaInstances = await fetchUma();
-    if (umaInstances.length > 0) {
-      updateInvidiousInstances(
-        umaInstances.map((instance) =>
-          normalizeInvidiousInstance(instance)
-        ) as string[]
-      );
-      console.log(
-        `[API] Updated Invidious instances from Uma. Total: ${DYNAMIC_INVIDIOUS_INSTANCES.length}`
-      );
-    }
-  } catch (error) {
-    console.error("[API] Error updating instances from Uma:", error);
-  }
-}
 
 // Utility functions
 export const convertSStoHHMMSS = (seconds: number): string => {
@@ -334,8 +463,16 @@ export async function fetchStreamFromPipedWithFallback(id: string) {
 
   for (const baseUrl of API.piped) {
     try {
-      return await fetchStreamFromPiped(id, baseUrl);
+      console.log(`🟡 [API] Piped instance try: ${baseUrl}`);
+      const data = await fetchStreamFromPiped(id, baseUrl);
+      console.log(`🟢 [API] Piped instance ok: ${baseUrl}`);
+      return data;
     } catch (error) {
+      console.log(
+        `🔴 [API] Piped instance failed: ${baseUrl} (${
+          (error as Error).message
+        })`
+      );
       errors.push(`${baseUrl}: ${(error as Error).message}`);
       continue;
     }
@@ -365,8 +502,16 @@ export async function fetchStreamFromInvidiousWithFallback(id: string) {
 
   for (const baseUrl of instances) {
     try {
-      return await fetchStreamFromInvidious(id, baseUrl);
+      console.log(`🟡 [API] Invidious instance try: ${baseUrl}`);
+      const data = await fetchStreamFromInvidious(id, baseUrl);
+      console.log(`🟢 [API] Invidious instance ok: ${baseUrl}`);
+      return data;
     } catch (error) {
+      console.log(
+        `🔴 [API] Invidious instance failed: ${baseUrl} (${
+          (error as Error).message
+        })`
+      );
       errors.push(`${baseUrl}: ${(error as Error).message}`);
       continue;
     }
@@ -375,100 +520,51 @@ export async function fetchStreamFromInvidiousWithFallback(id: string) {
   throw new Error(`All Invidious instances failed: ${errors.join(", ")}`);
 }
 
-/**
- * Fetches Invidious instances from Stremion API
- */
-export async function fetchStremionInstances(): Promise<string[]> {
-  try {
-    console.log("[API] Fetching Invidious instances from Stremion...");
-    const response = await fetch("https://stremion.zeabur.app/api/instances");
+async function applyProviderEndpoints(revalidate = false): Promise<void> {
+  const endpoints = await getProviderEndpoints({ revalidate });
+  CURRENT_PROVIDER_ENDPOINTS = endpoints;
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
+  const normalizedInvidious = endpoints.instances.invidious.map((instance) =>
+    normalizeInvidiousInstance(instance)
+  );
+  const pipedInstances = endpoints.instances.piped.map((instance) =>
+    normalizeUrl(instance)
+  );
 
-    const data = await response.json();
-    let instances: string[] = [];
+  const [healthyPiped, healthyInvidious] = await Promise.all([
+    pipedInstances.length > 0 ? getHealthyInstances(pipedInstances) : [],
+    normalizedInvidious.length > 0
+      ? getHealthyInvidiousInstancesSorted(normalizedInvidious)
+      : [],
+  ]);
 
-    // Handle different response formats
-    if (Array.isArray(data)) {
-      instances = data
-        .map((instance: any) =>
-          typeof instance === "string"
-            ? instance
-            : instance.url || instance.instance
-        )
-        .filter(Boolean);
-    } else if (data.instances && Array.isArray(data.instances)) {
-      instances = data.instances
-        .map((instance: any) =>
-          typeof instance === "string"
-            ? instance
-            : instance.url || instance.instance
-        )
-        .filter(Boolean);
-    } else if (data.urls && Array.isArray(data.urls)) {
-      instances = data.urls.filter(Boolean);
-    }
+  const prioritizedPiped = [
+    ...healthyPiped,
+    ...pipedInstances.filter((instance) => !healthyPiped.includes(instance)),
+  ];
 
-    // Normalize instances
-    instances = instances.map((instance: string) => {
-      if (!instance.startsWith("http")) {
-        instance = `https://${instance}`;
-      }
-      return normalizeInvidiousInstance(instance);
-    });
+  setPipedInstances(prioritizedPiped);
+  setJioSaavnBase(endpoints.providers.jiosaavn.apiBase);
 
-    console.log(
-      `[API] Successfully fetched ${instances.length} instances from Stremion`
-    );
-    return instances;
-  } catch (error) {
-    console.error("[API] Failed to fetch instances from Stremion:", error);
-    return [];
+  if (normalizedInvidious.length === 0) {
+    setInvidiousInstances([]);
+    console.log("[API] Runtime config returned no Invidious instances");
+    return;
   }
+
+  setInvidiousInstances(
+    healthyInvidious.length > 0 ? healthyInvidious : normalizedInvidious
+  );
+
+  console.log(
+    `[API] Runtime config ready. Piped: ${API.piped.length} (${healthyPiped.length} healthy), Invidious: ${DYNAMIC_INVIDIOUS_INSTANCES.length} (${healthyInvidious.length} healthy)`
+  );
 }
 
-// Initialize dynamic instances on app startup
 export async function initializeDynamicInstances(): Promise<void> {
   try {
-    console.log(
-      "[API] Fetching dynamic Invidious instances from multiple sources..."
-    );
-
-    // Fetch from all sources in parallel
-    const [umaInstances, stremionInstances] = await Promise.all([
-      fetchUma(),
-      fetchStremionInstances(),
-    ]);
-
-    // Combine all instances
-    const allInstances = [...umaInstances, ...stremionInstances];
-
-    console.log(`[API] Total instances fetched: ${allInstances.length}`);
-    console.log(`[API] - Uma: ${umaInstances.length}`);
-    console.log(`[API] - Stremion: ${stremionInstances.length}`);
-
-    if (allInstances.length > 0) {
-      const formattedInstances = allInstances.map((instance) =>
-        normalizeInvidiousInstance(instance)
-      ) as string[];
-
-      updateInvidiousInstances(formattedInstances);
-      const healthy = await getHealthyInvidiousInstancesSorted(
-        DYNAMIC_INVIDIOUS_INSTANCES
-      );
-      if (healthy.length > 0) {
-        setInvidiousInstances(healthy as string[]);
-        console.log(
-          `[API] Healthy Invidious instances ready: ${healthy.length}`
-        );
-      } else {
-        console.log("[API] No healthy instances detected, keeping defaults");
-      }
-    } else {
-      console.log("[API] No dynamic instances fetched, using defaults");
-    }
+    console.log("[API] Fetching provider instances from runtime config...");
+    await applyProviderEndpoints(false);
   } catch (error) {
     console.error("[API] Error initializing dynamic instances:", error);
   }
@@ -545,11 +641,14 @@ export async function fetchPipedMix(videoId: string) {
 
 export async function fetchYouTubeMix(mixId: string, continuation?: string) {
   const normalizedId = mixId.startsWith("RD") ? mixId : `RD${mixId}`;
-  const baseUrl = "https://yt.omada.cafe/api/v1/mixes";
+  const baseUrl = getPrimaryInvidiousInstance();
+  if (!baseUrl) {
+    throw new Error("No Invidious instance available for YouTube mixes");
+  }
   const suffix = continuation
     ? `?continuation=${encodeURIComponent(continuation)}`
     : "";
-  const url = `${baseUrl}/${encodeURIComponent(normalizedId)}${suffix}`;
+  const url = `${baseUrl}/api/v1/mixes/${encodeURIComponent(normalizedId)}${suffix}`;
   return await fetchWithRetry<any>(url, {}, 2, 300);
 }
 
@@ -557,7 +656,7 @@ export async function fetchYouTubeMix(mixId: string, continuation?: string) {
 export async function fetchJioSaavnSuggestions(songId: string) {
   try {
     const response = await fetch(
-      `https://streamifyjiosaavn.vercel.app/api/songs/${songId}/suggestions`
+      `${getJioSaavnSongEndpoint(songId)}/suggestions`
     );
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);

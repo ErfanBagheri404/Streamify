@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { SafeArea } from "../SafeArea";
 import { usePlayer } from "../../contexts/PlayerContext";
 import Playlist from "../Playlist";
 
@@ -44,40 +43,36 @@ export const PreviouslyPlayedScreen: React.FC<PreviouslyPlayedScreenProps> = ({
 
   if (isLoading) {
     return (
-      <SafeArea>
-        <Playlist
-          title="Previously Played"
-          albumArtUrl={albumArtUrl}
-          libraryCover="previously-played"
-          songs={[]}
-          onBack={handleGoBack}
-          emptyMessage="Loading..."
-          emptySubMessage=""
-          showSongOptions={false}
-          showHeaderOptions={false}
-          type="playlist"
-        />
-      </SafeArea>
-    );
-  }
-
-  return (
-    <SafeArea>
       <Playlist
         title="Previously Played"
-        artist={`${previouslyPlayedSongs.length} songs`}
         albumArtUrl={albumArtUrl}
         libraryCover="previously-played"
-        songs={previouslyPlayedSongs}
+        songs={[]}
         onBack={handleGoBack}
-        emptyMessage="No previously played songs"
-        emptySubMessage="Play some songs to see them here"
-        emptyIcon="time"
+        emptyMessage="Loading..."
+        emptySubMessage=""
         showSongOptions={false}
         showHeaderOptions={false}
         type="playlist"
       />
-    </SafeArea>
+    );
+  }
+
+  return (
+    <Playlist
+      title="Previously Played"
+      artist={`${previouslyPlayedSongs.length} songs`}
+      albumArtUrl={albumArtUrl}
+      libraryCover="previously-played"
+      songs={previouslyPlayedSongs}
+      onBack={handleGoBack}
+      emptyMessage="No previously played songs"
+      emptySubMessage="Play some songs to see them here"
+      emptyIcon="time"
+      showSongOptions={false}
+      showHeaderOptions={false}
+      type="playlist"
+    />
   );
 };
 

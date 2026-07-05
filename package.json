@@ -24,6 +24,7 @@
     "@react-navigation/bottom-tabs": "^7.8.12",
     "@react-navigation/native": "^7.1.25",
     "@react-navigation/native-stack": "^7.8.6",
+    "@supabase/supabase-js": "^2.108.2",
     "@types/hls.js": "^0.13.3",
     "@types/sortablejs": "^1.15.9",
     "@types/styled-components-react-native": "^5.2.5",

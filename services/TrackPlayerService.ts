@@ -12,8 +12,35 @@ import TrackPlayer, {
 } from "react-native-track-player";
 import { Track } from "../contexts/PlayerContext";
 import { StorageService } from "../utils/storage";
+import {
+  getAudioStreamUrl,
+  getFullyCachedAudioUrl,
+} from "../modules/audioStreaming";
 import { NativeModules } from "react-native";
 import { t } from "../utils/localization";
+import {
+  getProviderOrigin,
+  getProviderReferer,
+  getSoundCloudWidgetBase,
+} from "../components/core/api";
+
+function resolveTrackSource(
+  track: Pick<Track, "source" | "_isSoundCloud" | "_isJioSaavn">
+): "youtube" | "youtubemusic" | "soundcloud" | "jiosaavn" {
+  if (track._isSoundCloud || track.source === "soundcloud") {
+    return "soundcloud";
+  }
+
+  if (track._isJioSaavn || track.source === "jiosaavn") {
+    return "jiosaavn";
+  }
+
+  if (track.source === "youtubemusic") {
+    return "youtubemusic";
+  }
+
+  return "youtube";
+}
 
 // Safe fallback for TrackPlayer constants
 let TrackPlayerCapability: typeof Capability | null = null;
@@ -38,7 +65,7 @@ try {
 
 // Safe wrapper functions for TrackPlayer constants
 function getSafeCapability(
-  capabilityName: keyof typeof Capability,
+  capabilityName: keyof typeof Capability
 ): Capability {
   if (TrackPlayerCapability && TrackPlayerCapability[capabilityName]) {
     return TrackPlayerCapability[capabilityName];
@@ -63,7 +90,7 @@ function setupTurboModuleCompatibility() {
 
     if (!nativeTrackPlayer) {
       throw new Error(
-        "Native TrackPlayer module is not available. If you are using Expo, make sure you are *not* running in Expo Go and that you have rebuilt the app after installing react-native-track-player.",
+        "Native TrackPlayer module is not available. If you are using Expo, make sure you are *not* running in Expo Go and that you have rebuilt the app after installing react-native-track-player."
       );
     }
 
@@ -80,7 +107,7 @@ function setupTurboModuleCompatibility() {
             return originalGetConstants.call(this);
           } catch (e) {
             console.warn(
-              "[TrackPlayerService] getConstants failed, returning empty object",
+              "[TrackPlayerService] getConstants failed, returning empty object"
             );
             return {};
           }
@@ -88,14 +115,14 @@ function setupTurboModuleCompatibility() {
       } catch (e) {
         console.warn(
           "[TrackPlayerService] Failed to wrap native module methods:",
-          e,
+          e
         );
       }
     }
   } catch (e) {
     console.warn(
       "[TrackPlayerService] Failed to setup TurboModule compatibility:",
-      e,
+      e
     );
   }
 }
@@ -119,7 +146,7 @@ export class TrackPlayerService {
       } catch (error) {
         console.error(
           "[TrackPlayerService] Failed to create TrackPlayerService instance:",
-          error,
+          error
         );
         throw error;
       }
@@ -135,7 +162,7 @@ export class TrackPlayerService {
     // Check if TrackPlayer is available and initialized
     if (!TrackPlayer) {
       throw new Error(
-        "TrackPlayer is not available - make sure react-native-track-player is properly installed",
+        "TrackPlayer is not available - make sure react-native-track-player is properly installed"
       );
     }
 
@@ -146,7 +173,7 @@ export class TrackPlayerService {
 
     if (!nativeTrackPlayer) {
       throw new Error(
-        "Native TrackPlayer module is not available. If you are using Expo, make sure you are *not* running in Expo Go and that you have rebuilt the app after installing react-native-track-player.",
+        "Native TrackPlayer module is not available. If you are using Expo, make sure you are *not* running in Expo Go and that you have rebuilt the app after installing react-native-track-player."
       );
     }
 
@@ -163,7 +190,7 @@ export class TrackPlayerService {
             return originalGetConstants.call(this);
           } catch (e) {
             console.warn(
-              "[TrackPlayerService] getConstants failed, returning empty object",
+              "[TrackPlayerService] getConstants failed, returning empty object"
             );
             return {};
           }
@@ -171,7 +198,7 @@ export class TrackPlayerService {
       } catch (e) {
         console.warn(
           "[TrackPlayerService] Failed to wrap native module methods:",
-          e,
+          e
         );
       }
     }
@@ -183,7 +210,7 @@ export class TrackPlayerService {
       console.log("[TrackPlayerService] TrackPlayer state check:", state);
     } catch (error) {
       console.warn(
-        "[TrackPlayerService] TrackPlayer not ready, attempting setup...",
+        "[TrackPlayerService] TrackPlayer not ready, attempting setup..."
       );
       await this.setupPlayer();
     }
@@ -217,19 +244,19 @@ export class TrackPlayerService {
       if (!TrackPlayer) {
         console.error("[TrackPlayerService] TrackPlayer is null!");
         throw new Error(
-          "TrackPlayer is not available - make sure react-native-track-player is properly installed",
+          "TrackPlayer is not available - make sure react-native-track-player is properly installed"
         );
       }
 
       // Check if Capability constants are available
       if (!Capability) {
         console.warn(
-          "[TrackPlayerService] Capability constants are null, using string fallbacks",
+          "[TrackPlayerService] Capability constants are null, using string fallbacks"
         );
       } else {
         console.log(
           "[TrackPlayerService] Capability constants available:",
-          Object.keys(Capability),
+          Object.keys(Capability)
         );
         // Test individual capabilities to ensure they're not null
         try {
@@ -240,12 +267,12 @@ export class TrackPlayerService {
             getSafeCapability("SkipToPrevious" as keyof typeof Capability),
           ];
           console.log(
-            "[TrackPlayerService] All capability fallbacks working correctly",
+            "[TrackPlayerService] All capability fallbacks working correctly"
           );
         } catch (error) {
           console.error(
             "[TrackPlayerService] Error testing capability fallbacks:",
-            error,
+            error
           );
         }
       }
@@ -257,10 +284,10 @@ export class TrackPlayerService {
 
       if (!nativeTrackPlayer) {
         console.error(
-          "[TrackPlayerService] Native TrackPlayer module is null - this usually means the native module is not linked or you are running in an environment (like Expo Go or web) that does not support react-native-track-player.",
+          "[TrackPlayerService] Native TrackPlayer module is null - this usually means the native module is not linked or you are running in an environment (like Expo Go or web) that does not support react-native-track-player."
         );
         throw new Error(
-          "Native TrackPlayer module is not available. Rebuild the app after installing react-native-track-player and avoid running in Expo Go.",
+          "Native TrackPlayer module is not available. Rebuild the app after installing react-native-track-player and avoid running in Expo Go."
         );
       }
 
@@ -271,29 +298,29 @@ export class TrackPlayerService {
           const constants = nativeTrackPlayer.getConstants();
           console.log(
             "[TrackPlayerService] TrackPlayer constants available:",
-            !!constants,
+            !!constants
           );
         }
       } catch (turboError) {
         console.warn(
-          "[TrackPlayerService] TurboModule compatibility issue detected, continuing with setup...",
+          "[TrackPlayerService] TurboModule compatibility issue detected, continuing with setup..."
         );
         // Continue with setup even if there are TurboModule issues
       }
 
       console.log(
         "[TrackPlayerService] TrackPlayer object type:",
-        typeof TrackPlayer,
+        typeof TrackPlayer
       );
       console.log(
         "[TrackPlayerService] TrackPlayer methods:",
         Object.getOwnPropertyNames(TrackPlayer)
           .filter((name) => typeof (TrackPlayer as any)[name] === "function")
-          .slice(0, 10),
+          .slice(0, 10)
       );
 
-      // Add a small delay to ensure native module is ready during development reload
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Keep only a very small pause for hot reload/native readiness.
+      await new Promise((resolve) => setTimeout(resolve, 25));
 
       await TrackPlayer.setupPlayer({
         maxCacheSize: 1024 * 50, // 50MB cache for better streaming
@@ -303,19 +330,19 @@ export class TrackPlayerService {
           IOSCategoryOptions.AllowAirPlay,
           IOSCategoryOptions.AllowBluetoothA2DP,
         ],
-        // Better buffering for streaming - more conservative for YouTube
-        minBuffer: 10, // 10 seconds minimum buffer (reduced from 15)
-        maxBuffer: 60, // 60 seconds maximum buffer
-        playBuffer: 2, // 2 seconds play buffer (reduced from 5)
-        backBuffer: 5, // 5 seconds back buffer (reduced from 10)
+        // Favor faster startup while keeping enough headroom to avoid rebuffering.
+        minBuffer: 6,
+        maxBuffer: 40,
+        playBuffer: 1,
+        backBuffer: 3,
         // Additional streaming options
-        waitForBuffer: true, // Wait for buffer before playing
+        waitForBuffer: false,
         autoUpdateMetadata: false, // Don't auto-update metadata for streams
         // Enable automatic interruption handling
         autoHandleInterruptions: false,
       });
       console.log(
-        "[TrackPlayerService] TrackPlayer setup completed successfully",
+        "[TrackPlayerService] TrackPlayer setup completed successfully"
       );
 
       // Build capabilities array safely
@@ -332,23 +359,23 @@ export class TrackPlayerService {
             TrackPlayerCapability.SkipToNext,
             TrackPlayerCapability.SkipToPrevious,
             TrackPlayerCapability.Stop,
-            TrackPlayerCapability.SeekTo,
+            TrackPlayerCapability.SeekTo
           );
           compactCapabilities.push(
             TrackPlayerCapability.Play,
             TrackPlayerCapability.Pause,
             TrackPlayerCapability.SkipToNext,
-            TrackPlayerCapability.SkipToPrevious,
+            TrackPlayerCapability.SkipToPrevious
           );
           notificationCapabilities.push(
             TrackPlayerCapability.Play,
             TrackPlayerCapability.Pause,
             TrackPlayerCapability.SkipToNext,
-            TrackPlayerCapability.SkipToPrevious,
+            TrackPlayerCapability.SkipToPrevious
           );
         } catch (error) {
           console.warn(
-            "[TrackPlayerService] Error accessing capability constants, using fallbacks",
+            "[TrackPlayerService] Error accessing capability constants, using fallbacks"
           );
         }
       }
@@ -361,19 +388,19 @@ export class TrackPlayerService {
           "skipToNext",
           "skipToPrevious",
           "stop",
-          "seekTo",
+          "seekTo"
         );
         compactCapabilities.push(
           "play",
           "pause",
           "skipToNext",
-          "skipToPrevious",
+          "skipToPrevious"
         );
         notificationCapabilities.push(
           "play",
           "pause",
           "skipToNext",
-          "skipToPrevious",
+          "skipToPrevious"
         );
       }
 
@@ -384,7 +411,8 @@ export class TrackPlayerService {
         },
         // This is the key for proper media session integration
         // The service will automatically handle media session creation
-        progressUpdateEventInterval: 1.0, // Reduced from 0.25 to 1.0 seconds for better performance
+        // Keep progress events frequent enough for lyrics and seek UI to stay aligned.
+        progressUpdateEventInterval: 0.25,
         capabilities,
         compactCapabilities,
         notificationCapabilities,
@@ -404,21 +432,21 @@ export class TrackPlayerService {
       getSafeEvent("RemotePlay" as keyof typeof Event),
       () => {
         TrackPlayer.play();
-      },
+      }
     );
 
     TrackPlayer.addEventListener(
       getSafeEvent("RemotePause" as keyof typeof Event),
       () => {
         TrackPlayer.pause();
-      },
+      }
     );
 
     TrackPlayer.addEventListener(
       getSafeEvent("RemoteStop" as keyof typeof Event),
       () => {
         TrackPlayer.stop();
-      },
+      }
     );
 
     TrackPlayer.addEventListener(
@@ -428,7 +456,7 @@ export class TrackPlayerService {
           Promise.resolve(this.onRemoteNext()).catch((error) => {
             console.error(
               "[TrackPlayerService] Remote next handler failed:",
-              error,
+              error
             );
           });
           return;
@@ -436,7 +464,7 @@ export class TrackPlayerService {
         this.skipToNext().catch((error) => {
           console.error("[TrackPlayerService] Failed to skip to next:", error);
         });
-      },
+      }
     );
 
     TrackPlayer.addEventListener(
@@ -446,7 +474,7 @@ export class TrackPlayerService {
           Promise.resolve(this.onRemotePrevious()).catch((error) => {
             console.error(
               "[TrackPlayerService] Remote previous handler failed:",
-              error,
+              error
             );
           });
           return;
@@ -454,17 +482,17 @@ export class TrackPlayerService {
         this.skipToPrevious().catch((error) => {
           console.error(
             "[TrackPlayerService] Failed to skip to previous:",
-            error,
+            error
           );
         });
-      },
+      }
     );
 
     TrackPlayer.addEventListener(
       getSafeEvent("RemoteSeek" as keyof typeof Event),
       (event: any) => {
         TrackPlayer.seekTo(event.position);
-      },
+      }
     );
 
     TrackPlayer.addEventListener(
@@ -472,7 +500,7 @@ export class TrackPlayerService {
       (event: any) => {
         console.log("[TrackPlayerService] Playback queue ended:", event);
         // Handle queue end - could repeat playlist or stop
-      },
+      }
     );
 
     TrackPlayer.addEventListener(
@@ -480,50 +508,145 @@ export class TrackPlayerService {
       (event: any) => {
         console.log("[TrackPlayerService] Playback track changed:", event);
         this.currentTrackIndex = event.nextTrack;
-      },
+      }
     );
 
     TrackPlayer.addEventListener(
       getSafeEvent("PlaybackError" as keyof typeof Event),
-      (event: any) => {
+      async (event: any) => {
         console.error("[TrackPlayerService] Playback error:", event);
 
         const currentTrack = this.playlist[this.currentTrackIndex];
-
-        if (
-          currentTrack &&
-          currentTrack.audioUrl &&
-          (currentTrack.audioUrl.includes("googlevideo.com") ||
-            currentTrack.audioUrl.includes("youtube.com"))
-        ) {
-          console.error(
-            `[TrackPlayerService] YouTube stream error for track: ${currentTrack.title}`,
-          );
-          console.error(
-            `[TrackPlayerService] YouTube URL: ${currentTrack.audioUrl.substring(0, 100)}...`,
-          );
-
-          if (event?.message?.includes("403") || event?.code === 403) {
-            console.error(
-              "[TrackPlayerService] YouTube URL expired (403 Forbidden) - needs refresh",
-            );
-          } else if (event?.message?.includes("404") || event?.code === 404) {
-            console.error(
-              "[TrackPlayerService] YouTube URL not found (404) - stream may be removed",
-            );
-          } else if (
-            event?.message?.includes("Network") ||
-            event?.message?.includes("Connection")
-          ) {
-            console.error(
-              "[TrackPlayerService] Network error during YouTube playback",
-            );
-          }
-        }
-
         const message: string =
           typeof event?.message === "string" ? event.message.toLowerCase() : "";
         const code = event?.code;
+
+        // #region debug-point A:playback-error
+        void fetch("http://192.168.1.106:7777/event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: "cached-seek-source-error",
+            runId: "pre-fix",
+            hypothesisId: "A",
+            location: "TrackPlayerService:PlaybackError",
+            msg: "[DEBUG] PlaybackError received",
+            data: {
+              code: event?.code ?? null,
+              message: event?.message ?? null,
+              currentTrackId: currentTrack?.id ?? null,
+              currentTrackTitle: currentTrack?.title ?? null,
+              source: currentTrack?.source ?? null,
+              audioUrl: currentTrack?.audioUrl ?? null,
+              audioUrlIsLocal:
+                typeof currentTrack?.audioUrl === "string" &&
+                (currentTrack.audioUrl.startsWith("file://") ||
+                  currentTrack.audioUrl.startsWith("content://")),
+              audioUrlLooksYouTube:
+                typeof currentTrack?.audioUrl === "string" &&
+                (currentTrack.audioUrl.includes("googlevideo.com") ||
+                  currentTrack.audioUrl.includes("youtube.com")),
+            },
+            ts: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
+
+        const isLocalFileSource =
+          typeof currentTrack?.audioUrl === "string" &&
+          (currentTrack.audioUrl.startsWith("file://") ||
+            currentTrack.audioUrl.startsWith("content://"));
+
+        const isYouTubeStream =
+          currentTrack &&
+          currentTrack.audioUrl &&
+          !isLocalFileSource &&
+          (currentTrack.audioUrl.includes("googlevideo.com") ||
+            currentTrack.audioUrl.includes("youtube.com") ||
+            currentTrack.source === "youtube" ||
+            currentTrack.source === "youtubemusic");
+
+        if (isYouTubeStream && currentTrack?.audioUrl) {
+          console.error(
+            `[TrackPlayerService] YouTube stream error for track: ${currentTrack.title}`
+          );
+          console.error(
+            `🟥 [TrackPlayerService] YouTube URL: ${currentTrack.audioUrl.substring(0, 100)}...`
+          );
+
+          const isBadHttpStatus =
+            code === "android-io-bad-http-status" ||
+            message.includes("bad http status") ||
+            message.includes("http status");
+          const isExpired =
+            message.includes("403") ||
+            code === 403 ||
+            message.includes("forbidden");
+          const isNotFound =
+            message.includes("404") ||
+            code === 404 ||
+            message.includes("not found");
+
+          if (isExpired) {
+            console.error(
+              "[TrackPlayerService] YouTube URL expired (403 Forbidden) - needs refresh"
+            );
+          } else if (isNotFound) {
+            console.error(
+              "[TrackPlayerService] YouTube URL not found (404) - stream may be removed"
+            );
+          } else if (
+            message.includes("network") ||
+            message.includes("connection")
+          ) {
+            console.error(
+              "[TrackPlayerService] Network error during YouTube playback"
+            );
+          }
+
+          if (isBadHttpStatus || isExpired || isNotFound) {
+            try {
+              const cachedAudioUrl = currentTrack?.id
+                ? await getFullyCachedAudioUrl(currentTrack.id)
+                : null;
+              if (cachedAudioUrl) {
+                console.log(
+                  "[TrackPlayerService] Switching playback recovery to fully cached local file"
+                );
+                await this.updateCurrentTrack(cachedAudioUrl);
+                await TrackPlayer.play();
+                return;
+              }
+
+              const resolvedSource = resolveTrackSource(currentTrack);
+              const lookupId =
+                resolvedSource === "soundcloud"
+                  ? currentTrack.url || currentTrack.id
+                  : currentTrack.id;
+              console.log(
+                `🟡 [TrackPlayerService] Refreshing ${resolvedSource} stream URL...`
+              );
+              const freshUrl = await getAudioStreamUrl(
+                lookupId,
+                undefined,
+                resolvedSource,
+                currentTrack.title,
+                currentTrack.artist
+              );
+              if (freshUrl) {
+                console.log("🟢 [TrackPlayerService] YouTube URL refreshed");
+                await this.updateCurrentTrack(freshUrl);
+                await TrackPlayer.play();
+                return;
+              }
+            } catch (refreshError) {
+              console.error(
+                "🔴 [TrackPlayerService] YouTube URL refresh failed:",
+                refreshError
+              );
+            }
+          }
+        }
 
         const isCorruptOrMissingSource =
           code === 404 ||
@@ -537,12 +660,12 @@ export class TrackPlayerService {
 
         if (isCorruptOrMissingSource) {
           console.warn(
-            "[TrackPlayerService] Detected corrupt or missing source, attempting to skip to next track",
+            "[TrackPlayerService] Detected corrupt or missing source, attempting to skip to next track"
           );
           this.skipToNext().catch((skipError) => {
             console.error(
               "[TrackPlayerService] Failed to skip to next after corrupt source:",
-              skipError,
+              skipError
             );
             TrackPlayer.stop().catch(() => {});
           });
@@ -552,7 +675,7 @@ export class TrackPlayerService {
         if (this.onError) {
           this.onError(event);
         }
-      },
+      }
     );
   }
 
@@ -567,7 +690,7 @@ export class TrackPlayerService {
 
   private convertTrackToTrackPlayer(
     track: Track,
-    index: number,
+    index: number
   ): TrackPlayerTrack {
     const headers: { [key: string]: string } = {};
     const url = track.audioUrl || "";
@@ -582,6 +705,7 @@ export class TrackPlayerService {
     const isYouTubeStream =
       !isLocalFile &&
       (track.source === "youtube" ||
+        track.source === "youtubemusic" ||
         url.includes("googlevideo.com") ||
         url.includes("youtube.com"));
 
@@ -589,8 +713,8 @@ export class TrackPlayerService {
       Object.assign(headers, {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        Referer: "https://www.youtube.com/",
-        Origin: "https://www.youtube.com/",
+        Referer: getProviderReferer("youtube"),
+        Origin: getProviderOrigin("youtube"),
       });
     }
 
@@ -603,11 +727,12 @@ export class TrackPlayerService {
     }
 
     if (track._isSoundCloud) {
+      const soundCloudWidgetOrigin = getSoundCloudWidgetBase();
       Object.assign(headers, {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        Referer: "https://w.soundcloud.com/",
-        Origin: "https://w.soundcloud.com",
+        Referer: soundCloudWidgetOrigin ? `${soundCloudWidgetOrigin}/` : "",
+        Origin: soundCloudWidgetOrigin,
       });
     }
 
@@ -634,7 +759,10 @@ export class TrackPlayerService {
         contentType = "audio/ogg";
       } else if (track._isSoundCloud) {
         contentType = "audio/mpeg";
-      } else if (track.source === "youtube") {
+      } else if (
+        track.source === "youtube" ||
+        track.source === "youtubemusic"
+      ) {
         contentType = "audio/webm";
       }
     }
@@ -660,7 +788,7 @@ export class TrackPlayerService {
       title: track.title,
       artist: track.artist || t("screens.artist.unknown_artist"),
       album: "Streamify", // Add album for better notification display
-      artwork: track.thumbnail || "",
+      artwork: track.thumbnail || undefined,
       duration: track.duration || 0,
       headers: headers,
       userAgent: isYouTubeStream
@@ -678,14 +806,14 @@ export class TrackPlayerService {
     try {
       console.log(
         "[TrackPlayerService] addTracks called, isSetup:",
-        this.isSetup,
+        this.isSetup
       );
 
       // Ensure player is initialized and ready before adding tracks
       await this.ensureTrackPlayerReady();
 
       console.log(
-        "[TrackPlayerService] Player setup complete, proceeding with addTracks",
+        "[TrackPlayerService] Player setup complete, proceeding with addTracks"
       );
 
       // Validate YouTube URLs before adding tracks
@@ -700,7 +828,7 @@ export class TrackPlayerService {
             const isValid = await this.validateYouTubeUrl(track.audioUrl);
             if (!isValid) {
               console.warn(
-                `[TrackPlayerService] YouTube URL validation failed for track: ${track.title}`,
+                `[TrackPlayerService] YouTube URL validation failed for track: ${track.title}`
               );
               return {
                 ...track,
@@ -709,7 +837,7 @@ export class TrackPlayerService {
             }
           }
           return track;
-        }),
+        })
       );
 
       const playableTracks: Track[] = [];
@@ -721,14 +849,14 @@ export class TrackPlayerService {
           playableIndexMap.push(index);
         } else {
           console.warn(
-            `[TrackPlayerService] Skipping track without audio URL: ${track.title} (${track.id})`,
+            `[TrackPlayerService] Skipping track without audio URL: ${track.title} (${track.id})`
           );
         }
       });
 
       if (playableTracks.length === 0) {
         throw new Error(
-          "[TrackPlayerService] No playable tracks with audioUrl to add",
+          "[TrackPlayerService] No playable tracks with audioUrl to add"
         );
       }
 
@@ -738,7 +866,7 @@ export class TrackPlayerService {
       }
 
       const trackPlayerTracks = playableTracks.map((track, index) =>
-        this.convertTrackToTrackPlayer(track, index),
+        this.convertTrackToTrackPlayer(track, index)
       );
 
       console.log("[TrackPlayerService] About to call TrackPlayer.reset()");
@@ -746,12 +874,12 @@ export class TrackPlayerService {
       try {
         await TrackPlayer.reset();
         console.log(
-          "[TrackPlayerService] TrackPlayer.reset() completed successfully",
+          "[TrackPlayerService] TrackPlayer.reset() completed successfully"
         );
       } catch (resetError) {
         console.error(
           "[TrackPlayerService] TrackPlayer.reset() failed:",
-          resetError,
+          resetError
         );
         // Continue even if reset fails
       }
@@ -766,7 +894,7 @@ export class TrackPlayerService {
 
       if (adjustedStartIndex > 0) {
         console.log(
-          `[TrackPlayerService] Skipping to track index: ${adjustedStartIndex}`,
+          `[TrackPlayerService] Skipping to track index: ${adjustedStartIndex}`
         );
         await TrackPlayer.skip(adjustedStartIndex);
       }
@@ -793,16 +921,16 @@ export class TrackPlayerService {
 
         if (isYouTubeStream) {
           console.log(
-            "[TrackPlayerService] YouTube stream detected, adding safety delay...",
+            "[TrackPlayerService] YouTube stream detected, adding safety delay..."
           );
-          // Add a small delay for YouTube streams to initialize properly
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+          // Keep a short settle time without forcing a visible playback pause.
+          await new Promise((resolve) => setTimeout(resolve, 150));
 
           // Validate the YouTube URL before playing
           const isValid = await this.validateYouTubeUrl(currentTrack.audioUrl);
           if (!isValid) {
             console.error(
-              "[TrackPlayerService] YouTube URL validation failed before playback",
+              "[TrackPlayerService] YouTube URL validation failed before playback"
             );
             throw new Error("YouTube stream URL is no longer valid");
           }
@@ -841,6 +969,32 @@ export class TrackPlayerService {
 
   async seekTo(position: number) {
     try {
+      const currentTrack = this.playlist[this.currentTrackIndex];
+      // #region debug-point B:service-seek
+      void fetch("http://192.168.1.106:7777/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "cached-seek-source-error",
+          runId: "pre-fix",
+          hypothesisId: "B",
+          location: "TrackPlayerService:seekTo",
+          msg: "[DEBUG] TrackPlayerService.seekTo called",
+          data: {
+            position,
+            currentTrackId: currentTrack?.id ?? null,
+            currentTrackTitle: currentTrack?.title ?? null,
+            source: currentTrack?.source ?? null,
+            audioUrl: currentTrack?.audioUrl ?? null,
+            audioUrlIsLocal:
+              typeof currentTrack?.audioUrl === "string" &&
+              (currentTrack.audioUrl.startsWith("file://") ||
+                currentTrack.audioUrl.startsWith("content://")),
+          },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       await TrackPlayer.seekTo(position);
       console.log("[TrackPlayerService] Seeked to position:", position);
     } catch (error) {
@@ -901,11 +1055,45 @@ export class TrackPlayerService {
 
   async updateCurrentTrack(audioUrl: string): Promise<void> {
     try {
+      await this.ensureTrackPlayerReady();
       const currentTrackIndex = await TrackPlayer.getCurrentTrack();
       if (
         currentTrackIndex !== null &&
         currentTrackIndex < this.playlist.length
       ) {
+        const previousTrack = this.playlist[currentTrackIndex];
+        // #region debug-point C:update-current-track
+        void fetch("http://192.168.1.106:7777/event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: "cached-seek-source-error",
+            runId: "pre-fix",
+            hypothesisId: "C",
+            location: "TrackPlayerService:updateCurrentTrack",
+            msg: "[DEBUG] updateCurrentTrack called",
+            data: {
+              currentTrackIndex,
+              previousTrackId: previousTrack?.id ?? null,
+              previousTrackTitle: previousTrack?.title ?? null,
+              previousSource: previousTrack?.source ?? null,
+              previousAudioUrl: previousTrack?.audioUrl ?? null,
+              previousAudioUrlIsLocal:
+                typeof previousTrack?.audioUrl === "string" &&
+                (previousTrack.audioUrl.startsWith("file://") ||
+                  previousTrack.audioUrl.startsWith("content://")),
+              nextAudioUrl: audioUrl,
+              nextAudioUrlIsLocal:
+                audioUrl.startsWith("file://") ||
+                audioUrl.startsWith("content://"),
+              nextAudioUrlLooksYouTube:
+                audioUrl.includes("googlevideo.com") ||
+                audioUrl.includes("youtube.com"),
+            },
+            ts: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
         // Validate YouTube URL before updating
         const isYouTubeStream =
           audioUrl &&
@@ -914,12 +1102,12 @@ export class TrackPlayerService {
 
         if (isYouTubeStream) {
           console.log(
-            "[TrackPlayerService] Validating YouTube URL before track update...",
+            "[TrackPlayerService] Validating YouTube URL before track update..."
           );
           const isValid = await this.validateYouTubeUrl(audioUrl);
           if (!isValid) {
             throw new Error(
-              "Cannot update track: YouTube URL is no longer valid",
+              "Cannot update track: YouTube URL is no longer valid"
             );
           }
           console.log("[TrackPlayerService] YouTube URL validation passed");
@@ -932,26 +1120,43 @@ export class TrackPlayerService {
         };
         this.playlist[currentTrackIndex] = updatedTrack;
 
-        // Get current position before updating
-        const currentPosition = await this.getPosition();
-
-        // Remove current track and re-add with new URL
-        await TrackPlayer.remove(currentTrackIndex);
-        await TrackPlayer.add([
-          this.convertTrackToTrackPlayer(updatedTrack, currentTrackIndex),
+        // Preserve playback state and queue order while swapping the active source.
+        const [currentPosition, currentState] = await Promise.all([
+          this.getPosition(),
+          this.getState(),
         ]);
+        const wasPlaying =
+          currentState === State.Playing ||
+          currentState === State.Buffering ||
+          currentState === State.Connecting;
 
-        // Seek back to previous position
-        await TrackPlayer.seekTo(currentPosition);
+        if (wasPlaying) {
+          await TrackPlayer.pause();
+        }
+
+        await TrackPlayer.remove(currentTrackIndex);
+        await TrackPlayer.add(
+          this.convertTrackToTrackPlayer(updatedTrack, currentTrackIndex),
+          currentTrackIndex
+        );
+        await TrackPlayer.skip(currentTrackIndex);
+
+        if (currentPosition > 0) {
+          await TrackPlayer.seekTo(currentPosition);
+        }
+
+        if (wasPlaying) {
+          await TrackPlayer.play();
+        }
 
         console.log(
-          "[TrackPlayerService] Updated current track with new audio URL",
+          "[TrackPlayerService] Updated current track with new audio URL"
         );
       }
     } catch (error) {
       console.error(
         "[TrackPlayerService] Failed to update current track:",
-        error,
+        error
       );
       throw error;
     }
@@ -1041,7 +1246,7 @@ export class TrackPlayerService {
     } catch (error) {
       console.error(
         "[TrackPlayerService] Failed to remove upcoming tracks:",
-        error,
+        error
       );
       throw error;
     }
@@ -1055,7 +1260,7 @@ export class TrackPlayerService {
     } catch (error) {
       console.error(
         "[TrackPlayerService] Failed to destroy TrackPlayer:",
-        error,
+        error
       );
       throw error;
     }

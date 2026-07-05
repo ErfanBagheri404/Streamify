@@ -5,6 +5,7 @@ declare module "react-native" {
   export class Text extends React.Component<any> {}
   export class TextInput extends React.Component<any> {}
   export class ScrollView extends React.Component<any> {}
+  export class KeyboardAvoidingView extends React.Component<any> {}
   export class Modal extends React.Component<any> {}
   export class TouchableOpacity extends React.Component<any> {}
   export class TouchableWithoutFeedback extends React.Component<any> {}

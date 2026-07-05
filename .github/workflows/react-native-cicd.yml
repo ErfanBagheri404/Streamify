@@ -18,6 +18,9 @@ on:
           - prod-apk # <-- changed from 'dev'
           - all
 
+permissions:
+  contents: write
+
 env:
   EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
   NODE_OPTIONS: --openssl-legacy-provider
@@ -34,9 +37,14 @@ jobs:
     needs: check-skip
     if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    concurrency:
+      group: android-release-${{ github.ref }}
+      cancel-in-progress: false
     steps:
       - name: 🏗 Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: 🏗 Setup Node.js
         uses: actions/setup-node@v4
@@ -46,11 +54,12 @@ jobs:
 
       - name: 📦 Install dependencies
         run: |
+          set -euo pipefail
           npm ci --include=dev
           npm install -g eas-cli@latest
 
       - name: 📱 Setup EAS build cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.eas-build-local
           key: ${{ runner.os }}-eas-build-local-${{ hashFiles('**/package.json') }}
@@ -59,11 +68,13 @@ jobs:
 
       - name: 🔄 Verify EAS CLI installation
         run: |
+          set -euo pipefail
           echo "EAS CLI version:"
           eas --version
 
       - name: 📋 Fix package.json main entry
         run: |
+          set -euo pipefail
           if ! command -v jq &> /dev/null; then
             sudo apt-get update && sudo apt-get install -y jq
           fi
@@ -73,6 +84,7 @@ jobs:
 
       - name: 📋 Update metro.config.js for SVG support
         run: |
+          set -euo pipefail
           if [ -f ./metro.config.js ]; then
             cp ./metro.config.js ./metro.config.js.backup
             cat > ./metro.config.js << 'EOFMARKER'
@@ -93,11 +105,47 @@ jobs:
           EOFMARKER
           fi
 
+      - name: 🏷 Resolve Expo version and release metadata
+        id: release_meta
+        run: |
+          set -euo pipefail
+          mkdir -p build-artifacts
+          npx expo config --json > build-artifacts/expo-config.json
+          node <<'NODE'
+          const fs = require("fs");
+          const outputPath = process.env.GITHUB_OUTPUT;
+          const raw = fs.readFileSync("build-artifacts/expo-config.json", "utf8").trim();
+          if (!raw) {
+            throw new Error("Resolved Expo config output is empty.");
+          }
+
+          const parsed = JSON.parse(raw);
+          const expoConfig = parsed?.expo ?? parsed;
+          const version = String(expoConfig?.version ?? "").trim();
+          if (!version) {
+            throw new Error(
+              "Expo config version is missing. Add expo.version to app.json or app.config.*."
+            );
+          }
+
+          const appName = String(expoConfig?.name ?? "Streamify").trim() || "Streamify";
+          const slug = String(expoConfig?.slug ?? "streamify-mobile").trim() || "streamify-mobile";
+          const releaseTag = `v${version}`;
+          const apkName = `Streamify-v${version}.apk`;
+
+          fs.appendFileSync(outputPath, `app_name=${appName}\n`);
+          fs.appendFileSync(outputPath, `app_slug=${slug}\n`);
+          fs.appendFileSync(outputPath, `app_version=${version}\n`);
+          fs.appendFileSync(outputPath, `release_tag=${releaseTag}\n`);
+          fs.appendFileSync(outputPath, `apk_name=${apkName}\n`);
+          NODE
+
       # ----------------------------------------------------------
       #  PREBUILD - Generate native Android files
       # ----------------------------------------------------------
       - name: 🏗 Run Prebuild (Generate Android files)
         run: |
+          set -euo pipefail
           echo "Running prebuild to generate Android directory..."
           npx expo prebuild --platform android --clean
 
@@ -106,43 +154,325 @@ jobs:
       # ----------------------------------------------------------
 
       - name: 📱 Build Production APK
+        id: eas_build
         if: >
           (github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push')
           && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         run: |
+          set -euo pipefail
           export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
-           
-           # Use EAS cloud build for production APK (works on all platforms)
-           echo "Building production APK using EAS cloud build..."
-           
-           # Build and wait for completion
-           eas build --platform android --profile production-apk --non-interactive --wait
-           
-           echo "Build completed! 🎉"
-           echo ""
-           echo "The production APK has been built successfully!"
-           echo "To download your APK:"
-           echo "1. Visit your EAS dashboard at: https://expo.dev/accounts/[your-account]/projects/streamify/builds"
-           echo "2. Look for the latest completed production build"
-           echo "3. Click on it to download the APK file"
-           echo ""
-           echo "Alternatively, you can run: eas build:list --platform android --limit 5"
-           echo "to see your recent builds and their download links."
+
+          mkdir -p build-artifacts
+
+          # Use EAS cloud build for production APK (works on all platforms)
+          echo "Building production APK using EAS cloud build..."
+
+          # Build and wait for completion, while capturing machine-readable metadata.
+          eas build --platform android --profile production-apk --non-interactive --wait --json > build-artifacts/eas-build-result.json
+
+          echo "Build completed! 🎉"
         env:
           NODE_ENV: production
 
+      - name: 🧾 Extract EAS build info
+        id: eas_build_info
+        if: steps.eas_build.outcome == 'success'
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("fs");
+          const outputPath = process.env.GITHUB_OUTPUT;
+          const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+          const raw = fs.readFileSync("build-artifacts/eas-build-result.json", "utf8").trim();
+          if (!raw) {
+            throw new Error("EAS build JSON output is empty.");
+          }
 
+          const parsed = JSON.parse(raw);
+          const build = Array.isArray(parsed) ? parsed[0] : parsed;
+          const buildId =
+            build?.id ||
+            build?.buildId ||
+            build?.build?.id ||
+            "";
+          const status = String(build?.status || build?.build?.status || "").trim().toUpperCase();
+          const buildDetailsUrl =
+            build?.buildDetailsUrl ||
+            build?.detailsPageUrl ||
+            build?.webUrl ||
+            build?.build?.buildDetailsUrl ||
+            "";
+
+          if (!buildId) {
+            throw new Error("Could not determine the EAS build ID from eas build --json output.");
+          }
+
+          if (status && !["FINISHED", "COMPLETED"].includes(status)) {
+            throw new Error(`EAS build did not finish successfully. Final status: ${status}`);
+          }
+
+          fs.appendFileSync(outputPath, `build_id=${buildId}\n`);
+          if (buildDetailsUrl) {
+            fs.appendFileSync(outputPath, `build_details_url=${buildDetailsUrl}\n`);
+          }
+
+          const lines = [
+            "### EAS build completed",
+            `- Build ID: \`${buildId}\``,
+          ];
+          if (buildDetailsUrl) {
+            lines.push(`- Details: ${buildDetailsUrl}`);
+          }
+          fs.appendFileSync(summaryPath, `${lines.join("\n")}\n`);
+          NODE
+
+      - name: 🔍 Fetch final EAS build details
+        if: steps.eas_build_info.outcome == 'success'
+        run: |
+          set -euo pipefail
+          eas build:view "${{ steps.eas_build_info.outputs.build_id }}" --json > build-artifacts/eas-build-view.json
+
+      - name: 🔗 Resolve EAS artifact URLs
+        id: eas_artifacts
+        if: steps.eas_build_info.outcome == 'success'
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("fs");
+          const path = require("path");
+
+          const outputPath = process.env.GITHUB_OUTPUT;
+          const files = [
+            "build-artifacts/eas-build-result.json",
+            "build-artifacts/eas-build-view.json",
+          ].filter((file) => fs.existsSync(file));
+
+          const urlSet = new Set();
+
+          function collectUrls(value) {
+            if (!value) {
+              return;
+            }
+            if (typeof value === "string") {
+              const trimmed = value.trim();
+              if (/^https?:\/\//i.test(trimmed)) {
+                urlSet.add(trimmed);
+              }
+              return;
+            }
+            if (Array.isArray(value)) {
+              for (const entry of value) {
+                collectUrls(entry);
+              }
+              return;
+            }
+            if (typeof value === "object") {
+              for (const nestedValue of Object.values(value)) {
+                collectUrls(nestedValue);
+              }
+            }
+          }
+
+          for (const file of files) {
+            const raw = fs.readFileSync(file, "utf8").trim();
+            if (!raw) {
+              continue;
+            }
+            collectUrls(JSON.parse(raw));
+          }
+
+          const urls = [...urlSet];
+          fs.writeFileSync("build-artifacts/discovered-urls.txt", urls.join("\n"));
+
+          const artifactUrl =
+            urls.find((url) => /\.apk(?:$|[?#])/i.test(url)) ||
+            urls.find(
+              (url) =>
+                /\/artifacts\//i.test(url) &&
+                !/\.(json|txt|log)(?:$|[?#])/i.test(url)
+            ) ||
+            "";
+
+          if (!artifactUrl) {
+            throw new Error(
+              `Could not find an APK artifact URL in the EAS build metadata. URLs discovered: ${urls.join(", ")}`
+            );
+          }
+
+          const extraAssetUrls = urls.filter(
+            (url) =>
+              url !== artifactUrl &&
+              /(mapping|proguard|symbols?)/i.test(url)
+          );
+
+          fs.writeFileSync(
+            "build-artifacts/additional-asset-urls.txt",
+            extraAssetUrls.join("\n")
+          );
+
+          fs.appendFileSync(outputPath, `artifact_url=${artifactUrl}\n`);
+          fs.appendFileSync(
+            outputPath,
+            `has_additional_assets=${extraAssetUrls.length > 0 ? "true" : "false"}\n`
+          );
+          NODE
+
+      - name: 📥 Download APK from EAS
+        if: steps.eas_artifacts.outcome == 'success'
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --retry-delay 5 "${{ steps.eas_artifacts.outputs.artifact_url }}" -o "build-artifacts/${{ steps.release_meta.outputs.apk_name }}"
+          test -s "build-artifacts/${{ steps.release_meta.outputs.apk_name }}"
+
+      - name: 📥 Download additional release artifacts
+        if: steps.eas_artifacts.outcome == 'success'
+        run: |
+          set -euo pipefail
+          if [ ! -s build-artifacts/additional-asset-urls.txt ]; then
+            echo "No extra mapping or symbol artifacts were exposed by the EAS build metadata."
+            exit 0
+          fi
+
+          while IFS= read -r url; do
+            [ -n "$url" ] || continue
+            filename="$(basename "${url%%\?*}")"
+            safe_name="$(echo "$filename" | tr -cd '[:alnum:]._-' )"
+            if [ -z "$safe_name" ]; then
+              safe_name="extra-artifact-$(date +%s)"
+            fi
+            curl -fL --retry 3 --retry-delay 5 "$url" -o "build-artifacts/$safe_name"
+          done < build-artifacts/additional-asset-urls.txt
+
+      - name: 📝 Generate changelog and release metadata
+        if: steps.eas_artifacts.outcome == 'success'
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ steps.release_meta.outputs.app_version }}"
+          TAG="${{ steps.release_meta.outputs.release_tag }}"
+          CHANGELOG_FILE="build-artifacts/CHANGELOG-v${VERSION}.md"
+          PREVIOUS_TAG="$(git tag --sort=-v:refname | grep -Fvx "${TAG}" | head -n 1 || true)"
+
+          {
+            echo "# Streamify v${VERSION}"
+            echo
+            echo "- Automated Android APK release from GitHub Actions."
+            echo "- Tag: \`${TAG}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- EAS Build ID: \`${{ steps.eas_build_info.outputs.build_id }}\`"
+            if [ -n "${{ steps.eas_build_info.outputs.build_details_url }}" ]; then
+              echo "- EAS Build Details: ${{ steps.eas_build_info.outputs.build_details_url }}"
+            fi
+            echo
+            echo "## Changes"
+            if [ -n "$PREVIOUS_TAG" ]; then
+              git log --pretty=format:'- %s (%h)' "${PREVIOUS_TAG}..${GITHUB_SHA}"
+            else
+              git log -n 20 --pretty=format:'- %s (%h)'
+            fi
+          } > "${CHANGELOG_FILE}"
+
+          node <<'NODE'
+          const fs = require("fs");
+
+          const version = process.env.APP_VERSION;
+          const releaseTag = process.env.RELEASE_TAG;
+          const buildId = process.env.EAS_BUILD_ID;
+          const artifactUrl = process.env.EAS_ARTIFACT_URL;
+          const detailsUrl = process.env.EAS_BUILD_DETAILS_URL;
+
+          const metadata = {
+            appName: "Streamify",
+            version,
+            releaseTag,
+            gitSha: process.env.GITHUB_SHA,
+            gitRef: process.env.GITHUB_REF,
+            runId: process.env.GITHUB_RUN_ID,
+            runNumber: process.env.GITHUB_RUN_NUMBER,
+            repository: process.env.GITHUB_REPOSITORY,
+            workflow: process.env.GITHUB_WORKFLOW,
+            runUrl: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+            eas: {
+              buildId,
+              artifactUrl,
+              buildDetailsUrl: detailsUrl || null,
+            },
+            generatedAt: new Date().toISOString(),
+          };
+
+          fs.writeFileSync(
+            `build-artifacts/release-metadata-v${version}.json`,
+            `${JSON.stringify(metadata, null, 2)}\n`
+          );
+          NODE
+        env:
+          APP_VERSION: ${{ steps.release_meta.outputs.app_version }}
+          RELEASE_TAG: ${{ steps.release_meta.outputs.release_tag }}
+          EAS_BUILD_ID: ${{ steps.eas_build_info.outputs.build_id }}
+          EAS_ARTIFACT_URL: ${{ steps.eas_artifacts.outputs.artifact_url }}
+          EAS_BUILD_DETAILS_URL: ${{ steps.eas_build_info.outputs.build_details_url }}
+
+      - name: 🚀 Create or update GitHub Release
+        if: steps.eas_artifacts.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ steps.release_meta.outputs.app_version }}"
+          TAG="${{ steps.release_meta.outputs.release_tag }}"
+          TITLE="Streamify v${VERSION}"
+          NOTES_FILE="build-artifacts/CHANGELOG-v${VERSION}.md"
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Updating existing release ${TAG}"
+            gh release edit "${TAG}" --title "${TITLE}" --notes-file "${NOTES_FILE}"
+          else
+            echo "Creating release ${TAG}"
+            gh release create "${TAG}" --title "${TITLE}" --notes-file "${NOTES_FILE}" --target "${GITHUB_SHA}"
+          fi
+
+          assets=(
+            "build-artifacts/${{ steps.release_meta.outputs.apk_name }}"
+            "build-artifacts/CHANGELOG-v${VERSION}.md"
+            "build-artifacts/expo-config.json#expo-config-v${VERSION}.json"
+            "build-artifacts/eas-build-result.json#eas-build-result-v${VERSION}.json"
+            "build-artifacts/eas-build-view.json#eas-build-view-v${VERSION}.json"
+            "build-artifacts/release-metadata-v${VERSION}.json"
+          )
+
+          while IFS= read -r extra_file; do
+            [ -n "${extra_file}" ] || continue
+            assets+=("${extra_file}")
+          done < <(find build-artifacts -maxdepth 1 -type f \( -iname '*mapping*' -o -iname '*proguard*' -o -iname '*symbol*' \) | sort)
+
+          gh release upload "${TAG}" "${assets[@]}" --clobber
+
+      - name: 📋 Release summary
+        if: steps.eas_artifacts.outcome == 'success'
+        run: |
+          set -euo pipefail
+          {
+            echo "### Release published"
+            echo "- Version: \`${{ steps.release_meta.outputs.app_version }}\`"
+            echo "- Tag: \`${{ steps.release_meta.outputs.release_tag }}\`"
+            echo "- APK: \`${{ steps.release_meta.outputs.apk_name }}\`"
+            echo "- EAS Build ID: \`${{ steps.eas_build_info.outputs.build_id }}\`"
+            echo "- Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.release_meta.outputs.release_tag }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 📦 Upload workflow artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-assets
+          path: ./build-artifacts/**/*
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: 🔍 Print Gradle log (if failed)
         if: failure()
         run: |
+          set -euo pipefail
           LOG=$(ls -t ./logs/*.log 2>/dev/null | head -n1)
           if [ -f "$LOG" ]; then cat "$LOG"; else echo "No gradle log found"; fi
-
-      - name: 📦 Upload production APK
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-prod-apk
-          path: ./app-*.apk
-          retention-days: 7

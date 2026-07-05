@@ -1,335 +1,55 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-  FlatList,
   ActivityIndicator,
-  Dimensions,
+  Image,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import styled from "styled-components/native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePlayer } from "../../contexts/PlayerContext";
-import { SafeArea } from "../SafeArea";
-import { t } from "../../utils/localization";
+import { Screen } from "../ui/Screen";
+import { BodyText, MutedText, TitleText } from "../ui/Text";
+import { useAppLanguage } from "../../hooks/useAppLanguage";
+import { useTheme, withOpacity } from "../../hooks/useTheme";
+import { getAppFontFamily, getTextDirectionStyle } from "../../utils/fonts";
+import { fetchWithRetry } from "../core/api";
 import {
-  getJioSaavnArtistEndpoint,
-  getJioSaavnArtistSongsEndpoint,
-  getJioSaavnArtistAlbumsEndpoint,
-  fetchWithRetry,
-  API,
-} from "../core/api";
+  buildProviderUrlCandidates,
+  getProviderEndpoints,
+} from "../../lib/provider-endpoints";
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
-const HEADER_HEIGHT = screenHeight * 0.45;
+const HEADER_HEIGHT = 330;
+const MAX_VISIBLE_SONGS = 20;
+const HEADER_TOP_RESERVED_SPACE = 84;
+const ABSOLUTE_FILL = {
+  position: "absolute" as const,
+  top: 0,
+  right: 0,
+  bottom: 0,
+  left: 0,
+};
 
-// Styled Components
-const Container = styled.View`
-  flex: 1;
-  background-color: #000;
-`;
-
-const HeaderBackground = styled.ImageBackground`
-  width: ${screenWidth}px;
-  height: ${HEADER_HEIGHT}px;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-`;
-
-const HeaderGradient = styled(LinearGradient)`
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-`;
-
-const HeaderContent = styled.View`
-  flex: 1;
-  justify-content: flex-end;
-  padding: 24px;
-  padding-bottom: 0px;
-`;
-
-const BackButton = styled.TouchableOpacity`
-  position: absolute;
-  top: 20px;
-  left: 16px;
-  width: 40px;
-  height: 40px;
-  border-radius: 20px;
-  background-color: rgba(0, 0, 0, 0.5);
-  justify-content: center;
-  align-items: center;
-  z-index: 10;
-`;
-
-const ArtistName = styled.Text<{ fontSize: number }>`
-  color: #fff;
-  font-size: ${(props) => props.fontSize}px;
-  margin-bottom: 8px;
-  font-family: GoogleSansBold;
-  line-height: ${(props) => props.fontSize + 4}px;
-`;
-
-const MonthlyListeners = styled.Text`
-  color: #a3a3a3;
-  font-size: 16px;
-  font-family: GoogleSansRegular;
-  line-height: 20px;
-`;
-
-const VerifiedBadge = styled.View`
-  margin-left: 8px;
-  align-self: flex-end;
-  margin-bottom: 8px;
-`;
-
-const ContentContainer = styled.View`
-  flex: 1;
-  background-color: #000;
-  padding-top: 16px;
-  padding-bottom: 120px;
-`;
-
-const ActionButtonsRow = styled.View`
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 24px;
-  margin-bottom: 18px;
-`;
-
-const LeftButtons = styled.View`
-  flex-direction: row;
-  align-items: center;
-`;
-
-const FollowButton = styled.TouchableOpacity`
-  padding: 12px 24px;
-  border-radius: 25px;
-  border: 1px solid #a3a3a3;
-  background-color: transparent;
-  margin-right: 16px;
-`;
-
-const FollowButtonText = styled.Text`
-  color: #fff;
-  font-size: 16px;
-  font-family: GoogleSansMedium;
-  line-height: 20px;
-`;
-
-const MoreOptionsButton = styled.TouchableOpacity`
-  padding: 8px;
-`;
-
-const PlayShuffleButton = styled.TouchableOpacity`
-  width: 56px;
-  height: 56px;
-  border-radius: 28px;
-  background-color: #1db954;
-  justify-content: center;
-  align-items: center;
-  position: relative;
-`;
-
-const ShuffleIconContainer = styled.View`
-  position: absolute;
-  bottom: -4px;
-  right: -4px;
-  width: 24px;
-  height: 24px;
-  border-radius: 12px;
-  background-color: #fff;
-  justify-content: center;
-  align-items: center;
-`;
-
-const PopularSection = styled.View`
-  padding: 0 24px;
-`;
-
-const PopularTitle = styled.Text`
-  color: #fff;
-  font-size: 24px;
-  margin-bottom: 16px;
-  font-family: GoogleSansBold;
-  line-height: 28px;
-`;
-
-const SongItem = styled.TouchableOpacity`
-  flex-direction: row;
-  align-items: center;
-  padding: 12px 0;
-`;
-
-const TrackNumber = styled.Text`
-  color: #a3a3a3;
-  font-size: 16px;
-  width: 30px;
-  text-align: center;
-  margin-right: 16px;
-`;
-
-const SongThumbnail = styled.Image`
-  width: 56px;
-  height: 56px;
-  border-radius: 4px;
-  background-color: #333;
-  margin-right: 16px;
-`;
-
-const SongDetails = styled.View`
-  flex: 1;
-  justify-content: center;
-`;
-
-const SongTitle = styled.Text`
-  color: #fff;
-  font-size: 16px;
-  margin-bottom: 4px;
-  font-family: GoogleSansRegular;
-  line-height: 20px;
-`;
-
-const PlayCount = styled.Text`
-  color: #a3a3a3;
-  font-size: 14px;
-  font-family: GoogleSansRegular;
-  line-height: 18px;
-`;
-
-const MoreOptionsIcon = styled.TouchableOpacity`
-  padding: 8px;
-`;
-
-const AlbumsSection = styled.View`
-  padding: 0 24px;
-`;
-
-const AlbumsTitle = styled.Text`
-  color: #fff;
-  font-size: 24px;
-  margin-bottom: 16px;
-  font-family: GoogleSansBold;
-  line-height: 28px;
-`;
-
-const AlbumsGrid = styled.View`
-  flex-direction: row;
-  flex-wrap: wrap;
-  justify-content: space-between;
-`;
-
-const AlbumItem = styled.TouchableOpacity`
-  width: 48%;
-  margin-bottom: 16px;
-`;
-
-const AlbumImage = styled.Image`
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 12px;
-  background-color: #333;
-  z-index: 3;
-`;
-
-const AlbumTitle = styled.Text`
-  color: #fff;
-  font-size: 14px;
-  margin-top: 8px;
-  font-family: GoogleSansMedium;
-  line-height: 18px;
-`;
-
-const AlbumYear = styled.Text`
-  color: #a3a3a3;
-  font-size: 12px;
-  margin-top: 2px;
-  font-family: GoogleSansRegular;
-  line-height: 16px;
-`;
-
-const LoadingContainer = styled.View`
-  flex: 1;
-  justify-content: center;
-  align-items: center;
-  background-color: #000;
-`;
-
-const ErrorContainer = styled.View`
-  flex: 1;
-  justify-content: center;
-  align-items: center;
-  background-color: #000;
-  padding: 24px;
-`;
-
-const ErrorText = styled.Text`
-  color: #fff;
-  font-size: 16px;
-  text-align: center;
-  margin-bottom: 16px;
-  font-family: GoogleSansRegular;
-  line-height: 20px;
-`;
-
-const RetryButton = styled.TouchableOpacity`
-  background-color: #1db954;
-  padding: 12px 24px;
-  border-radius: 25px;
-`;
-
-const RetryButtonText = styled.Text`
-  color: #fff;
-  font-size: 16px;
-  font-family: GoogleSansSemiBold;
-  line-height: 20px;
-`;
-
-// Category Tabs
-const CategoryTabs = styled.View`
-  flex-direction: row;
-  padding: 0 24px;
-  margin-bottom: 24px;
-  border-bottom-width: 1px;
-  border-bottom-color: #333;
-`;
-
-const CategoryTab = styled.TouchableOpacity<{ isActive: boolean }>`
-  padding: 12px 16px;
-  margin-right: 8px;
-  border-bottom-width: 2px;
-  border-bottom-color: ${(props) =>
-    props.isActive ? "#1db954" : "transparent"};
-`;
-
-const CategoryTabText = styled.Text<{ isActive: boolean }>`
-  color: ${(props) => (props.isActive ? "#fff" : "#a3a3a3")};
-  font-size: 16px;
-  font-family: ${(props) =>
-    props.isActive ? "GoogleSansMedium" : "GoogleSansRegular"};
-  line-height: 20px;
-`;
-
-// Interfaces
 interface ArtistScreenProps {
   navigation: any;
   route: any;
 }
 
+type ArtistSource = "youtube" | "jiosaavn";
+
 interface Artist {
   id: string;
   name: string;
   image: string;
+  banner?: string;
   monthlyListeners?: number;
   verified?: boolean;
+  description?: string;
+  source?: ArtistSource;
+  url?: string;
 }
 
 interface Song {
@@ -337,767 +57,1698 @@ interface Song {
   title: string;
   thumbnail: string;
   playCount: number;
-  source?: string;
+  duration?: number;
+  artist?: string;
+  url?: string;
+  source?: ArtistSource;
   _isJioSaavn?: boolean;
 }
 
-interface Album {
+interface CollectionItem {
   id: string;
   title: string;
-  year: string;
+  year?: string;
   thumbnail: string;
-  videoCount?: string; // Optional video/song count
+  videoCount?: number;
+  songCount?: number;
+  url?: string;
+  type: "album" | "playlist";
+}
+
+function safeString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function safeNumber(value: unknown): number {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value.replace(/[^0-9-]/g, ""), 10);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
+function toRecord(value: unknown): Record<string, any> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : {};
+}
+
+function toArray<T = Record<string, unknown>>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function normalizeYouTubeChannelId(value: string): string {
+  const rawValue = value.trim();
+  if (!rawValue) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(rawValue)) {
+    try {
+      const parsed = new URL(rawValue);
+      const segments = parsed.pathname.split("/").filter(Boolean);
+      if (segments[0] === "channel" && segments[1]) {
+        return segments[1];
+      }
+    } catch {}
+  }
+
+  const normalized = rawValue.replace(/^\/+/, "");
+  const channelMatch = normalized.match(/^channel\/([^/?#]+)/i);
+  if (channelMatch?.[1]) {
+    return channelMatch[1];
+  }
+
+  return normalized;
+}
+
+function isYouTubeChannelId(id: string): boolean {
+  return id.startsWith("UC") || id.startsWith("U") || id.length === 24;
+}
+
+function absolutizeUrl(url: string, base: string): string {
+  if (!url) {
+    return "";
+  }
+  if (url.startsWith("https://") || url.startsWith("http://")) {
+    return url;
+  }
+  if (url.startsWith("//")) {
+    return `https:${url}`;
+  }
+  if (url.startsWith("/")) {
+    return `${base}${url}`;
+  }
+  return url;
+}
+
+function pickBestImageUrl(arr: unknown, base: string): string {
+  const entries = toArray<Record<string, unknown>>(arr);
+  if (entries.length === 0) {
+    return "";
+  }
+
+  const sorted = [...entries].sort(
+    (left, right) => safeNumber(right.width) - safeNumber(left.width)
+  );
+  return absolutizeUrl(safeString(sorted[0]?.url), base);
+}
+
+function qualityScore(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const match = value.match(/(\d+)/);
+    if (match) {
+      return Number.parseInt(match[1], 10);
+    }
+  }
+  return 0;
+}
+
+function pickJioSaavnImage(arr: unknown): string {
+  const entries = toArray<Record<string, unknown>>(arr);
+  if (entries.length === 0) {
+    return "";
+  }
+
+  const sorted = [...entries].sort(
+    (left, right) =>
+      qualityScore(right.quality || right.size) -
+      qualityScore(left.quality || left.size)
+  );
+
+  for (const image of sorted) {
+    const url = safeString(image.url || image.link);
+    if (url) {
+      return url;
+    }
+  }
+
+  return "";
+}
+
+function pickJioSaavnArtistNames(value: unknown): string {
+  const artists = toRecord(value);
+  const candidateGroups = [artists.primary, artists.featured, artists.all];
+
+  for (const group of candidateGroups) {
+    const names = toArray<Record<string, unknown>>(group)
+      .map((entry) => safeString(entry.name))
+      .filter(Boolean);
+
+    if (names.length > 0) {
+      return names.join(", ");
+    }
+  }
+
+  return "";
+}
+
+function isAutoGeneratedAlbumPlaylistId(playlistId: string): boolean {
+  return playlistId.startsWith("OLAK5uy") || playlistId.startsWith("MPREb_");
+}
+
+function shortenDescription(value?: string, maxLength = 220): string {
+  const normalized = value?.replace(/\s+/g, " ").trim() || "";
+  if (!normalized || normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  const truncated = normalized.slice(0, maxLength);
+  const lastSpaceIndex = truncated.lastIndexOf(" ");
+  const safeText =
+    lastSpaceIndex > Math.floor(maxLength * 0.6)
+      ? truncated.slice(0, lastSpaceIndex)
+      : truncated;
+
+  return `${safeText.trimEnd()}...`;
 }
 
 const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
+  const { colors } = useTheme();
+  const { t, isRtl } = useAppLanguage();
   const { playTrack } = usePlayer();
+  const insets = useSafeAreaInsets();
   const [artistData, setArtistData] = useState<Artist | null>(null);
   const [popularSongs, setPopularSongs] = useState<Song[]>([]);
-  const [albums, setAlbums] = useState<Album[]>([]);
-  const [playlists, setPlaylists] = useState<any[]>([]);
+  const [albums, setAlbums] = useState<CollectionItem[]>([]);
+  const [playlists, setPlaylists] = useState<CollectionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isFollowing, setIsFollowing] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<
-    "songs" | "albums" | "playlists"
-  >("songs");
-  const [isYouTubeChannel, setIsYouTubeChannel] = useState(false);
-  const [artistNameFontSize, setArtistNameFontSize] = useState(64);
 
-  const { artistId, artistName, artistImage } = route.params;
+  const {
+    artistId,
+    artistName,
+    artistImage,
+    source: routeSource,
+  } = route.params || {};
 
-  // Function to calculate font size based on artist name length
-  const calculateFontSize = useCallback((name: string): number => {
-    if (!name) {
-      return 64;
+  const normalizedArtistId = useMemo(
+    () => normalizeYouTubeChannelId(String(artistId || "")),
+    [artistId]
+  );
+  const resolvedSource = useMemo<ArtistSource>(() => {
+    if (routeSource === "jiosaavn") {
+      return "jiosaavn";
     }
+    return isYouTubeChannelId(normalizedArtistId) ? "youtube" : "jiosaavn";
+  }, [normalizedArtistId, routeSource]);
+  const isYouTubeChannel = resolvedSource === "youtube";
 
-    const baseFontSize = 64;
-    const minFontSize = 32;
-    const maxLengthForBaseSize = 12; // characters that fit in 1 line at 64px
-
-    // Estimate characters per line (this is approximate and depends on character width)
-    const charsPerLine = 12; // Conservative estimate for 1 line
-
-    if (name.length <= charsPerLine) {
-      return baseFontSize;
+  const artistNameFontSize = useMemo(() => {
+    const name = artistData?.name || artistName || "";
+    if (name.length <= 14) {
+      return 42;
     }
+    if (name.length <= 22) {
+      return 34;
+    }
+    return 28;
+  }, [artistData?.name, artistName]);
 
-    // Decrease font size proportionally for longer names
-    const lengthRatio = name.length / charsPerLine;
-    const newSize = Math.max(minFontSize, baseFontSize / (lengthRatio * 0.7));
-
-    return Math.round(newSize);
+  const formatCompactNumber = useCallback((count: number) => {
+    if (count >= 1000000000) {
+      return `${(count / 1000000000).toFixed(1).replace(".0", "")}B`;
+    }
+    if (count >= 1000000) {
+      return `${(count / 1000000).toFixed(1).replace(".0", "")}M`;
+    }
+    if (count >= 1000) {
+      return `${(count / 1000).toFixed(1).replace(".0", "")}K`;
+    }
+    return String(count);
   }, []);
 
-  // Function to fetch YouTube albums for a channel
-  const fetchYouTubeAlbums = async (channelId: string) => {
-    try {
-      // First, try to get the channel data to access tabs
-      const channelData = await fetchWithRetry<any>(
-        `${API.piped[0]}/channel/${channelId}`,
-        {},
-        3,
-        1000,
-      );
+  const formatDuration = useCallback((duration?: number) => {
+    if (!duration || Number.isNaN(duration)) {
+      return "";
+    }
+    const minutes = Math.floor(duration / 60);
+    const seconds = duration % 60;
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  }, []);
+  const buildSongSubtitle = useCallback(
+    (song: Song) => {
+      const parts = [
+        song.artist || artistData?.name || "",
+        song.duration ? formatDuration(song.duration) : "",
+      ].filter(Boolean);
 
-      console.log("Channel tabs data for albums:", channelData.tabs);
+      return parts.join(" · ");
+    },
+    [artistData?.name, formatDuration]
+  );
 
-      // Look for albums tab data
-      const albumsTab = channelData.tabs?.find(
-        (tab: any) => tab.name === "albums",
-      );
-      if (albumsTab && albumsTab.data) {
+  const fetchJsonFromCandidates = useCallback(async (urls: string[]) => {
+    const errors: string[] = [];
+
+    for (const url of urls) {
+      try {
+        return await fetchWithRetry<any>(
+          url,
+          {
+            headers: {
+              Accept: "application/json",
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            },
+          },
+          2,
+          350
+        );
+      } catch (fetchError) {
+        errors.push(
+          fetchError instanceof Error ? fetchError.message : String(fetchError)
+        );
+      }
+    }
+
+    throw new Error(errors.join(" | ") || "All requests failed");
+  }, []);
+
+  const fetchFirstSuccessfulInvidiousJson = useCallback(
+    async (buildUrl: (instance: string) => string) => {
+      const providerEndpoints = await getProviderEndpoints();
+      const errors: string[] = [];
+
+      for (const instance of providerEndpoints.instances.invidious) {
         try {
-          // Use the correct GET format for the tabs endpoint
-          const albumsTabData = JSON.parse(albumsTab.data);
-          const encodedData = encodeURIComponent(JSON.stringify(albumsTabData));
-          const albumsData = await fetchWithRetry<any>(
-            `${API.piped[0]}/channels/tabs?data=${encodedData}`,
-            {},
-            3,
-            1000,
+          const payload = await fetchWithRetry<any>(
+            buildUrl(instance),
+            {
+              headers: {
+                Accept: "application/json",
+                "User-Agent":
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+              },
+            },
+            2,
+            350
           );
-          console.log("Albums data fetched successfully:", albumsData);
-
-          // Process the albums data
-          if (albumsData.content && Array.isArray(albumsData.content)) {
-            return albumsData.content.map((album: any, index: number) => ({
-              id: album.url || `album_${index}`,
-              title:
-                album.name || album.title || t("screens.artist.unknown_album"),
-              thumbnail:
-                album.thumbnail ||
-                "https://via.placeholder.com/160x160/333/ffffff?text=Album",
-              year: album.year || "",
-              type: "album",
-              videoCount: album.videos ? `${album.videos} videos` : undefined,
-            }));
-          }
-        } catch (apiError) {
-          console.log(
-            "Failed to fetch albums from tabs endpoint, using fallback:",
-            apiError,
+          return { payload, base: instance, providerEndpoints };
+        } catch (fetchError) {
+          errors.push(
+            fetchError instanceof Error
+              ? fetchError.message
+              : String(fetchError)
           );
         }
       }
 
-      // Return empty array if no real albums are found
-      return [];
-    } catch (error) {
-      console.error("Error fetching YouTube albums:", error);
-      return [];
-    }
-  };
+      throw new Error(errors.join(" | ") || "All Invidious requests failed");
+    },
+    []
+  );
 
-  // Function to fetch YouTube playlists for a channel
-  const fetchYouTubePlaylists = async (channelId: string) => {
-    try {
-      // First, try to get the channel data to access tabs
-      const channelData = await fetchWithRetry<any>(
-        `${API.piped[0]}/channel/${channelId}`,
-        {},
-        3,
-        1000,
-      );
-
-      console.log("Channel tabs data:", channelData.tabs);
-
-      // Look for playlists tab data
-      const playlistsTab = channelData.tabs?.find(
-        (tab: any) => tab.name === "playlists",
-      );
-      if (playlistsTab && playlistsTab.data) {
-        try {
-          // Use the correct GET format for the tabs endpoint
-          const playlistsTabData = JSON.parse(playlistsTab.data);
-          const encodedData = encodeURIComponent(
-            JSON.stringify(playlistsTabData),
-          );
-          const playlistsData = await fetchWithRetry<any>(
-            `${API.piped[0]}/channels/tabs?data=${encodedData}`,
-            {},
-            3,
-            1000,
-          );
-          console.log("Playlists data fetched successfully:", playlistsData);
-
-          // Process the playlists data
-          if (playlistsData.content && Array.isArray(playlistsData.content)) {
-            return playlistsData.content.map((playlist: any, index: number) => {
-              // Extract playlist ID from URL (e.g., "/playlist?list=ABC123" -> "ABC123")
-              let playlistId = `playlist_${index}`;
-              if (playlist.url) {
-                const match = playlist.url.match(/[?&]list=([^&]+)/);
-                if (match && match[1]) {
-                  playlistId = match[1];
-                } else {
-                  playlistId = playlist.url;
-                }
-              }
-
-              console.log(
-                `[ArtistScreen] Extracted playlist ID: ${playlistId} from URL: ${playlist.url}`,
-              );
-
-              return {
-                id: playlistId,
-                title:
-                  playlist.name ||
-                  playlist.title ||
-                  t("screens.artist.unknown_playlist"),
-                thumbnail:
-                  playlist.thumbnail ||
-                  "https://via.placeholder.com/160x160/333/ffffff?text=Playlist",
-                videoCount:
-                  playlist.videos && playlist.videos > 0
-                    ? playlist.videos
-                    : playlist.videoCount && playlist.videoCount > 0
-                      ? playlist.videoCount
-                      : 0,
-                type: "playlist",
-              };
-            });
-          }
-        } catch (apiError) {
-          console.log(
-            "Failed to fetch playlists from tabs endpoint, using fallback:",
-            apiError,
-          );
-        }
-      }
-
-      // Return empty array if no real playlists are found
-      return [];
-    } catch (error) {
-      console.error("Error fetching YouTube playlists:", error);
-      return [];
-    }
-  };
-
-  useEffect(() => {
-    fetchArtistData();
-  }, [artistId]);
-
-  const fetchArtistData = async () => {
+  const fetchArtistData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Check if this is a YouTube channel (ID starts with "UC" or similar YouTube channel pattern)
-      const isYouTubeChannel =
-        artistId.startsWith("UC") ||
-        artistId.startsWith("U") ||
-        artistId.length === 24;
-
-      setIsYouTubeChannel(isYouTubeChannel);
-
-      if (isYouTubeChannel) {
-        // Use Piped API for YouTube channels
-        const channelData = await fetchWithRetry<any>(
-          `${API.piped[0]}/channel/${artistId}`,
-          {},
-          3,
-          1000,
-        );
-        console.log("YouTube channel API response:", channelData);
-
-        // Process YouTube channel data
-        const processedArtist: Artist = {
-          id: artistId,
-          name: (channelData.name || artistName)?.replace(/\s*-\s*Topic$/i, ""),
-          image:
-            channelData.avatarUrl ||
-            "https://via.placeholder.com/500x500/1a1a1a/ffffff?text=Artist",
-          monthlyListeners: channelData.subscribers || 0,
-          verified: channelData.verified || false,
-        };
-
-        // Process channel videos as songs - show all available videos
-        const processedSongs: Song[] = (channelData.relatedStreams || []).map(
-          (video: any, index: number) => ({
-            id: video.url?.split("v=")[1] || video.id || `video_${index}`,
-            title: video.title || t("screens.artist.unknown_title"),
-            thumbnail:
-              video.thumbnail ||
-              "https://via.placeholder.com/56x56/333/ffffff?text=V",
-            playCount: video.views || 0,
-            source: "youtube",
-            _isJioSaavn: false,
-          }),
-        );
-
-        // Process channel tabs data for albums and playlists
-        const tabsData = channelData.tabs || [];
-        console.log("Available tabs from channel:", tabsData);
-
-        // Process albums from tabs data
-        const processedAlbums = await fetchYouTubeAlbums(artistId);
-
-        // Process playlists from tabs data
-        const processedPlaylists = await fetchYouTubePlaylists(artistId);
-
-        setArtistData(processedArtist);
-        setPopularSongs(processedSongs);
-        setAlbums(processedAlbums);
-        setPlaylists(processedPlaylists);
-        setArtistNameFontSize(calculateFontSize(processedArtist.name));
-        setLoading(false);
-        return;
-      }
-
-      // Original JioSaavn API logic for non-YouTube artists
-      // Fetch artist info
-      const artistInfo = await fetchWithRetry<any>(
-        getJioSaavnArtistEndpoint(artistId),
-        {},
-        3,
-        1000,
-      );
-      console.log("Artist info API response:", artistInfo);
-
-      // Validate artist response
-      const artistData = artistInfo.data || artistInfo;
-      if (!artistData || (!artistData.name && !artistName)) {
-        throw new Error("Invalid artist data received");
-      }
-
-      // Fetch artist songs
-      let songsData;
-      try {
-        songsData = await fetchWithRetry<any>(
-          getJioSaavnArtistSongsEndpoint(artistId, 0),
-          {},
-          3,
-          1000,
-        );
-        console.log("Songs API response:", songsData);
-      } catch (e) {
-        console.warn("Failed to fetch songs, using empty array", e);
-        songsData = [];
-      }
-
-      // Fetch artist albums
-      let albumsData;
-      try {
-        albumsData = await fetchWithRetry<any>(
-          getJioSaavnArtistAlbumsEndpoint(artistId, 0),
-          {},
-          3,
-          1000,
-        );
-        console.log("Albums API response:", albumsData);
-      } catch (e) {
-        console.warn("Failed to fetch albums, using empty array", e);
-        albumsData = [];
-      }
-
-      // Process artist data - use best quality image available
-      const getBestQualityImage = (images: any[]): string => {
-        if (!images || images.length === 0) {
-          return "https://via.placeholder.com/500x500/1a1a1a/ffffff?text=Artist";
+      if (resolvedSource === "youtube") {
+        const channelId = normalizedArtistId || String(artistId || "");
+        if (!channelId) {
+          throw new Error("Missing channel id");
         }
 
-        // Priority order for image qualities (best to worst)
-        const qualityPriority = [
-          "1500x1500",
-          "1000x1000",
-          "800x800",
-          "500x500",
-          "400x400",
-          "300x300",
-          "200x200",
-          "150x150",
-          "100x100",
-          "50x50",
-        ];
+        const [channelResult, videosResult, playlistsResult] =
+          await Promise.all([
+            fetchFirstSuccessfulInvidiousJson(
+              (instance) =>
+                `${instance}/api/v1/channels/${encodeURIComponent(channelId)}`
+            ).catch(() => null),
+            fetchFirstSuccessfulInvidiousJson(
+              (instance) =>
+                `${instance}/api/v1/channels/${encodeURIComponent(channelId)}/videos`
+            ).catch(() => null),
+            fetchFirstSuccessfulInvidiousJson(
+              (instance) =>
+                `${instance}/api/v1/channels/${encodeURIComponent(channelId)}/playlists`
+            ).catch(() => null),
+          ]);
 
-        // Try to find the best quality image
-        for (const quality of qualityPriority) {
-          const image = images.find((img: any) => img.quality === quality);
-          if (image && image.url) {
-            return image.url;
+        const providerEndpoints =
+          channelResult?.providerEndpoints ||
+          videosResult?.providerEndpoints ||
+          playlistsResult?.providerEndpoints ||
+          (await getProviderEndpoints());
+        const invidiousBase =
+          channelResult?.base ||
+          videosResult?.base ||
+          playlistsResult?.base ||
+          providerEndpoints.instances.invidious[0] ||
+          "";
+
+        const invidiousChannel = toRecord(channelResult?.payload);
+        const latestVideos = toArray<Record<string, unknown>>(
+          invidiousChannel.latestVideos
+        );
+        const videosFallback = Array.isArray(videosResult?.payload)
+          ? (videosResult?.payload as Array<Record<string, unknown>>)
+          : toArray<Record<string, unknown>>(
+              toRecord(videosResult?.payload).videos
+            );
+        const videosToUse =
+          latestVideos.length > 0 ? latestVideos : videosFallback;
+
+        if (!Object.keys(invidiousChannel).length && videosToUse.length === 0) {
+          throw new Error("Failed to load artist");
+        }
+
+        const youtubeWebBase = providerEndpoints.providers.youtube.webBase;
+        const name =
+          safeString(invidiousChannel.author || invidiousChannel.name)
+            .replace(/\s*-\s*Topic$/i, "")
+            .trim() ||
+          safeString(videosToUse[0]?.author)
+            .replace(/\s*-\s*Topic$/i, "")
+            .trim() ||
+          String(artistName || "Artist");
+
+        const nextArtist: Artist = {
+          id: channelId,
+          name,
+          image:
+            pickBestImageUrl(
+              invidiousChannel.authorThumbnails,
+              invidiousBase
+            ) || String(artistImage || ""),
+          banner:
+            pickBestImageUrl(invidiousChannel.authorBanners, invidiousBase) ||
+            pickBestImageUrl(
+              invidiousChannel.authorThumbnails,
+              invidiousBase
+            ) ||
+            String(artistImage || ""),
+          monthlyListeners: safeNumber(invidiousChannel.subCount),
+          verified: Boolean(invidiousChannel.verified),
+          description: safeString(invidiousChannel.description),
+          source: "youtube",
+          url: `${youtubeWebBase}/channel/${encodeURIComponent(channelId)}`,
+        };
+
+        const nextSongs: Song[] = videosToUse
+          .map((video, index) => ({
+            id:
+              safeString(video.videoId) ||
+              safeString(video.id) ||
+              `video_${index}`,
+            title: safeString(video.title) || t("screens.artist.unknown_title"),
+            thumbnail:
+              pickBestImageUrl(video.videoThumbnails, invidiousBase) ||
+              safeString(video.thumbnail),
+            playCount: safeNumber(video.viewCount),
+            duration: safeNumber(video.lengthSeconds),
+            artist: name,
+            url: safeString(video.url),
+            source: "youtube" as const,
+            _isJioSaavn: false,
+          }))
+          .filter((song) => song.id);
+
+        const playlistEntries = Array.isArray(playlistsResult?.payload)
+          ? (playlistsResult?.payload as Array<Record<string, unknown>>)
+          : toArray<Record<string, unknown>>(
+              toRecord(playlistsResult?.payload).playlists
+            );
+
+        const nextAlbums: CollectionItem[] = [];
+        const nextPlaylists: CollectionItem[] = [];
+
+        for (const playlist of playlistEntries) {
+          const playlistId =
+            safeString(playlist.playlistId) || safeString(playlist.id);
+          if (!playlistId) {
+            continue;
+          }
+
+          const normalizedItem: CollectionItem = {
+            id: playlistId,
+            title:
+              safeString(playlist.title) ||
+              t("screens.artist.unknown_playlist"),
+            thumbnail: absolutizeUrl(
+              safeString(playlist.playlistThumbnail),
+              invidiousBase
+            ),
+            videoCount: safeNumber(playlist.videoCount),
+            type: isAutoGeneratedAlbumPlaylistId(playlistId)
+              ? "album"
+              : "playlist",
+          };
+
+          if (normalizedItem.type === "album") {
+            nextAlbums.push(normalizedItem);
+          } else {
+            nextPlaylists.push(normalizedItem);
           }
         }
 
-        // Fallback to first available image
-        return (
-          images[0]?.url ||
-          "https://via.placeholder.com/500x500/1a1a1a/ffffff?text=Artist"
-        );
+        setArtistData(nextArtist);
+        setPopularSongs(nextSongs);
+        setAlbums(nextAlbums);
+        setPlaylists(nextPlaylists);
+        return;
+      }
+
+      const providerEndpoints = await getProviderEndpoints();
+      const jiosaavnApiBase = providerEndpoints.providers.jiosaavn.apiBase;
+      const [artistPayload, songsPayload, albumsPayload] = await Promise.all([
+        fetchJsonFromCandidates(
+          buildProviderUrlCandidates(jiosaavnApiBase, [
+            `/api/artists/${encodeURIComponent(String(artistId || ""))}`,
+            `/artists/${encodeURIComponent(String(artistId || ""))}`,
+          ])
+        ),
+        fetchJsonFromCandidates(
+          buildProviderUrlCandidates(jiosaavnApiBase, [
+            `/api/artists/${encodeURIComponent(String(artistId || ""))}/songs`,
+            `/artists/${encodeURIComponent(String(artistId || ""))}/songs`,
+          ])
+        ).catch(() => null),
+        fetchJsonFromCandidates(
+          buildProviderUrlCandidates(jiosaavnApiBase, [
+            `/api/artists/${encodeURIComponent(String(artistId || ""))}/albums`,
+            `/artists/${encodeURIComponent(String(artistId || ""))}/albums`,
+          ])
+        ).catch(() => null),
+      ]);
+
+      const artistEnvelope = toRecord(artistPayload);
+      const artistCore =
+        toRecord(artistEnvelope.data).name || toRecord(artistEnvelope.data).id
+          ? toRecord(artistEnvelope.data)
+          : artistEnvelope;
+      const songsEnvelope = toRecord(songsPayload);
+      const songsData = toRecord(songsEnvelope.data);
+      const albumsEnvelope = toRecord(albumsPayload);
+      const albumsData = toRecord(albumsEnvelope.data);
+
+      const topSongs = toArray(artistCore.topSongs);
+      const songsFromEndpoint = toArray(songsData.songs);
+      const songsArray =
+        songsFromEndpoint.length > 0
+          ? songsFromEndpoint
+          : Array.isArray(songsEnvelope.data)
+            ? (songsEnvelope.data as any[])
+            : topSongs;
+      const albumsArray =
+        toArray(albumsData.albums).length > 0
+          ? toArray(albumsData.albums)
+          : Array.isArray(albumsEnvelope.data)
+            ? (albumsEnvelope.data as any[])
+            : toArray(albumsEnvelope.albums);
+
+      const nextArtist: Artist = {
+        id: safeString(artistCore.id) || String(artistId || ""),
+        name:
+          safeString(artistCore.name)
+            .replace(/\s*-\s*Topic$/i, "")
+            .trim() || String(artistName || "Artist"),
+        image: String(artistImage || "") || pickJioSaavnImage(artistCore.image),
+        banner:
+          pickJioSaavnImage(artistCore.image) ||
+          String(artistImage || "") ||
+          pickJioSaavnImage(songsArray[0] && toRecord(songsArray[0]).image),
+        monthlyListeners:
+          safeNumber(artistCore.followerCount) ||
+          safeNumber(artistCore.fanCount),
+        verified: Boolean(artistCore.isVerified),
+        description:
+          safeString(artistCore.dominantType) ||
+          toArray(artistCore.bio)
+            .map((entry) => safeString(toRecord(entry).text || entry))
+            .filter(Boolean)
+            .join(" "),
+        source: "jiosaavn",
+        url: safeString(artistCore.url),
       };
 
-      const songsArray = Array.isArray(songsData)
-        ? songsData
-        : songsData.data?.songs || songsData.data || songsData.songs || [];
-
-      const albumsArray = Array.isArray(albumsData)
-        ? albumsData
-        : albumsData.data?.albums || albumsData.data || albumsData.albums || [];
-
-      const artistImages = Array.isArray(artistData.image)
-        ? artistData.image
-        : [];
-      const artistImageUrlFromSearch =
-        typeof artistImage === "string" ? artistImage : "";
-      const fallbackImages =
-        artistImages.length > 0
-          ? artistImages
-          : songsArray[0]?.image || albumsArray[0]?.image || [];
-
-      const processedArtist: Artist = {
-        id: artistId,
-        name: (artistData.name || artistName)?.replace(/\s*-\s*Topic$/i, ""),
-        image:
-          artistImageUrlFromSearch || getBestQualityImage(fallbackImages),
-        monthlyListeners: artistData.followers || artistData.followerCount || 0,
-      };
-
-      const processedSongs: Song[] = songsArray
-        .slice(0, 5)
-        .map((song: any, index: number) => ({
-          id: String(song.id || song.songId),
-          title: song.title || song.name || t("screens.artist.unknown_title"),
-          thumbnail:
-            song.image?.find((img: any) => img.quality === "500x500")?.url ||
-            song.image?.[0]?.url ||
-            song.thumbnail ||
-            "https://via.placeholder.com/56x56/333/ffffff?text=" + (index + 1),
-          playCount:
-            parseInt(song.playCount) ||
-            parseInt(song.playcount) ||
-            Math.floor(Math.random() * 1000000000),
-          // Add JioSaavn metadata for proper playback
-          source: "jiosaavn",
-          _isJioSaavn: true,
-        }));
-
-      console.log("Processing albums array:", albumsArray);
-
-      const processedAlbums: Album[] = albumsArray
-        .slice(0, 6)
-        .map((album: any) => {
-          console.log("Processing individual album:", album);
+      const nextSongs: Song[] = songsArray
+        .map((song, index) => {
+          const record = toRecord(song);
           return {
-            id: String(album.id || album.albumId),
+            id:
+              safeString(
+                record.id || record.songId || record.songid || record.url
+              ) || `song_${index}`,
             title:
-              album.title || album.name || t("screens.artist.unknown_album"),
-            year: album.year || album.releaseYear || "",
+              safeString(record.title || record.name || record.song) ||
+              t("screens.artist.unknown_title"),
             thumbnail:
-              album.image?.find((img: any) => img.quality === "500x500")?.url ||
-              album.image?.[0]?.url ||
-              album.thumbnail ||
-              "https://via.placeholder.com/160x160/333/ffffff?text=Album",
-            videoCount: album.songCount
-              ? `${album.songCount} songs`
-              : undefined,
+              pickJioSaavnImage(record.image) || safeString(record.thumbnail),
+            playCount:
+              safeNumber(record.playCount) || safeNumber(record.playcount),
+            duration: safeNumber(record.duration),
+            artist: pickJioSaavnArtistNames(record.artists) || nextArtist.name,
+            url: safeString(record.url),
+            source: "jiosaavn" as const,
+            _isJioSaavn: true,
           };
-        });
+        })
+        .filter((song) => song.id);
 
-      setArtistData(processedArtist);
-      setPopularSongs(processedSongs);
-      setAlbums(processedAlbums);
-      setArtistNameFontSize(calculateFontSize(processedArtist.name));
-    } catch (err) {
-      console.error("Error fetching artist data:", err);
-      setError("Failed to load artist data. Please try again.");
+      const nextAlbums: CollectionItem[] = albumsArray
+        .map((album, index) => {
+          const record = toRecord(album);
+          return {
+            id:
+              safeString(record.id || record.albumId || record.url) ||
+              `album_${index}`,
+            title:
+              safeString(record.title || record.name) ||
+              t("screens.artist.unknown_album"),
+            year: safeString(record.year || record.releaseYear),
+            thumbnail:
+              pickJioSaavnImage(record.image) || safeString(record.thumbnail),
+            videoCount: safeNumber(record.songCount),
+            songCount: safeNumber(record.songCount),
+            url: safeString(record.url),
+            type: "album" as const,
+          };
+        })
+        .filter((album) => album.id);
+
+      setArtistData(nextArtist);
+      setPopularSongs(nextSongs);
+      setAlbums(nextAlbums);
+      setPlaylists([]);
+    } catch (fetchError) {
+      console.error("Error fetching artist data:", fetchError);
+      setError(t("screens.artist.load_error"));
+      setArtistData(null);
+      setPopularSongs([]);
+      setAlbums([]);
+      setPlaylists([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [
+    artistId,
+    artistImage,
+    artistName,
+    fetchFirstSuccessfulInvidiousJson,
+    fetchJsonFromCandidates,
+    normalizedArtistId,
+    resolvedSource,
+    t,
+  ]);
 
-  const handlePlaySong = (song: Song, index: number) => {
-    // Convert to track format for player
-    const track = {
-      id: song.id,
-      title: song.title,
-      artist: artistData?.name || t("screens.artist.unknown_artist"),
-      thumbnail: song.thumbnail,
-      duration: 0,
-      url: "",
-      // Use the song's source if available (YouTube), otherwise default to JioSaavn
-      source: song.source || "jiosaavn",
-      _isJioSaavn: song._isJioSaavn || false,
-    };
-    playTrack(
-      track,
-      popularSongs.map((s) => ({
-        id: s.id,
-        title: s.title,
-        artist: artistData?.name || t("screens.artist.unknown_artist"),
-        thumbnail: s.thumbnail,
-        duration: 0,
-        url: "",
-        // Use the song's source if available (YouTube), otherwise default to JioSaavn
-        source: s.source || "jiosaavn",
-        _isJioSaavn: s._isJioSaavn || false,
-      })),
-      index,
+  useEffect(() => {
+    void fetchArtistData();
+  }, [fetchArtistData]);
+
+  const visibleSongs = useMemo(
+    () => popularSongs.slice(0, MAX_VISIBLE_SONGS),
+    [popularSongs]
+  );
+
+  const featuredSong = useMemo(() => {
+    if (popularSongs.length === 0) {
+      return null;
+    }
+
+    return popularSongs.reduce((best, song) =>
+      song.playCount > best.playCount ? song : best
     );
-  };
+  }, [popularSongs]);
 
-  const handlePlayAll = () => {
+  const handlePlaySong = useCallback(
+    (song: Song, index: number) => {
+      const queue = popularSongs.map((item) => ({
+        id: item.id,
+        title: item.title,
+        artist:
+          item.artist || artistData?.name || t("screens.artist.unknown_artist"),
+        artistId: artistData?.id,
+        artistImage: artistData?.image || artistData?.banner || "",
+        artistSource: artistData?.source || resolvedSource,
+        thumbnail: item.thumbnail,
+        duration: item.duration,
+        audioUrl: item.url,
+        source: item.source || resolvedSource,
+        _isJioSaavn: item._isJioSaavn || item.source === "jiosaavn",
+      }));
+
+      const track = queue[index] || queue[0];
+      if (!track) {
+        return;
+      }
+
+      void playTrack(track, queue, Math.max(index, 0));
+    },
+    [artistData?.name, playTrack, popularSongs, resolvedSource, t]
+  );
+
+  const handlePlayAll = useCallback(() => {
     if (popularSongs.length > 0) {
       handlePlaySong(popularSongs[0], 0);
     }
-  };
+  }, [handlePlaySong, popularSongs]);
 
-  const handleShuffle = () => {
+  const handleShuffle = useCallback(() => {
     if (popularSongs.length > 0) {
       const randomIndex = Math.floor(Math.random() * popularSongs.length);
       handlePlaySong(popularSongs[randomIndex], randomIndex);
     }
-  };
+  }, [handlePlaySong, popularSongs]);
 
-  const handleFollow = () => {
-    setIsFollowing(!isFollowing);
-  };
+  const openCollection = useCallback(
+    (item: CollectionItem) => {
+      navigation.navigate("AlbumPlaylist", {
+        albumId: item.id,
+        albumName: item.title,
+        albumArtist: artistData?.name || t("screens.artist.unknown_artist"),
+        source: item.type === "playlist" ? "youtube" : resolvedSource,
+      });
+    },
+    [artistData?.name, navigation, resolvedSource, t]
+  );
 
-  const formatPlayCount = (count: number) => {
-    if (count >= 1000000000) {
-      return `${(count / 1000000000).toFixed(1)}B`;
-    } else if (count >= 1000000) {
-      return `${(count / 1000000).toFixed(1)}M`;
-    } else if (count >= 1000) {
-      return `${(count / 1000).toFixed(1)}K`;
-    }
-    return count.toString();
-  };
-
-  const formatMonthlyListeners = (count: number) => {
-    if (count >= 1000000) {
-      return `${(count / 1000000).toFixed(1)}M`;
-    } else if (count >= 1000) {
-      return `${(count / 1000).toFixed(1)}K`;
-    }
-    return count.toString();
-  };
+  const headerImage =
+    artistData?.banner || artistData?.image || String(artistImage || "");
+  const sourceLabel =
+    artistData?.source === "jiosaavn" ? "JioSaavn" : "YouTube";
+  const titleSpacing = isRtl
+    ? { marginRight: 10, marginLeft: 0 }
+    : { marginLeft: 10, marginRight: 0 };
 
   if (loading) {
     return (
-      <SafeArea>
-        <LoadingContainer>
-          <ActivityIndicator size="large" color="#1db954" />
-        </LoadingContainer>
-      </SafeArea>
+      <Screen padded={false} safeEdges={["left", "right"]}>
+        <View
+          style={[styles.centeredState, { backgroundColor: colors.background }]}
+        >
+          <ActivityIndicator size="large" color={colors.accent} />
+        </View>
+      </Screen>
     );
   }
 
   if (error) {
     return (
-      <SafeArea>
-        <ErrorContainer>
-          <ErrorText>{error}</ErrorText>
-          <RetryButton onPress={fetchArtistData}>
-            <RetryButtonText>{t("screens.artist.retry")}</RetryButtonText>
-          </RetryButton>
-        </ErrorContainer>
-      </SafeArea>
+      <Screen padded={false} safeEdges={["left", "right"]}>
+        <View
+          style={[
+            styles.centeredState,
+            styles.statePadding,
+            { backgroundColor: colors.background },
+          ]}
+        >
+          <BodyText style={styles.errorText}>{error}</BodyText>
+          <TouchableOpacity
+            onPress={() => {
+              void fetchArtistData();
+            }}
+            style={[styles.retryButton, { backgroundColor: colors.accent }]}
+          >
+            <TitleText
+              style={[styles.retryButtonText, { color: colors.accentContrast }]}
+            >
+              {t("screens.artist.retry")}
+            </TitleText>
+          </TouchableOpacity>
+        </View>
+      </Screen>
     );
   }
 
   if (!artistData) {
     return (
-      <SafeArea>
-        <ErrorContainer>
-          <ErrorText>{t("screens.artist.artist_not_found")}</ErrorText>
-          <RetryButton onPress={() => navigation.goBack()}>
-            <RetryButtonText>{t("screens.artist.go_back")}</RetryButtonText>
-          </RetryButton>
-        </ErrorContainer>
-      </SafeArea>
+      <Screen padded={false} safeEdges={["left", "right"]}>
+        <View
+          style={[
+            styles.centeredState,
+            styles.statePadding,
+            { backgroundColor: colors.background },
+          ]}
+        >
+          <BodyText style={styles.errorText}>
+            {t("screens.artist.artist_not_found")}
+          </BodyText>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={[styles.retryButton, { backgroundColor: colors.accent }]}
+          >
+            <TitleText
+              style={[styles.retryButtonText, { color: colors.accentContrast }]}
+            >
+              {t("screens.artist.go_back")}
+            </TitleText>
+          </TouchableOpacity>
+        </View>
+      </Screen>
     );
   }
 
-  const renderSongItem = ({ item, index }: { item: Song; index: number }) => (
-    <SongItem onPress={() => handlePlaySong(item, index)}>
-      <TrackNumber>{index + 1}</TrackNumber>
-      <SongThumbnail source={{ uri: item.thumbnail }} />
-      <SongDetails>
-        <SongTitle numberOfLines={1}>{item.title}</SongTitle>
-        <PlayCount>
-          {formatPlayCount(item.playCount)} {t("screens.artist.plays")}
-        </PlayCount>
-      </SongDetails>
-      <MoreOptionsIcon>
-        <Ionicons name="ellipsis-horizontal" size={20} color="#a3a3a3" />
-      </MoreOptionsIcon>
-    </SongItem>
-  );
-
-  const renderAlbumItem = ({ item }: { item: Album }) => (
-    <AlbumItem
-      onPress={() =>
-        navigation.navigate("AlbumPlaylist", {
-          albumId: item.id,
-          albumName: item.title,
-          source: "jiosaavn", // Add source parameter for proper JioSaavn album handling
-        })
-      }
-    >
-      <AlbumImage source={{ uri: item.thumbnail }} />
-      <AlbumTitle numberOfLines={1}>{item.title}</AlbumTitle>
-      <AlbumYear>{item.year}</AlbumYear>
-    </AlbumItem>
-  );
-
   return (
-    <SafeArea>
-      <Container>
+    <Screen padded={false} safeEdges={["left", "right"]}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
         <ScrollView showsVerticalScrollIndicator={false}>
-          {/* Header Section */}
-          <View style={{ height: HEADER_HEIGHT, position: "relative" }}>
-            <HeaderBackground source={{ uri: artistData.image }}>
-              <HeaderGradient
-                colors={[
-                  "transparent",
-                  "rgba(0, 0, 0, 0.7)",
-                  "rgba(0, 0, 0, 0.9)",
-                  "#000",
-                ]}
-                locations={[0, 0.5, 0.8, 1]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0, y: 1 }}
+          <View style={styles.headerSection}>
+            {headerImage ? (
+              <Image
+                source={{ uri: headerImage }}
+                resizeMode="cover"
+                style={styles.headerImage}
               />
-            </HeaderBackground>
-            <BackButton onPress={() => navigation.goBack()}>
-              <Ionicons name="chevron-back" size={24} color="#fff" />
-            </BackButton>
-            <HeaderContent>
+            ) : (
               <View
-                style={{
-                  flex: 1,
-                  justifyContent: "flex-end",
-                }}
+                style={[
+                  styles.headerFallback,
+                  { backgroundColor: colors.surface2 },
+                ]}
               >
-                <ArtistName fontSize={artistNameFontSize} numberOfLines={1}>
-                  {artistData.name}
-                  {artistData.verified && (
+                <Ionicons
+                  name="person-outline"
+                  size={92}
+                  color={colors.muted}
+                />
+              </View>
+            )}
+            <LinearGradient
+              colors={[
+                withOpacity("#000000", 0.08),
+                withOpacity("#000000", 0.32),
+                withOpacity(colors.background, 0.92),
+                colors.background,
+              ]}
+              locations={[0, 0.4, 0.78, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={ABSOLUTE_FILL}
+            />
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={[
+                styles.backButton,
+                {
+                  top: insets.top + 12,
+                  left: isRtl ? undefined : 16,
+                  right: isRtl ? 16 : undefined,
+                  backgroundColor: withOpacity(colors.background, 0.48),
+                },
+              ]}
+            >
+              <Ionicons
+                name={isRtl ? "chevron-forward" : "chevron-back"}
+                size={24}
+                color={colors.foreground}
+              />
+            </TouchableOpacity>
+            <View
+              style={[
+                styles.headerContent,
+                { top: insets.top + HEADER_TOP_RESERVED_SPACE },
+              ]}
+            >
+              <View
+                style={[
+                  styles.headerBadgeRow,
+                  { flexDirection: isRtl ? "row-reverse" : "row" },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.headerBadge,
+                    {
+                      backgroundColor: withOpacity("#000000", 0.26),
+                      borderColor: withOpacity("#ffffff", 0.14),
+                    },
+                  ]}
+                >
+                  <MutedText style={styles.headerBadgeText}>
+                    {sourceLabel}
+                  </MutedText>
+                </View>
+                {artistData.verified ? (
+                  <View
+                    style={[
+                      styles.headerBadge,
+                      {
+                        backgroundColor: withOpacity(colors.accent, 0.2),
+                        borderColor: withOpacity(colors.accent, 0.4),
+                      },
+                    ]}
+                  >
                     <MaterialIcons
                       name="verified"
-                      size={32}
-                      color="#3b82f6"
-                      style={{ marginLeft: 14 }}
+                      size={14}
+                      color={colors.accent}
+                      style={{
+                        marginRight: isRtl ? 0 : 6,
+                        marginLeft: isRtl ? 6 : 0,
+                      }}
                     />
-                  )}
-                </ArtistName>
+                    <MutedText style={styles.headerBadgeText}>
+                      Verified
+                    </MutedText>
+                  </View>
+                ) : null}
               </View>
-              {artistData.monthlyListeners !== undefined &&
-                artistData.monthlyListeners !== null && (
-                  <MonthlyListeners>
-                    {formatMonthlyListeners(artistData.monthlyListeners)}{" "}
-                    {t("screens.artist.monthly_listeners")}
-                  </MonthlyListeners>
-                )}
-            </HeaderContent>
+
+              <View
+                style={[
+                  styles.artistTitleRow,
+                  { flexDirection: isRtl ? "row-reverse" : "row" },
+                ]}
+              >
+                {artistData.image ? (
+                  <Image
+                    source={{ uri: artistData.image }}
+                    style={styles.artistAvatar}
+                  />
+                ) : null}
+                <TitleText
+                  numberOfLines={2}
+                  style={[
+                    styles.artistName,
+                    {
+                      color: "#ffffff",
+                      fontSize: artistNameFontSize,
+                      lineHeight: artistNameFontSize + 4,
+                    },
+                    titleSpacing,
+                  ]}
+                >
+                  {artistData.name}
+                </TitleText>
+              </View>
+
+              <View
+                style={[
+                  styles.metaChipRow,
+                  { flexDirection: isRtl ? "row-reverse" : "row" },
+                ]}
+              >
+                {artistData.monthlyListeners ? (
+                  <View
+                    style={[
+                      styles.metaChip,
+                      { backgroundColor: withOpacity("#000000", 0.22) },
+                    ]}
+                  >
+                    <MutedText style={styles.metaChipText}>
+                      {formatCompactNumber(artistData.monthlyListeners)}{" "}
+                      {t("screens.artist.monthly_listeners")}
+                    </MutedText>
+                  </View>
+                ) : null}
+                {popularSongs.length > 0 ? (
+                  <View
+                    style={[
+                      styles.metaChip,
+                      { backgroundColor: withOpacity("#000000", 0.22) },
+                    ]}
+                  >
+                    <MutedText style={styles.metaChipText}>
+                      {popularSongs.length}{" "}
+                      {isYouTubeChannel
+                        ? t("screens.artist.videos")
+                        : t("screens.artist.songs")}
+                    </MutedText>
+                  </View>
+                ) : null}
+                {playlists.length > 0 ? (
+                  <View
+                    style={[
+                      styles.metaChip,
+                      { backgroundColor: withOpacity("#000000", 0.22) },
+                    ]}
+                  >
+                    <MutedText style={styles.metaChipText}>
+                      {playlists.length} {t("screens.artist.playlists")}
+                    </MutedText>
+                  </View>
+                ) : null}
+              </View>
+
+              {artistData.description ? (
+                <MutedText numberOfLines={3} style={styles.descriptionText}>
+                  {shortenDescription(artistData.description)}
+                </MutedText>
+              ) : null}
+            </View>
           </View>
 
-          {/* Content Section */}
-          <ContentContainer>
-            {/* Action Buttons Row */}
-            <ActionButtonsRow>
-              <LeftButtons>
-                <FollowButton onPress={handleFollow}>
-                  <FollowButtonText>
-                    {isFollowing
-                      ? t("screens.artist.following")
-                      : t("screens.artist.follow")}
-                  </FollowButtonText>
-                </FollowButton>
-              </LeftButtons>
-
-              <PlayShuffleButton onPress={handlePlayAll}>
-                <Ionicons name="play" size={24} color="#000" />
-                <ShuffleIconContainer>
-                  <Ionicons name="shuffle" size={12} color="#000" />
-                </ShuffleIconContainer>
-              </PlayShuffleButton>
-            </ActionButtonsRow>
-
-            {/* Category Tabs - Show for all sources */}
-            <CategoryTabs>
-              <CategoryTab
-                isActive={activeCategory === "songs"}
-                onPress={() => setActiveCategory("songs")}
+          <View
+            style={[
+              styles.contentContainer,
+              { backgroundColor: colors.background },
+            ]}
+          >
+            <View
+              style={[
+                styles.actionsRow,
+                { flexDirection: isRtl ? "row-reverse" : "row" },
+              ]}
+            >
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={handlePlayAll}
+                style={[
+                  styles.primaryActionButton,
+                  {
+                    backgroundColor: colors.accent,
+                    shadowColor: "#000000",
+                    flexDirection: isRtl ? "row-reverse" : "row",
+                  },
+                ]}
               >
-                <CategoryTabText isActive={activeCategory === "songs"}>
-                  {t("screens.artist.songs")}
-                </CategoryTabText>
-              </CategoryTab>
-              <CategoryTab
-                isActive={activeCategory === "albums"}
-                onPress={() => setActiveCategory("albums")}
-              >
-                <CategoryTabText isActive={activeCategory === "albums"}>
-                  {t("screens.artist.albums")}
-                </CategoryTabText>
-              </CategoryTab>
-              {isYouTubeChannel && (
-                <CategoryTab
-                  isActive={activeCategory === "playlists"}
-                  onPress={() => setActiveCategory("playlists")}
+                <Ionicons name="play" size={18} color={colors.accentContrast} />
+                <TitleText
+                  style={[
+                    styles.primaryActionText,
+                    {
+                      color: colors.accentContrast,
+                      marginLeft: isRtl ? 0 : 8,
+                      marginRight: isRtl ? 8 : 0,
+                    },
+                  ]}
                 >
-                  <CategoryTabText isActive={activeCategory === "playlists"}>
-                    {t("screens.artist.playlists")}
-                  </CategoryTabText>
-                </CategoryTab>
-              )}
-            </CategoryTabs>
+                  {t("common.play")}
+                </TitleText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.88}
+                onPress={handleShuffle}
+                style={[
+                  styles.secondaryActionButton,
+                  {
+                    backgroundColor: colors.surface1,
+                    borderColor: colors.borderSubtle,
+                    marginLeft: isRtl ? 0 : 12,
+                    marginRight: isRtl ? 12 : 0,
+                  },
+                ]}
+              >
+                <Ionicons name="shuffle" size={18} color={colors.foreground} />
+              </TouchableOpacity>
+            </View>
 
-            {/* Content based on active category */}
-            {activeCategory === "songs" && (
-              <PopularSection>
-                <PopularTitle>
-                  {isYouTubeChannel ? t("screens.artist.videos") : "Popular"}
-                </PopularTitle>
-                <FlatList
-                  data={popularSongs}
-                  renderItem={renderSongItem}
-                  keyExtractor={(item) => item.id}
-                  scrollEnabled={false}
-                  showsVerticalScrollIndicator={false}
-                />
-              </PopularSection>
-            )}
-            {activeCategory === "albums" && (
-              <AlbumsSection>
-                <AlbumsTitle>Albums</AlbumsTitle>
-                <AlbumsGrid>
-                  {albums.map((album) => (
-                    <AlbumItem
-                      key={album.id}
-                      onPress={() => {
-                        console.log("Navigating to album:", {
-                          albumId: album.id,
-                          albumName: album.title,
-                          albumArtist:
-                            artistData?.name ||
-                            t("screens.artist.unknown_artist"),
-                          source: isYouTubeChannel ? "youtube" : "jiosaavn",
-                        });
-                        navigation.navigate("AlbumPlaylist", {
-                          albumId: album.id,
-                          albumName: album.title,
-                          albumArtist:
-                            artistData?.name ||
-                            t("screens.artist.unknown_artist"),
-                          source: isYouTubeChannel ? "youtube" : "jiosaavn",
-                        });
-                      }}
+            <View
+              style={[
+                styles.mainCard,
+                {
+                  backgroundColor: colors.surface1,
+                  borderColor: colors.borderSubtle,
+                },
+              ]}
+            >
+              {featuredSong ? (
+                <TouchableOpacity
+                  activeOpacity={0.92}
+                  onPress={() => {
+                    const featuredIndex = popularSongs.findIndex(
+                      (song) => song.id === featuredSong.id
+                    );
+                    handlePlaySong(
+                      featuredSong,
+                      featuredIndex >= 0 ? featuredIndex : 0
+                    );
+                  }}
+                  style={[
+                    styles.featuredCard,
+                    {
+                      backgroundColor: colors.surface2,
+                      borderColor: colors.borderSubtle,
+                    },
+                  ]}
+                >
+                  {featuredSong.thumbnail ? (
+                    <Image
+                      source={{ uri: featuredSong.thumbnail }}
+                      resizeMode="cover"
+                      style={styles.featuredImage}
+                    />
+                  ) : null}
+                  <LinearGradient
+                    colors={[
+                      withOpacity("#000000", 0.15),
+                      withOpacity("#000000", 0.52),
+                      withOpacity("#000000", 0.88),
+                    ]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={ABSOLUTE_FILL}
+                  />
+                  <View style={styles.featuredContent}>
+                    <MutedText style={styles.featuredEyebrow}>
+                      {isYouTubeChannel
+                        ? t("screens.artist.videos")
+                        : t("screens.artist.songs")}
+                    </MutedText>
+                    <TitleText numberOfLines={2} style={styles.featuredTitle}>
+                      {featuredSong.title}
+                    </TitleText>
+                    <MutedText
+                      numberOfLines={1}
+                      style={styles.featuredSubtitle}
                     >
-                      <AlbumImage source={{ uri: album.thumbnail }} />
-                      <AlbumTitle numberOfLines={1}>{album.title}</AlbumTitle>
-                      <AlbumYear>
-                        {album.videoCount
-                          ? `${album.videoCount} videos`
-                          : album.year}
-                      </AlbumYear>
-                    </AlbumItem>
-                  ))}
-                </AlbumsGrid>
-              </AlbumsSection>
-            )}
-            {activeCategory === "playlists" && isYouTubeChannel && (
-              <AlbumsSection>
-                <AlbumsTitle>Playlists</AlbumsTitle>
-                <AlbumsGrid>
-                  {playlists.map((playlist) => (
-                    <AlbumItem
-                      key={playlist.id}
-                      onPress={() => {
-                        console.log("Navigating to playlist:", {
-                          playlistId: playlist.id,
-                          playlistName: playlist.title,
-                        });
-                        navigation.navigate("AlbumPlaylist", {
-                          albumId: playlist.id,
-                          albumName: playlist.title,
-                          albumArtist:
-                            artistData?.name ||
-                            t("screens.artist.unknown_artist"),
-                          source: "youtube",
-                        });
-                      }}
+                      {featuredSong.artist || artistData.name}
+                    </MutedText>
+                    <View
+                      style={[
+                        styles.featuredMetaRow,
+                        { flexDirection: isRtl ? "row-reverse" : "row" },
+                      ]}
                     >
-                      <AlbumImage source={{ uri: playlist.thumbnail }} />
-                      <AlbumTitle numberOfLines={1}>
-                        {playlist.title}
-                      </AlbumTitle>
-                      <AlbumYear>
-                        {playlist.videoCount && playlist.videoCount > 0
-                          ? `${playlist.videoCount} videos`
-                          : "No videos"}
-                      </AlbumYear>
-                    </AlbumItem>
-                  ))}
-                </AlbumsGrid>
-              </AlbumsSection>
-            )}
-          </ContentContainer>
+                      {featuredSong.playCount > 0 ? (
+                        <View
+                          style={[
+                            styles.featuredMetaChip,
+                            { backgroundColor: withOpacity("#000000", 0.24) },
+                          ]}
+                        >
+                          <MutedText style={styles.featuredMetaText}>
+                            {formatCompactNumber(featuredSong.playCount)}{" "}
+                            {t("screens.artist.plays")}
+                          </MutedText>
+                        </View>
+                      ) : null}
+                      {featuredSong.duration ? (
+                        <View
+                          style={[
+                            styles.featuredMetaChip,
+                            { backgroundColor: withOpacity("#000000", 0.24) },
+                          ]}
+                        >
+                          <MutedText style={styles.featuredMetaText}>
+                            {formatDuration(featuredSong.duration)}
+                          </MutedText>
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
+
+              <View style={styles.sectionBlock}>
+                <View
+                  style={[
+                    styles.sectionHeaderRow,
+                    { flexDirection: isRtl ? "row-reverse" : "row" },
+                  ]}
+                >
+                  <TitleText style={styles.sectionTitle}>
+                    {isYouTubeChannel
+                      ? t("screens.artist.videos")
+                      : t("screens.artist.songs")}
+                  </TitleText>
+                  {visibleSongs.length > 0 ? (
+                    <MutedText style={styles.sectionMeta}>
+                      {visibleSongs.length}
+                    </MutedText>
+                  ) : null}
+                </View>
+
+                {visibleSongs.length > 0 ? (
+                  visibleSongs.map((song, index) => (
+                    <TouchableOpacity
+                      key={`${song.id}-${index}`}
+                      activeOpacity={0.88}
+                      onPress={() => handlePlaySong(song, index)}
+                      style={[
+                        styles.songRow,
+                        {
+                          backgroundColor: colors.surface2,
+                          borderColor: colors.borderSubtle,
+                          flexDirection: isRtl ? "row-reverse" : "row",
+                        },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.trackIndexWrap,
+                          {
+                            marginRight: isRtl ? 0 : 14,
+                            marginLeft: isRtl ? 14 : 0,
+                          },
+                        ]}
+                      >
+                        <BodyText
+                          style={[styles.trackIndex, { color: colors.muted }]}
+                        >
+                          {index + 1}
+                        </BodyText>
+                      </View>
+
+                      {song.thumbnail ? (
+                        <Image
+                          source={{ uri: song.thumbnail }}
+                          style={[
+                            styles.songThumb,
+                            {
+                              marginRight: isRtl ? 0 : 14,
+                              marginLeft: isRtl ? 14 : 0,
+                            },
+                          ]}
+                        />
+                      ) : (
+                        <View
+                          style={[
+                            styles.songThumb,
+                            styles.songThumbFallback,
+                            {
+                              backgroundColor: colors.surface3,
+                              marginRight: isRtl ? 0 : 14,
+                              marginLeft: isRtl ? 14 : 0,
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name="musical-notes-outline"
+                            size={20}
+                            color={colors.muted}
+                          />
+                        </View>
+                      )}
+
+                      <View style={styles.songMeta}>
+                        <TitleText numberOfLines={1} style={styles.songTitle}>
+                          {song.title}
+                        </TitleText>
+                        <MutedText
+                          numberOfLines={1}
+                          style={styles.songSubtitle}
+                        >
+                          {buildSongSubtitle(song)}
+                        </MutedText>
+                      </View>
+
+                      <View style={styles.songEndMeta}>
+                        {song.playCount > 0 ? (
+                          <MutedText
+                            numberOfLines={1}
+                            style={styles.songEndMetaText}
+                          >
+                            {formatCompactNumber(song.playCount)}{" "}
+                            {t("screens.artist.plays")}
+                          </MutedText>
+                        ) : null}
+                      </View>
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <MutedText>{t("common.noneYet")}</MutedText>
+                )}
+              </View>
+
+              {albums.length > 0 ? (
+                <View style={styles.sectionBlock}>
+                  <View
+                    style={[
+                      styles.sectionHeaderRow,
+                      { flexDirection: isRtl ? "row-reverse" : "row" },
+                    ]}
+                  >
+                    <TitleText style={styles.sectionTitle}>
+                      {t("screens.artist.albums")}
+                    </TitleText>
+                    <MutedText style={styles.sectionMeta}>
+                      {albums.length}
+                    </MutedText>
+                  </View>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={isRtl ? styles.horizontalScrollRtl : undefined}
+                    contentContainerStyle={[
+                      styles.horizontalListContent,
+                      isRtl ? styles.horizontalListContentRtl : null,
+                    ]}
+                  >
+                    {albums.map((album) => (
+                      <TouchableOpacity
+                        key={album.id}
+                        activeOpacity={0.9}
+                        onPress={() => openCollection(album)}
+                        style={[
+                          styles.collectionCard,
+                          {
+                            marginRight: isRtl ? 0 : 14,
+                            marginLeft: isRtl ? 14 : 0,
+                            transform: [{ scaleX: isRtl ? -1 : 1 }],
+                          },
+                        ]}
+                      >
+                        {album.thumbnail ? (
+                          <Image
+                            source={{ uri: album.thumbnail }}
+                            style={styles.collectionImage}
+                          />
+                        ) : (
+                          <View
+                            style={[
+                              styles.collectionImage,
+                              styles.collectionFallback,
+                              { backgroundColor: colors.surface2 },
+                            ]}
+                          >
+                            <Ionicons
+                              name="disc-outline"
+                              size={28}
+                              color={colors.muted}
+                            />
+                          </View>
+                        )}
+                        <TitleText
+                          numberOfLines={1}
+                          style={[
+                            styles.collectionTitle,
+                            {
+                              fontFamily: getAppFontFamily(isRtl, "semibold"),
+                              ...getTextDirectionStyle(isRtl),
+                            },
+                          ]}
+                        >
+                          {album.title}
+                        </TitleText>
+                        <MutedText
+                          numberOfLines={1}
+                          style={[
+                            styles.collectionSubtitle,
+                            {
+                              fontFamily: getAppFontFamily(isRtl, "regular"),
+                              ...getTextDirectionStyle(isRtl),
+                            },
+                          ]}
+                        >
+                          {album.year ||
+                            (album.songCount
+                              ? `${album.songCount} ${t("screens.artist.songs")}`
+                              : album.videoCount
+                                ? `${album.videoCount} ${t("screens.artist.videos")}`
+                                : t("common.noneYet"))}
+                        </MutedText>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : null}
+
+              {playlists.length > 0 ? (
+                <View style={styles.sectionBlock}>
+                  <View
+                    style={[
+                      styles.sectionHeaderRow,
+                      { flexDirection: isRtl ? "row-reverse" : "row" },
+                    ]}
+                  >
+                    <TitleText style={styles.sectionTitle}>
+                      {t("screens.artist.playlists")}
+                    </TitleText>
+                    <MutedText style={styles.sectionMeta}>
+                      {playlists.length}
+                    </MutedText>
+                  </View>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={isRtl ? styles.horizontalScrollRtl : undefined}
+                    contentContainerStyle={[
+                      styles.horizontalListContent,
+                      isRtl ? styles.horizontalListContentRtl : null,
+                    ]}
+                  >
+                    {playlists.map((playlist) => (
+                      <TouchableOpacity
+                        key={playlist.id}
+                        activeOpacity={0.9}
+                        onPress={() => openCollection(playlist)}
+                        style={[
+                          styles.collectionCard,
+                          {
+                            marginRight: isRtl ? 0 : 14,
+                            marginLeft: isRtl ? 14 : 0,
+                            transform: [{ scaleX: isRtl ? -1 : 1 }],
+                          },
+                        ]}
+                      >
+                        {playlist.thumbnail ? (
+                          <Image
+                            source={{ uri: playlist.thumbnail }}
+                            style={styles.collectionImage}
+                          />
+                        ) : (
+                          <View
+                            style={[
+                              styles.collectionImage,
+                              styles.collectionFallback,
+                              { backgroundColor: colors.surface2 },
+                            ]}
+                          >
+                            <Ionicons
+                              name="list-outline"
+                              size={28}
+                              color={colors.muted}
+                            />
+                          </View>
+                        )}
+                        <TitleText
+                          numberOfLines={1}
+                          style={[
+                            styles.collectionTitle,
+                            {
+                              fontFamily: getAppFontFamily(isRtl, "semibold"),
+                              ...getTextDirectionStyle(isRtl),
+                            },
+                          ]}
+                        >
+                          {playlist.title}
+                        </TitleText>
+                        <MutedText
+                          numberOfLines={1}
+                          style={[
+                            styles.collectionSubtitle,
+                            {
+                              fontFamily: getAppFontFamily(isRtl, "regular"),
+                              ...getTextDirectionStyle(isRtl),
+                            },
+                          ]}
+                        >
+                          {playlist.videoCount
+                            ? `${playlist.videoCount} ${t("screens.artist.videos")}`
+                            : t("common.noneYet")}
+                        </MutedText>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : null}
+            </View>
+          </View>
         </ScrollView>
-      </Container>
-    </SafeArea>
+      </View>
+    </Screen>
   );
 };
 
 export default ArtistScreen;
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  centeredState: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  statePadding: {
+    paddingHorizontal: 24,
+  },
+  errorText: {
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  retryButton: {
+    borderRadius: 999,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  retryButtonText: {
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  headerSection: {
+    height: HEADER_HEIGHT,
+    position: "relative",
+    justifyContent: "flex-end",
+  },
+  headerImage: {
+    ...ABSOLUTE_FILL,
+    width: "100%",
+    height: "100%",
+  },
+  headerFallback: {
+    ...ABSOLUTE_FILL,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  backButton: {
+    position: "absolute",
+    top: 18,
+    left: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2,
+  },
+  headerContent: {
+    position: "absolute",
+    right: 0,
+    bottom: 0,
+    left: 0,
+    paddingHorizontal: 20,
+    paddingBottom: 18,
+    zIndex: 1,
+  },
+  headerBadgeRow: {
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  headerBadge: {
+    minHeight: 28,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    marginRight: 8,
+  },
+  headerBadgeText: {
+    color: "#ffffff",
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  artistTitleRow: {
+    alignItems: "center",
+  },
+  artistAvatar: {
+    width: 72,
+    height: 72,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
+  artistName: {
+    flex: 1,
+  },
+  metaChipRow: {
+    flexWrap: "wrap",
+    marginTop: 12,
+  },
+  metaChip: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  metaChipText: {
+    color: "#ffffff",
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  descriptionText: {
+    marginTop: 8,
+    color: "rgba(255,255,255,0.72)",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  contentContainer: {
+    marginTop: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 120,
+  },
+  actionsRow: {
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  primaryActionButton: {
+    minHeight: 48,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.22,
+    shadowRadius: 22,
+    elevation: 8,
+  },
+  primaryActionText: {
+    fontSize: 15,
+    lineHeight: 18,
+  },
+  secondaryActionButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mainCard: {
+    borderRadius: 26,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  featuredCard: {
+    height: 220,
+    borderBottomWidth: 1,
+    overflow: "hidden",
+  },
+  featuredImage: {
+    ...ABSOLUTE_FILL,
+    width: "100%",
+    height: "100%",
+  },
+  featuredContent: {
+    flex: 1,
+    justifyContent: "flex-end",
+    padding: 18,
+  },
+  featuredEyebrow: {
+    color: "rgba(255,255,255,0.78)",
+    fontSize: 12,
+    lineHeight: 16,
+    textTransform: "uppercase",
+    letterSpacing: 1.4,
+  },
+  featuredTitle: {
+    marginTop: 10,
+    color: "#ffffff",
+    fontSize: 28,
+    lineHeight: 32,
+  },
+  featuredSubtitle: {
+    marginTop: 6,
+    color: "rgba(255,255,255,0.74)",
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  featuredMetaRow: {
+    flexWrap: "wrap",
+    marginTop: 12,
+  },
+  featuredMetaChip: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  featuredMetaText: {
+    color: "#ffffff",
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  sectionBlock: {
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 8,
+  },
+  sectionHeaderRow: {
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    lineHeight: 28,
+  },
+  sectionMeta: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  songRow: {
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  trackIndexWrap: {
+    width: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  trackIndex: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  songThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: 14,
+  },
+  songThumbFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  songMeta: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  songTitle: {
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  songSubtitle: {
+    marginTop: 4,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  songEndMeta: {
+    marginLeft: 12,
+    alignItems: "flex-end",
+    maxWidth: 92,
+  },
+  songEndMetaText: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  horizontalListContent: {
+    paddingRight: 16,
+  },
+  horizontalListContentRtl: {
+    paddingLeft: 0,
+    paddingRight: 16,
+  },
+  horizontalScrollRtl: {
+    transform: [{ scaleX: -1 }],
+  },
+  collectionCard: {
+    width: 172,
+  },
+  collectionImage: {
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: 18,
+  },
+  collectionFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  collectionTitle: {
+    marginTop: 12,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  collectionSubtitle: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+});

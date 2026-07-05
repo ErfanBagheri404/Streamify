@@ -2,9 +2,7 @@ import React from "react";
 import styled from "styled-components/native";
 import { FlatList } from "react-native";
 import ListItem from "../ListItem";
-// generateImageUrl temporarily stubbed until the module is available
-const generateImageUrl = (id: string, quality: string) =>
-  `https://i.ytimg.com/vi/${id}/${quality}default.jpg`;
+import { generateImageUrl } from "../core/image";
 
 const Screen = styled.View`
   flex: 1;

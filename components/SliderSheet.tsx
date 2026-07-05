@@ -3,6 +3,9 @@ import { TouchableOpacity, ScrollView } from "react-native";
 const { Animated } = require("react-native");
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
+import { useAppLanguage } from "../hooks/useAppLanguage";
+import { useTheme, withOpacity } from "../hooks/useTheme";
+import { getAppFontFamily, getTextDirectionStyle } from "../utils/fonts";
 
 interface SheetOption {
   key: string;
@@ -147,6 +150,9 @@ export const SliderSheet: React.FC<SliderSheetProps> = ({
   options,
   onOptionPress,
 }) => {
+  const { colors } = useTheme();
+  const { isRtl } = useAppLanguage();
+
   if (!visible) {
     return null;
   }
@@ -160,38 +166,86 @@ export const SliderSheet: React.FC<SliderSheetProps> = ({
     <>
       <BottomSheetOverlay activeOpacity={1} onPress={onClose} />
       <BottomSheetContainer style={{ top: sheetTop }} {...panHandlers}>
-        <BottomSheetInner>
-          <SheetHandle />
-          <SheetHeaderRow>
+        <BottomSheetInner
+          style={{
+            backgroundColor: colors.background,
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+          }}
+        >
+          <SheetHandle style={{ backgroundColor: withOpacity(colors.foreground, 0.22) }} />
+          <SheetHeaderRow style={{ flexDirection: isRtl ? "row-reverse" : "row" }}>
             {currentTrack.thumbnail ? (
-              <SheetHeaderCoverImage source={{ uri: currentTrack.thumbnail }} />
+              <SheetHeaderCoverImage
+                source={{ uri: currentTrack.thumbnail }}
+                style={{ marginRight: isRtl ? 0 : 12, marginLeft: isRtl ? 12 : 0 }}
+              />
             ) : (
-              <SheetHeaderCoverPlaceholder>
-                <Ionicons name="musical-notes" size={24} color="#ffffff" />
+              <SheetHeaderCoverPlaceholder
+                style={{
+                  backgroundColor: colors.surface2,
+                  marginRight: isRtl ? 0 : 12,
+                  marginLeft: isRtl ? 12 : 0,
+                }}
+              >
+                <Ionicons
+                  name="musical-notes"
+                  size={24}
+                  color={colors.foreground}
+                />
               </SheetHeaderCoverPlaceholder>
             )}
             <SheetHeaderTextContainer>
-              <SheetHeaderTitle numberOfLines={1}>
+              <SheetHeaderTitle
+                numberOfLines={1}
+                style={{
+                  color: colors.foreground,
+                  fontFamily: getAppFontFamily(isRtl, "medium"),
+                  ...getTextDirectionStyle(isRtl),
+                }}
+              >
                 {currentTrack.title}
               </SheetHeaderTitle>
               {currentTrack.artist && (
-                <SheetHeaderArtist numberOfLines={1}>
+                <SheetHeaderArtist
+                  numberOfLines={1}
+                  style={{
+                    color: colors.muted,
+                    fontFamily: getAppFontFamily(isRtl, "regular"),
+                    ...getTextDirectionStyle(isRtl),
+                  }}
+                >
                   {currentTrack.artist}
                 </SheetHeaderArtist>
               )}
             </SheetHeaderTextContainer>
           </SheetHeaderRow>
-          <SheetSeparator />
+          <SheetSeparator style={{ backgroundColor: colors.borderSubtle }} />
           <SheetContent>
             {options.map((option) => (
               <SheetItem
                 key={option.key}
                 onPress={() => handleOptionPress(option.key)}
+                style={{ flexDirection: isRtl ? "row-reverse" : "row" }}
               >
-                <SheetItemIconWrapper>
-                  <Ionicons name={option.icon as any} size={22} color="#fff" />
+                <SheetItemIconWrapper
+                  style={{ marginRight: isRtl ? 0 : 16, marginLeft: isRtl ? 16 : 0 }}
+                >
+                  <Ionicons
+                    name={option.icon as any}
+                    size={22}
+                    color={colors.foreground}
+                  />
                 </SheetItemIconWrapper>
-                <SheetItemText>{option.label}</SheetItemText>
+                <SheetItemText
+                  style={{
+                    color: colors.foreground,
+                    fontFamily: getAppFontFamily(isRtl, "regular"),
+                    ...getTextDirectionStyle(isRtl),
+                  }}
+                >
+                  {option.label}
+                </SheetItemText>
               </SheetItem>
             ))}
           </SheetContent>

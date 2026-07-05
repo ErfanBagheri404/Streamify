@@ -1,10 +1,13 @@
 import * as React from "react";
-import { TouchableOpacity, ActivityIndicator } from "react-native";
+import { TouchableOpacity, ActivityIndicator, View } from "react-native";
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { usePlayer } from "../contexts/PlayerContext";
+import { useTheme, withOpacity } from "../hooks/useTheme";
+import { useAppLanguage } from "../hooks/useAppLanguage";
+import { useAppSettings } from "../hooks/useAppSettings";
+import { getAppFontFamily } from "../utils/fonts";
 
 const MiniPlayerContainer = styled.View<{ bottomPosition: number }>`
   position: absolute;
@@ -14,21 +17,21 @@ const MiniPlayerContainer = styled.View<{ bottomPosition: number }>`
   right: 12px;
   width: auto; /* let flexbox fill the space between left & right */
   align-self: stretch;
-  height: 64px;
+  min-height: 74px;
   flex-direction: row;
   align-items: center;
-  padding: 10px 10px;
+  padding: 10px 10px 14px 10px;
   elevation: 10;
   shadow-color: #000;
   shadow-offset: 0px -2px;
   shadow-opacity: 0.3;
   shadow-radius: 4px;
   border-radius: 10px;
+  overflow: hidden;
 `;
 
 const TrackInfo = styled.View`
   flex: 1;
-  margin-left: 12px;
 `;
 
 const TrackTitle = styled.Text`
@@ -47,15 +50,23 @@ const TrackArtist = styled.Text`
   line-height: 16px;
 `;
 
+const ProgressTrack = styled.View`
+  height: 4px;
+  overflow: hidden;
+`;
+
+const ProgressFill = styled.View`
+  height: 100%;
+  border-radius: 999px;
+`;
+
 const ControlsContainer = styled.View`
   flex-direction: row;
   align-items: center;
-  margin-left: 16px;
 `;
 
 const ControlButton = styled.TouchableOpacity`
   padding: 8px;
-  margin-left: 8px;
   width: 40px;
   height: 40px;
   justify-content: center;
@@ -122,31 +133,46 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
 }) => {
   const {
     currentTrack,
+    playlist,
+    currentIndex,
     isPlaying,
     isLoading,
     isTransitioning,
-    colorTheme,
+    repeatMode,
+    position,
+    duration,
     playPause,
     nextTrack,
     previousTrack,
+    seekTo,
     cancelLoadingState,
   } = usePlayer();
+  const { colors, isLight } = useTheme();
+  const { language, isRtl, t } = useAppLanguage();
+  const { settings } = useAppSettings();
 
-  // Set bottom position: 65px when not on playlist screen, 15px when on playlist screen or artist screen
-  const playlistScreens = [
+  // Keep the compact player closer to the content on immersive detail screens.
+  const compactPlayerScreens = [
     "AlbumPlaylist",
     "LikedSongs",
     "PreviouslyPlayed",
     "Artist",
+    "Settings",
   ];
-  const targetBottomPosition = playlistScreens.includes(currentScreen)
+  const targetBottomPosition = compactPlayerScreens.includes(currentScreen)
     ? 15
     : 65;
   // Use state to create smooth animation
   const [currentBottomPosition, setCurrentBottomPosition] =
     React.useState(targetBottomPosition);
+  const [progressBarWidth, setProgressBarWidth] = React.useState(0);
 
   React.useEffect(() => {
+    if (settings.disableAnimations) {
+      setCurrentBottomPosition(targetBottomPosition);
+      return;
+    }
+
     // Create smooth animation by gradually changing the position
     const startPosition = currentBottomPosition;
     const endPosition = targetBottomPosition;
@@ -168,12 +194,26 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
     }, stepDuration);
 
     return () => clearInterval(interval);
-  }, [targetBottomPosition]);
+  }, [settings.disableAnimations, targetBottomPosition]);
 
-  if (!currentTrack) {
-    return null;
-  }
-
+  const effectiveDuration = React.useMemo(
+    () => (duration > 0 ? duration : currentTrack?.duration || 0),
+    [currentTrack?.duration, duration]
+  );
+  const progressRatio =
+    effectiveDuration > 0
+      ? Math.min(Math.max(position / effectiveDuration, 0), 1)
+      : 0;
+  const statusText =
+    isLoading || isTransitioning
+      ? language === "fa"
+        ? "در حال بارگذاری پخش..."
+        : "Loading playback..."
+      : null;
+  const canGoPrevious = position > 3 || currentIndex > 0 || playlist.length > 1;
+  const canGoNext =
+    playlist.length > 1 &&
+    (currentIndex < playlist.length - 1 || repeatMode === "all");
   const handlePlayPause = async () => {
     await playPause();
   };
@@ -186,7 +226,45 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
     await previousTrack();
   };
 
-  const displayTheme = colorTheme;
+  const handleProgressLayout = React.useCallback(
+    (event: { nativeEvent: { layout: { width: number } } }) => {
+      setProgressBarWidth(event.nativeEvent.layout.width);
+    },
+    []
+  );
+
+  const handleProgressPress = React.useCallback(
+    async (event: { nativeEvent: { locationX: number } }) => {
+      if (!effectiveDuration || progressBarWidth <= 0) {
+        return;
+      }
+
+      const ratio = Math.min(
+        Math.max(event.nativeEvent.locationX / progressBarWidth, 0),
+        1
+      );
+
+      const targetSeconds = ratio * effectiveDuration;
+      await seekTo(targetSeconds);
+    },
+    [effectiveDuration, progressBarWidth, seekTo]
+  );
+
+  const displayTheme = {
+    primary: colors.accent,
+    text: colors.foreground,
+    muted: colors.muted,
+    border: colors.borderSubtle,
+    overlay: withOpacity(colors.heroMid, isLight ? 0.34 : 0.66),
+    placeholder: colors.surface2,
+    shadow: withOpacity(colors.heroMid, isLight ? 0.18 : 0.42),
+  };
+  const previousIconName = isRtl ? "play-forward" : "play-back";
+  const nextIconName = isRtl ? "play-back" : "play-forward";
+
+  if (!currentTrack) {
+    return null;
+  }
 
   // Debug: Log the current color theme
 
@@ -195,26 +273,25 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
       bottomPosition={currentBottomPosition}
       style={{
         backgroundColor: "transparent",
-        borderTopColor: displayTheme.text + "20" /* 12% opacity */,
+        flexDirection: isRtl ? "row-reverse" : "row",
+        shadowColor: displayTheme.shadow,
       }}
     >
       <BackgroundContainer>
         <BackgroundImage
           source={{
-            uri:
-              currentTrack.thumbnail ||
-              "https://placehold.co/400x400/000000/ffffff?text=Music",
+            uri: currentTrack.thumbnail || "https://placehold.co/400x400",
           }}
           resizeMode="cover"
-          blurRadius={10}
+          blurRadius={34}
         />
-        <BlurOverlay intensity={5} tint="dark" />
-        <DarkOverlay />
+        <BlurOverlay intensity={10} tint={isLight ? "light" : "dark"} />
+        <DarkOverlay style={{ backgroundColor: displayTheme.overlay }} />
       </BackgroundContainer>
       <TouchableOpacity
         onPress={onExpand}
         style={{
-          flexDirection: "row",
+          flexDirection: isRtl ? "row-reverse" : "row",
           alignItems: "center",
           flex: 1,
           zIndex: 1,
@@ -224,34 +301,72 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
           <Thumbnail source={{ uri: currentTrack.thumbnail }} />
         ) : (
           <PlaceholderThumbnail
-            style={{ backgroundColor: displayTheme.text + "1A" }}
+            style={{ backgroundColor: displayTheme.placeholder }}
           >
             <Ionicons
               name="musical-notes"
               size={24}
-              color={displayTheme.text + "80"}
+              color={displayTheme.muted}
             />
           </PlaceholderThumbnail>
         )}
 
-        <TrackInfo>
-          <TrackTitle numberOfLines={1} style={{ color: "#fff" }}>
+        <TrackInfo
+          style={{
+            marginLeft: isRtl ? 0 : 12,
+            marginRight: isRtl ? 12 : 0,
+          }}
+        >
+          <TrackTitle
+            numberOfLines={1}
+            style={{
+              color: displayTheme.text,
+              fontFamily: getAppFontFamily(isRtl, "medium"),
+              textAlign: isRtl ? "right" : "left",
+              writingDirection: isRtl ? "rtl" : "ltr",
+            }}
+          >
             {currentTrack.title}
           </TrackTitle>
-          {currentTrack.artist && (
+          {(statusText || currentTrack.artist) && (
             <TrackArtist
               numberOfLines={1}
-              style={{ color: "#fff", opacity: 0.7 }}
+              style={{
+                color: statusText ? displayTheme.text : displayTheme.muted,
+                fontFamily: getAppFontFamily(isRtl, "regular"),
+                textAlign: isRtl ? "right" : "left",
+                writingDirection: isRtl ? "rtl" : "ltr",
+              }}
             >
-              {currentTrack.artist}
+              {statusText || currentTrack.artist}
             </TrackArtist>
           )}
         </TrackInfo>
       </TouchableOpacity>
 
-      <ControlsContainer style={{ zIndex: 1 }}>
-        <ControlButton onPress={handlePrevious}>
-          <Ionicons name="play-back" size={20} color="#fff" />
+      <ControlsContainer
+        style={{
+          zIndex: 1,
+          flexDirection: isRtl ? "row-reverse" : "row",
+          marginLeft: isRtl ? 0 : 16,
+          marginRight: isRtl ? 16 : 0,
+        }}
+      >
+        <ControlButton
+          onPress={handlePrevious}
+          disabled={!canGoPrevious}
+          accessibilityRole="button"
+          accessibilityLabel={t("player.play_previous")}
+          style={{
+            opacity: canGoPrevious ? 1 : 0.38,
+            marginHorizontal: 4,
+          }}
+        >
+          <Ionicons
+            name={previousIconName}
+            size={20}
+            color={displayTheme.text}
+          />
         </ControlButton>
 
         <ControlButton
@@ -259,26 +374,72 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
             isLoading || isTransitioning ? cancelLoadingState : handlePlayPause
           }
           disabled={false}
+          accessibilityRole="button"
+          accessibilityLabel={
+            isPlaying ? t("player.play_button") : t("player.play_button")
+          }
+          style={{ marginHorizontal: 2 }}
         >
           {isLoading || isTransitioning ? (
             <ActivityIndicator
               size="small"
-              color="#fff"
+              color={displayTheme.text}
               style={{ width: 24, height: 24 }}
             />
           ) : (
             <Ionicons
               name={isPlaying ? "pause" : "play"}
               size={24}
-              color="#fff"
+              color={displayTheme.text}
             />
           )}
         </ControlButton>
 
-        <ControlButton onPress={handleNext}>
-          <Ionicons name="play-forward" size={20} color="#fff" />
+        <ControlButton
+          onPress={handleNext}
+          disabled={!canGoNext}
+          accessibilityRole="button"
+          accessibilityLabel={t("player.play_next")}
+          style={{
+            opacity: canGoNext ? 1 : 0.38,
+            marginHorizontal: 4,
+          }}
+        >
+          <Ionicons name={nextIconName} size={20} color={displayTheme.text} />
         </ControlButton>
       </ControlsContainer>
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onLayout={handleProgressLayout}
+        onPress={(event) => {
+          void handleProgressPress(event);
+        }}
+        accessibilityRole="adjustable"
+        accessibilityLabel={
+          language === "fa" ? "تغییر موقعیت پخش" : "Seek playback"
+        }
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 2,
+        }}
+      >
+        <ProgressTrack
+          style={{
+            width: "100%",
+            backgroundColor: withOpacity(displayTheme.text, 0.18),
+          }}
+        >
+          <ProgressFill
+            style={{
+              width: `${progressRatio * 100}%`,
+              backgroundColor: displayTheme.primary,
+            }}
+          />
+        </ProgressTrack>
+      </TouchableOpacity>
     </MiniPlayerContainer>
   );
 };

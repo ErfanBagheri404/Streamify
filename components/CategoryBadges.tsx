@@ -1,6 +1,9 @@
 import React from "react";
 import { View, TouchableOpacity, ScrollView } from "react-native";
 import styled from "styled-components/native";
+import { useAppLanguage } from "../hooks/useAppLanguage";
+import { useTheme } from "../hooks/useTheme";
+import { getAppFontFamily, getTextDirectionStyle } from "../utils/fonts";
 
 // Enhanced badge system with modern design
 const BadgeContainer = styled.View`
@@ -146,8 +149,11 @@ export const CategoryBadges: React.FC<CategoryBadgeProps> = ({
   playlistCounts = {},
   showCounts = true,
 }) => {
+  const { colors } = useTheme();
+  const { isRtl } = useAppLanguage();
+
   return (
-    <BadgeContainer>
+    <BadgeContainer style={{ flexDirection: isRtl ? "row-reverse" : "row" }}>
       {categories.map((category) => (
         <Badge
           key={category}
@@ -156,14 +162,36 @@ export const CategoryBadges: React.FC<CategoryBadgeProps> = ({
           onPress={() => onToggleCategory(category)}
         >
           <BadgeContent>
-            <BadgeIcon>
+            <BadgeIcon
+              style={{
+                marginRight: isRtl ? 0 : 6,
+                marginLeft: isRtl ? 6 : 0,
+              }}
+            >
               {CategoryEmoji[category as keyof typeof CategoryEmoji]}
             </BadgeIcon>
-            <BadgeText active={selectedCategories.includes(category)}>
+            <BadgeText
+              active={selectedCategories.includes(category)}
+              style={{
+                fontFamily: getAppFontFamily(
+                  isRtl,
+                  selectedCategories.includes(category) ? "semibold" : "medium"
+                ),
+                ...getTextDirectionStyle(isRtl),
+              }}
+            >
               {category}
             </BadgeText>
             {showCounts && playlistCounts[category] && (
-              <BadgeCount active={selectedCategories.includes(category)}>
+              <BadgeCount
+                active={selectedCategories.includes(category)}
+                style={{
+                  marginLeft: isRtl ? 0 : 4,
+                  marginRight: isRtl ? 4 : 0,
+                  fontFamily: getAppFontFamily(isRtl, "medium"),
+                  ...getTextDirectionStyle(isRtl, "center"),
+                }}
+              >
                 {playlistCounts[category]}
               </BadgeCount>
             )}
@@ -235,25 +263,81 @@ export const BadgeHeader: React.FC<BadgeHeaderProps> = ({
   onClearAll,
   onSelectAll,
 }) => {
+  const { colors } = useTheme();
+  const { isRtl } = useAppLanguage();
+
   return (
-    <BadgeHeaderContainer>
-      <BadgeHeaderTitle>{title}</BadgeHeaderTitle>
-      <BadgeHeaderSubtitle>{subtitle}</BadgeHeaderSubtitle>
-      <BadgeHeaderStats>
+    <BadgeHeaderContainer
+      style={{
+        backgroundColor: colors.background,
+        borderBottomColor: colors.borderSubtle,
+      }}
+    >
+      <BadgeHeaderTitle
+        style={{
+          color: colors.foreground,
+          fontFamily: getAppFontFamily(isRtl, "bold"),
+          ...getTextDirectionStyle(isRtl),
+        }}
+      >
+        {title}
+      </BadgeHeaderTitle>
+      <BadgeHeaderSubtitle
+        style={{
+          color: colors.muted,
+          fontFamily: getAppFontFamily(isRtl, "regular"),
+          ...getTextDirectionStyle(isRtl),
+        }}
+      >
+        {subtitle}
+      </BadgeHeaderSubtitle>
+      <BadgeHeaderStats style={{ flexDirection: isRtl ? "row-reverse" : "row" }}>
         <BadgeStat>
-          <BadgeStatText>🎯 {selectedCategories.length} selected</BadgeStatText>
+          <BadgeStatText
+            style={{
+              color: colors.accent,
+              fontFamily: getAppFontFamily(isRtl, "semibold"),
+              ...getTextDirectionStyle(isRtl),
+            }}
+          >
+            🎯 {selectedCategories.length} selected
+          </BadgeStatText>
         </BadgeStat>
         <BadgeStat>
-          <BadgeStatText>📊 {totalCategories} categories</BadgeStatText>
+          <BadgeStatText
+            style={{
+              color: colors.accent,
+              fontFamily: getAppFontFamily(isRtl, "semibold"),
+              ...getTextDirectionStyle(isRtl),
+            }}
+          >
+            📊 {totalCategories} categories
+          </BadgeStatText>
         </BadgeStat>
         {selectedCategories.length > 0 && onClearAll && (
           <TouchableOpacity onPress={onClearAll}>
-            <BadgeStatText>🗑️ Clear all</BadgeStatText>
+            <BadgeStatText
+              style={{
+                color: colors.accent,
+                fontFamily: getAppFontFamily(isRtl, "semibold"),
+                ...getTextDirectionStyle(isRtl),
+              }}
+            >
+              🗑️ Clear all
+            </BadgeStatText>
           </TouchableOpacity>
         )}
         {selectedCategories.length < totalCategories && onSelectAll && (
           <TouchableOpacity onPress={onSelectAll}>
-            <BadgeStatText>✨ Select all</BadgeStatText>
+            <BadgeStatText
+              style={{
+                color: colors.accent,
+                fontFamily: getAppFontFamily(isRtl, "semibold"),
+                ...getTextDirectionStyle(isRtl),
+              }}
+            >
+              ✨ Select all
+            </BadgeStatText>
           </TouchableOpacity>
         )}
       </BadgeHeaderStats>

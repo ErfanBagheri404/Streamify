@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { SafeArea } from "../SafeArea";
 import { usePlayer } from "../../contexts/PlayerContext";
 import Playlist from "../Playlist";
 
@@ -44,40 +43,36 @@ export const LikedSongsScreen: React.FC<LikedSongsScreenProps> = ({
 
   if (isLoading) {
     return (
-      <SafeArea>
-        <Playlist
-          title="Liked Songs"
-          albumArtUrl={albumArtUrl}
-          libraryCover="liked"
-          songs={[]}
-          onBack={handleGoBack}
-          emptyMessage="Loading..."
-          emptySubMessage=""
-          showSongOptions={false}
-          showHeaderOptions={false}
-          type="playlist"
-        />
-      </SafeArea>
-    );
-  }
-
-  return (
-    <SafeArea>
       <Playlist
         title="Liked Songs"
-        artist={`${likedSongs.length} songs`}
         albumArtUrl={albumArtUrl}
         libraryCover="liked"
-        songs={likedSongs}
+        songs={[]}
         onBack={handleGoBack}
-        emptyMessage="No liked songs yet"
-        emptySubMessage="Like songs from the player to see them here"
-        emptyIcon="heart"
+        emptyMessage="Loading..."
+        emptySubMessage=""
         showSongOptions={false}
         showHeaderOptions={false}
         type="playlist"
       />
-    </SafeArea>
+    );
+  }
+
+  return (
+    <Playlist
+      title="Liked Songs"
+      artist={`${likedSongs.length} songs`}
+      albumArtUrl={albumArtUrl}
+      libraryCover="liked"
+      songs={likedSongs}
+      onBack={handleGoBack}
+      emptyMessage="No liked songs yet"
+      emptySubMessage="Like songs from the player to see them here"
+      emptyIcon="heart"
+      showSongOptions={false}
+      showHeaderOptions={false}
+      type="playlist"
+    />
   );
 };
 
