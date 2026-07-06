@@ -18,7 +18,6 @@
           "android": {
             "compileSdkVersion": 35,
             "targetSdkVersion": 35,
-            "abiFilters": ["armeabi-v7a", "arm64-v8a", "x86", "x86_64"],
             "kotlinVersion": "2.0.21",
             "foregroundService": {
               "serviceType": "mediaPlayback",

@@ -28,14 +28,23 @@ env:
 jobs:
   check-skip:
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
     steps:
       - name: Skip CI check
         run: echo "Proceeding with workflow"
 
   build-and-deploy:
     needs: check-skip
-    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) || github.event_name == 'workflow_dispatch'
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'push' &&
+        (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') &&
+        (
+          contains(github.event.head_commit.message, '[eas build]') ||
+          contains(github.event.head_commit.message, '[build apk]')
+        )
+      )
     runs-on: ubuntu-latest
     concurrency:
       group: android-release-${{ github.ref }}
@@ -156,8 +165,9 @@ jobs:
       - name: 📱 Build Production APK
         id: eas_build
         if: >
-          (github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push')
-          && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+          github.event_name == 'push' ||
+          github.event.inputs.buildType == 'all' ||
+          github.event.inputs.buildType == 'prod-apk'
         run: |
           set -euo pipefail
           export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
