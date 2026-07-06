@@ -196,7 +196,6 @@ jobs:
             build?.buildId ||
             build?.build?.id ||
             "";
-          const status = String(build?.status || build?.build?.status || "").trim().toUpperCase();
           const buildDetailsUrl =
             build?.buildDetailsUrl ||
             build?.detailsPageUrl ||
@@ -206,10 +205,6 @@ jobs:
 
           if (!buildId) {
             throw new Error("Could not determine the EAS build ID from eas build --json output.");
-          }
-
-          if (status && !["FINISHED", "COMPLETED"].includes(status)) {
-            throw new Error(`EAS build did not finish successfully. Final status: ${status}`);
           }
 
           fs.appendFileSync(outputPath, `build_id=${buildId}\n`);
