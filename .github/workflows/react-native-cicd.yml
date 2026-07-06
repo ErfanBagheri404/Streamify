@@ -28,17 +28,14 @@ env:
 jobs:
   check-skip:
     runs-on: ubuntu-latest
-    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
     steps:
       - name: Skip CI check
         run: echo "Proceeding with workflow"
 
   build-and-deploy:
     needs: check-skip
-    if: >
-      (github.event_name == 'push' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) ||
-      github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     concurrency:
       group: android-release-${{ github.ref }}
@@ -159,9 +156,8 @@ jobs:
       - name: 📱 Build Production APK
         id: eas_build
         if: >
-          github.event_name == 'push' ||
-          github.event.inputs.buildType == 'all' ||
-          github.event.inputs.buildType == 'prod-apk'
+          (github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push')
+          && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         run: |
           set -euo pipefail
           export NODE_OPTIONS="--openssl-legacy-provider --max_old_space_size=4096"
@@ -171,11 +167,10 @@ jobs:
           # Use EAS cloud build for production APK (works on all platforms)
           echo "Building production APK using EAS cloud build..."
 
-          # Start the build first, then poll that exact EAS UUID to avoid parsing the
-          # wrong identifier from mixed CLI output.
-          eas build --platform android --profile production-apk --non-interactive --no-wait --json > build-artifacts/eas-build-result.json
+          # Build and wait for completion, while capturing machine-readable metadata.
+          eas build --platform android --profile production-apk --non-interactive --wait --json > build-artifacts/eas-build-result.json
 
-          echo "Build submitted successfully. Waiting for EAS completion..."
+          echo "Build completed! 🎉"
         env:
           NODE_ENV: production
 
@@ -200,6 +195,7 @@ jobs:
             build?.buildId ||
             build?.build?.id ||
             "";
+          const status = String(build?.status || build?.build?.status || "").trim().toUpperCase();
           const buildDetailsUrl =
             build?.buildDetailsUrl ||
             build?.detailsPageUrl ||
@@ -209,6 +205,10 @@ jobs:
 
           if (!buildId) {
             throw new Error("Could not determine the EAS build ID from eas build --json output.");
+          }
+
+          if (status && !["FINISHED", "COMPLETED"].includes(status)) {
+            throw new Error(`EAS build did not finish successfully. Final status: ${status}`);
           }
 
           fs.appendFileSync(outputPath, `build_id=${buildId}\n`);
@@ -226,11 +226,11 @@ jobs:
           fs.appendFileSync(summaryPath, `${lines.join("\n")}\n`);
           NODE
 
-      - name: ⏳ Wait for EAS build to finish
+      - name: 🔍 Fetch final EAS build details
         if: steps.eas_build_info.outcome == 'success'
         run: |
           set -euo pipefail
-          eas build:wait "${{ steps.eas_build_info.outputs.build_id }}" --json > build-artifacts/eas-build-view.json
+          eas build:view "${{ steps.eas_build_info.outputs.build_id }}" --json > build-artifacts/eas-build-view.json
 
       - name: 🔗 Resolve EAS artifact URLs
         id: eas_artifacts
