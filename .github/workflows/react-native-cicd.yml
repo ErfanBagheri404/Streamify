@@ -167,10 +167,11 @@ jobs:
           # Use EAS cloud build for production APK (works on all platforms)
           echo "Building production APK using EAS cloud build..."
 
-          # Build and wait for completion, while capturing machine-readable metadata.
-          eas build --platform android --profile production-apk --non-interactive --wait --json > build-artifacts/eas-build-result.json
+          # Start the build first, then poll that exact EAS UUID to avoid parsing the
+          # wrong identifier from mixed CLI output.
+          eas build --platform android --profile production-apk --non-interactive --no-wait --json > build-artifacts/eas-build-result.json
 
-          echo "Build completed! 🎉"
+          echo "Build submitted successfully. Waiting for EAS completion..."
         env:
           NODE_ENV: production
 
@@ -226,11 +227,11 @@ jobs:
           fs.appendFileSync(summaryPath, `${lines.join("\n")}\n`);
           NODE
 
-      - name: 🔍 Fetch final EAS build details
+      - name: ⏳ Wait for EAS build to finish
         if: steps.eas_build_info.outcome == 'success'
         run: |
           set -euo pipefail
-          eas build:view "${{ steps.eas_build_info.outputs.build_id }}" --json > build-artifacts/eas-build-view.json
+          eas build:wait "${{ steps.eas_build_info.outputs.build_id }}" --json > build-artifacts/eas-build-view.json
 
       - name: 🔗 Resolve EAS artifact URLs
         id: eas_artifacts
