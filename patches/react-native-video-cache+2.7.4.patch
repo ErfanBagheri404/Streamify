@@ -1,19 +1,19 @@
 diff --git a/node_modules/react-native-video-cache/android/build.gradle b/node_modules/react-native-video-cache/android/build.gradle
-index 020f90f..2a54347 100644
+index 020f90f..8de2b52 100644
 --- a/node_modules/react-native-video-cache/android/build.gradle
 +++ b/node_modules/react-native-video-cache/android/build.gradle
-@@ -58,6 +58,10 @@ android {
- repositories {
-     // ref: https://www.baeldung.com/maven-local-repository
-     mavenLocal()
-+    maven {
-+        // The library ships videocache-2.7.1 in android/libs as a local Maven repo.
-+        url "$projectDir/libs"
-+    }
-     maven {
-         // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
-         url "$rootDir/../node_modules/react-native/android"
-@@ -146,4 +150,3 @@ afterEvaluate { project ->
+@@ -73,7 +73,9 @@ repositories {
+ dependencies {
+     //noinspection GradleDynamicVersion
+     implementation 'com.facebook.react:react-native:+'  // From node_modules
+-    implementation 'com.danikula:videocache:2.7.1'
++    // Use the vendored AAR directly so managed Expo/EAS builds do not rely on
++    // settings-level repositories to resolve this dependency.
++    implementation files('libs/com/danikula/videocache/2.7.1/videocache-2.7.1.aar')
+ }
+ 
+ def configureReactNativePom(def pom) {
+@@ -146,4 +148,3 @@ afterEvaluate { project ->
          }
      }
  }
