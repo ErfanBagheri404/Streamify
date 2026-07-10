@@ -1,0 +1,20 @@
+diff --git a/node_modules/react-native-video-cache/android/build.gradle b/node_modules/react-native-video-cache/android/build.gradle
+index 020f90f..2a54347 100644
+--- a/node_modules/react-native-video-cache/android/build.gradle
++++ b/node_modules/react-native-video-cache/android/build.gradle
+@@ -58,6 +58,10 @@ android {
+ repositories {
+     // ref: https://www.baeldung.com/maven-local-repository
+     mavenLocal()
++    maven {
++        // The library ships videocache-2.7.1 in android/libs as a local Maven repo.
++        url "$projectDir/libs"
++    }
+     maven {
+         // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
+         url "$rootDir/../node_modules/react-native/android"
+@@ -146,4 +150,3 @@ afterEvaluate { project ->
+         }
+     }
+ }
+-
