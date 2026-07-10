@@ -149,8 +149,8 @@ jobs:
       #  PRODUCTION build (standalone, offline, no Metro required)
       # ----------------------------------------------------------
 
-      - name: 📱 Build Production APK
-        id: eas_build
+      - name: 📱 Start Production APK build
+        id: eas_build_start
         if: >
           (github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push')
           && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
@@ -161,18 +161,18 @@ jobs:
           mkdir -p build-artifacts
 
           # Use EAS cloud build for production APK (works on all platforms)
-          echo "Building production APK using EAS cloud build..."
+          echo "Starting production APK build using EAS cloud build..."
 
-          # Build and wait for completion, while capturing machine-readable metadata.
-          eas build --platform android --profile production-apk --non-interactive --wait --json > build-artifacts/eas-build-result.json
-
-          echo "Build completed! 🎉"
+          # Start the build first so we always capture the EAS build ID,
+          # even when the remote build later errors without rich logs.
+          eas build --platform android --profile production-apk --non-interactive --no-wait --json > build-artifacts/eas-build-result.json
+          test -s build-artifacts/eas-build-result.json
         env:
           NODE_ENV: production
 
       - name: 🧾 Extract EAS build info
         id: eas_build_info
-        if: steps.eas_build.outcome == 'success'
+        if: steps.eas_build_start.outcome == 'success'
         run: |
           set -euo pipefail
           node <<'NODE'
@@ -203,34 +203,170 @@ jobs:
             throw new Error("Could not determine the EAS build ID from eas build --json output.");
           }
 
-          if (status && !["FINISHED", "COMPLETED"].includes(status)) {
-            throw new Error(`EAS build did not finish successfully. Final status: ${status}`);
-          }
-
           fs.appendFileSync(outputPath, `build_id=${buildId}\n`);
+          if (status) {
+            fs.appendFileSync(outputPath, `initial_status=${status}\n`);
+          }
           if (buildDetailsUrl) {
             fs.appendFileSync(outputPath, `build_details_url=${buildDetailsUrl}\n`);
           }
 
           const lines = [
-            "### EAS build completed",
+            "### EAS build started",
             `- Build ID: \`${buildId}\``,
           ];
+          if (status) {
+            lines.push(`- Initial Status: \`${status}\``);
+          }
           if (buildDetailsUrl) {
             lines.push(`- Details: ${buildDetailsUrl}`);
           }
           fs.appendFileSync(summaryPath, `${lines.join("\n")}\n`);
           NODE
 
-      - name: 🔍 Fetch final EAS build details
+      - name: ⏳ Wait for EAS build completion
+        id: eas_build_wait
         if: steps.eas_build_info.outcome == 'success'
+        continue-on-error: true
         run: |
           set -euo pipefail
-          eas build:view "${{ steps.eas_build_info.outputs.build_id }}" --json > build-artifacts/eas-build-view.json
+          BUILD_ID="${{ steps.eas_build_info.outputs.build_id }}"
+          MAX_ATTEMPTS=120
+          SLEEP_SECONDS=15
+
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+            VIEW_EXIT_CODE=0
+            eas build:view "$BUILD_ID" --json > build-artifacts/eas-build-view.json 2> build-artifacts/eas-build-view.stderr || VIEW_EXIT_CODE=$?
+
+            if [ "$VIEW_EXIT_CODE" -ne 0 ]; then
+              echo "Attempt $attempt/$MAX_ATTEMPTS: failed to fetch EAS build status."
+              if [ -s build-artifacts/eas-build-view.stderr ]; then
+                cat build-artifacts/eas-build-view.stderr
+              fi
+              sleep "$SLEEP_SECONDS"
+              continue
+            fi
+
+            STATUS="$(node <<'NODE'
+          const fs = require("fs");
+          const raw = fs.readFileSync("build-artifacts/eas-build-view.json", "utf8").trim();
+          if (!raw) {
+            process.stdout.write("UNKNOWN");
+            process.exit(0);
+          }
+          const parsed = JSON.parse(raw);
+          const build = Array.isArray(parsed) ? parsed[0] : parsed;
+          const status = String(build?.status || build?.build?.status || "UNKNOWN").trim().toUpperCase();
+          process.stdout.write(status || "UNKNOWN");
+          NODE
+            )"
+
+            echo "Attempt $attempt/$MAX_ATTEMPTS: EAS build status is $STATUS"
+
+            case "$STATUS" in
+              FINISHED|COMPLETED)
+                exit 0
+                ;;
+              ERRORED|FAILED|CANCELED|CANCELLED)
+                exit 1
+                ;;
+            esac
+
+            sleep "$SLEEP_SECONDS"
+          done
+
+          echo "Timed out while waiting for EAS build completion."
+          exit 1
+
+      - name: 🔍 Fetch final EAS build details
+        if: always() && steps.eas_build_info.outcome == 'success'
+        run: |
+          set -euo pipefail
+          BUILD_ID="${{ steps.eas_build_info.outputs.build_id }}"
+          VIEW_EXIT_CODE=0
+          eas build:view "$BUILD_ID" --json > build-artifacts/eas-build-view.json 2> build-artifacts/eas-build-view.stderr || VIEW_EXIT_CODE=$?
+          if [ "$VIEW_EXIT_CODE" -ne 0 ]; then
+            echo "Final EAS build detail fetch failed for build $BUILD_ID."
+            if [ -s build-artifacts/eas-build-view.stderr ]; then
+              cat build-artifacts/eas-build-view.stderr
+            fi
+          fi
+
+      - name: 🚨 Summarize EAS build failure
+        if: always() && steps.eas_build_info.outcome == 'success' && steps.eas_build_wait.outcome != 'success'
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("fs");
+
+          const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+          const files = [
+            "build-artifacts/eas-build-view.json",
+            "build-artifacts/eas-build-result.json",
+          ].filter((file) => fs.existsSync(file));
+
+          const candidates = [];
+          for (const file of files) {
+            const raw = fs.readFileSync(file, "utf8").trim();
+            if (!raw) continue;
+            const parsed = JSON.parse(raw);
+            const root = Array.isArray(parsed) ? parsed[0] : parsed;
+            if (!root || typeof root !== "object") continue;
+            candidates.push(root);
+            if (root.build && typeof root.build === "object") {
+              candidates.push(root.build);
+            }
+          }
+
+          function firstNonEmpty(values) {
+            for (const value of values) {
+              if (value === undefined || value === null) continue;
+              const normalized = String(value).trim();
+              if (normalized) return normalized;
+            }
+            return "";
+          }
+
+          const status = firstNonEmpty(candidates.map((entry) => entry.status)).toUpperCase() || "ERRORED";
+          const buildId = firstNonEmpty([
+            ...candidates.map((entry) => entry.id),
+            ...candidates.map((entry) => entry.buildId),
+          ]);
+          const detailsUrl = firstNonEmpty([
+            ...candidates.map((entry) => entry.buildDetailsUrl),
+            ...candidates.map((entry) => entry.detailsPageUrl),
+            ...candidates.map((entry) => entry.webUrl),
+            ...candidates.map((entry) => entry.logsUrl),
+          ]);
+          const errorMessage = firstNonEmpty([
+            ...candidates.map((entry) => entry.message),
+            ...candidates.map((entry) => entry.error),
+            ...candidates.map((entry) => entry.errorMessage),
+            ...candidates.map((entry) => entry.reason),
+          ]);
+
+          const lines = [
+            "### EAS build failed",
+            `- Status: \`${status}\``,
+          ];
+
+          if (buildId) {
+            lines.push(`- Build ID: \`${buildId}\``);
+          }
+          if (detailsUrl) {
+            lines.push(`- Details: ${detailsUrl}`);
+          }
+          if (errorMessage) {
+            lines.push(`- Error: ${errorMessage}`);
+          }
+
+          fs.appendFileSync(summaryPath, `${lines.join("\n")}\n`);
+          console.error(lines.join("\n"));
+          NODE
 
       - name: 🏷 Resolve release identity
         id: release_identity
-        if: steps.eas_build_info.outcome == 'success'
+        if: steps.eas_build_wait.outcome == 'success'
         run: |
           set -euo pipefail
           node <<'NODE'
@@ -317,7 +453,7 @@ jobs:
 
       - name: 🔗 Resolve EAS artifact URLs
         id: eas_artifacts
-        if: steps.eas_build_info.outcome == 'success'
+        if: steps.eas_build_wait.outcome == 'success'
         run: |
           set -euo pipefail
           node <<'NODE'
@@ -571,3 +707,18 @@ jobs:
           set -euo pipefail
           LOG=$(ls -t ./logs/*.log 2>/dev/null | head -n1)
           if [ -f "$LOG" ]; then cat "$LOG"; else echo "No gradle log found"; fi
+
+      - name: ❌ Fail workflow when EAS build fails
+        if: always() && steps.eas_build_info.outcome == 'success' && steps.eas_build_wait.outcome != 'success'
+        run: |
+          set -euo pipefail
+          echo "EAS build failed for build ID ${{ steps.eas_build_info.outputs.build_id }}"
+          if [ -n "${{ steps.eas_build_info.outputs.build_details_url }}" ]; then
+            echo "Details: ${{ steps.eas_build_info.outputs.build_details_url }}"
+          fi
+          if [ -f build-artifacts/eas-build-view.json ]; then
+            cat build-artifacts/eas-build-view.json
+          else
+            echo "No final EAS build JSON was captured."
+          fi
+          exit 1
