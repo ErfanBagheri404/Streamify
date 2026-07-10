@@ -338,8 +338,19 @@ jobs:
             ...candidates.map((entry) => entry.webUrl),
             ...candidates.map((entry) => entry.logsUrl),
           ]);
+          const logFileUrl = firstNonEmpty(
+            candidates.flatMap((entry) =>
+              Array.isArray(entry.logFiles) ? entry.logFiles : []
+            )
+          ).replace(/^["'\s`]+|["'\s`]+$/g, "");
+          const errorCode = firstNonEmpty([
+            ...candidates.map((entry) => entry.errorCode),
+            ...candidates.map((entry) => entry.error?.errorCode),
+            ...candidates.map((entry) => entry.error?.code),
+          ]);
           const errorMessage = firstNonEmpty([
             ...candidates.map((entry) => entry.message),
+            ...candidates.map((entry) => entry.error?.message),
             ...candidates.map((entry) => entry.error),
             ...candidates.map((entry) => entry.errorMessage),
             ...candidates.map((entry) => entry.reason),
@@ -355,6 +366,12 @@ jobs:
           }
           if (detailsUrl) {
             lines.push(`- Details: ${detailsUrl}`);
+          }
+          if (logFileUrl) {
+            lines.push(`- Log File: ${logFileUrl}`);
+          }
+          if (errorCode) {
+            lines.push(`- Error Code: \`${errorCode}\``);
           }
           if (errorMessage) {
             lines.push(`- Error: ${errorMessage}`);
@@ -712,13 +729,46 @@ jobs:
         if: always() && steps.eas_build_info.outcome == 'success' && steps.eas_build_wait.outcome != 'success'
         run: |
           set -euo pipefail
-          echo "EAS build failed for build ID ${{ steps.eas_build_info.outputs.build_id }}"
-          if [ -n "${{ steps.eas_build_info.outputs.build_details_url }}" ]; then
-            echo "Details: ${{ steps.eas_build_info.outputs.build_details_url }}"
-          fi
-          if [ -f build-artifacts/eas-build-view.json ]; then
-            cat build-artifacts/eas-build-view.json
-          else
-            echo "No final EAS build JSON was captured."
-          fi
+          node <<'NODE'
+          const fs = require("fs");
+
+          if (!fs.existsSync("build-artifacts/eas-build-view.json")) {
+            console.error("No final EAS build JSON was captured.");
+            process.exit(1);
+          }
+
+          const raw = fs.readFileSync("build-artifacts/eas-build-view.json", "utf8").trim();
+          const parsed = JSON.parse(raw);
+          const build = Array.isArray(parsed) ? parsed[0] : parsed;
+
+          const buildId = String(build?.id || build?.buildId || "").trim();
+          const detailsUrl = String(
+            build?.buildDetailsUrl || build?.detailsPageUrl || build?.webUrl || ""
+          ).trim();
+          const errorCode = String(
+            build?.error?.errorCode || build?.errorCode || build?.error?.code || ""
+          ).trim();
+          const errorMessage = String(
+            build?.error?.message || build?.message || build?.errorMessage || build?.reason || ""
+          ).trim();
+          const logFileUrl = Array.isArray(build?.logFiles)
+            ? String(build.logFiles[0] || "").trim().replace(/^["'\s`]+|["'\s`]+$/g, "")
+            : "";
+
+          console.error(`EAS build failed for build ID ${buildId || "unknown"}`);
+          if (detailsUrl) {
+            console.error(`Details: ${detailsUrl}`);
+          }
+          if (logFileUrl) {
+            console.error(`Log File: ${logFileUrl}`);
+          }
+          if (errorCode) {
+            console.error(`Error Code: ${errorCode}`);
+          }
+          if (errorMessage) {
+            console.error(`Error: ${errorMessage}`);
+          }
+          console.error(JSON.stringify(build, null, 2));
+          process.exit(1);
+          NODE
           exit 1
