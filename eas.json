@@ -24,7 +24,7 @@
       }
     },
     "production-apk": {
-      "extends": "preview",
+      "extends": "production",
       "android": {
         "buildType": "apk",
         "image": "sdk-54"

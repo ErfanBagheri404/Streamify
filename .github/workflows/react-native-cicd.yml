@@ -130,14 +130,10 @@ jobs:
 
           const appName = String(expoConfig?.name ?? "Streamify").trim() || "Streamify";
           const slug = String(expoConfig?.slug ?? "streamify-mobile").trim() || "streamify-mobile";
-          const releaseTag = `v${version}`;
-          const apkName = `Streamify-v${version}.apk`;
 
           fs.appendFileSync(outputPath, `app_name=${appName}\n`);
           fs.appendFileSync(outputPath, `app_slug=${slug}\n`);
           fs.appendFileSync(outputPath, `app_version=${version}\n`);
-          fs.appendFileSync(outputPath, `release_tag=${releaseTag}\n`);
-          fs.appendFileSync(outputPath, `apk_name=${apkName}\n`);
           NODE
 
       # ----------------------------------------------------------
@@ -232,6 +228,93 @@ jobs:
           set -euo pipefail
           eas build:view "${{ steps.eas_build_info.outputs.build_id }}" --json > build-artifacts/eas-build-view.json
 
+      - name: 🏷 Resolve release identity
+        id: release_identity
+        if: steps.eas_build_info.outcome == 'success'
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("fs");
+
+          const outputPath = process.env.GITHUB_OUTPUT;
+          const baseVersion = String(process.env.BASE_APP_VERSION || "").trim();
+          const runNumber = String(process.env.GITHUB_RUN_NUMBER || "").trim();
+          const files = [
+            "build-artifacts/eas-build-view.json",
+            "build-artifacts/eas-build-result.json",
+          ].filter((file) => fs.existsSync(file));
+
+          const candidates = [];
+
+          for (const file of files) {
+            const raw = fs.readFileSync(file, "utf8").trim();
+            if (!raw) {
+              continue;
+            }
+            const parsed = JSON.parse(raw);
+            const root = Array.isArray(parsed) ? parsed[0] : parsed;
+            if (!root || typeof root !== "object") {
+              continue;
+            }
+            candidates.push(root);
+            if (root.build && typeof root.build === "object") {
+              candidates.push(root.build);
+            }
+            if (root.metadata && typeof root.metadata === "object") {
+              candidates.push(root.metadata);
+            }
+          }
+
+          function firstNonEmpty(values) {
+            for (const value of values) {
+              if (value === undefined || value === null) {
+                continue;
+              }
+              const normalized = String(value).trim();
+              if (normalized) {
+                return normalized;
+              }
+            }
+            return "";
+          }
+
+          const appVersion =
+            firstNonEmpty(candidates.map((entry) => entry.appVersion)) || baseVersion;
+
+          if (!appVersion) {
+            throw new Error("Unable to determine the app version for release naming.");
+          }
+
+          const appBuildVersion = firstNonEmpty([
+            ...candidates.map((entry) => entry.appBuildVersion),
+            ...candidates.map((entry) => entry.versionCode),
+            ...candidates.map((entry) => entry.androidVersionCode),
+            ...candidates.map((entry) => entry.buildNumber),
+            ...candidates
+              .map((entry) => entry.buildVersion)
+              .filter((value) => String(value ?? "").trim() !== appVersion),
+          ]);
+
+          const sanitizedBuildVersion = appBuildVersion.replace(/[^0-9A-Za-z._-]+/g, "-");
+          const sanitizedRunNumber = runNumber.replace(/[^0-9A-Za-z._-]+/g, "-");
+          const tagSuffix = sanitizedBuildVersion
+            ? `android.${sanitizedBuildVersion}`
+            : `run.${sanitizedRunNumber || "manual"}`;
+          const releaseTag = `v${appVersion}-${tagSuffix}`;
+          const apkName = `Streamify-v${appVersion}-${tagSuffix}.apk`;
+          const changelogName = `CHANGELOG-${releaseTag}.md`;
+          const metadataName = `release-metadata-${releaseTag}.json`;
+
+          fs.appendFileSync(outputPath, `resolved_app_version=${appVersion}\n`);
+          fs.appendFileSync(outputPath, `app_build_version=${sanitizedBuildVersion}\n`);
+          fs.appendFileSync(outputPath, `release_tag=${releaseTag}\n`);
+          fs.appendFileSync(outputPath, `apk_name=${apkName}\n`);
+          fs.appendFileSync(outputPath, `changelog_name=${changelogName}\n`);
+          fs.appendFileSync(outputPath, `metadata_name=${metadataName}\n`);
+          NODE
+        env:
+          BASE_APP_VERSION: ${{ steps.release_meta.outputs.app_version }}
+
       - name: 🔗 Resolve EAS artifact URLs
         id: eas_artifacts
         if: steps.eas_build_info.outcome == 'success'
@@ -321,8 +404,8 @@ jobs:
         if: steps.eas_artifacts.outcome == 'success'
         run: |
           set -euo pipefail
-          curl -fL --retry 3 --retry-delay 5 "${{ steps.eas_artifacts.outputs.artifact_url }}" -o "build-artifacts/${{ steps.release_meta.outputs.apk_name }}"
-          test -s "build-artifacts/${{ steps.release_meta.outputs.apk_name }}"
+          curl -fL --retry 3 --retry-delay 5 "${{ steps.eas_artifacts.outputs.artifact_url }}" -o "build-artifacts/${{ steps.release_identity.outputs.apk_name }}"
+          test -s "build-artifacts/${{ steps.release_identity.outputs.apk_name }}"
 
       - name: 📥 Download additional release artifacts
         if: steps.eas_artifacts.outcome == 'success'
@@ -348,15 +431,20 @@ jobs:
         run: |
           set -euo pipefail
 
-          VERSION="${{ steps.release_meta.outputs.app_version }}"
-          TAG="${{ steps.release_meta.outputs.release_tag }}"
-          CHANGELOG_FILE="build-artifacts/CHANGELOG-v${VERSION}.md"
+          VERSION="${{ steps.release_identity.outputs.resolved_app_version }}"
+          BUILD_VERSION="${{ steps.release_identity.outputs.app_build_version }}"
+          TAG="${{ steps.release_identity.outputs.release_tag }}"
+          CHANGELOG_FILE="build-artifacts/${{ steps.release_identity.outputs.changelog_name }}"
           PREVIOUS_TAG="$(git tag --sort=-v:refname | grep -Fvx "${TAG}" | head -n 1 || true)"
 
           {
-            echo "# Streamify v${VERSION}"
+            echo "# Streamify ${TAG}"
             echo
             echo "- Automated Android APK release from GitHub Actions."
+            echo "- App Version: \`${VERSION}\`"
+            if [ -n "${BUILD_VERSION}" ]; then
+              echo "- Android Build Version: \`${BUILD_VERSION}\`"
+            fi
             echo "- Tag: \`${TAG}\`"
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo "- EAS Build ID: \`${{ steps.eas_build_info.outputs.build_id }}\`"
@@ -376,6 +464,7 @@ jobs:
           const fs = require("fs");
 
           const version = process.env.APP_VERSION;
+          const buildVersion = process.env.APP_BUILD_VERSION || null;
           const releaseTag = process.env.RELEASE_TAG;
           const buildId = process.env.EAS_BUILD_ID;
           const artifactUrl = process.env.EAS_ARTIFACT_URL;
@@ -394,6 +483,7 @@ jobs:
             runUrl: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
             eas: {
               buildId,
+              appBuildVersion: buildVersion,
               artifactUrl,
               buildDetailsUrl: detailsUrl || null,
             },
@@ -401,13 +491,15 @@ jobs:
           };
 
           fs.writeFileSync(
-            `build-artifacts/release-metadata-v${version}.json`,
+            `build-artifacts/${process.env.METADATA_NAME}`,
             `${JSON.stringify(metadata, null, 2)}\n`
           );
           NODE
         env:
-          APP_VERSION: ${{ steps.release_meta.outputs.app_version }}
-          RELEASE_TAG: ${{ steps.release_meta.outputs.release_tag }}
+          APP_VERSION: ${{ steps.release_identity.outputs.resolved_app_version }}
+          APP_BUILD_VERSION: ${{ steps.release_identity.outputs.app_build_version }}
+          RELEASE_TAG: ${{ steps.release_identity.outputs.release_tag }}
+          METADATA_NAME: ${{ steps.release_identity.outputs.metadata_name }}
           EAS_BUILD_ID: ${{ steps.eas_build_info.outputs.build_id }}
           EAS_ARTIFACT_URL: ${{ steps.eas_artifacts.outputs.artifact_url }}
           EAS_BUILD_DETAILS_URL: ${{ steps.eas_build_info.outputs.build_details_url }}
@@ -419,10 +511,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          VERSION="${{ steps.release_meta.outputs.app_version }}"
-          TAG="${{ steps.release_meta.outputs.release_tag }}"
-          TITLE="Streamify v${VERSION}"
-          NOTES_FILE="build-artifacts/CHANGELOG-v${VERSION}.md"
+          VERSION="${{ steps.release_identity.outputs.resolved_app_version }}"
+          TAG="${{ steps.release_identity.outputs.release_tag }}"
+          TITLE="Streamify ${TAG}"
+          NOTES_FILE="build-artifacts/${{ steps.release_identity.outputs.changelog_name }}"
 
           if gh release view "${TAG}" >/dev/null 2>&1; then
             echo "Updating existing release ${TAG}"
@@ -433,12 +525,12 @@ jobs:
           fi
 
           assets=(
-            "build-artifacts/${{ steps.release_meta.outputs.apk_name }}"
-            "build-artifacts/CHANGELOG-v${VERSION}.md"
-            "build-artifacts/expo-config.json#expo-config-v${VERSION}.json"
-            "build-artifacts/eas-build-result.json#eas-build-result-v${VERSION}.json"
-            "build-artifacts/eas-build-view.json#eas-build-view-v${VERSION}.json"
-            "build-artifacts/release-metadata-v${VERSION}.json"
+            "build-artifacts/${{ steps.release_identity.outputs.apk_name }}"
+            "build-artifacts/${{ steps.release_identity.outputs.changelog_name }}"
+            "build-artifacts/expo-config.json#expo-config-${TAG}.json"
+            "build-artifacts/eas-build-result.json#eas-build-result-${TAG}.json"
+            "build-artifacts/eas-build-view.json#eas-build-view-${TAG}.json"
+            "build-artifacts/${{ steps.release_identity.outputs.metadata_name }}"
           )
 
           while IFS= read -r extra_file; do
@@ -454,11 +546,14 @@ jobs:
           set -euo pipefail
           {
             echo "### Release published"
-            echo "- Version: \`${{ steps.release_meta.outputs.app_version }}\`"
-            echo "- Tag: \`${{ steps.release_meta.outputs.release_tag }}\`"
-            echo "- APK: \`${{ steps.release_meta.outputs.apk_name }}\`"
+            echo "- Version: \`${{ steps.release_identity.outputs.resolved_app_version }}\`"
+            if [ -n "${{ steps.release_identity.outputs.app_build_version }}" ]; then
+              echo "- Android Build Version: \`${{ steps.release_identity.outputs.app_build_version }}\`"
+            fi
+            echo "- Tag: \`${{ steps.release_identity.outputs.release_tag }}\`"
+            echo "- APK: \`${{ steps.release_identity.outputs.apk_name }}\`"
             echo "- EAS Build ID: \`${{ steps.eas_build_info.outputs.build_id }}\`"
-            echo "- Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.release_meta.outputs.release_tag }}"
+            echo "- Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.release_identity.outputs.release_tag }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 📦 Upload workflow artifacts
