@@ -87,6 +87,14 @@
     "typescript": "~5.9.2"
   },
   "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "react-native-track-player",
+          "react-native-video-cache"
+        ]
+      }
+    },
     "install": {
       "exclude": [
         "react-native-reanimated"
