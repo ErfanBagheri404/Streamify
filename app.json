@@ -2,7 +2,7 @@
   "expo": {
     "newArchEnabled": false,
     "name": "Streamify",
-    "version": "1.0.0",
+    "version": "1.23.23",
     "slug": "streamify-mobile",
     "scheme": "streamify",
     "sdkVersion": "54.0.0",
@@ -37,7 +37,7 @@
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE"
       ],
-      "versionCode": 1
+      "versionCode": 23
     },
     "extra": {
       "eas": {

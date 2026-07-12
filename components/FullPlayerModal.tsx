@@ -341,7 +341,9 @@ const TrackRow = styled.View`
 const LikeButton = styled(TouchableOpacity)`
   justify-content: center;
   align-items: center;
-  padding-left: 40px;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
 `;
 
 const TrackInfo = styled.View`
@@ -564,12 +566,16 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     getCacheInfo,
     cacheProgress,
     repeatMode,
-    setRepeatMode,
+    cycleRepeatMode,
     isShuffled,
     toggleShuffle,
+    canSkipNext,
+    canSkipPrevious,
+    canToggleShuffle,
     position,
     duration,
     cancelLoadingState,
+    playbackError,
   } = usePlayer();
   const { settings } = useAppSettings();
   const { colors, isLight } = useTheme();
@@ -617,6 +623,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const mutedTextColor = colors.muted;
   const activeAccentColor = colors.accent;
   const playerActionColor = colors.accentContrast;
+  const repeatIndicatorLabel =
+    repeatMode === "all"
+      ? t("miniPlayer.repeatAllShort")
+      : repeatMode === "one"
+        ? t("miniPlayer.repeatOneShort")
+        : null;
   const previousIconName = isRtl ? "play-forward" : "play-back";
   const nextIconName = isRtl ? "play-back" : "play-forward";
   const fullscreenArtworkSources = React.useMemo(() => {
@@ -1643,9 +1655,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 <LikeButton
                   onPress={handleLike}
                   style={{
-                    paddingHorizontal: 12,
-                    marginLeft: isRtl ? 0 : 16,
-                    marginRight: isRtl ? 16 : 0,
+                    marginLeft: isRtl ? 16 : 12,
+                    marginRight: isRtl ? 12 : 16,
                   }}
                 >
                   <Entypo
@@ -1657,6 +1668,32 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   />
                 </LikeButton>
               </TrackRow>
+
+              {playbackError ? (
+                <View
+                  style={{
+                    marginTop: 16,
+                    marginHorizontal: 28,
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                    borderRadius: 16,
+                    backgroundColor: withOpacity("#dc2626", 0.14),
+                    borderWidth: 1,
+                    borderColor: withOpacity("#f87171", 0.28),
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: isLight ? "#991b1b" : "#fecaca",
+                      fontSize: 13,
+                      fontFamily: getAppFontFamily(isRtl, "medium"),
+                      ...getTextDirectionStyle(isRtl, "center"),
+                    }}
+                  >
+                    {playbackError}
+                  </Text>
+                </View>
+              ) : null}
 
               <Spacer size={32} />
 
@@ -1735,7 +1772,11 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               <Spacer size={32} />
 
               <Controls>
-                <ControlButton onPress={toggleShuffle}>
+                <ControlButton
+                  onPress={toggleShuffle}
+                  disabled={!canToggleShuffle}
+                  style={{ opacity: canToggleShuffle ? 1 : 0.38 }}
+                >
                   <Ionicons
                     name="shuffle"
                     size={24}
@@ -1743,7 +1784,11 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   />
                 </ControlButton>
 
-                <ControlButton onPress={handlePrevious}>
+                <ControlButton
+                  onPress={handlePrevious}
+                  disabled={!canSkipPrevious}
+                  style={{ opacity: canSkipPrevious ? 1 : 0.38 }}
+                >
                   <Ionicons
                     name={previousIconName}
                     size={24}
@@ -1775,28 +1820,27 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   )}
                 </PlayPauseButton>
 
-                <ControlButton onPress={handleNext}>
+                <ControlButton
+                  onPress={handleNext}
+                  disabled={!canSkipNext}
+                  style={{ opacity: canSkipNext ? 1 : 0.38 }}
+                >
                   <Ionicons name={nextIconName} size={24} color={iconColor} />
                 </ControlButton>
 
-                <ControlButton
-                  onPress={() => {
-                    // Cycle through repeat modes: off -> all -> one -> off
-                    if (repeatMode === "off") {
-                      setRepeatMode("all");
-                    } else if (repeatMode === "all") {
-                      setRepeatMode("one");
-                    } else {
-                      setRepeatMode("off");
-                    }
-                  }}
-                >
+                <ControlButton onPress={cycleRepeatMode}>
                   <Ionicons
                     name={repeatMode === "off" ? "repeat-outline" : "repeat"}
                     size={24}
                     color={repeatMode === "off" ? iconColor : activeAccentColor}
                   />
-                  {repeatMode === "one" && <RepeatNumber>1</RepeatNumber>}
+                  {repeatIndicatorLabel ? (
+                    <RepeatNumber
+                      style={{ fontFamily: getAppFontFamily(isRtl, "bold") }}
+                    >
+                      {repeatIndicatorLabel}
+                    </RepeatNumber>
+                  ) : null}
                 </ControlButton>
               </Controls>
 
@@ -1871,10 +1915,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                       )
                     }
                     contentContainerStyle={{
-                      paddingTop:
-                        currentLyricIndex <= 0
-                          ? 8
-                          : Math.max(56, lyricsViewportHeight / 2 - 28),
+                      paddingTop: 8,
                       paddingBottom: Math.max(
                         56,
                         lyricsViewportHeight / 2 - 28

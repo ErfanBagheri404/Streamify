@@ -16,12 +16,17 @@ import {
   type AppTheme,
   type PlaybackRetryMode,
   type PreferredSearchSource,
+  type SettingsSectionKey,
   isLightAppTheme,
 } from "../../lib/app-settings";
 import { Screen } from "../ui/Screen";
 import { BodyText, MutedText, TitleText } from "../ui/Text";
 import { AccentButton } from "../ui/Button";
 import { useAppLanguage } from "../../hooks/useAppLanguage";
+import {
+  CURRENT_APP_VERSION,
+  useAppUpdate,
+} from "../../contexts/AppUpdateContext";
 import { useAppSettings } from "../../hooks/useAppSettings";
 import { useAuth } from "../../hooks/useAuth";
 import { useTheme, withOpacity } from "../../hooks/useTheme";
@@ -144,12 +149,18 @@ function Section({
   description,
   colors,
   children,
+  collapsed = false,
+  onToggle,
+  isRtl,
 }: {
   eyebrow: string;
   title: string;
   description: string;
   colors: ReturnType<typeof useTheme>["colors"];
   children: ReactNode;
+  collapsed?: boolean;
+  onToggle?: () => void;
+  isRtl: boolean;
 }) {
   return (
     <View
@@ -161,10 +172,39 @@ function Section({
         },
       ]}
     >
-      <MutedText style={styles.eyebrow}>{eyebrow}</MutedText>
-      <TitleText style={styles.sectionTitle}>{title}</TitleText>
-      <MutedText style={styles.sectionDescription}>{description}</MutedText>
-      <View style={styles.sectionContent}>{children}</View>
+      <TouchableOpacity
+        activeOpacity={0.82}
+        disabled={!onToggle}
+        onPress={onToggle}
+        style={[
+          styles.sectionHeader,
+          { flexDirection: isRtl ? "row-reverse" : "row" },
+        ]}
+      >
+        <View style={styles.sectionHeaderCopy}>
+          <MutedText style={styles.eyebrow}>{eyebrow}</MutedText>
+          <TitleText style={styles.sectionTitle}>{title}</TitleText>
+          <MutedText style={styles.sectionDescription}>{description}</MutedText>
+        </View>
+        <View
+          style={[
+            styles.sectionToggle,
+            {
+              backgroundColor: colors.surface3,
+              borderColor: colors.borderSubtle,
+            },
+          ]}
+        >
+          <Ionicons
+            name={collapsed ? "chevron-down" : "chevron-up"}
+            size={18}
+            color={colors.foreground}
+          />
+        </View>
+      </TouchableOpacity>
+      {!collapsed ? (
+        <View style={styles.sectionContent}>{children}</View>
+      ) : null}
     </View>
   );
 }
@@ -346,14 +386,20 @@ export default function SettingsScreen({
 }) {
   const { colors, isLight } = useTheme();
   const { t, isRtl } = useAppLanguage();
-  const { settings, updateSettings, resetSettings, hasHydratedSettings } =
-    useAppSettings();
+  const { settings, updateSettings, hasHydratedSettings } = useAppSettings();
+  const { availableUpdateInfo, isCheckingForUpdates, reopenUpdateModal } =
+    useAppUpdate();
   const { user, isLoading: isAuthLoading, isConfigured, signOut } = useAuth();
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<{
     tone: "error" | "success" | "info";
     message: string;
   } | null>(null);
+  const [updateFeedback, setUpdateFeedback] = useState<{
+    tone: "error" | "success" | "info";
+    message: string;
+  } | null>(null);
+  const collapsedSections = settings.collapsedSettingsSections;
 
   const accountName = getUserDisplayName(user) || t("settings.accountGuest");
   const accountAvatarUrl = getUserAvatarUrl(user);
@@ -411,6 +457,36 @@ export default function SettingsScreen({
       : settings.playbackRetryMode === "never"
         ? t("settings.neverRetryAutomatically")
         : t("settings.askWhenPlaybackFails");
+  const updateDescription = availableUpdateInfo
+    ? t("settings.updateReadyDescription", {
+        currentVersion: CURRENT_APP_VERSION,
+        version: availableUpdateInfo.version,
+      })
+    : t("settings.checkForUpdatesDescription", {
+        currentVersion: CURRENT_APP_VERSION,
+      });
+
+  const handleCheckForUpdates = async () => {
+    setUpdateFeedback(null);
+    const result = await reopenUpdateModal();
+
+    if (result.status === "up_to_date") {
+      setUpdateFeedback({
+        tone: "info",
+        message: t("settings.updateCurrent", {
+          version: CURRENT_APP_VERSION,
+        }),
+      });
+      return;
+    }
+
+    if (result.status === "error") {
+      setUpdateFeedback({
+        tone: "error",
+        message: t("settings.updateCheckFailed"),
+      });
+    }
+  };
 
   const handleSyncLibrary = async () => {
     if (!isConfigured) {
@@ -466,6 +542,15 @@ export default function SettingsScreen({
     }
   };
 
+  const toggleSection = (section: SettingsSectionKey) => {
+    updateSettings({
+      collapsedSettingsSections: {
+        ...collapsedSections,
+        [section]: !collapsedSections?.[section],
+      },
+    });
+  };
+
   if (!hasHydratedSettings) {
     return (
       <Screen padded={false}>
@@ -488,7 +573,7 @@ export default function SettingsScreen({
             {
               backgroundColor: colors.background,
               borderBottomColor: colors.borderSubtle,
-              flexDirection: isRtl ? "row-reverse" : "row",
+              flexDirection: "row",
             },
           ]}
         >
@@ -496,11 +581,7 @@ export default function SettingsScreen({
             onPress={() => navigation.goBack()}
             style={styles.iconButton}
           >
-            <Ionicons
-              name={isRtl ? "chevron-forward" : "chevron-back"}
-              size={24}
-              color={colors.foreground}
-            />
+            <Ionicons name="chevron-back" size={24} color={colors.foreground} />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <TitleText style={styles.headerTitle}>
@@ -585,6 +666,9 @@ export default function SettingsScreen({
             title={t("settings.account")}
             description={t("settings.accountDescription")}
             colors={colors}
+            collapsed={Boolean(collapsedSections.account)}
+            onToggle={() => toggleSection("account")}
+            isRtl={isRtl}
           >
             <View
               style={[
@@ -754,6 +838,9 @@ export default function SettingsScreen({
             title={t("settings.themeAndMotion")}
             description={t("settings.themeAndMotionDescription")}
             colors={colors}
+            collapsed={Boolean(collapsedSections.appearance)}
+            onToggle={() => toggleSection("appearance")}
+            isRtl={isRtl}
           >
             <SettingRow
               label={t("settings.theme")}
@@ -819,6 +906,9 @@ export default function SettingsScreen({
             title={t("settings.musicBehaves")}
             description={t("settings.musicBehavesDescription")}
             colors={colors}
+            collapsed={Boolean(collapsedSections.playback)}
+            onToggle={() => toggleSection("playback")}
+            isRtl={isRtl}
           >
             <SettingRow
               label={t("settings.autoRetryPlayback")}
@@ -879,6 +969,9 @@ export default function SettingsScreen({
             title={t("settings.searchPreferences")}
             description={t("settings.searchPreferencesDescription")}
             colors={colors}
+            collapsed={Boolean(collapsedSections.discovery)}
+            onToggle={() => toggleSection("discovery")}
+            isRtl={isRtl}
           >
             <SettingRow
               label={t("settings.defaultSearchSource")}
@@ -923,6 +1016,9 @@ export default function SettingsScreen({
             title={t("settings.readingAndInput")}
             description={t("settings.readingAndInputDescription")}
             colors={colors}
+            collapsed={Boolean(collapsedSections.lyrics)}
+            onToggle={() => toggleSection("lyrics")}
+            isRtl={isRtl}
           >
             <SettingRow
               label={t("settings.lyrics")}
@@ -1000,6 +1096,9 @@ export default function SettingsScreen({
             title={t("settings.activeSetup")}
             description={t("settings.quickHelp")}
             colors={colors}
+            collapsed={Boolean(collapsedSections.summary)}
+            onToggle={() => toggleSection("summary")}
+            isRtl={isRtl}
           >
             <SummaryCard
               label={t("settings.playbackSummary")}
@@ -1046,29 +1145,104 @@ export default function SettingsScreen({
           </Section>
 
           <Section
-            eyebrow={t("settings.quickHelp")}
-            title={t("settings.quickHelp")}
-            description={t("settings.quickHelpReset")}
+            eyebrow={t("settings.appUpdates")}
+            title={t("settings.appUpdates")}
+            description={t("settings.appUpdatesDescription")}
             colors={colors}
+            collapsed={Boolean(collapsedSections.updates)}
+            onToggle={() => toggleSection("updates")}
+            isRtl={isRtl}
           >
-            <MutedText style={styles.helpText}>
-              {t("settings.quickHelpShortcuts")}
-            </MutedText>
-            <MutedText style={styles.helpText}>
-              {t("settings.quickHelpLyrics")}
-            </MutedText>
-            <MutedText style={styles.helpText}>
-              {t("settings.quickHelpThemes")}
-            </MutedText>
-            <MutedText style={styles.helpText}>
-              {t("settings.quickHelpReset")}
-            </MutedText>
-            <AccentButton
-              title={t("settings.resetDefaults")}
-              fullWidth
-              onPress={resetSettings}
+            <SettingRow
+              label={t("settings.checkForUpdates")}
+              description={updateDescription}
+              colors={colors}
+              control={
+                <View
+                  style={[
+                    styles.accountActions,
+                    { flexDirection: isRtl ? "row-reverse" : "row" },
+                  ]}
+                >
+                  <AccentButton
+                    title={
+                      availableUpdateInfo
+                        ? t("settings.openUpdate")
+                        : t("settings.checkForUpdates")
+                    }
+                    disabled={isCheckingForUpdates}
+                    onPress={() => {
+                      void handleCheckForUpdates();
+                    }}
+                    style={{
+                      opacity: isCheckingForUpdates ? 0.6 : 1,
+                    }}
+                  />
+                  <View
+                    style={[
+                      styles.secondaryButton,
+                      {
+                        backgroundColor: colors.surface2,
+                        borderColor: colors.borderSubtle,
+                        flexDirection: isRtl ? "row-reverse" : "row",
+                        alignItems: "center",
+                        gap: 8,
+                        opacity: 1,
+                      },
+                    ]}
+                  >
+                    {isCheckingForUpdates ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={colors.foreground}
+                      />
+                    ) : null}
+                    <BodyText style={styles.secondaryButtonText}>
+                      {availableUpdateInfo?.version || CURRENT_APP_VERSION}
+                    </BodyText>
+                  </View>
+                </View>
+              }
             />
+            {updateFeedback ? (
+              <View
+                style={[
+                  styles.syncFeedbackBox,
+                  {
+                    backgroundColor:
+                      updateFeedback.tone === "error"
+                        ? "rgba(220, 38, 38, 0.12)"
+                        : updateFeedback.tone === "success"
+                          ? withOpacity(colors.accent, 0.12)
+                          : withOpacity(colors.foreground, 0.05),
+                    borderColor:
+                      updateFeedback.tone === "error"
+                        ? "rgba(248, 113, 113, 0.22)"
+                        : updateFeedback.tone === "success"
+                          ? withOpacity(colors.accent, 0.28)
+                          : withOpacity(colors.foreground, 0.08),
+                  },
+                ]}
+              >
+                <BodyText
+                  style={[
+                    styles.syncFeedbackText,
+                    {
+                      color:
+                        updateFeedback.tone === "error"
+                          ? isLight
+                            ? "#991b1b"
+                            : "#fecaca"
+                          : colors.foreground,
+                    },
+                  ]}
+                >
+                  {updateFeedback.message}
+                </BodyText>
+              </View>
+            ) : null}
           </Section>
+
         </ScrollView>
       </View>
     </Screen>
@@ -1086,7 +1260,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   header: {
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 8,
     paddingVertical: 8,
     borderBottomWidth: 1,
@@ -1163,6 +1339,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 16,
   },
+  sectionHeader: {
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  sectionHeaderCopy: {
+    flex: 1,
+  },
   eyebrow: {
     fontSize: 11,
     lineHeight: 16,
@@ -1180,6 +1364,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 13,
     lineHeight: 18,
+  },
+  sectionToggle: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   sectionContent: {
     marginTop: 16,
@@ -1360,9 +1552,5 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 13,
     lineHeight: 18,
-  },
-  helpText: {
-    fontSize: 13,
-    lineHeight: 19,
   },
 });

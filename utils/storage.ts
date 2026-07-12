@@ -29,6 +29,7 @@ export interface SearchState {
   query: string;
   source: string;
   filter: string;
+  results?: unknown[];
 }
 
 function emitLibraryUpdated() {
@@ -77,6 +78,17 @@ function chooseNonEmptyString(
     if (typeof value === "string" && value.trim()) {
       return value.trim();
     }
+  }
+  return undefined;
+}
+
+function sanitizeStoredAudioUrl(value: unknown): string | undefined {
+  const normalized = normalizeString(value);
+  if (
+    normalized.startsWith("file://") ||
+    normalized.startsWith("content://")
+  ) {
+    return normalized;
   }
   return undefined;
 }
@@ -153,7 +165,7 @@ function normalizeTrackSnapshot(track: Partial<Track>): Track | null {
     artistSource: chooseNonEmptyString(track.artistSource),
     duration: normalizeNumber(track.duration),
     thumbnail: chooseNonEmptyString(track.thumbnail),
-    audioUrl: chooseNonEmptyString(track.audioUrl),
+    audioUrl: sanitizeStoredAudioUrl(track.audioUrl),
     url: chooseNonEmptyString(track.url),
     source,
     _isSoundCloud: source === "soundcloud" ? true : undefined,
@@ -567,6 +579,7 @@ export const StorageService = {
         query: parsed.query,
         source: parsed.source,
         filter: parsed.filter,
+        results: Array.isArray(parsed.results) ? parsed.results : undefined,
       };
     } catch (error) {
       console.error("Error loading last search state:", error);
@@ -576,9 +589,17 @@ export const StorageService = {
 
   async saveLastSearchState(searchState: SearchState): Promise<void> {
     try {
+      const normalizedSearchState: SearchState = {
+        query: searchState.query,
+        source: searchState.source,
+        filter: searchState.filter,
+        results: Array.isArray(searchState.results)
+          ? searchState.results.slice(0, 100)
+          : undefined,
+      };
       await AsyncStorage.setItem(
         LAST_SEARCH_STATE_KEY,
-        JSON.stringify(searchState)
+        JSON.stringify(normalizedSearchState)
       );
     } catch (error) {
       console.error("Error saving last search state:", error);

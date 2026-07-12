@@ -9,6 +9,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Linking from "expo-linking";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Screen } from "../ui/Screen";
 import { BodyText, MutedText, TitleText } from "../ui/Text";
 import { useAppLanguage } from "../../hooks/useAppLanguage";
@@ -79,6 +80,7 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
   const { colors, isLight } = useTheme();
   const { t, isRtl } = useAppLanguage();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -92,8 +94,7 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
   const isSignUp = mode === "signup";
   const supabase = useMemo(() => getSupabaseClient(), []);
   const redirectTo = useMemo(() => "streamify://auth/callback", []);
-  const authUnavailableMessage =
-    "Authentication is unavailable until Supabase environment variables are configured.";
+  const authUnavailableMessage = t("home.authDisabledBody");
 
   useEffect(() => {
     if (user) {
@@ -292,7 +293,10 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
         <View
           style={[
             styles.header,
-            { flexDirection: isRtl ? "row-reverse" : "row" },
+            {
+              flexDirection: "row",
+              paddingTop: insets.top + 18,
+            },
           ]}
         >
           <TouchableOpacity
@@ -305,18 +309,17 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
               },
             ]}
           >
-            <Ionicons
-              name={isRtl ? "chevron-forward" : "chevron-back"}
-              size={22}
-              color={colors.foreground}
-            />
+            <Ionicons name="chevron-back" size={22} color={colors.foreground} />
           </TouchableOpacity>
           <View style={styles.headerSpacer} />
         </View>
 
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + 104 },
+          ]}
           keyboardShouldPersistTaps="handled"
         >
           <View
@@ -689,10 +692,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 2,
+    flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingTop: 20,
   },
   backButton: {
     width: 42,
@@ -709,7 +712,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: "center",
     paddingHorizontal: 16,
-    paddingTop: 92,
     paddingBottom: 56,
   },
   card: {

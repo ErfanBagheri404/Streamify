@@ -23,6 +23,7 @@ import {
 
 import { StorageService, subscribeToLibraryUpdates } from "../utils/storage";
 import { trackPlayerService } from "../services/TrackPlayerService";
+import { t } from "../utils/localization";
 
 export interface Track {
   id: string;
@@ -58,6 +59,37 @@ function resolveTrackSource(
   return "youtube";
 }
 
+function getNextQueueIndex(
+  mode: "off" | "one" | "all",
+  queueLength: number,
+  activeIndex: number
+): number {
+  if (queueLength <= 0 || activeIndex < 0) {
+    return -1;
+  }
+
+  if (activeIndex < queueLength - 1) {
+    return activeIndex + 1;
+  }
+
+  if (mode === "all" && queueLength > 1) {
+    return 0;
+  }
+
+  return -1;
+}
+
+function normalizeCachePercentage(
+  percentage: number,
+  isFullyCached = false
+): number {
+  const safePercentage = Number.isFinite(percentage) ? percentage : 0;
+  const rounded = Math.round(safePercentage);
+  return isFullyCached
+    ? 100
+    : Math.max(0, Math.min(99, rounded));
+}
+
 interface PlayerContextType {
   currentTrack: Track | null;
   playlist: Track[];
@@ -68,6 +100,9 @@ interface PlayerContextType {
   repeatMode: "off" | "one" | "all";
   isInPlaylistContext: boolean;
   isShuffled: boolean;
+  canSkipNext: boolean;
+  canSkipPrevious: boolean;
+  canToggleShuffle: boolean;
   likedSongs: Track[];
   previouslyPlayedSongs: Track[];
   colorTheme: {
@@ -94,6 +129,7 @@ interface PlayerContextType {
   hasStreamFailed: boolean;
   position: number;
   duration: number;
+  playbackError: string | null;
 
   // Actions
   playTrack: (
@@ -107,6 +143,7 @@ interface PlayerContextType {
   seekTo: (position: number) => Promise<void>;
   setShowFullPlayer: (show: boolean) => void;
   setRepeatMode: (mode: "off" | "one" | "all") => void;
+  cycleRepeatMode: () => void;
   toggleShuffle: () => void;
   clearPlayer: () => Promise<void>;
   handleStreamFailure: () => Promise<void>;
@@ -127,6 +164,7 @@ interface PlayerContextType {
   cancelCaching: (trackId: string) => void;
   resetStreamRetryCount: () => void;
   applyPredefinedTheme: (themeName: string) => void;
+  clearPlaybackError: () => void;
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
@@ -141,7 +179,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [showFullPlayer, setShowFullPlayer] = useState(false);
   // Remove sound state since we're using Track Player
-  const [repeatMode, setRepeatMode] = useState<"off" | "one" | "all">("off");
+  const [repeatMode, setRepeatModeState] = useState<"off" | "one" | "all">(
+    "off"
+  );
   const [isInPlaylistContext, setIsInPlaylistContext] = useState(false);
   const [isShuffled, setIsShuffled] = useState(false);
   const [likedSongs, setLikedSongs] = useState<Track[]>([]);
@@ -166,6 +206,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [hasStreamFailed, setHasStreamFailed] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
   const originalPlaylistRef = useRef<Track[]>([]);
   const currentPlaylistContextRef = useRef<Track[]>([]);
   const streamCheckRef = useRef<{ position: number; time: number } | null>(
@@ -177,15 +218,42 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const cacheQueueAbortControllerRef = useRef<AbortController | null>(null);
   const activeCacheTrackIdRef = useRef<string | null>(null);
   const lastAppliedCachedUrlRef = useRef<string | null>(null);
+  const activeQueueLength =
+    currentPlaylistContextRef.current.length > 0
+      ? currentPlaylistContextRef.current.length
+      : playlist.length;
+  const canToggleShuffle = activeQueueLength > 1;
+  const canSkipNext =
+    activeQueueLength > 1 &&
+    (currentIndex < activeQueueLength - 1 || repeatMode === "all");
+  const canSkipPrevious =
+    position > 3 ||
+    (activeQueueLength > 1 &&
+      (currentIndex > 0 || (repeatMode === "all" && activeQueueLength > 1)));
 
   // Function refs to avoid stale closures in useEffect
   const playPauseRef = useRef<() => Promise<void>>(async () => {});
   const nextTrackRef = useRef<() => Promise<void>>(async () => {});
   const previousTrackRef = useRef<() => Promise<void>>(async () => {});
   const clearPlayerRef = useRef<() => Promise<void>>(async () => {});
+  const seekToRef = useRef<(position: number) => Promise<void>>(async () => {});
 
   // Audio monitoring listeners for cleanup
   const audioMonitoringListenersRef = useRef<any[]>([]);
+
+  const buildCacheProgressState = useCallback(
+    (
+      trackId: string,
+      percentage: number,
+      fileSize: number,
+      isFullyCached = false
+    ) => ({
+      trackId,
+      percentage: normalizeCachePercentage(percentage, isFullyCached),
+      fileSize,
+    }),
+    []
+  );
 
   const updateIsPlayingFromState = useCallback(async () => {
     try {
@@ -199,6 +267,56 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsPlaying(nextIsPlaying);
     } catch (error) {}
   }, []);
+
+  const normalizePlaybackError = useCallback(
+    (message?: string | null, track?: Track | null) => {
+      const rawMessage = String(message || "").trim();
+      const normalizedMessage = rawMessage.toLowerCase();
+      const isSoundCloudTrack =
+        track?._isSoundCloud || track?.source === "soundcloud";
+
+      if (isSoundCloudTrack) {
+        if (
+          rawMessage ===
+            "SoundCloud is restricted in your country. Use a VPN or change your IP to play SoundCloud songs." ||
+          (normalizedMessage.includes("soundcloud") &&
+            (normalizedMessage.includes("restricted") ||
+              normalizedMessage.includes("403") ||
+              normalizedMessage.includes("401") ||
+              normalizedMessage.includes("forbidden") ||
+              normalizedMessage.includes("license") ||
+              normalizedMessage.includes("drm") ||
+              normalizedMessage.includes("encrypted")))
+        ) {
+          return t("playback.soundcloudRestricted");
+        }
+
+        return t("playback.soundcloudTrackUnavailable");
+      }
+
+      if (!rawMessage) {
+        return t("playback.errorDefault");
+      }
+
+      if (
+        rawMessage === "Couldn't load this track right now." ||
+        normalizedMessage.includes("couldn't load this track right now")
+      ) {
+        return t("playback.loadTrackNow");
+      }
+
+      if (
+        rawMessage ===
+          "Couldn't play this track. Try again or choose another one." ||
+        normalizedMessage.includes("couldn't play this track")
+      ) {
+        return t("playback.errorDefault");
+      }
+
+      return rawMessage;
+    },
+    []
+  );
 
   const rehydrateFromTrackPlayer = async () => {
     try {
@@ -327,6 +445,22 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       subscription?.remove?.();
     };
   }, []);
+
+  useEffect(() => {
+    const handlePlaybackError = (error: any) => {
+      setPlaybackError(normalizePlaybackError(error?.message, currentTrack));
+      setIsPlaying(false);
+      setIsLoading(false);
+      setIsTransitioning(false);
+    };
+
+    trackPlayerService.onError = handlePlaybackError;
+    return () => {
+      if (trackPlayerService.onError === handlePlaybackError) {
+        trackPlayerService.onError = undefined;
+      }
+    };
+  }, [currentTrack, normalizePlaybackError]);
 
   const syncCurrentTrackFromPlayer = useCallback(async () => {
     try {
@@ -458,7 +592,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     return subscribeToAudioCacheProgress((update) => {
       setCacheProgress((prev) => {
-        const nextPercentage = update.isFullyCached ? 100 : update.percentage;
+        const nextPercentage = normalizeCachePercentage(
+          update.percentage,
+          update.isFullyCached
+        );
         const nextFileSize = update.fileSize || 0;
 
         if (
@@ -495,7 +632,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                     ...prev,
                     percentage:
                       info.isFullyCached || info.percentage > prev.percentage
-                        ? info.percentage
+                        ? normalizeCachePercentage(
+                            info.percentage,
+                            info.isFullyCached
+                          )
                         : prev.percentage,
                     fileSize: info.fileSize,
                   }
@@ -630,13 +770,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       trackId: string,
       info: { percentage: number; fileSize: number; isFullyCached?: boolean }
     ) => {
-      setCacheProgress({
-        trackId,
-        percentage: info.isFullyCached ? 100 : info.percentage,
-        fileSize: info.fileSize,
-      });
+      setCacheProgress(
+        buildCacheProgressState(
+          trackId,
+          info.percentage,
+          info.fileSize,
+          info.isFullyCached
+        )
+      );
     },
-    []
+    [buildCacheProgressState]
   );
 
   const reconcileFinalCacheInfo = useCallback(
@@ -708,11 +851,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         const controller = new AbortController();
         cacheQueueAbortControllerRef.current = controller;
 
-        setCacheProgress({
-          trackId: nextTrackToCache.id,
-          percentage: initialCacheInfo?.percentage || 0,
-          fileSize: initialCacheInfo?.fileSize || 0,
-        });
+        setCacheProgress(
+          buildCacheProgressState(
+            nextTrackToCache.id,
+            initialCacheInfo?.percentage || 0,
+            initialCacheInfo?.fileSize || 0
+          )
+        );
 
         const streamUrl = await resolveTrackStreamUrl(nextTrackToCache);
         if (!streamUrl || streamUrl.startsWith("file://")) {
@@ -724,21 +869,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           await continueCachingTrack(
             streamUrl,
             nextTrackToCache.id,
-            controller,
-            (value) => {
-              setCacheProgress((prev) =>
-                prev?.trackId === nextTrackToCache!.id
-                  ? {
-                      ...prev,
-                      percentage: Math.max(prev.percentage, value),
-                    }
-                  : {
-                      trackId: nextTrackToCache!.id,
-                      percentage: value,
-                      fileSize: 0,
-                    }
-              );
-            }
+            controller
           );
         } catch (error) {
           console.error(
@@ -757,24 +888,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           (streamUrl.startsWith("http://") || streamUrl.startsWith("https://"));
 
         if (shouldMonitorRecovery) {
-          void monitorAndResumeCache(
-            nextTrackToCache.id,
-            streamUrl,
-            (percentage) => {
-              setCacheProgress((prev) =>
-                prev?.trackId === nextTrackToCache!.id
-                  ? {
-                      ...prev,
-                      percentage: Math.max(prev.percentage, percentage),
-                    }
-                  : {
-                      trackId: nextTrackToCache!.id,
-                      percentage,
-                      fileSize: finalCacheInfo.fileSize || 0,
-                    }
-              );
-            }
-          );
+          void monitorAndResumeCache(nextTrackToCache.id, streamUrl);
         }
 
         cacheQueueAbortControllerRef.current = null;
@@ -808,6 +922,19 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     lastAppliedCachedUrlRef.current = null;
   }, [currentTrack?.id]);
+
+  useEffect(() => {
+    if (activeQueueLength <= 1 && repeatMode === "all") {
+      setRepeatModeState("off");
+    }
+  }, [activeQueueLength, repeatMode]);
+
+  useEffect(() => {
+    if (activeQueueLength <= 1 && isShuffled) {
+      setIsShuffled(false);
+      originalPlaylistRef.current = [];
+    }
+  }, [activeQueueLength, isShuffled]);
 
   useEffect(() => {
     if (
@@ -848,11 +975,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
         const info = await getAudioCacheInfo(currentTrack.id);
         if (!cancelled) {
-          setCacheProgress({
-            trackId: currentTrack.id,
-            percentage: 100,
-            fileSize: info.fileSize,
-          });
+          setCacheProgress(
+            buildCacheProgressState(currentTrack.id, 100, info.fileSize, true)
+          );
         }
       } catch (error) {
         console.error(
@@ -887,11 +1012,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, [processLikedSongsCacheQueue]);
 
-  const stopCachingAndUnlike = useCallback(
-    async (trackId: string) => {
+  const removeLikedSong = useCallback(
+    (trackId: string) => {
       if (!trackId) {
         return;
       }
+
       cancelCaching(trackId);
       setLikedSongs((prev) => {
         const updated = prev.filter((song) => song.id !== trackId);
@@ -903,6 +1029,35 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     },
     [cancelCaching]
   );
+
+  const stopCachingAndUnlike = useCallback(
+    async (trackId: string) => {
+      removeLikedSong(trackId);
+    },
+    [removeLikedSong]
+  );
+
+  const setRepeatMode = useCallback(
+    (mode: "off" | "one" | "all") => {
+      if (activeQueueLength <= 1 && mode === "all") {
+        setRepeatModeState("one");
+        return;
+      }
+
+      setRepeatModeState(mode);
+    },
+    [activeQueueLength]
+  );
+
+  const cycleRepeatMode = useCallback(() => {
+    setRepeatModeState((prev) => {
+      if (activeQueueLength > 1) {
+        return prev === "off" ? "all" : prev === "all" ? "one" : "off";
+      }
+
+      return prev === "one" ? "off" : "one";
+    });
+  }, [activeQueueLength]);
 
   const nextTrack = useCallback(async () => {
     console.log("[PlayerContext] nextTrack() called");
@@ -945,18 +1100,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             "[PlayerContext] nextTrack() - Single song with repeat, replaying"
           );
           await playTrack(currentTrack!, currentPlaylist, 0);
-        } else {
-          console.log(
-            "[PlayerContext] nextTrack() - Single song, no repeat, stopping"
-          );
-          await trackPlayerService.stop();
-          setIsPlaying(false);
         }
         return;
       }
 
-      // Calculate next index
-      const nextIndex = (currentIndex + 1) % currentPlaylist.length;
+      // Match the web player queue behavior:
+      // only wrap when repeat-all is enabled.
+      const nextIndex = getNextQueueIndex(
+        repeatMode,
+        currentPlaylist.length,
+        currentIndex
+      );
+      if (nextIndex < 0) {
+        console.log(
+          "[PlayerContext] nextTrack() - Reached end of queue with no repeat-all"
+        );
+        return;
+      }
+
       const nextTrackItem = currentPlaylist[nextIndex];
 
       if (nextTrackItem) {
@@ -987,6 +1148,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     console.log("[PlayerContext] Cancelling loading state");
     setIsLoading(false);
     setIsTransitioning(false);
+    setPlaybackError(null);
 
     // Stop current playback
     try {
@@ -1036,6 +1198,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       setStreamRetryCount(0);
       // Reset stream failed flag when starting a new track
       setHasStreamFailed(false);
+      setPlaybackError(null);
 
       try {
         setIsLoading(true);
@@ -1139,6 +1302,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               "[PlayerContext] Failed to get streaming URL:",
               streamingError
             );
+            setPlaybackError(
+              normalizePlaybackError(
+                streamingError instanceof Error
+                  ? streamingError.message
+                  : String(streamingError),
+                track
+              )
+            );
           }
         }
 
@@ -1147,6 +1318,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           console.warn(
             "[PlayerContext] No audio URL available, creating placeholder"
           );
+          setPlaybackError(normalizePlaybackError(null, track));
           // We'll still create the sound object but with a silent/placeholder audio
           // This allows the UI to show the track info even if playback isn't available
         }
@@ -1168,11 +1340,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               finalAudioUrl = cached.url;
               if (cached.cacheInfo) {
                 isUsingCacheProxy = cached.url !== baseStreamUrl;
-                setCacheProgress({
-                  trackId: track.id,
-                  percentage: cached.cacheInfo.percentage,
-                  fileSize: cached.cacheInfo.fileSize,
-                });
+                setCacheProgress(
+                  buildCacheProgressState(
+                    track.id,
+                    cached.cacheInfo.percentage,
+                    cached.cacheInfo.fileSize,
+                    cached.cacheInfo.isFullyCached
+                  )
+                );
               }
             } catch (error) {
               console.error(
@@ -1207,6 +1382,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             if (playRequestId === playRequestIdRef.current) {
               syncResolvedTrackUrlInState(track.id, finalAudioUrl);
               setIsPlaying(true);
+              setPlaybackError(null);
               console.log(
                 `[PlayerContext] Playback started for track: ${track.title}`
               );
@@ -1217,6 +1393,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             );
             if (playRequestId === playRequestIdRef.current) {
               setIsPlaying(false);
+              setPlaybackError(normalizePlaybackError(null, track));
             }
           }
 
@@ -1233,6 +1410,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           if (playRequestId === playRequestIdRef.current) {
             setIsPlaying(false);
             setIsLoading(false);
+            setPlaybackError(
+              normalizePlaybackError(
+                playbackError instanceof Error
+                  ? playbackError.message
+                  : String(playbackError),
+                track
+              )
+            );
             setCurrentTrack({ ...track, audioUrl: "" });
           }
         }
@@ -1342,11 +1527,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               await markAudioCacheComplete(playedTrackId);
               const finalCacheInfo = await getCacheInfo(playedTrackId);
               if (finalCacheInfo?.isFullyCached) {
-                setCacheProgress({
-                  trackId: playedTrackId,
-                  percentage: 100,
-                  fileSize: finalCacheInfo.fileSize,
-                });
+                setCacheProgress(
+                  buildCacheProgressState(
+                    playedTrackId,
+                    100,
+                    finalCacheInfo.fileSize,
+                    true
+                  )
+                );
               }
             }
 
@@ -1369,6 +1557,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           setIsLoading(false);
           setIsTransitioning(false);
           setIsPlaying(false);
+          setPlaybackError(
+            normalizePlaybackError(
+              error instanceof Error ? error.message : String(error),
+              track
+            )
+          );
         }
       } finally {
         if (playRequestId === playRequestIdRef.current) {
@@ -1441,6 +1635,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsTransitioning(true);
 
     try {
+      if (position > 3 && currentTrack) {
+        console.log(
+          "[PlayerContext] previousTrack() - Restarting current track from current position"
+        );
+        await seekToRef.current(0);
+        return;
+      }
+
       // Handle repeat one mode - replay current track
       if (repeatMode === "one" && currentTrack) {
         console.log(
@@ -1459,18 +1661,28 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           );
           await playTrack(currentTrack!, currentPlaylist, 0);
         } else {
-          console.log(
-            "[PlayerContext] previousTrack() - Single song, no repeat, stopping"
-          );
-          await trackPlayerService.stop();
-          setIsPlaying(false);
+          await seekToRef.current(0);
         }
         return;
       }
 
-      // Calculate previous index (loop to end if at beginning)
-      const prevIndex =
-        currentIndex === 0 ? currentPlaylist.length - 1 : currentIndex - 1;
+      // Match the web player queue behavior:
+      // only wrap when repeat-all is enabled.
+      let prevIndex = -1;
+      if (currentIndex > 0) {
+        prevIndex = currentIndex - 1;
+      } else if (repeatMode === "all" && currentPlaylist.length > 1) {
+        prevIndex = currentPlaylist.length - 1;
+      }
+
+      if (prevIndex < 0) {
+        console.log(
+          "[PlayerContext] previousTrack() - At start of queue with no repeat-all"
+        );
+        await seekToRef.current(0);
+        return;
+      }
+
       const prevTrack = currentPlaylist[prevIndex];
 
       if (prevTrack) {
@@ -1500,41 +1712,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     currentIndex,
     playTrack,
     currentTrack,
+    position,
     repeatMode,
-    setIsTransitioning,
     clearAudioMonitoring,
   ]);
 
   const seekTo = useCallback(
     async (positionSeconds: number) => {
       // #region debug-point D:context-seek
-      void fetch("http://192.168.1.106:7777/event", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: "cached-seek-source-error",
-          runId: "pre-fix",
-          hypothesisId: "D",
-          location: "PlayerContext:seekTo",
-          msg: "[DEBUG] PlayerContext.seekTo called",
-          data: {
-            requestedPositionSeconds: positionSeconds,
-            currentTrackId: currentTrack?.id ?? null,
-            currentTrackTitle: currentTrack?.title ?? null,
-            source: currentTrack?.source ?? null,
-            isPlaying,
-            duration,
-            audioUrl: currentTrack?.audioUrl ?? null,
-            audioUrlIsLocal:
-              typeof currentTrack?.audioUrl === "string" &&
-              (currentTrack.audioUrl.startsWith("file://") ||
-                currentTrack.audioUrl.startsWith("content://")),
-            cacheProgressTrackId: cacheProgress?.trackId ?? null,
-            cacheProgressPercentage: cacheProgress?.percentage ?? null,
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
       // #endregion
       console.log(
         `[PlayerContext] seekTo called - positionSeconds: ${positionSeconds}, currentTrack?.audioUrl: ${!!currentTrack?.audioUrl}`
@@ -1601,33 +1786,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     ]
   );
 
+  useEffect(() => {
+    seekToRef.current = seekTo;
+  }, [seekTo]);
+
   const handleStreamFailure = useCallback(async () => {
-    // #region debug-point E:stream-failure
-    void fetch("http://192.168.1.106:7777/event", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: "cached-seek-source-error",
-        runId: "pre-fix",
-        hypothesisId: "E",
-        location: "PlayerContext:handleStreamFailure",
-        msg: "[DEBUG] handleStreamFailure entered",
-        data: {
-          currentTrackId: currentTrack?.id ?? null,
-          currentTrackTitle: currentTrack?.title ?? null,
-          source: currentTrack?.source ?? null,
-          hasStreamFailed,
-          streamRetryCount,
-          audioUrl: currentTrack?.audioUrl ?? null,
-          audioUrlIsLocal:
-            typeof currentTrack?.audioUrl === "string" &&
-            (currentTrack.audioUrl.startsWith("file://") ||
-              currentTrack.audioUrl.startsWith("content://")),
-        },
-        ts: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     console.warn("[PlayerContext] === STREAM FAILURE DETECTED ===");
     console.warn("[PlayerContext] Attempting to reload stream...");
 
@@ -1713,31 +1876,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       let newAudioUrl =
         (currentTrack.id && (await getFullyCachedAudioUrl(currentTrack.id))) ||
         currentTrack.audioUrl;
-
-      // #region debug-point E:recovery-url
-      void fetch("http://192.168.1.106:7777/event", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: "cached-seek-source-error",
-          runId: "pre-fix",
-          hypothesisId: "E",
-          location: "PlayerContext:handleStreamFailure:recoveryUrl",
-          msg: "[DEBUG] Recovery selected candidate URL",
-          data: {
-            currentTrackId: currentTrack?.id ?? null,
-            currentTrackTitle: currentTrack?.title ?? null,
-            currentPosition,
-            candidateAudioUrl: newAudioUrl ?? null,
-            candidateAudioUrlIsLocal:
-              typeof newAudioUrl === "string" &&
-              (newAudioUrl.startsWith("file://") ||
-                newAudioUrl.startsWith("content://")),
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
 
       // Always try to get a fresh URL for SoundCloud tracks (they expire)
       if (newAudioUrl?.startsWith("file://")) {
@@ -1937,10 +2075,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     setCurrentTrack(null);
+    currentPlaylistContextRef.current = [];
     setPlaylist([]);
     setCurrentIndex(0);
+    setShowFullPlayer(false);
     setIsPlaying(false);
     setIsLoading(false);
+    setIsTransitioning(false);
+    setPosition(0);
+    setDuration(0);
+    setPlaybackError(null);
   }, []);
 
   // Update function refs to avoid stale closures
@@ -1981,10 +2125,26 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [previousTrack]);
 
   useEffect(() => {
+    const handler = async () => {
+      await clearPlayerRef.current();
+    };
+    trackPlayerService.onRemoteStop = handler;
+    return () => {
+      if (trackPlayerService.onRemoteStop === handler) {
+        trackPlayerService.onRemoteStop = undefined;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     clearPlayerRef.current = clearPlayer;
   }, [clearPlayer]);
 
   const toggleShuffle = useCallback(() => {
+    if (playlist.length <= 1) {
+      return;
+    }
+
     const newShuffledState = !isShuffled;
     setIsShuffled(newShuffledState);
 
@@ -1994,6 +2154,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Create shuffled playlist (excluding current track)
       const currentTrackItem = playlist[currentIndex];
+      if (!currentTrackItem) {
+        return;
+      }
       const remainingTracks = playlist.filter(
         (_, index) => index !== currentIndex
       );
@@ -2009,6 +2172,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Put current track at the beginning
       const shuffledPlaylist = [currentTrackItem, ...remainingTracks];
+      currentPlaylistContextRef.current = shuffledPlaylist;
       setPlaylist(shuffledPlaylist);
       setCurrentIndex(0);
     } else if (!newShuffledState && originalPlaylistRef.current.length > 0) {
@@ -2018,6 +2182,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         (track) => track.id === currentTrackItem?.id
       );
 
+      currentPlaylistContextRef.current = originalPlaylistRef.current;
       setPlaylist(originalPlaylistRef.current);
       setCurrentIndex(originalIndex >= 0 ? originalIndex : 0);
     }
@@ -2025,50 +2190,22 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const toggleLikeSong = useCallback(
     (track: Track) => {
+      if (!track.id) {
+        return;
+      }
+
+      const isCurrentlyLiked = likedSongsRef.current.some(
+        (song) => song.id === track.id
+      );
+
+      if (isCurrentlyLiked) {
+        removeLikedSong(track.id);
+        return;
+      }
+
       setLikedSongs((prev) => {
-        const isCurrentlyLiked = prev.some((song) => song.id === track.id);
-        let updatedSongs: Track[];
+        const updatedSongs = [...prev, track];
 
-        if (isCurrentlyLiked) {
-          // Remove from liked songs
-          updatedSongs = prev.filter((song) => song.id !== track.id);
-          if (track.id) {
-            cancelCaching(track.id);
-          }
-        } else {
-          // Add to liked songs
-          updatedSongs = [...prev, track];
-
-          if (
-            track.id &&
-            currentTrack?.id === track.id &&
-            currentTrack.audioUrl &&
-            !currentTrack.audioUrl.startsWith("file://")
-          ) {
-            prepareCachedStreamUrl(currentTrack.audioUrl, track.id)
-              .then(async (cached) => {
-                if (cached.cacheInfo) {
-                  setCacheProgress({
-                    trackId: track.id,
-                    percentage: cached.cacheInfo.percentage,
-                    fileSize: cached.cacheInfo.fileSize,
-                  });
-                }
-                if (cached.url && cached.url !== currentTrack.audioUrl) {
-                  await trackPlayerService.updateCurrentTrack(cached.url);
-                  syncResolvedTrackUrlInState(track.id, cached.url);
-                }
-              })
-              .catch((error) => {
-                console.error(
-                  "[PlayerContext] Failed to prepare cached stream on like:",
-                  error
-                );
-              });
-          }
-        }
-
-        // Persist to storage
         StorageService.saveLikedSongs(updatedSongs).catch((error) => {
           console.error("Error saving liked songs:", error);
         });
@@ -2076,12 +2213,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         return updatedSongs;
       });
     },
-    [
-      cancelCaching,
-      currentTrack?.audioUrl,
-      currentTrack?.id,
-      syncResolvedTrackUrlInState,
-    ]
+    [removeLikedSong]
   );
 
   const isSongLiked = useCallback(
@@ -2137,6 +2269,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     repeatMode,
     isShuffled,
     isInPlaylistContext,
+    canSkipNext,
+    canSkipPrevious,
+    canToggleShuffle,
     colorTheme,
     likedSongs,
     previouslyPlayedSongs,
@@ -2146,6 +2281,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     hasStreamFailed,
     position,
     duration,
+    playbackError,
     playTrack,
     playPause,
     nextTrack,
@@ -2153,6 +2289,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     seekTo,
     setShowFullPlayer,
     setRepeatMode,
+    cycleRepeatMode,
     toggleShuffle,
     clearPlayer,
     handleStreamFailure,
@@ -2165,6 +2302,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     cancelCaching,
     resetStreamRetryCount: () => setStreamRetryCount(0),
     applyPredefinedTheme,
+    clearPlaybackError: () => setPlaybackError(null),
   };
 
   return (

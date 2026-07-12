@@ -123,7 +123,7 @@ const LayoutIcon = styled.Text`
 
 const Grid = styled.ScrollView`
   flex: 1;
-  padding: 0 16px 120px 16px;
+  padding: 0 0 120px 0;
 `;
 
 const GridRow = styled.View`
@@ -381,7 +381,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     stopCachingAndUnlike,
   } = usePlayer();
   const [downloadingTracks, setDownloadingTracks] = React.useState<
-    { track: Track; percentage: number }[]
+    { track: Track; percentage: number; status: "caching" | "queued" }[]
   >([]);
   const [downloadedTracks, setDownloadedTracks] = React.useState<Track[]>([]);
 
@@ -548,8 +548,14 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         try {
           const info = await getCacheInfo(track.id);
           const percentage = info?.percentage ?? 0;
-          if (!info?.isFullyCached && (info?.isDownloading || percentage > 0)) {
-            return { track, percentage };
+          if (!info?.isFullyCached) {
+            const isActivelyCaching =
+              info?.isDownloading || cacheProgress?.trackId === track.id;
+            return {
+              track,
+              percentage,
+              status: isActivelyCaching ? "caching" : "queued",
+            };
           }
         } catch (error) {
           return null;
@@ -559,11 +565,17 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     );
 
     setDownloadingTracks(
-      results.filter((item): item is { track: Track; percentage: number } =>
-        Boolean(item)
+      results.filter(
+        (
+          item
+        ): item is {
+          track: Track;
+          percentage: number;
+          status: "caching" | "queued";
+        } => Boolean(item)
       )
     );
-  }, [getCacheInfo, likedSongs]);
+  }, [cacheProgress?.trackId, getCacheInfo, likedSongs]);
 
   const loadDownloadedTracks = React.useCallback(async () => {
     const candidates = new Map<string, Track>();
@@ -636,6 +648,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           ? "در حال حاضر آهنگی در حال کش شدن نیست."
           : "No songs are caching right now.",
       cachingLabel: language === "fa" ? "در حال کش شدن" : "Caching",
+      queuedLabel: language === "fa" ? "در صف کش" : "Queued",
       downloadedEmpty:
         language === "fa"
           ? "هنوز آهنگ دانلودشده‌ای ندارید."
@@ -769,6 +782,16 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     return progressById;
   }, [downloadingTracks]);
 
+  const downloadingStatusByTrackId = React.useMemo(() => {
+    const statusById = new Map<string, "caching" | "queued">();
+    downloadingTracks.forEach(({ track, status }) => {
+      if (track.id) {
+        statusById.set(track.id, status);
+      }
+    });
+    return statusById;
+  }, [downloadingTracks]);
+
   const topArtistItems = React.useMemo<LibraryDisplayItem[]>(() => {
     const artistMap = new Map<string, LibraryDisplayItem>();
 
@@ -821,17 +844,24 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
     return queue.map((track) => {
       const cacheProgress = downloadingProgressByTrackId.get(track.id);
+      const cacheStatus = downloadingStatusByTrackId.get(track.id);
       const clampedProgress =
         typeof cacheProgress === "number"
           ? Math.min(100, Math.max(0, cacheProgress))
           : null;
       const meta = downloadedTrackIds.has(track.id)
         ? copy.downloaded
-        : clampedProgress !== null
+        : cacheStatus === "caching" && clampedProgress !== null
           ? language === "fa"
             ? `${Math.round(clampedProgress)}٪ ${copy.cachingLabel}`
             : `${copy.cachingLabel} ${Math.round(clampedProgress)}%`
-          : formatTrackDuration(track.duration) || copy.previouslyPlayed;
+          : cacheStatus === "queued"
+            ? clampedProgress && clampedProgress > 0
+              ? language === "fa"
+                ? `${Math.round(clampedProgress)}٪ ${copy.queuedLabel}`
+                : `${copy.queuedLabel} ${Math.round(clampedProgress)}%`
+              : copy.queuedLabel
+            : formatTrackDuration(track.duration) || copy.previouslyPlayed;
 
       return {
         id: `history-track-${track.id}`,
@@ -861,8 +891,10 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     copy.cachingLabel,
     copy.downloaded,
     copy.previouslyPlayed,
+    copy.queuedLabel,
     downloadedTrackIds,
     downloadingProgressByTrackId,
+    downloadingStatusByTrackId,
     language,
     openSongActionSheet,
     playTrack,
@@ -981,17 +1013,25 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
   const downloadingItems = React.useMemo<LibraryDisplayItem[]>(
     () =>
-      downloadingTracks.map(({ track, percentage }) => {
+      downloadingTracks.map(({ track, percentage, status }) => {
         const clamped = Math.min(100, Math.max(0, percentage));
+        const rounded = Math.round(clamped);
+        const meta =
+          status === "caching"
+            ? language === "fa"
+              ? `${rounded}٪ ${copy.cachingLabel}`
+              : `${copy.cachingLabel} ${rounded}%`
+            : clamped > 0
+              ? language === "fa"
+                ? `${rounded}٪ ${copy.queuedLabel}`
+                : `${copy.queuedLabel} ${rounded}%`
+              : copy.queuedLabel;
         return {
           id: `downloading-${track.id}`,
           trackId: track.id,
           title: track.title,
           subtitle: track.artist || sectionLabels.Downloading,
-          meta:
-            language === "fa"
-              ? `${Math.round(clamped)}٪ ${copy.cachingLabel}`
-              : `${copy.cachingLabel} ${Math.round(clamped)}%`,
+          meta,
           searchText: [track.title, track.artist, sectionLabels.Downloading]
             .filter(Boolean)
             .join(" "),
@@ -999,7 +1039,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           itemType: "collection",
           imageShape: "rounded",
           imageUri: track.thumbnail,
-          progress: clamped,
+          progress: clamped > 0 ? clamped : undefined,
           onPress: () => openSongActionSheet(track),
           onLongPress: () => openSongActionSheet(track),
           onSecondaryAction: () => {
@@ -1012,6 +1052,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       }),
     [
       copy.cachingLabel,
+      copy.queuedLabel,
       copy.stopCaching,
       language,
       loadDownloadedTracks,
@@ -1164,7 +1205,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         <LinearGradient
           colors={
             item.artworkKind === "liked"
-              ? ["#3d02ae", "#6053b0", "#6c867f"]
+              ? [colors.accent, colors.heroMid, colors.heroEnd]
               : item.artworkKind === "artist"
                 ? [colors.surface1, colors.surface2, colors.surface3]
                 : item.artworkKind === "playlist"
@@ -1396,13 +1437,13 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
               <Fontisto
                 name="search"
                 size={14}
-                color={withOpacity(colors.muted, 0.9)}
+                color={withOpacity(colors.foreground, 0.62)}
               />
               <TextInput
                 value={libraryQuery}
                 onChangeText={setLibraryQuery}
                 placeholder={copy.searchInLibrary}
-                placeholderTextColor={withOpacity(colors.muted, 0.72)}
+                placeholderTextColor={withOpacity(colors.foreground, 0.48)}
                 style={{
                   flex: 1,
                   color: colors.foreground,
@@ -1417,7 +1458,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                   <AntDesign
                     name="close"
                     size={16}
-                    color={withOpacity(colors.muted, 0.86)}
+                    color={withOpacity(colors.foreground, 0.58)}
                   />
                 </TouchableOpacity>
               ) : null}
@@ -1505,7 +1546,12 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           ) : null}
         </View>
 
-        <Grid contentContainerStyle={{ paddingBottom: 156 }}>
+        <Grid
+          contentContainerStyle={{
+            paddingBottom: 156,
+            paddingHorizontal: viewMode === "grid" ? 16 : 0,
+          }}
+        >
           {displayedItems.length === 0 ? (
             <View
               style={{
@@ -1522,11 +1568,11 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                   ? copy.downloadingEmpty
                   : activeSection === "Artists"
                     ? copy.artistsEmpty
-                  : activeSection === "Downloaded"
-                    ? copy.downloadedEmpty
-                    : activeSection === null
-                      ? copy.playlistsEmpty
-                      : copy.playlistsEmpty}
+                    : activeSection === "Downloaded"
+                      ? copy.downloadedEmpty
+                      : activeSection === null
+                        ? copy.playlistsEmpty
+                        : copy.playlistsEmpty}
               </MutedText>
             </View>
           ) : viewMode === "list" ? (
@@ -1673,6 +1719,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                       <CollectionTitle
                         numberOfLines={2}
                         style={{
+                          color: colors.foreground,
                           fontFamily: getAppFontFamily(isRtl, "semibold"),
                           ...getTextDirectionStyle(isRtl),
                         }}
@@ -1682,6 +1729,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                       <CollectionMeta
                         numberOfLines={1}
                         style={{
+                          color: withOpacity(colors.foreground, 0.66),
                           fontFamily: getAppFontFamily(isRtl, "regular"),
                           ...getTextDirectionStyle(isRtl),
                         }}
@@ -1691,6 +1739,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                       <CollectionMeta
                         numberOfLines={1}
                         style={{
+                          color: withOpacity(colors.foreground, 0.66),
                           fontFamily: getAppFontFamily(isRtl, "regular"),
                           ...getTextDirectionStyle(isRtl),
                         }}

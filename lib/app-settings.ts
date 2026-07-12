@@ -46,6 +46,16 @@ export type AppLanguage = "en" | "fa";
 
 export type PlaybackRetryMode = "ask" | "always" | "never";
 
+export type SettingsSectionKey =
+  | "account"
+  | "appearance"
+  | "playback"
+  | "discovery"
+  | "lyrics"
+  | "summary"
+  | "updates"
+  | "help";
+
 export interface AppSettings {
   autoplayRecommendations: boolean;
   openFullscreenOnPlay: boolean;
@@ -59,6 +69,7 @@ export interface AppSettings {
   rememberLastSearch: boolean;
   preferredSearchSource: PreferredSearchSource;
   seekStepSeconds: number;
+  collapsedSettingsSections: Partial<Record<SettingsSectionKey, boolean>>;
 }
 
 export const APP_SETTINGS_STORAGE_KEY = "@app_settings";
@@ -133,7 +144,37 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   rememberLastSearch: true,
   preferredSearchSource: "mixed",
   seekStepSeconds: 10,
+  collapsedSettingsSections: {},
 };
+
+function sanitizeCollapsedSettingsSections(
+  value: unknown,
+): Partial<Record<SettingsSectionKey, boolean>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const allowedKeys: SettingsSectionKey[] = [
+    "account",
+    "appearance",
+    "playback",
+    "discovery",
+    "lyrics",
+    "summary",
+    "updates",
+    "help",
+  ];
+  const nextValue: Partial<Record<SettingsSectionKey, boolean>> = {};
+  const record = value as Record<string, unknown>;
+
+  allowedKeys.forEach((key) => {
+    if (typeof record[key] === "boolean") {
+      nextValue[key] = record[key] as boolean;
+    }
+  });
+
+  return nextValue;
+}
 
 function isAppLanguage(value: unknown): value is AppLanguage {
   return value === "en" || value === "fa";
@@ -221,6 +262,9 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
     seekStepSeconds: isSeekStepSeconds(record.seekStepSeconds)
       ? record.seekStepSeconds
       : DEFAULT_APP_SETTINGS.seekStepSeconds,
+    collapsedSettingsSections: sanitizeCollapsedSettingsSections(
+      record.collapsedSettingsSections,
+    ),
   };
 }
 

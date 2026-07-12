@@ -55,6 +55,16 @@ interface PlayedArtistSummary {
   playCountLabel: string;
 }
 
+type HeroBannerCache = Record<
+  string,
+  {
+    banner: string;
+    cachedAt: number;
+  }
+>;
+
+const HOME_HERO_BANNER_CACHE_KEY = "@home_hero_artist_banners";
+
 function getUserDisplayName(
   user: { email?: string | null; user_metadata?: any } | null
 ) {
@@ -120,6 +130,44 @@ function shortenLabel(value: string, maxLength: number): string {
 
 function pickBestImageUrl(value: unknown, base: string): string {
   return pickBestArtworkUrl(value, base);
+}
+
+function prefetchImage(url: string) {
+  const prefetch = (
+    Image as typeof Image & {
+      prefetch?: (uri: string) => Promise<boolean>;
+    }
+  ).prefetch;
+  if (url && typeof prefetch === "function") {
+    void prefetch(url);
+  }
+}
+
+async function readHomeHeroBannerCache(): Promise<HeroBannerCache> {
+  try {
+    const raw = await StorageService.getItem(HOME_HERO_BANNER_CACHE_KEY);
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw) as HeroBannerCache;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+async function writeHomeHeroBannerCache(cache: HeroBannerCache): Promise<void> {
+  try {
+    await StorageService.setItem(
+      HOME_HERO_BANNER_CACHE_KEY,
+      JSON.stringify(cache)
+    );
+  } catch {}
 }
 
 function normalizeArtistSource(
@@ -298,7 +346,7 @@ function HeroCard({
     >
       {image ? (
         <Image
-          source={{ uri: image }}
+          source={{ uri: image, cache: "force-cache" }}
           resizeMode="cover"
           style={[absoluteFill, styles.heroImage]}
         />
@@ -779,6 +827,7 @@ export default function HomeScreen({ navigation }: any) {
       }
 
       const artistMap = new Map<string, PlayedArtistSummary>();
+      const bannerCache = await readHomeHeroBannerCache();
 
       for (const track of tracks) {
         const artistName = track.artist?.trim();
@@ -827,6 +876,15 @@ export default function HomeScreen({ navigation }: any) {
       }
 
       for (const artist of artistMap.values()) {
+        if (artist.source === "youtube" && artist.artistId) {
+          const cachedBanner = sanitizeImageUrl(
+            bannerCache[artist.artistId]?.banner || ""
+          );
+          if (cachedBanner) {
+            artist.banner = cachedBanner;
+            prefetchImage(cachedBanner);
+          }
+        }
         artist.playCountLabel = t("home.play", { count: artist.count });
       }
 
@@ -949,8 +1007,25 @@ export default function HomeScreen({ navigation }: any) {
       setIsLoadingHeroTracks(true);
 
       try {
-        let nextBanner = artist.banner || "";
+        const bannerCache = await readHomeHeroBannerCache();
+        const cachedBanner = sanitizeImageUrl(
+          bannerCache[artist.artistId]?.banner || ""
+        );
+        let nextBanner = cachedBanner || artist.banner || "";
         let nextHeroTracks: SuggestedTrack[] = [];
+
+        if (cachedBanner) {
+          prefetchImage(cachedBanner);
+          if (cachedBanner !== artist.banner) {
+            setPlayedArtists((current) =>
+              current.map((entry) =>
+                entry.key === artist.key
+                  ? { ...entry, banner: cachedBanner }
+                  : entry
+              )
+            );
+          }
+        }
 
         const providerEndpoints = await getProviderEndpoints();
         const invidiousBases = [
@@ -1089,6 +1164,12 @@ export default function HomeScreen({ navigation }: any) {
         }
 
         if (nextBanner && nextBanner !== artist.banner) {
+          prefetchImage(nextBanner);
+          bannerCache[artist.artistId] = {
+            banner: nextBanner,
+            cachedAt: Date.now(),
+          };
+          void writeHomeHeroBannerCache(bannerCache);
           setPlayedArtists((current) =>
             current.map((entry) =>
               entry.key === artist.key

@@ -238,15 +238,28 @@ function clampColorChannel(value: number): number {
   return Math.max(0, Math.min(255, Math.round(value)));
 }
 
-function hexToRgb(hex: string) {
-  const normalized = hex.replace("#", "");
+function colorToRgb(color: string) {
+  const normalized = color.trim();
+  const rgbMatch = normalized.match(
+    /^rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)(?:\s*,\s*[0-9.]+\s*)?\)$/i
+  );
+
+  if (rgbMatch) {
+    return {
+      r: clampColorChannel(Number(rgbMatch[1])),
+      g: clampColorChannel(Number(rgbMatch[2])),
+      b: clampColorChannel(Number(rgbMatch[3])),
+    };
+  }
+
+  const hex = normalized.startsWith("#") ? normalized.slice(1) : normalized;
   const value =
-    normalized.length === 3
-      ? normalized
+    hex.length === 3
+      ? hex
           .split("")
           .map((part) => part + part)
           .join("")
-      : normalized;
+      : hex;
 
   return {
     r: parseInt(value.slice(0, 2), 16),
@@ -262,8 +275,8 @@ function rgbToHex(r: number, g: number, b: number): string {
 }
 
 function mixColors(colorA: string, colorB: string, amount: number): string {
-  const left = hexToRgb(colorA);
-  const right = hexToRgb(colorB);
+  const left = colorToRgb(colorA);
+  const right = colorToRgb(colorB);
 
   return rgbToHex(
     left.r + (right.r - left.r) * amount,
@@ -273,7 +286,7 @@ function mixColors(colorA: string, colorB: string, amount: number): string {
 }
 
 export function withOpacity(color: string, opacity: number): string {
-  const { r, g, b } = hexToRgb(color);
+  const { r, g, b } = colorToRgb(color);
   return `rgba(${r}, ${g}, ${b}, ${opacity})`;
 }
 

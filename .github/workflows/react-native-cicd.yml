@@ -105,6 +105,32 @@ jobs:
           EOFMARKER
           fi
 
+      - name: 🔐 Write public production env
+        run: |
+          set -euo pipefail
+          rm -f .env.production
+          {
+            if [ -n "${EXPO_PUBLIC_SUPABASE_URL:-}" ]; then
+              echo "EXPO_PUBLIC_SUPABASE_URL=${EXPO_PUBLIC_SUPABASE_URL}"
+            fi
+            if [ -n "${EXPO_PUBLIC_SUPABASE_ANON_KEY:-}" ]; then
+              echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=${EXPO_PUBLIC_SUPABASE_ANON_KEY}"
+            fi
+            if [ -n "${EXPO_PUBLIC_AUTH_ACCOUNT_STATUS_URL:-}" ]; then
+              echo "EXPO_PUBLIC_AUTH_ACCOUNT_STATUS_URL=${EXPO_PUBLIC_AUTH_ACCOUNT_STATUS_URL}"
+            fi
+          } > .env.production
+
+          if [ -s .env.production ]; then
+            sed 's/=.*/=[secure]/' .env.production
+          else
+            echo "No public auth environment values were provided."
+          fi
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          EXPO_PUBLIC_AUTH_ACCOUNT_STATUS_URL: ${{ secrets.EXPO_PUBLIC_AUTH_ACCOUNT_STATUS_URL }}
+
       - name: 🏷 Resolve Expo version and release metadata
         id: release_meta
         run: |
@@ -449,12 +475,8 @@ jobs:
           ]);
 
           const sanitizedBuildVersion = appBuildVersion.replace(/[^0-9A-Za-z._-]+/g, "-");
-          const sanitizedRunNumber = runNumber.replace(/[^0-9A-Za-z._-]+/g, "-");
-          const tagSuffix = sanitizedBuildVersion
-            ? `android.${sanitizedBuildVersion}`
-            : `run.${sanitizedRunNumber || "manual"}`;
-          const releaseTag = `v${appVersion}-${tagSuffix}`;
-          const apkName = `Streamify-v${appVersion}-${tagSuffix}.apk`;
+          const releaseTag = `v${appVersion}`;
+          const apkName = `Streamify-v${appVersion}.apk`;
           const changelogName = `CHANGELOG-${releaseTag}.md`;
           const metadataName = `release-metadata-${releaseTag}.json`;
 
@@ -679,17 +701,7 @@ jobs:
 
           assets=(
             "build-artifacts/${{ steps.release_identity.outputs.apk_name }}"
-            "build-artifacts/${{ steps.release_identity.outputs.changelog_name }}"
-            "build-artifacts/expo-config.json#expo-config-${TAG}.json"
-            "build-artifacts/eas-build-result.json#eas-build-result-${TAG}.json"
-            "build-artifacts/eas-build-view.json#eas-build-view-${TAG}.json"
-            "build-artifacts/${{ steps.release_identity.outputs.metadata_name }}"
           )
-
-          while IFS= read -r extra_file; do
-            [ -n "${extra_file}" ] || continue
-            assets+=("${extra_file}")
-          done < <(find build-artifacts -maxdepth 1 -type f \( -iname '*mapping*' -o -iname '*proguard*' -o -iname '*symbol*' \) | sort)
 
           gh release upload "${TAG}" "${assets[@]}" --clobber
 

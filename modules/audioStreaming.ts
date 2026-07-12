@@ -178,6 +178,28 @@ function getSoundCloudHeaders() {
   };
 }
 
+const SOUNDCLOUD_RESTRICTED_PLAYBACK_ERROR_EN =
+  "SoundCloud is restricted in your country. Use a VPN or change your IP to play SoundCloud songs.";
+const SOUNDCLOUD_TRACK_UNAVAILABLE_ERROR_EN =
+  "This SoundCloud track couldn't be loaded.";
+
+function isSoundCloudRestrictedFailure(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : String(error).toLowerCase();
+
+  return (
+    message.includes("403") ||
+    message.includes("401") ||
+    message.includes("forbidden") ||
+    message.includes("license") ||
+    message.includes("drm") ||
+    message.includes("encrypted") ||
+    message.includes("restricted")
+  );
+}
+
 function normalizeForMatch(value?: string): string {
   return String(value || "")
     .toLowerCase()
@@ -2515,14 +2537,6 @@ export class AudioStreamManager {
         }
 
         percentage = stablePercentage;
-
-        // Boost percentage for substantial cache but cap at 95%
-        if (hasSubstantialCache && percentage < 90) {
-          percentage = Math.min(95, percentage + 5);
-          console.log(
-            `[Audio] Boosting cache percentage for substantial cache: ${percentage}%`
-          );
-        }
 
         displayFileSize = Math.round((fileSize / 1024 / 1024) * 100) / 100;
       }
@@ -6572,13 +6586,13 @@ export class AudioStreamManager {
         return await this.extractSoundCloudStream(resolvedData, controller);
       }
 
-      throw new Error("Track not found or unavailable");
+      throw new Error(SOUNDCLOUD_TRACK_UNAVAILABLE_ERROR_EN);
     } catch (error) {
-      throw new Error(
-        `SoundCloud playback failed: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+      if (isSoundCloudRestrictedFailure(error)) {
+        throw new Error(SOUNDCLOUD_RESTRICTED_PLAYBACK_ERROR_EN);
+      }
+
+      throw new Error(SOUNDCLOUD_TRACK_UNAVAILABLE_ERROR_EN);
     }
   }
 
@@ -6609,12 +6623,12 @@ export class AudioStreamManager {
       !trackData.media.transcodings ||
       trackData.media.transcodings.length === 0
     ) {
-      throw new Error("No media transcodings available");
+      throw new Error(SOUNDCLOUD_TRACK_UNAVAILABLE_ERROR_EN);
     }
 
     const trackId = trackData.id ? String(trackData.id) : "";
     if (!trackId) {
-      throw new Error("SoundCloud track ID missing");
+      throw new Error(SOUNDCLOUD_TRACK_UNAVAILABLE_ERROR_EN);
     }
 
     const orderedTranscodings = [...trackData.media.transcodings]
@@ -6633,10 +6647,10 @@ export class AudioStreamManager {
         return !protocol.includes("encrypted");
       }
     );
-    const transcodingsToTry =
-      playableTranscodings.length > 0
-        ? playableTranscodings
-        : orderedTranscodings;
+    if (playableTranscodings.length === 0 && orderedTranscodings.length > 0) {
+      throw new Error(SOUNDCLOUD_RESTRICTED_PLAYBACK_ERROR_EN);
+    }
+    const transcodingsToTry = playableTranscodings;
 
     let lastError: Error | null = null;
 
@@ -6668,7 +6682,11 @@ export class AudioStreamManager {
       }
     }
 
-    throw lastError || new Error("No suitable SoundCloud stream found");
+    if (isSoundCloudRestrictedFailure(lastError)) {
+      throw new Error(SOUNDCLOUD_RESTRICTED_PLAYBACK_ERROR_EN);
+    }
+
+    throw new Error(SOUNDCLOUD_TRACK_UNAVAILABLE_ERROR_EN);
   }
 
   private extractSoundCloudTrackId(videoId: string): string | null {

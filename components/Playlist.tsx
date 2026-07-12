@@ -181,7 +181,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
-                <Entypo name="heart" size={64} color="white" />
+                <Entypo name="heart" size={64} color="#ffffff" />
               </LinearGradient>
             </View>
           ) : (
@@ -335,7 +335,6 @@ export const Playlist: React.FC<PlaylistProps> = ({
           styles.header,
           {
             top: insets.top + 8,
-            flexDirection: isRtl ? "row-reverse" : "row",
           },
         ]}
       >
@@ -349,11 +348,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
             },
           ]}
         >
-          <Ionicons
-            name={isRtl ? "chevron-forward" : "chevron-back"}
-            size={24}
-            color={colors.foreground}
-          />
+          <Ionicons name="chevron-back" size={24} color={colors.foreground} />
         </TouchableOpacity>
         <TitleText
           style={[

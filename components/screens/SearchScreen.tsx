@@ -74,6 +74,31 @@ const formatDuration = (seconds: number, source?: string): string => {
   return `${minutes}:${secs.toString().padStart(2, "0")}`;
 };
 
+const isPlayableSearchResult = (item: any): boolean => {
+  return (
+    item?.type === "song" ||
+    item?.type === "video" ||
+    item?.type === "stream" ||
+    (!item?.type && Boolean(item?.duration))
+  );
+};
+
+const toPlayableSearchTrack = (item: any) => ({
+  id: item.id,
+  title: item.title,
+  artist: item.author,
+  artistId: item.artistId,
+  artistImage: item.artistImage || item.thumbnailUrl || item.img,
+  artistSource: item.artistSource || item.source || "youtube",
+  duration: parseInt(item.duration) || 0,
+  thumbnail: item.thumbnailUrl || item.img,
+  audioUrl: undefined,
+  url: item.href,
+  source: item.source || "youtube",
+  _isSoundCloud: item.source === "soundcloud",
+  _isJioSaavn: item.source === "jiosaavn",
+});
+
 const getDefaultFilterForSource = (source: SourceType): string => {
   if (source === "mixed") {
     return "all";
@@ -725,13 +750,30 @@ export default function SearchScreen({ navigation }: any) {
         lastSearchState.source,
         preferredSource
       );
+      const restoredFilter = normalizeFilterForSource(
+        restoredSource,
+        lastSearchState.filter
+      );
+      const restoredResults = Array.isArray(lastSearchState.results)
+        ? (lastSearchState.results as SearchResult[])
+        : [];
 
       isRestoringSearchStateRef.current = true;
       setSearchQuery(lastSearchState.query);
       setSelectedSource(restoredSource);
-      setSelectedFilter(
-        normalizeFilterForSource(restoredSource, lastSearchState.filter)
-      );
+      setSelectedFilter(restoredFilter);
+      if (restoredResults.length > 0) {
+        setSearchResults(restoredResults);
+        setHasSearched(true);
+        setHasMoreResults(false);
+        setCurrentPage(1);
+        paginationRef.current = {
+          page: 1,
+          hasMore: false,
+          isLoadingMore: false,
+          nextpage: null,
+        };
+      }
       pendingRestoreQueryRef.current = lastSearchState.query;
     };
 
@@ -1033,6 +1075,14 @@ export default function SearchScreen({ navigation }: any) {
           });
         }
 
+        const existingIds = new Set(searchResults.map((item) => item.id));
+        const uniqueNewItems = formattedResults.filter(
+          (item) => !existingIds.has(item.id)
+        );
+        const persistedResults = loadMore
+          ? [...searchResults, ...uniqueNewItems]
+          : formattedResults;
+
         // Handle pagination - append results if loading more, replace if new search
         if (loadMore) {
           console.log(
@@ -1152,6 +1202,7 @@ export default function SearchScreen({ navigation }: any) {
             query: trimmedQuery,
             source: requestSource,
             filter: requestFilter,
+            results: persistedResults,
           });
         }
       } catch (error) {
@@ -1184,7 +1235,7 @@ export default function SearchScreen({ navigation }: any) {
       searchQuery,
       selectedFilter,
       selectedSource,
-      searchResults.length,
+      searchResults,
       settings.rememberLastSearch,
     ]
   );
@@ -1366,6 +1417,11 @@ export default function SearchScreen({ navigation }: any) {
     return { topResults, artists, albums, playlists, songs };
   }, [searchResults, searchQuery]);
 
+  const playableSearchQueue = useMemo(
+    () => searchResults.filter(isPlayableSearchResult).map(toPlayableSearchTrack),
+    [searchResults]
+  );
+
   // Optimized item press handlers
   const handleTopResultPress = useCallback(
     async (item: any) => {
@@ -1387,43 +1443,24 @@ export default function SearchScreen({ navigation }: any) {
       }
 
       // Play track using player context (for regular songs/videos)
-      const track = {
-        id: item.id,
-        title: item.title,
-        artist: item.author,
-        artistId: item.artistId,
-        artistImage: item.artistImage || item.thumbnailUrl || item.img,
-        artistSource: item.artistSource || item.source || "youtube",
-        duration: parseInt(item.duration) || 0,
-        thumbnail: item.thumbnailUrl || item.img,
-        audioUrl: undefined,
-        url: item.href,
-        source: item.source || "youtube",
-        _isSoundCloud: item.source === "soundcloud",
-        _isJioSaavn: item.source === "jiosaavn",
-      };
+      const track = toPlayableSearchTrack(item);
+      const currentIndex = playableSearchQueue.findIndex(
+        (result) => result.id === item.id
+      );
 
       await playTrack(
         track,
-        searchResults.map((result: any) => ({
-          id: result.id,
-          title: result.title,
-          artist: result.author,
-          artistId: result.artistId,
-          artistImage: result.artistImage || result.thumbnailUrl || result.img,
-          artistSource: result.artistSource || result.source || "youtube",
-          duration: parseInt(result.duration) || 0,
-          thumbnail: result.thumbnailUrl || result.img,
-          audioUrl: undefined,
-          url: result.href,
-          source: result.source || "youtube",
-          _isSoundCloud: result.source === "soundcloud",
-          _isJioSaavn: result.source === "jiosaavn",
-        })),
-        searchResults.indexOf(item)
+        playableSearchQueue,
+        currentIndex >= 0 ? currentIndex : 0
       );
     },
-    [showSuggestions, setShowSuggestions, navigation, playTrack, searchResults]
+    [
+      showSuggestions,
+      setShowSuggestions,
+      navigation,
+      playTrack,
+      playableSearchQueue,
+    ]
   );
 
   const handleArtistPress = useCallback(
@@ -1583,40 +1620,15 @@ export default function SearchScreen({ navigation }: any) {
       }
 
       // Play track using player context
-      const track = {
-        id: item.id,
-        title: item.title,
-        artist: item.author,
-        artistId: item.artistId,
-        artistImage: item.artistImage || item.thumbnailUrl || item.img,
-        artistSource: item.artistSource || item.source || "youtube",
-        duration: parseInt(item.duration) || 0,
-        thumbnail: item.thumbnailUrl || item.img,
-        audioUrl: undefined,
-        url: item.href,
-        source: item.source || "youtube",
-        _isSoundCloud: item.source === "soundcloud",
-        _isJioSaavn: item.source === "jiosaavn",
-      };
+      const track = toPlayableSearchTrack(item);
+      const currentIndex = playableSearchQueue.findIndex(
+        (result) => result.id === item.id
+      );
 
       await playTrack(
         track,
-        searchResults.map((result: any) => ({
-          id: result.id,
-          title: result.title,
-          artist: result.author,
-          artistId: result.artistId,
-          artistImage: result.artistImage || result.thumbnailUrl || result.img,
-          artistSource: result.artistSource || result.source || "youtube",
-          duration: parseInt(result.duration) || 0,
-          thumbnail: result.thumbnailUrl || result.img,
-          audioUrl: undefined,
-          url: result.href,
-          source: result.source || "youtube",
-          _isSoundCloud: result.source === "soundcloud",
-          _isJioSaavn: result.source === "jiosaavn",
-        })),
-        searchResults.indexOf(item)
+        playableSearchQueue,
+        currentIndex >= 0 ? currentIndex : 0
       );
     },
     [
@@ -1624,7 +1636,7 @@ export default function SearchScreen({ navigation }: any) {
       setShowSuggestions,
       handleJioSaavnAlbumSong,
       playTrack,
-      searchResults,
+      playableSearchQueue,
     ]
   );
 
@@ -1814,7 +1826,12 @@ export default function SearchScreen({ navigation }: any) {
             },
           ]}
         >
-          <FilterIcon width={20} height={20} />
+          <FilterIcon
+            width={20}
+            height={20}
+            color={colors.muted}
+            stroke={colors.muted}
+          />
         </TouchableOpacity>
       </Header>
 

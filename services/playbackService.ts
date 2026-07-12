@@ -17,7 +17,17 @@ module.exports = async function () {
   });
 
   TrackPlayer.addEventListener(Event.RemoteStop, () => {
-    TrackPlayer.stop();
+    if (trackPlayerService.onRemoteStop) {
+      Promise.resolve(trackPlayerService.onRemoteStop()).catch((error) => {
+        console.error("[PlaybackService] Remote stop handler failed:", error);
+      });
+      return;
+    }
+
+    trackPlayerService.reset().catch((error) => {
+      console.error("[PlaybackService] Failed to reset after remote stop:", error);
+      TrackPlayer.stop().catch(() => {});
+    });
   });
 
   TrackPlayer.addEventListener(Event.RemoteNext, () => {
@@ -53,12 +63,16 @@ module.exports = async function () {
 
   TrackPlayer.addEventListener(Event.RemoteDuck, (event) => {
     if (event.permanent === true) {
-      TrackPlayer.stop();
+      trackPlayerService.reset().catch((error) => {
+        console.error(
+          "[PlaybackService] Failed to reset after permanent duck:",
+          error
+        );
+        TrackPlayer.stop().catch(() => {});
+      });
     } else {
       if (event.paused === true) {
         TrackPlayer.pause();
-      } else {
-        TrackPlayer.play();
       }
     }
   });

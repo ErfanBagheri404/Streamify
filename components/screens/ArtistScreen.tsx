@@ -849,14 +849,13 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                 styles.backButton,
                 {
                   top: insets.top + 12,
-                  left: isRtl ? undefined : 16,
-                  right: isRtl ? 16 : undefined,
+                  left: 16,
                   backgroundColor: withOpacity(colors.background, 0.48),
                 },
               ]}
             >
               <Ionicons
-                name={isRtl ? "chevron-forward" : "chevron-back"}
+                name="chevron-back"
                 size={24}
                 color={colors.foreground}
               />

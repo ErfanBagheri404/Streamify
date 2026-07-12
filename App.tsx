@@ -7,12 +7,16 @@ import { enableScreens } from "react-native-screens";
 import TrackPlayer from "./utils/safeTrackPlayer";
 import {
   View,
+  Modal,
   TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
   Text,
   StatusBar,
   TextInput,
   Image,
 } from "react-native";
+import * as Linking from "expo-linking";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts } from "expo-font";
 // import { LoadingScreen } from "./components/LoadingScreen";
@@ -24,6 +28,11 @@ import LibraryIcon from "./assets/Library.svg";
 
 // Context
 import { PlayerProvider } from "./contexts/PlayerContext";
+import {
+  AppUpdateProvider,
+  CURRENT_APP_VERSION,
+  useAppUpdate,
+} from "./contexts/AppUpdateContext";
 import { SettingsProvider, useSettings } from "./contexts/SettingsContext";
 import { ThemeProvider, useTheme, withOpacity } from "./contexts/ThemeContext";
 import { usePlayer } from "./contexts/PlayerContext";
@@ -125,7 +134,7 @@ const TabBarIcon: React.FC<IconProps> = ({ name, color, size, focused }) => {
   if (name === "home") {
     return (
       <View style={{ opacity: focused ? 1 : 0.56 }}>
-        <StreamifyLogoIcon width={22} height={22} />
+        <StreamifyLogoIcon width={22} height={22} color={color} fill={color} />
       </View>
     );
   }
@@ -133,25 +142,29 @@ const TabBarIcon: React.FC<IconProps> = ({ name, color, size, focused }) => {
   if (name === "library") {
     return (
       <View style={{ opacity: focused ? 1 : 0.56 }}>
-        <LibraryIcon width={22} height={22} />
+        <LibraryIcon width={22} height={22} color={color} fill={color} />
       </View>
     );
   }
 
-  return <Ionicons name="search" size={size} color={color} />;
+  return (
+    <View style={{ opacity: focused ? 1 : 0.56 }}>
+      <Ionicons name="search" size={size} color={color} />
+    </View>
+  );
 };
 
 /* ---------- Custom Tab Bar ---------- */
 function CustomTabBar({ state, descriptors, navigation }: any) {
-  const { colors } = useTheme();
+  const { colors, isLight } = useTheme();
   const { dir, isRtl } = useAppLanguage();
 
   return (
     <LinearGradient
       colors={[
-        "rgba(0, 0, 0, 0.92)",
-        "rgba(0, 0, 0, 0.52)",
-        "rgba(0, 0, 0, 0.12)",
+        withOpacity(colors.surface1, isLight ? 0.98 : 0.94),
+        withOpacity(colors.surface1, isLight ? 0.92 : 0.74),
+        withOpacity(colors.background, isLight ? 0.18 : 0.14),
       ]}
       locations={[0, 0.56, 1]}
       start={{ x: 0, y: 1 }}
@@ -226,6 +239,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                 flex: 1,
                 alignItems: "center",
                 justifyContent: "center",
+                paddingHorizontal: 10,
               }}
             >
               <TabBarIcon
@@ -394,8 +408,9 @@ function AppStartupGate({ children }: { children: React.ReactNode }) {
 /* ---------- Root Stack ---------- */
 function AppShell() {
   const { colors, isLight } = useTheme();
-  const { dir } = useAppLanguage();
+  const { dir, isRtl } = useAppLanguage();
   const { showFullPlayer, setShowFullPlayer } = usePlayer();
+  const { updateInfo, dismissUpdate, hideUpdateModal } = useAppUpdate();
   const navigationRef = React.useRef<any>(null);
   const handlePlaylistUpdated = () => {
     console.log("[App] Playlist updated, triggering refresh");
@@ -439,6 +454,8 @@ function AppShell() {
     console.log("[App] Detected screen name:", screenName);
     setCurrentScreen(screenName);
   }, []);
+  const shouldHideMiniPlayer =
+    currentScreen === "SignIn" || currentScreen === "SignUp";
 
   return (
     <View
@@ -558,15 +575,236 @@ function AppShell() {
       </NavigationContainer>
 
       {/* Persistent Player Components */}
-      <MiniPlayer
-        onExpand={() => setShowFullPlayer(true)}
-        currentScreen={currentScreen}
-      />
+      {!shouldHideMiniPlayer ? (
+        <MiniPlayer
+          onExpand={() => setShowFullPlayer(true)}
+          currentScreen={currentScreen}
+        />
+      ) : null}
       <FullPlayerModal
         visible={showFullPlayer}
         onClose={() => setShowFullPlayer(false)}
         onPlaylistUpdated={handlePlaylistUpdated}
       />
+
+      <Modal
+        visible={Boolean(updateInfo)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          void dismissUpdate();
+        }}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0, 0, 0, 0.68)",
+            paddingHorizontal: 22,
+            justifyContent: "center",
+          }}
+        >
+          <View
+            style={{
+              borderRadius: 28,
+              overflow: "hidden",
+              backgroundColor: colors.surface1,
+              borderWidth: 1,
+              borderColor: withOpacity(colors.borderSubtle, 0.92),
+            }}
+          >
+            <LinearGradient
+              colors={[
+                withOpacity(colors.accent, 0.24),
+                withOpacity(colors.heroMid, 0.14),
+                withOpacity(colors.surface1, 0.98),
+              ]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ padding: 22 }}
+            >
+              <View
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 18,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: withOpacity(colors.foreground, 0.08),
+                  marginBottom: 16,
+                }}
+              >
+                <Ionicons
+                  name="cloud-download-outline"
+                  size={28}
+                  color={colors.foreground}
+                />
+              </View>
+
+              <Text
+                style={{
+                  color: colors.foreground,
+                  fontSize: 26,
+                  lineHeight: 30,
+                  fontFamily: getAppFontFamily(isRtl, "bold"),
+                }}
+              >
+                New Version Available
+              </Text>
+              <Text
+                style={{
+                  color: withOpacity(colors.foreground, 0.78),
+                  fontSize: 14,
+                  lineHeight: 20,
+                  marginTop: 8,
+                  fontFamily: getAppFontFamily(isRtl, "regular"),
+                }}
+              >
+                {`You are on ${CURRENT_APP_VERSION}. Streamify ${updateInfo?.version} is ready to download.`}
+              </Text>
+
+              <View
+                style={{
+                  marginTop: 18,
+                  padding: 14,
+                  borderRadius: 18,
+                  backgroundColor: withOpacity(colors.surface2, 0.94),
+                  borderWidth: 1,
+                  borderColor: withOpacity(colors.borderSubtle, 0.72),
+                }}
+              >
+                <Text
+                  style={{
+                    color: colors.foreground,
+                    fontSize: 15,
+                    lineHeight: 20,
+                    fontFamily: getAppFontFamily(isRtl, "medium"),
+                  }}
+                >
+                  {updateInfo?.title}
+                </Text>
+                <Text
+                  style={{
+                    color: withOpacity(colors.foreground, 0.68),
+                    fontSize: 12,
+                    lineHeight: 18,
+                    marginTop: 6,
+                    fontFamily: getAppFontFamily(isRtl, "regular"),
+                  }}
+                >
+                  {updateInfo?.releaseUrl}
+                </Text>
+              </View>
+
+              <Text
+                style={{
+                  color: colors.foreground,
+                  fontSize: 13,
+                  lineHeight: 18,
+                  marginTop: 18,
+                  marginBottom: 10,
+                  textTransform: "uppercase",
+                  letterSpacing: 1,
+                  fontFamily: getAppFontFamily(isRtl, "medium"),
+                }}
+              >
+                Changelog
+              </Text>
+
+              <View
+                style={{
+                  maxHeight: 220,
+                  borderRadius: 18,
+                  backgroundColor: withOpacity(colors.background, 0.42),
+                  borderWidth: 1,
+                  borderColor: withOpacity(colors.borderSubtle, 0.6),
+                }}
+              >
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={{ padding: 16 }}
+                >
+                  <Text
+                    style={{
+                      color: withOpacity(colors.foreground, 0.9),
+                      fontSize: 14,
+                      lineHeight: 22,
+                      fontFamily: getAppFontFamily(isRtl, "regular"),
+                    }}
+                  >
+                    {updateInfo?.changelog}
+                  </Text>
+                </ScrollView>
+              </View>
+
+              <View
+                style={{
+                  flexDirection: isRtl ? "row-reverse" : "row",
+                  marginTop: 18,
+                }}
+              >
+                <TouchableOpacity
+                  onPress={() => {
+                    void dismissUpdate();
+                  }}
+                  style={{
+                    flex: 1,
+                    minHeight: 52,
+                    borderRadius: 16,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginRight: isRtl ? 0 : 8,
+                    marginLeft: isRtl ? 8 : 0,
+                    backgroundColor: withOpacity(colors.foreground, 0.08),
+                    borderWidth: 1,
+                    borderColor: withOpacity(colors.borderSubtle, 0.8),
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: colors.foreground,
+                      fontSize: 15,
+                      lineHeight: 20,
+                      fontFamily: getAppFontFamily(isRtl, "medium"),
+                    }}
+                  >
+                    Later
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => {
+                    if (updateInfo?.downloadUrl) {
+                      void Linking.openURL(updateInfo.downloadUrl);
+                    }
+                    hideUpdateModal();
+                  }}
+                  style={{
+                    flex: 1.35,
+                    minHeight: 52,
+                    borderRadius: 16,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginLeft: isRtl ? 0 : 8,
+                    marginRight: isRtl ? 8 : 0,
+                    backgroundColor: colors.foreground,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: colors.background,
+                      fontSize: 15,
+                      lineHeight: 20,
+                      fontFamily: getAppFontFamily(isRtl, "bold"),
+                    }}
+                  >
+                    Download Update
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </LinearGradient>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -578,12 +816,14 @@ function AppContent() {
         <AppStartupGate>
           <ThemeProvider>
             <AuthProvider>
-              <PlayerProvider>
-                <CloudLibraryBridge />
-                <PlaybackPreferenceBridge />
-                <GlobalTextDefaultsBridge />
-                <AppShell />
-              </PlayerProvider>
+              <AppUpdateProvider>
+                <PlayerProvider>
+                  <CloudLibraryBridge />
+                  <PlaybackPreferenceBridge />
+                  <GlobalTextDefaultsBridge />
+                  <AppShell />
+                </PlayerProvider>
+              </AppUpdateProvider>
             </AuthProvider>
           </ThemeProvider>
         </AppStartupGate>

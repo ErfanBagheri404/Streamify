@@ -42,6 +42,43 @@ function resolveTrackSource(
   return "youtube";
 }
 
+function normalizePlaybackErrorMessage(event: any, track?: Track): string | null {
+  const rawMessage =
+    typeof event?.message === "string" ? event.message.trim() : "";
+  const message = rawMessage.toLowerCase();
+  const source = track ? resolveTrackSource(track) : undefined;
+
+  if (source === "soundcloud") {
+    if (
+      message.includes("restricted") ||
+      message.includes("403") ||
+      message.includes("401") ||
+      message.includes("forbidden") ||
+      message.includes("license") ||
+      message.includes("drm") ||
+      message.includes("encrypted")
+    ) {
+      return t("playback.soundcloudRestricted");
+    }
+
+    return t("playback.soundcloudTrackUnavailable");
+  }
+
+  if (!rawMessage) {
+    return null;
+  }
+
+  if (rawMessage === "Couldn't load this track right now.") {
+    return t("playback.loadTrackNow");
+  }
+
+  if (rawMessage === "Couldn't play this track. Try again or choose another one.") {
+    return t("playback.errorDefault");
+  }
+
+  return rawMessage;
+}
+
 // Safe fallback for TrackPlayer constants
 let TrackPlayerCapability: typeof Capability | null = null;
 let TrackPlayerEvent: typeof Event | null = null;
@@ -136,6 +173,7 @@ export class TrackPlayerService {
   public onError?: (error: any) => void;
   public onRemoteNext?: () => Promise<void> | void;
   public onRemotePrevious?: () => Promise<void> | void;
+  public onRemoteStop?: () => Promise<void> | void;
 
   static getInstance(): TrackPlayerService {
     if (!TrackPlayerService.instance) {
@@ -371,7 +409,8 @@ export class TrackPlayerService {
             TrackPlayerCapability.Play,
             TrackPlayerCapability.Pause,
             TrackPlayerCapability.SkipToNext,
-            TrackPlayerCapability.SkipToPrevious
+            TrackPlayerCapability.SkipToPrevious,
+            TrackPlayerCapability.Stop
           );
         } catch (error) {
           console.warn(
@@ -400,7 +439,8 @@ export class TrackPlayerService {
           "play",
           "pause",
           "skipToNext",
-          "skipToPrevious"
+          "skipToPrevious",
+          "stop"
         );
       }
 
@@ -445,7 +485,23 @@ export class TrackPlayerService {
     TrackPlayer.addEventListener(
       getSafeEvent("RemoteStop" as keyof typeof Event),
       () => {
-        TrackPlayer.stop();
+        if (this.onRemoteStop) {
+          Promise.resolve(this.onRemoteStop()).catch((error) => {
+            console.error(
+              "[TrackPlayerService] Remote stop handler failed:",
+              error
+            );
+          });
+          return;
+        }
+
+        this.reset().catch((error) => {
+          console.error(
+            "[TrackPlayerService] Failed to reset after remote stop:",
+            error
+          );
+          TrackPlayer.stop().catch(() => {});
+        });
       }
     );
 
@@ -521,41 +577,14 @@ export class TrackPlayerService {
           typeof event?.message === "string" ? event.message.toLowerCase() : "";
         const code = event?.code;
 
-        // #region debug-point A:playback-error
-        void fetch("http://192.168.1.106:7777/event", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sessionId: "cached-seek-source-error",
-            runId: "pre-fix",
-            hypothesisId: "A",
-            location: "TrackPlayerService:PlaybackError",
-            msg: "[DEBUG] PlaybackError received",
-            data: {
-              code: event?.code ?? null,
-              message: event?.message ?? null,
-              currentTrackId: currentTrack?.id ?? null,
-              currentTrackTitle: currentTrack?.title ?? null,
-              source: currentTrack?.source ?? null,
-              audioUrl: currentTrack?.audioUrl ?? null,
-              audioUrlIsLocal:
-                typeof currentTrack?.audioUrl === "string" &&
-                (currentTrack.audioUrl.startsWith("file://") ||
-                  currentTrack.audioUrl.startsWith("content://")),
-              audioUrlLooksYouTube:
-                typeof currentTrack?.audioUrl === "string" &&
-                (currentTrack.audioUrl.includes("googlevideo.com") ||
-                  currentTrack.audioUrl.includes("youtube.com")),
-            },
-            ts: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
-
         const isLocalFileSource =
           typeof currentTrack?.audioUrl === "string" &&
           (currentTrack.audioUrl.startsWith("file://") ||
             currentTrack.audioUrl.startsWith("content://"));
+        const resolvedErrorMessage = normalizePlaybackErrorMessage(
+          event,
+          currentTrack
+        );
 
         const isYouTubeStream =
           currentTrack &&
@@ -662,6 +691,9 @@ export class TrackPlayerService {
           console.warn(
             "[TrackPlayerService] Detected corrupt or missing source, attempting to skip to next track"
           );
+          if (resolvedErrorMessage && this.onError) {
+            this.onError({ ...event, message: resolvedErrorMessage });
+          }
           this.skipToNext().catch((skipError) => {
             console.error(
               "[TrackPlayerService] Failed to skip to next after corrupt source:",
@@ -673,7 +705,11 @@ export class TrackPlayerService {
         }
 
         if (this.onError) {
-          this.onError(event);
+          this.onError(
+            resolvedErrorMessage
+              ? { ...event, message: resolvedErrorMessage }
+              : event
+          );
         }
       }
     );
@@ -969,32 +1005,6 @@ export class TrackPlayerService {
 
   async seekTo(position: number) {
     try {
-      const currentTrack = this.playlist[this.currentTrackIndex];
-      // #region debug-point B:service-seek
-      void fetch("http://192.168.1.106:7777/event", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: "cached-seek-source-error",
-          runId: "pre-fix",
-          hypothesisId: "B",
-          location: "TrackPlayerService:seekTo",
-          msg: "[DEBUG] TrackPlayerService.seekTo called",
-          data: {
-            position,
-            currentTrackId: currentTrack?.id ?? null,
-            currentTrackTitle: currentTrack?.title ?? null,
-            source: currentTrack?.source ?? null,
-            audioUrl: currentTrack?.audioUrl ?? null,
-            audioUrlIsLocal:
-              typeof currentTrack?.audioUrl === "string" &&
-              (currentTrack.audioUrl.startsWith("file://") ||
-                currentTrack.audioUrl.startsWith("content://")),
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       await TrackPlayer.seekTo(position);
       console.log("[TrackPlayerService] Seeked to position:", position);
     } catch (error) {
@@ -1061,39 +1071,6 @@ export class TrackPlayerService {
         currentTrackIndex !== null &&
         currentTrackIndex < this.playlist.length
       ) {
-        const previousTrack = this.playlist[currentTrackIndex];
-        // #region debug-point C:update-current-track
-        void fetch("http://192.168.1.106:7777/event", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sessionId: "cached-seek-source-error",
-            runId: "pre-fix",
-            hypothesisId: "C",
-            location: "TrackPlayerService:updateCurrentTrack",
-            msg: "[DEBUG] updateCurrentTrack called",
-            data: {
-              currentTrackIndex,
-              previousTrackId: previousTrack?.id ?? null,
-              previousTrackTitle: previousTrack?.title ?? null,
-              previousSource: previousTrack?.source ?? null,
-              previousAudioUrl: previousTrack?.audioUrl ?? null,
-              previousAudioUrlIsLocal:
-                typeof previousTrack?.audioUrl === "string" &&
-                (previousTrack.audioUrl.startsWith("file://") ||
-                  previousTrack.audioUrl.startsWith("content://")),
-              nextAudioUrl: audioUrl,
-              nextAudioUrlIsLocal:
-                audioUrl.startsWith("file://") ||
-                audioUrl.startsWith("content://"),
-              nextAudioUrlLooksYouTube:
-                audioUrl.includes("googlevideo.com") ||
-                audioUrl.includes("youtube.com"),
-            },
-            ts: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
         // Validate YouTube URL before updating
         const isYouTubeStream =
           audioUrl &&

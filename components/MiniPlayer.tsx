@@ -133,12 +133,11 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
 }) => {
   const {
     currentTrack,
-    playlist,
-    currentIndex,
     isPlaying,
     isLoading,
     isTransitioning,
-    repeatMode,
+    canSkipNext,
+    canSkipPrevious,
     position,
     duration,
     playPause,
@@ -146,6 +145,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
     previousTrack,
     seekTo,
     cancelLoadingState,
+    playbackError,
   } = usePlayer();
   const { colors, isLight } = useTheme();
   const { language, isRtl, t } = useAppLanguage();
@@ -205,15 +205,12 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
       ? Math.min(Math.max(position / effectiveDuration, 0), 1)
       : 0;
   const statusText =
-    isLoading || isTransitioning
+    playbackError ||
+    (isLoading || isTransitioning
       ? language === "fa"
         ? "در حال بارگذاری پخش..."
         : "Loading playback..."
-      : null;
-  const canGoPrevious = position > 3 || currentIndex > 0 || playlist.length > 1;
-  const canGoNext =
-    playlist.length > 1 &&
-    (currentIndex < playlist.length - 1 || repeatMode === "all");
+      : null);
   const handlePlayPause = async () => {
     await playPause();
   };
@@ -332,7 +329,13 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
             <TrackArtist
               numberOfLines={1}
               style={{
-                color: statusText ? displayTheme.text : displayTheme.muted,
+                color: playbackError
+                  ? isLight
+                    ? "#991b1b"
+                    : "#fecaca"
+                  : statusText
+                    ? displayTheme.text
+                    : displayTheme.muted,
                 fontFamily: getAppFontFamily(isRtl, "regular"),
                 textAlign: isRtl ? "right" : "left",
                 writingDirection: isRtl ? "rtl" : "ltr",
@@ -354,11 +357,11 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
       >
         <ControlButton
           onPress={handlePrevious}
-          disabled={!canGoPrevious}
+          disabled={!canSkipPrevious}
           accessibilityRole="button"
           accessibilityLabel={t("player.play_previous")}
           style={{
-            opacity: canGoPrevious ? 1 : 0.38,
+            opacity: canSkipPrevious ? 1 : 0.38,
             marginHorizontal: 4,
           }}
         >
@@ -397,11 +400,11 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
 
         <ControlButton
           onPress={handleNext}
-          disabled={!canGoNext}
+          disabled={!canSkipNext}
           accessibilityRole="button"
           accessibilityLabel={t("player.play_next")}
           style={{
-            opacity: canGoNext ? 1 : 0.38,
+            opacity: canSkipNext ? 1 : 0.38,
             marginHorizontal: 4,
           }}
         >
