@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   AppState,
   Image,
   ScrollView,
@@ -33,6 +32,7 @@ import {
   pickBestImageUrl as pickBestArtworkUrl,
   sanitizeImageUrl,
 } from "../core/image";
+import { SkeletonLoader } from "../SkeletonLoader";
 
 interface SuggestedTrack {
   id: string;
@@ -66,7 +66,7 @@ type HeroBannerCache = Record<
 const HOME_HERO_BANNER_CACHE_KEY = "@home_hero_artist_banners";
 
 function getUserDisplayName(
-  user: { email?: string | null; user_metadata?: any } | null
+  user: { email?: string | null; user_metadata?: any } | null,
 ) {
   if (!user) {
     return "";
@@ -90,7 +90,7 @@ function getUserAvatarUrl(user: { user_metadata?: any } | null) {
     user.user_metadata?.avatar_url ||
       user.user_metadata?.picture ||
       user.user_metadata?.image ||
-      ""
+      "",
   );
 }
 
@@ -165,13 +165,13 @@ async function writeHomeHeroBannerCache(cache: HeroBannerCache): Promise<void> {
   try {
     await StorageService.setItem(
       HOME_HERO_BANNER_CACHE_KEY,
-      JSON.stringify(cache)
+      JSON.stringify(cache),
     );
   } catch {}
 }
 
 function normalizeArtistSource(
-  source?: string
+  source?: string,
 ): "youtube" | "jiosaavn" | "soundcloud" {
   const normalized = source?.trim().toLowerCase();
   if (normalized === "jiosaavn") {
@@ -376,7 +376,13 @@ function HeroCard({
       ) : null}
       <View style={styles.heroContent}>
         <TitleText
-          style={[styles.heroTitle, { textAlign: isRtl ? "right" : "left" }]}
+          style={[
+            styles.heroTitle,
+            {
+              textAlign: isRtl ? "right" : "left",
+              fontFamily: getAppFontFamily(isRtl, "bold"),
+            },
+          ]}
         >
           {title}
         </TitleText>
@@ -406,12 +412,7 @@ function SongCard({
     <TouchableOpacity
       activeOpacity={0.88}
       onPress={onPress}
-      style={[
-        styles.songCard,
-        {
-          transform: [{ scaleX: isRtl ? -1 : 1 }],
-        },
-      ]}
+      style={[styles.songCard]}
     >
       <View
         style={[
@@ -499,12 +500,7 @@ function ArtistCard({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={playLabel}
-      style={[
-        styles.artistCard,
-        {
-          transform: [{ scaleX: isRtl ? -1 : 1 }],
-        },
-      ]}
+      style={[styles.artistCard]}
     >
       <View
         style={[
@@ -542,14 +538,10 @@ function ArtistCard({
 function EmptyStateCard({
   label,
   colors,
-  loading = false,
 }: {
   label: string;
   colors: ReturnType<typeof useTheme>["colors"];
-  loading?: boolean;
 }) {
-  const { isRtl } = useAppLanguage();
-
   return (
     <View
       style={[
@@ -560,31 +552,92 @@ function EmptyStateCard({
         },
       ]}
     >
-      {loading ? (
+      <MutedText style={styles.emptyStateText}>{label}</MutedText>
+    </View>
+  );
+}
+
+function HorizontalSongSkeletonList({ count = 3 }: { count?: number }) {
+  const { isRtl } = useAppLanguage();
+
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={[
+        styles.horizontalListContent,
+        isRtl ? styles.horizontalListContentRtl : null,
+      ]}
+    >
+      {Array.from({ length: count }, (_, index) => (
         <View
+          key={`home-song-skeleton-${index}`}
           style={[
-            styles.emptyStateLoading,
-            { flexDirection: isRtl ? "row-reverse" : "row" },
+            styles.songCard,
+            { alignItems: isRtl ? "flex-end" : "flex-start" },
           ]}
         >
-          <ActivityIndicator size="small" color={colors.accent} />
-          <MutedText
-            style={[
-              styles.emptyStateText,
-              {
-                marginLeft: isRtl ? 0 : 10,
-                marginRight: isRtl ? 10 : 0,
-                textAlign: isRtl ? "right" : "left",
-              },
-            ]}
-          >
-            {label}
-          </MutedText>
+          <SkeletonLoader
+            width={168}
+            height={168}
+            style={{ borderRadius: 22 }}
+          />
+          <SkeletonLoader
+            height={20}
+            style={{ width: "78%", borderRadius: 8, marginTop: 12 }}
+          />
+          <SkeletonLoader
+            height={18}
+            style={{ width: "62%", borderRadius: 8, marginTop: 6 }}
+          />
+          <SkeletonLoader
+            height={16}
+            style={{ width: "38%", borderRadius: 7, marginTop: 4 }}
+          />
         </View>
-      ) : (
-        <MutedText style={styles.emptyStateText}>{label}</MutedText>
-      )}
-    </View>
+      ))}
+    </ScrollView>
+  );
+}
+
+function HorizontalArtistSkeletonList({ count = 3 }: { count?: number }) {
+  const { isRtl } = useAppLanguage();
+
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={[
+        styles.horizontalListContent,
+        isRtl ? styles.horizontalListContentRtl : null,
+      ]}
+    >
+      {Array.from({ length: count }, (_, index) => (
+        <View
+          key={`home-artist-skeleton-${index}`}
+          style={[
+            styles.artistCard,
+            { alignItems: isRtl ? "flex-end" : "center" },
+          ]}
+        >
+          <SkeletonLoader
+            width={168}
+            height={168}
+            style={{ borderRadius: 999 }}
+          />
+          <SkeletonLoader
+            width={120}
+            height={20}
+            style={{ borderRadius: 8, marginTop: 12 }}
+          />
+          <SkeletonLoader
+            width={88}
+            height={18}
+            style={{ borderRadius: 8, marginTop: 6 }}
+          />
+        </View>
+      ))}
+    </ScrollView>
   );
 }
 
@@ -704,10 +757,10 @@ export default function HomeScreen({ navigation }: any) {
   const [playedArtists, setPlayedArtists] = useState<PlayedArtistSummary[]>([]);
   const [isLoadingArtists, setIsLoadingArtists] = useState(false);
   const [madeForYouSeedTrack, setMadeForYouSeedTrack] = useState<Track | null>(
-    null
+    null,
   );
   const [madeForYouTracks, setMadeForYouTracks] = useState<SuggestedTrack[]>(
-    []
+    [],
   );
   const [isLoadingMadeForYou, setIsLoadingMadeForYou] = useState(false);
   const [heroTracks, setHeroTracks] = useState<SuggestedTrack[]>([]);
@@ -727,7 +780,7 @@ export default function HomeScreen({ navigation }: any) {
         if (nextAppState === "active") {
           syncCurrentHour();
         }
-      }
+      },
     );
 
     return () => {
@@ -748,20 +801,24 @@ export default function HomeScreen({ navigation }: any) {
 
   const uniqueRecentSongs = useMemo(
     () => dedupeTracksById(historyTracks).slice(0, 12),
-    [historyTracks]
+    [historyTracks],
   );
 
   const mostPlayedYoutubeArtist = useMemo(() => {
     return (
       playedArtists
-        .filter((artist) => artist.source === "youtube")
+        .filter(
+          (artist) =>
+            artist.source === "youtube" &&
+            !artist.name.toLowerCase().includes("- topic"),
+        )
         .sort((left, right) => right.count - left.count)[0] || null
     );
   }, [playedArtists]);
 
   const navigablePlayedArtists = useMemo(
     () => playedArtists.filter((artist) => canOpenArtistRoute(artist)),
-    [playedArtists]
+    [playedArtists],
   );
 
   const historyHeroSongs = useMemo(() => {
@@ -771,8 +828,8 @@ export default function HomeScreen({ navigation }: any) {
 
     return dedupeTracksById(
       mostPlayedYoutubeArtist.songs.filter(
-        (track) => getTrackSource(track) === "youtube"
-      )
+        (track) => getTrackSource(track) === "youtube",
+      ),
     );
   }, [mostPlayedYoutubeArtist]);
 
@@ -780,11 +837,11 @@ export default function HomeScreen({ navigation }: any) {
     async (queue: Track[], track: Track) => {
       const currentIndex = Math.max(
         queue.findIndex((entry) => entry.id === track.id),
-        0
+        0,
       );
       await playTrack(track, queue, currentIndex);
     },
-    [playTrack]
+    [playTrack],
   );
 
   const playSuggestedQueue = useCallback(
@@ -792,11 +849,11 @@ export default function HomeScreen({ navigation }: any) {
       const playableQueue = queue.map(toPlayableTrack);
       const currentIndex = Math.max(
         playableQueue.findIndex((entry) => entry.id === track.id),
-        0
+        0,
       );
       await playTrack(playableQueue[currentIndex], playableQueue, currentIndex);
     },
-    [playTrack]
+    [playTrack],
   );
 
   const resolveYouTubeVideoId = useCallback((track: Track): string => {
@@ -859,13 +916,18 @@ export default function HomeScreen({ navigation }: any) {
           continue;
         }
 
+        // Skip YouTube "Topic" auto-generated channels (e.g. "Artist Name - Topic")
+        // Same filter as streamifyweb-player hero
+        const isTopicChannel =
+          normalizedSource === "youtube" &&
+          artistName.toLowerCase().includes("- topic");
+        if (isTopicChannel) {
+          continue;
+        }
+
         artistMap.set(key, {
           key,
-          name:
-            normalizedSource === "youtube"
-              ? artistName.replace(/\s*-\s*Topic$/i, "") ||
-                t("home.unknownArtist")
-              : artistName,
+          name: artistName,
           artistId,
           image: track.artistImage || track.thumbnail,
           source: normalizedSource,
@@ -878,7 +940,7 @@ export default function HomeScreen({ navigation }: any) {
       for (const artist of artistMap.values()) {
         if (artist.source === "youtube" && artist.artistId) {
           const cachedBanner = sanitizeImageUrl(
-            bannerCache[artist.artistId]?.banner || ""
+            bannerCache[artist.artistId]?.banner || "",
           );
           if (cachedBanner) {
             artist.banner = cachedBanner;
@@ -889,11 +951,11 @@ export default function HomeScreen({ navigation }: any) {
       }
 
       setPlayedArtists(
-        [...artistMap.values()].sort((left, right) => right.count - left.count)
+        [...artistMap.values()].sort((left, right) => right.count - left.count),
       );
       setIsLoadingArtists(false);
     },
-    [t]
+    [t],
   );
 
   const loadMadeForYou = useCallback(
@@ -935,7 +997,7 @@ export default function HomeScreen({ navigation }: any) {
 
                 return {
                   id: String(
-                    video.videoId || video.id || video.url || video.title
+                    video.videoId || video.id || video.url || video.title,
                   ),
                   title: video.title,
                   artist: video.author || t("home.unknownArtist"),
@@ -954,7 +1016,7 @@ export default function HomeScreen({ navigation }: any) {
 
           if (source === "jiosaavn") {
             const suggestionsData = await fetchJioSaavnSuggestions(
-              candidate.id
+              candidate.id,
             );
             const nextTracks = Array.isArray(suggestionsData?.data)
               ? suggestionsData.data.slice(0, 12).map((song: any) => ({
@@ -986,7 +1048,7 @@ export default function HomeScreen({ navigation }: any) {
         setIsLoadingMadeForYou(false);
       }
     },
-    [resolveYouTubeVideoId, t]
+    [resolveYouTubeVideoId, t],
   );
 
   const loadHeroTracks = useCallback(
@@ -996,9 +1058,9 @@ export default function HomeScreen({ navigation }: any) {
           dedupeTracksById(artist?.songs || [])
             .map((track) => toSuggestedTrack(track))
             .filter((track): track is SuggestedTrack =>
-              Boolean(track?.id && track.title)
+              Boolean(track?.id && track.title),
             )
-            .slice(0, 12)
+            .slice(0, 12),
         );
         setIsLoadingHeroTracks(false);
         return;
@@ -1009,7 +1071,7 @@ export default function HomeScreen({ navigation }: any) {
       try {
         const bannerCache = await readHomeHeroBannerCache();
         const cachedBanner = sanitizeImageUrl(
-          bannerCache[artist.artistId]?.banner || ""
+          bannerCache[artist.artistId]?.banner || "",
         );
         let nextBanner = cachedBanner || artist.banner || "";
         let nextHeroTracks: SuggestedTrack[] = [];
@@ -1021,8 +1083,8 @@ export default function HomeScreen({ navigation }: any) {
               current.map((entry) =>
                 entry.key === artist.key
                   ? { ...entry, banner: cachedBanner }
-                  : entry
-              )
+                  : entry,
+              ),
             );
           }
         }
@@ -1041,7 +1103,7 @@ export default function HomeScreen({ navigation }: any) {
           try {
             const channelData = await fetchWithRetry<any>(
               `${candidateBase}/api/v1/channels/${encodeURIComponent(
-                artist.artistId
+                artist.artistId,
               )}`,
               {
                 headers: {
@@ -1051,7 +1113,7 @@ export default function HomeScreen({ navigation }: any) {
                 },
               },
               2,
-              350
+              350,
             );
 
             invidiousBase = candidateBase;
@@ -1102,7 +1164,7 @@ export default function HomeScreen({ navigation }: any) {
                 `${pipedBase}/channel/${artist.artistId}`,
                 {},
                 3,
-                1000
+                1000,
               );
 
               const streams = Array.isArray(channelData?.relatedStreams)
@@ -1127,7 +1189,7 @@ export default function HomeScreen({ navigation }: any) {
                 .slice()
                 .sort(
                   (left: any, right: any) =>
-                    getViewCount(right.views) - getViewCount(left.views)
+                    getViewCount(right.views) - getViewCount(left.views),
                 )
                 .slice(0, 12)
                 .map((video: any) => {
@@ -1164,18 +1226,19 @@ export default function HomeScreen({ navigation }: any) {
         }
 
         if (nextBanner && nextBanner !== artist.banner) {
-          prefetchImage(nextBanner);
+          const cleanBanner = sanitizeImageUrl(nextBanner);
+          prefetchImage(cleanBanner);
           bannerCache[artist.artistId] = {
-            banner: nextBanner,
+            banner: cleanBanner,
             cachedAt: Date.now(),
           };
           void writeHomeHeroBannerCache(bannerCache);
           setPlayedArtists((current) =>
             current.map((entry) =>
               entry.key === artist.key
-                ? { ...entry, banner: nextBanner }
-                : entry
-            )
+                ? { ...entry, banner: cleanBanner }
+                : entry,
+            ),
           );
         }
 
@@ -1186,7 +1249,7 @@ export default function HomeScreen({ navigation }: any) {
         setIsLoadingHeroTracks(false);
       }
     },
-    []
+    [],
   );
 
   const loadHome = useCallback(async () => {
@@ -1225,7 +1288,7 @@ export default function HomeScreen({ navigation }: any) {
   }, [heroTracks, historyHeroSongs]);
 
   const heroTitle = mostPlayedYoutubeArtist?.name || t("home.emptyHeroTitle");
-  const heroImage = mostPlayedYoutubeArtist?.banner || "";
+  const heroImage = sanitizeImageUrl(mostPlayedYoutubeArtist?.banner || "");
   const handleOpenSettings = useCallback(() => {
     navigation.navigate("Settings");
   }, [navigation]);
@@ -1375,7 +1438,6 @@ export default function HomeScreen({ navigation }: any) {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={isRtl ? styles.horizontalScrollRtl : undefined}
               contentContainerStyle={[
                 styles.horizontalListContent,
                 isRtl ? styles.horizontalListContentRtl : null,
@@ -1388,7 +1450,7 @@ export default function HomeScreen({ navigation }: any) {
                   subtitle={track.artist || t("home.unknownArtist")}
                   durationLabel={formatDuration(
                     track.duration,
-                    t("home.recentlyPlayedFallback")
+                    t("home.recentlyPlayedFallback"),
                   )}
                   image={track.thumbnail}
                   colors={colors}
@@ -1398,16 +1460,10 @@ export default function HomeScreen({ navigation }: any) {
                 />
               ))}
             </ScrollView>
+          ) : isLoadingHistory ? (
+            <HorizontalSongSkeletonList />
           ) : (
-            <EmptyStateCard
-              label={
-                isLoadingHistory
-                  ? t("common.loadingRecommendations")
-                  : t("home.noRecentSongs")
-              }
-              colors={colors}
-              loading={isLoadingHistory}
-            />
+            <EmptyStateCard label={t("home.noRecentSongs")} colors={colors} />
           )}
         </View>
 
@@ -1428,7 +1484,6 @@ export default function HomeScreen({ navigation }: any) {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={isRtl ? styles.horizontalScrollRtl : undefined}
               contentContainerStyle={[
                 styles.horizontalListContent,
                 isRtl ? styles.horizontalListContentRtl : null,
@@ -1441,7 +1496,7 @@ export default function HomeScreen({ navigation }: any) {
                   subtitle={track.artist}
                   durationLabel={formatDuration(
                     track.duration,
-                    t("home.recentlyPlayedFallback")
+                    t("home.recentlyPlayedFallback"),
                   )}
                   image={track.thumbnail}
                   colors={colors}
@@ -1451,15 +1506,12 @@ export default function HomeScreen({ navigation }: any) {
                 />
               ))}
             </ScrollView>
+          ) : isLoadingMadeForYou ? (
+            <HorizontalSongSkeletonList />
           ) : (
             <EmptyStateCard
-              label={
-                isLoadingMadeForYou
-                  ? t("common.loadingRecommendations")
-                  : t("home.playYoutubeToBuildMix")
-              }
+              label={t("home.playYoutubeToBuildMix")}
               colors={colors}
-              loading={isLoadingMadeForYou}
             />
           )}
         </View>
@@ -1473,7 +1525,6 @@ export default function HomeScreen({ navigation }: any) {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={isRtl ? styles.horizontalScrollRtl : undefined}
               contentContainerStyle={[
                 styles.horizontalListContent,
                 isRtl ? styles.horizontalListContentRtl : null,
@@ -1496,16 +1547,10 @@ export default function HomeScreen({ navigation }: any) {
                 />
               ))}
             </ScrollView>
+          ) : isLoadingArtists ? (
+            <HorizontalArtistSkeletonList />
           ) : (
-            <EmptyStateCard
-              label={
-                isLoadingArtists
-                  ? t("common.loadingRecommendations")
-                  : t("home.noRecentArtists")
-              }
-              colors={colors}
-              loading={isLoadingArtists}
-            />
+            <EmptyStateCard label={t("home.noRecentArtists")} colors={colors} />
           )}
         </View>
 
@@ -1520,7 +1565,6 @@ export default function HomeScreen({ navigation }: any) {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={isRtl ? styles.horizontalScrollRtl : undefined}
               contentContainerStyle={[
                 styles.horizontalListContent,
                 isRtl ? styles.horizontalListContentRtl : null,
@@ -1533,7 +1577,7 @@ export default function HomeScreen({ navigation }: any) {
                   subtitle={track.artist}
                   durationLabel={formatDuration(
                     track.duration,
-                    t("home.recentlyPlayedFallback")
+                    t("home.recentlyPlayedFallback"),
                   )}
                   image={track.thumbnail}
                   colors={colors}
@@ -1552,11 +1596,7 @@ export default function HomeScreen({ navigation }: any) {
               })}
               style={styles.sectionHeader}
             />
-            <EmptyStateCard
-              label={t("common.loadingRecommendations")}
-              colors={colors}
-              loading
-            />
+            <HorizontalSongSkeletonList />
           </View>
         ) : null}
       </ScrollView>
@@ -1699,14 +1739,10 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   horizontalListContent: {
-    paddingRight: 16,
+    paddingHorizontal: 16,
   },
   horizontalListContentRtl: {
-    paddingLeft: 0,
-    paddingRight: 16,
-  },
-  horizontalScrollRtl: {
-    transform: [{ scaleX: -1 }],
+    flexDirection: "row-reverse",
   },
   songCard: {
     width: 168,
@@ -1797,11 +1833,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 18,
   },
-  emptyStateLoading: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
   emptyStateText: {
-    marginLeft: 10,
+    textAlign: "center",
   },
 });

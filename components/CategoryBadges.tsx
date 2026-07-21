@@ -175,7 +175,7 @@ export const CategoryBadges: React.FC<CategoryBadgeProps> = ({
               style={{
                 fontFamily: getAppFontFamily(
                   isRtl,
-                  selectedCategories.includes(category) ? "semibold" : "medium"
+                  selectedCategories.includes(category) ? "semibold" : "medium",
                 ),
                 ...getTextDirectionStyle(isRtl),
               }}
@@ -291,7 +291,9 @@ export const BadgeHeader: React.FC<BadgeHeaderProps> = ({
       >
         {subtitle}
       </BadgeHeaderSubtitle>
-      <BadgeHeaderStats style={{ flexDirection: isRtl ? "row-reverse" : "row" }}>
+      <BadgeHeaderStats
+        style={{ flexDirection: isRtl ? "row-reverse" : "row" }}
+      >
         <BadgeStat>
           <BadgeStatText
             style={{

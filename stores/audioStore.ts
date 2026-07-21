@@ -1,5 +1,5 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 interface AudioState {
   // Playback state
@@ -62,7 +62,7 @@ export const useAudioStore = create<AudioState>()(
         }),
     }),
     {
-      name: 'audio-store',
+      name: "audio-store",
       partialize: (state) => ({
         // Only persist modal open state, not playback state
         isModalOpen: state.isModalOpen,

@@ -12,6 +12,7 @@ import {
 export function CloudLibraryBridge() {
   const { user, isConfigured, isLoading } = useAuth();
   const restoredUserIdsRef = useRef<Set<string>>(new Set());
+  const latestRestoreRequestRef = useRef(0);
 
   useEffect(() => {
     if (isLoading) {
@@ -36,14 +37,22 @@ export function CloudLibraryBridge() {
     let isCancelled = false;
 
     const restore = async (currentUserId: string) => {
+      const restoreRequestId = ++latestRestoreRequestRef.current;
+
       try {
         const remoteSnapshot = await pullCloudLibrarySnapshot();
-        if (isCancelled) {
+        if (
+          isCancelled ||
+          restoreRequestId !== latestRestoreRequestRef.current
+        ) {
           return;
         }
 
         const localSource = await buildCurrentLocalLibrarySyncSource();
-        if (isCancelled) {
+        if (
+          isCancelled ||
+          restoreRequestId !== latestRestoreRequestRef.current
+        ) {
           return;
         }
 
@@ -55,6 +64,12 @@ export function CloudLibraryBridge() {
 
         if (!hasRemoteData) {
           await saveLastSyncedCloudLibrarySnapshot(remoteSnapshot);
+          if (
+            isCancelled ||
+            restoreRequestId !== latestRestoreRequestRef.current
+          ) {
+            return;
+          }
           restoredUserIdsRef.current.add(currentUserId);
           return;
         }
@@ -64,9 +79,12 @@ export function CloudLibraryBridge() {
           : remoteSnapshot;
 
         await restoreCloudLibrary(nextSnapshot, {
-          deferTrackMetadataRefresh: true,
+          deferTrackMetadataRefresh: false,
         });
-        if (isCancelled) {
+        if (
+          isCancelled ||
+          restoreRequestId !== latestRestoreRequestRef.current
+        ) {
           return;
         }
 

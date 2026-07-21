@@ -112,10 +112,10 @@ function setJioSaavnBase(baseUrl?: string) {
 // Update function for dynamic Invidious instances
 export function updateInvidiousInstances(newInstances: readonly string[]) {
   const normalizedExisting = DYNAMIC_INVIDIOUS_INSTANCES.map((instance) =>
-    normalizeInvidiousInstance(instance)
+    normalizeInvidiousInstance(instance),
   );
   const normalizedNew = newInstances.map((instance) =>
-    normalizeInvidiousInstance(instance)
+    normalizeInvidiousInstance(instance),
   );
   const uniqueInstances = [
     ...new Set([...normalizedExisting, ...normalizedNew]),
@@ -127,7 +127,7 @@ export function updateInvidiousInstances(newInstances: readonly string[]) {
 export function setInvidiousInstances(instances: readonly string[]) {
   DYNAMIC_INVIDIOUS_INSTANCES = [
     ...new Set(
-      instances.map((instance) => normalizeInvidiousInstance(instance))
+      instances.map((instance) => normalizeInvidiousInstance(instance)),
     ),
   ];
   replaceList(API.invidious, DYNAMIC_INVIDIOUS_INSTANCES);
@@ -237,13 +237,13 @@ export function getYouTubeImageBase() {
 }
 
 export function getProviderOrigin(
-  provider: "soundcloud" | "youtube" | "jiosaavn"
+  provider: "soundcloud" | "youtube" | "jiosaavn",
 ) {
   return CURRENT_PROVIDER_ENDPOINTS.headers.origins[provider];
 }
 
 export function getProviderReferer(
-  provider: "soundcloud" | "youtube" | "jiosaavn"
+  provider: "soundcloud" | "youtube" | "jiosaavn",
 ) {
   return CURRENT_PROVIDER_ENDPOINTS.headers.referers[provider];
 }
@@ -251,12 +251,12 @@ export function getProviderReferer(
 // Helper functions for instance management
 export const idFromURL = (link: string | null) =>
   link?.match(
-    /(https?:\/\/)?((www\.)?(youtube(-nocookie)?|youtube.googleapis)\.com.*(v\/|v=|vi=|vi\/|e\/|embed\/|user\/.*\/u\/\d+\/)|youtu\.be\/)([_0-9a-z-]+)/i
+    /(https?:\/\/)?((www\.)?(youtube(-nocookie)?|youtube.googleapis)\.com.*(v\/|v=|vi=|vi\/|e\/|embed\/|user\/.*\/u\/\d+\/)|youtu\.be\/)([_0-9a-z-]+)/i,
   )?.[7];
 
 export const fetchJson = async <T>(
   url: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<T> =>
   fetch(url, { signal }).then((res) => {
     if (!res.ok) {
@@ -308,7 +308,7 @@ export const getJioSaavnAlbumEndpoint = (albumId: string) =>
 export const getJioSaavnArtistEndpoint = (
   artistId: string,
   type: "songs" | "albums" = "songs",
-  page: number = 0
+  page: number = 0,
 ) =>
   `${API.jiosaavn.base}${API.jiosaavn.artists}/${artistId}/${type}?page=${page}`;
 
@@ -320,12 +320,12 @@ export const getJioSaavnPlaylistByIdEndpoint = (playlistId: string) =>
 
 export const getJioSaavnArtistSongsEndpoint = (
   artistId: string,
-  page: number = 0
+  page: number = 0,
 ) => getJioSaavnArtistEndpoint(artistId, "songs", page);
 
 export const getJioSaavnArtistAlbumsEndpoint = (
   artistId: string,
-  page: number = 0
+  page: number = 0,
 ) => getJioSaavnArtistEndpoint(artistId, "albums", page);
 
 // Generic fetch with retry logic
@@ -333,7 +333,7 @@ export async function fetchWithRetry<T>(
   url: string,
   options: RequestInit = {},
   maxRetries: number = 1,
-  delay: number = 200
+  delay: number = 200,
 ): Promise<T> {
   let lastError: Error;
 
@@ -350,7 +350,7 @@ export async function fetchWithRetry<T>(
 
       if (attempt < maxRetries - 1) {
         await new Promise((resolve) =>
-          setTimeout(resolve, delay * (attempt + 1))
+          setTimeout(resolve, delay * (attempt + 1)),
         );
       }
     }
@@ -362,7 +362,7 @@ export async function fetchWithRetry<T>(
 // Instance health check
 export async function checkInstanceHealth(
   url: string,
-  timeout: number = 5000
+  timeout: number = 5000,
 ): Promise<boolean> {
   try {
     const controller = new AbortController();
@@ -382,7 +382,7 @@ export async function checkInstanceHealth(
 
 // Get healthy instances from a list
 export async function getHealthyInstances(
-  instances: string[]
+  instances: string[],
 ): Promise<string[]> {
   const healthChecks = instances.map(async (instance) => {
     const isHealthy = await checkInstanceHealth(instance);
@@ -397,7 +397,7 @@ export async function getHealthyInstances(
 
 async function fastCheckInvidiousInstance(
   baseUrl: string,
-  timeoutMs: number = 3000
+  timeoutMs: number = 3000,
 ): Promise<{ instance: string; ok: boolean; latency: number }> {
   const start = Date.now();
   try {
@@ -435,10 +435,10 @@ async function fastCheckInvidiousInstance(
 
 export async function getHealthyInvidiousInstancesSorted(
   instances: string[],
-  timeoutMs: number = 3000
+  timeoutMs: number = 3000,
 ): Promise<string[]> {
   const checks = await Promise.all(
-    instances.map((i) => fastCheckInvidiousInstance(i, timeoutMs))
+    instances.map((i) => fastCheckInvidiousInstance(i, timeoutMs)),
   );
   const healthy = checks.filter((c) => c.ok);
   healthy.sort((a, b) => a.latency - b.latency);
@@ -471,7 +471,7 @@ export async function fetchStreamFromPipedWithFallback(id: string) {
       console.log(
         `🔴 [API] Piped instance failed: ${baseUrl} (${
           (error as Error).message
-        })`
+        })`,
       );
       errors.push(`${baseUrl}: ${(error as Error).message}`);
       continue;
@@ -510,7 +510,7 @@ export async function fetchStreamFromInvidiousWithFallback(id: string) {
       console.log(
         `🔴 [API] Invidious instance failed: ${baseUrl} (${
           (error as Error).message
-        })`
+        })`,
       );
       errors.push(`${baseUrl}: ${(error as Error).message}`);
       continue;
@@ -525,10 +525,10 @@ async function applyProviderEndpoints(revalidate = false): Promise<void> {
   CURRENT_PROVIDER_ENDPOINTS = endpoints;
 
   const normalizedInvidious = endpoints.instances.invidious.map((instance) =>
-    normalizeInvidiousInstance(instance)
+    normalizeInvidiousInstance(instance),
   );
   const pipedInstances = endpoints.instances.piped.map((instance) =>
-    normalizeUrl(instance)
+    normalizeUrl(instance),
   );
 
   const [healthyPiped, healthyInvidious] = await Promise.all([
@@ -553,11 +553,11 @@ async function applyProviderEndpoints(revalidate = false): Promise<void> {
   }
 
   setInvidiousInstances(
-    healthyInvidious.length > 0 ? healthyInvidious : normalizedInvidious
+    healthyInvidious.length > 0 ? healthyInvidious : normalizedInvidious,
   );
 
   console.log(
-    `[API] Runtime config ready. Piped: ${API.piped.length} (${healthyPiped.length} healthy), Invidious: ${DYNAMIC_INVIDIOUS_INSTANCES.length} (${healthyInvidious.length} healthy)`
+    `[API] Runtime config ready. Piped: ${API.piped.length} (${healthyPiped.length} healthy), Invidious: ${DYNAMIC_INVIDIOUS_INSTANCES.length} (${healthyInvidious.length} healthy)`,
   );
 }
 
@@ -572,7 +572,7 @@ export async function initializeDynamicInstances(): Promise<void> {
 
 export async function getStreamData(
   id: string,
-  prefer: "piped" | "invidious" = "piped"
+  prefer: "piped" | "invidious" = "piped",
 ) {
   try {
     // Try preferred source with enhanced fallback
@@ -583,7 +583,7 @@ export async function getStreamData(
     }
   } catch (error) {
     console.log(
-      `[API] Preferred source (${prefer}) failed, trying fallback...`
+      `[API] Preferred source (${prefer}) failed, trying fallback...`,
     );
 
     // Fallback to other source
@@ -596,7 +596,7 @@ export async function getStreamData(
       }
     } catch (altError) {
       throw new Error(
-        `Both Piped and Invidious sources failed. Original: ${(error as Error).message}, Fallback: ${(altError as Error).message}`
+        `Both Piped and Invidious sources failed. Original: ${(error as Error).message}, Fallback: ${(altError as Error).message}`,
       );
     }
   }
@@ -608,7 +608,7 @@ export function getBestAudioUrl(piped: Piped) {
     return undefined;
   }
   const sorted = list.sort(
-    (a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0)
+    (a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0),
   );
   const best = sorted[0];
   return {
@@ -656,7 +656,7 @@ export async function fetchYouTubeMix(mixId: string, continuation?: string) {
 export async function fetchJioSaavnSuggestions(songId: string) {
   try {
     const response = await fetch(
-      `${getJioSaavnSongEndpoint(songId)}/suggestions`
+      `${getJioSaavnSongEndpoint(songId)}/suggestions`,
     );
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -664,7 +664,7 @@ export async function fetchJioSaavnSuggestions(songId: string) {
     return await response.json();
   } catch (error) {
     throw new Error(
-      `JioSaavn suggestions API failed: ${(error as Error).message}`
+      `JioSaavn suggestions API failed: ${(error as Error).message}`,
     );
   }
 }
@@ -689,7 +689,7 @@ export function extractYouTubeVideoId(url: string): string | null {
 
 // Helper function to determine track source
 export function getTrackSource(
-  track: Track
+  track: Track,
 ): "youtube" | "jiosaavn" | "unknown" {
   if (track._isJioSaavn) {
     return "jiosaavn";

@@ -52,7 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         const parsedUrl = new URL(url);
         const queryParams = parsedUrl.searchParams;
         const hashParams = new URLSearchParams(
-          parsedUrl.hash.replace(/^#/, "")
+          parsedUrl.hash.replace(/^#/, ""),
         );
 
         code =
@@ -189,7 +189,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         await supabase.auth.signOut();
       },
     }),
-    [isLoading, session, user]
+    [isLoading, session, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

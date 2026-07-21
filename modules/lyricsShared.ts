@@ -37,11 +37,11 @@ function stripDecorators(value: string): string {
       .replace(/\s*[\[\(\{][^\]\)\}]*[\]\)\}]\s*/g, " ")
       .replace(
         /\b(official|lyrics?|lyric|video|audio|hd|4k|remaster|re-master|remix|cover|acoustic|live|clean|explicit|amv|pmv)\b/gi,
-        " "
+        " ",
       )
       .replace(/\s*-\s*topic\s*/gi, " ")
       .replace(/\s*vevo\s*/gi, " ")
-      .replace(/[#⬆↗▶️🔔©®™]/g, " ")
+      .replace(/[#⬆↗▶️🔔©®™]/g, " "),
   );
 }
 
@@ -50,7 +50,7 @@ function stripFeatureSegments(value: string): string {
     value
       .replace(/\s+(?:ft\.?|feat\.?|featuring)\s+.+$/i, "")
       .replace(/\s*,\s*(?:ft\.?|feat\.?|featuring)\s+.+$/i, "")
-      .replace(/\s+\|\s+.+$/i, "")
+      .replace(/\s+\|\s+.+$/i, ""),
   );
 }
 
@@ -64,7 +64,7 @@ function sanitizeArtistValue(artist: string): string {
       .replace(/[#⬆↗]/g, " ")
       .replace(/\s*\((?:ft\.?|feat\.?|featuring)\s+[^)]+\)/gi, "")
       .replace(/\s+(?:ft\.?|feat\.?|featuring)\s+.+$/i, "")
-      .replace(/\s*[\/|]\s*.+$/i, "")
+      .replace(/\s*[\/|]\s*.+$/i, ""),
   );
 }
 
@@ -74,7 +74,7 @@ function extractPrimaryArtist(artist: string): string {
     sanitizedArtist
       .split(/,|&| x | X | and /)
       .map((part) => part.trim())
-      .filter(Boolean)[0] || sanitizedArtist
+      .filter(Boolean)[0] || sanitizedArtist,
   );
 }
 
@@ -169,7 +169,7 @@ export function buildLyricsCandidates(track: LyricsTrack): LyricsCandidate[] {
 function parseTimestampToSeconds(
   minutes: string,
   seconds: string,
-  fraction?: string
+  fraction?: string,
 ): number {
   const parsedMinutes = Number(minutes);
   const parsedSeconds = Number(seconds);
@@ -182,7 +182,7 @@ function parseTimestampToSeconds(
 
 function parseTimestampedLyrics(
   lyrics: string,
-  durationSeconds?: number
+  durationSeconds?: number,
 ): TimedLyricLine[] {
   const timestampPattern = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
   const entries: Array<{ text: string; startTime: number }> = [];
@@ -208,13 +208,13 @@ function parseTimestampedLyrics(
   if (!entries.length) return [];
 
   const sortedEntries = entries.sort(
-    (left, right) => left.startTime - right.startTime
+    (left, right) => left.startTime - right.startTime,
   );
   const fallbackDuration = Math.max(
     durationSeconds || 0,
     sortedEntries.length > 0
       ? sortedEntries[sortedEntries.length - 1]?.startTime || 0
-      : 0
+      : 0,
   );
 
   return sortedEntries.map((entry, index) => ({
@@ -228,14 +228,14 @@ function parseTimestampedLyrics(
 
 export function buildTimedLyrics(
   lyrics: string,
-  durationSeconds?: number
+  durationSeconds?: number,
 ): TimedLyricLine[] {
   return parseTimestampedLyrics(lyrics, durationSeconds);
 }
 
 export function findActiveLyricIndex(
   timedLyrics: TimedLyricLine[],
-  currentTime: number
+  currentTime: number,
 ): number {
   if (!timedLyrics.length) return -1;
 

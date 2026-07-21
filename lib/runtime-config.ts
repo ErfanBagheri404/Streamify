@@ -100,7 +100,7 @@ function getRuntimeConfigUrl(): string {
 }
 
 function isRuntimeConfigFresh(
-  cache: RuntimeConfigCacheRecord | null
+  cache: RuntimeConfigCacheRecord | null,
 ): cache is RuntimeConfigCacheRecord {
   return Boolean(cache && Date.now() - cache.cachedAt < RUNTIME_CONFIG_TTL_MS);
 }
@@ -133,7 +133,7 @@ async function writeCachedRuntimeConfig(cache: RuntimeConfigCacheRecord) {
 }
 
 async function fetchRuntimeConfig(
-  cached: RuntimeConfigCacheRecord | null
+  cached: RuntimeConfigCacheRecord | null,
 ): Promise<StreamifyRuntimeConfig> {
   try {
     const response = await fetch(getRuntimeConfigUrl(), {

@@ -43,7 +43,7 @@ function scoreImageCandidate(value: unknown): number {
 }
 
 export function extractYouTubeVideoId(
-  value: string | null | undefined
+  value: string | null | undefined,
 ): string {
   const rawValue = cleanValue(value);
   if (!rawValue) {
@@ -80,11 +80,11 @@ export function extractYouTubeVideoId(
 export function buildYouTubeThumbnailUrl(
   videoId: string,
   variant = DEFAULT_YOUTUBE_THUMBNAIL_VARIANT,
-  useWebp = false
+  useWebp = false,
 ): string {
   const thumbnailPath = useWebp ? "vi_webp" : "vi";
   return `${YOUTUBE_IMAGE_BASE}/${thumbnailPath}/${encodeURIComponent(
-    videoId
+    videoId,
   )}/${variant}`;
 }
 
@@ -94,7 +94,7 @@ function extractYouTubeThumbnailDetails(value: string): {
 } {
   const rawValue = cleanValue(value);
   const match = rawValue.match(
-    /\/(vi|vi_webp)\/[^/?#]+\/([^/?#]+(?:\.[a-z0-9]+)?)/i
+    /\/(vi|vi_webp)\/[^/?#]+\/([^/?#]+(?:\.[a-z0-9]+)?)/i,
   );
 
   if (!match) {
@@ -134,7 +134,7 @@ function buildWsrvUrl(
     trim?: string | number;
     output?: YouTubeThumbnailOutput;
     quality?: number;
-  }
+  },
 ): string {
   const params = new URLSearchParams({
     url,
@@ -189,8 +189,8 @@ export function buildProxiedYouTubeThumbnailUrl(input: {
       input.variant ||
         thumbnailDetails.variant ||
         DEFAULT_YOUTUBE_THUMBNAIL_VARIANT,
-      thumbnailDetails.useWebp
-    )
+      thumbnailDetails.useWebp,
+    ),
   );
 }
 
@@ -221,7 +221,7 @@ export function normalizeYouTubeThumbnailUrl(input: {
       input.variant ||
         thumbnailDetails.variant ||
         DEFAULT_YOUTUBE_THUMBNAIL_VARIANT,
-      thumbnailDetails.useWebp
+      thumbnailDetails.useWebp,
     ),
     {
       width: input.width,
@@ -231,7 +231,7 @@ export function normalizeYouTubeThumbnailUrl(input: {
       trim: input.trim,
       output: input.output,
       quality: input.quality,
-    }
+    },
   );
 }
 
@@ -242,10 +242,14 @@ function upgradeYouTubeImage(url: string): string {
 
   let nextUrl = url;
 
-  if (/(^|\/)(default|mqdefault|sddefault|hqdefault)\.(jpg|jpeg|webp)/i.test(nextUrl)) {
+  if (
+    /(^|\/)(default|mqdefault|sddefault|hqdefault)\.(jpg|jpeg|webp)/i.test(
+      nextUrl,
+    )
+  ) {
     nextUrl = nextUrl.replace(
       /(^|\/)(default|mqdefault|sddefault|hqdefault)\.(jpg|jpeg|webp)/i,
-      "$1hqdefault.$3"
+      "$1hqdefault.$3",
     );
   }
 
@@ -342,7 +346,10 @@ export function sanitizeImageUrl(url: string, base?: string): string {
     return upgradeSoundCloudImage(normalized);
   }
 
-  if (normalized.includes("saavncdn.com") || normalized.includes("jiosaavn.com")) {
+  if (
+    normalized.includes("saavncdn.com") ||
+    normalized.includes("jiosaavn.com")
+  ) {
     return upgradeJioSaavnImage(normalized);
   }
 
@@ -364,7 +371,7 @@ export function pickBestImageUrl(value: unknown, base?: string): string {
 
   if (Array.isArray(value)) {
     const sorted = [...value].sort(
-      (left, right) => scoreImageCandidate(right) - scoreImageCandidate(left)
+      (left, right) => scoreImageCandidate(right) - scoreImageCandidate(left),
     );
 
     for (const entry of sorted) {
@@ -384,7 +391,9 @@ export function pickBestImageUrl(value: unknown, base?: string): string {
           record.src,
           record.thumbnail,
           record.thumbnailUrl,
-        ].find((candidate) => typeof candidate === "string" && candidate.trim());
+        ].find(
+          (candidate) => typeof candidate === "string" && candidate.trim(),
+        );
 
         if (typeof candidateUrl === "string") {
           const normalizedUrl = sanitizeImageUrl(candidateUrl, base);
@@ -450,8 +459,7 @@ export function generateImageUrl(
     buildProxiedYouTubeThumbnailUrl({
       videoId: id,
       variant: `${res}default.webp`,
-    }) ||
-    `https://i.ytimg.com/vi_webp/${id}/${res}default.webp${music}`
+    }) || `https://i.ytimg.com/vi_webp/${id}/${res}default.webp${music}`
   );
 }
 

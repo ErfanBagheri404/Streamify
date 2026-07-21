@@ -108,24 +108,33 @@ jobs:
       - name: 🔐 Write public production env
         run: |
           set -euo pipefail
+
+          required_vars=(
+            EXPO_PUBLIC_SUPABASE_URL
+            EXPO_PUBLIC_SUPABASE_ANON_KEY
+            EXPO_PUBLIC_AUTH_ACCOUNT_STATUS_URL
+          )
+
+          missing_vars=()
+          for var_name in "${required_vars[@]}"; do
+            if [ -z "${!var_name:-}" ]; then
+              missing_vars+=("$var_name")
+            fi
+          done
+
+          if [ "${#missing_vars[@]}" -gt 0 ]; then
+            echo "Missing required public production env vars: ${missing_vars[*]}" >&2
+            exit 1
+          fi
+
           rm -f .env.production
           {
-            if [ -n "${EXPO_PUBLIC_SUPABASE_URL:-}" ]; then
-              echo "EXPO_PUBLIC_SUPABASE_URL=${EXPO_PUBLIC_SUPABASE_URL}"
-            fi
-            if [ -n "${EXPO_PUBLIC_SUPABASE_ANON_KEY:-}" ]; then
-              echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=${EXPO_PUBLIC_SUPABASE_ANON_KEY}"
-            fi
-            if [ -n "${EXPO_PUBLIC_AUTH_ACCOUNT_STATUS_URL:-}" ]; then
-              echo "EXPO_PUBLIC_AUTH_ACCOUNT_STATUS_URL=${EXPO_PUBLIC_AUTH_ACCOUNT_STATUS_URL}"
-            fi
+            echo "EXPO_PUBLIC_SUPABASE_URL=${EXPO_PUBLIC_SUPABASE_URL}"
+            echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=${EXPO_PUBLIC_SUPABASE_ANON_KEY}"
+            echo "EXPO_PUBLIC_AUTH_ACCOUNT_STATUS_URL=${EXPO_PUBLIC_AUTH_ACCOUNT_STATUS_URL}"
           } > .env.production
 
-          if [ -s .env.production ]; then
-            sed 's/=.*/=[secure]/' .env.production
-          else
-            echo "No public auth environment values were provided."
-          fi
+          sed 's/=.*/=[secure]/' .env.production
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}

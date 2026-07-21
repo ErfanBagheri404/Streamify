@@ -341,8 +341,6 @@ const TrackRow = styled.View`
 const LikeButton = styled(TouchableOpacity)`
   justify-content: center;
   align-items: center;
-  width: 40px;
-  height: 40px;
   flex-shrink: 0;
 `;
 
@@ -629,8 +627,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       : repeatMode === "one"
         ? t("miniPlayer.repeatOneShort")
         : null;
-  const previousIconName = isRtl ? "play-forward" : "play-back";
-  const nextIconName = isRtl ? "play-back" : "play-forward";
+  const previousIconName = "play-back";
+  const nextIconName = "play-forward";
   const fullscreenArtworkSources = React.useMemo(() => {
     const baseArtworkUrl = sanitizeImageUrl(currentTrack?.thumbnail || "");
     if (!baseArtworkUrl) {
@@ -739,7 +737,18 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
           ? "جستجوی دستی متن آهنگ انجام نشد. دوباره امتحان کنید."
           : "Couldn't load lyrics for that search. Try another spelling.",
     }),
-    [language]
+    [language],
+  );
+  const centeredTextDirectionStyle = React.useMemo(
+    () => getTextDirectionStyle(isRtl, "center"),
+    [isRtl],
+  );
+  const cacheInfoRowTextStyle = React.useMemo(
+    () => ({
+      fontFamily: getAppFontFamily(isRtl, "medium"),
+      ...centeredTextDirectionStyle,
+    }),
+    [centeredTextDirectionStyle, isRtl],
   );
 
   useEffect(() => {
@@ -749,7 +758,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   useEffect(() => {
     setIsHighResArtworkReady(
       !!fullscreenArtworkSources.highRes &&
-        fullscreenArtworkSources.highRes === fullscreenArtworkSources.lowRes
+        fullscreenArtworkSources.highRes === fullscreenArtworkSources.lowRes,
     );
   }, [
     currentTrack?.id,
@@ -798,7 +807,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
         icon: "information-circle-outline",
       },
     ],
-    [language]
+    [language],
   );
 
   // Memoize position calculations to prevent unnecessary re-renders
@@ -812,7 +821,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       : (pendingSeekValue ?? currentPosition);
     const calculatedPosition = Math.min(
       Math.max(displayPosition, 0),
-      effectiveDuration
+      effectiveDuration,
     );
 
     return calculatedPosition;
@@ -833,7 +842,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     const totalDurationSeconds = systemDuration || trackDuration || 1;
 
     console.log(
-      `[FullPlayerModal] Duration calculation - systemDuration: ${systemDuration}, trackDuration: ${trackDuration}, totalDurationSeconds: ${totalDurationSeconds}`
+      `[FullPlayerModal] Duration calculation - systemDuration: ${systemDuration}, trackDuration: ${trackDuration}, totalDurationSeconds: ${totalDurationSeconds}`,
     );
 
     return totalDurationSeconds;
@@ -860,12 +869,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       isSyncedLyrics
         ? buildTimedLyrics(lyricsText, effectiveDurationSeconds)
         : [],
-    [effectiveDurationSeconds, isSyncedLyrics, lyricsText]
+    [effectiveDurationSeconds, isSyncedLyrics, lyricsText],
   );
 
   const plainLyricsLines = React.useMemo(
     () => lyricsText.split("\n").filter((line) => line.trim()),
-    [lyricsText]
+    [lyricsText],
   );
 
   const currentLyricIndex = React.useMemo(() => {
@@ -927,7 +936,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
     const targetY = Math.max(
       0,
-      activeLayout.y + activeLayout.height / 2 - lyricsViewportHeight / 2
+      activeLayout.y + activeLayout.height / 2 - lyricsViewportHeight / 2,
     );
     lyricsScrollRef.current.scrollTo({
       y: targetY,
@@ -1037,7 +1046,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
         animateSheet(target);
       },
-    })
+    }),
   ).current;
 
   const openOptions = () => {
@@ -1068,7 +1077,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     try {
       // Check if song is already in playlist
       const isAlreadyInPlaylist = playlist.tracks.some(
-        (track) => track.id === currentTrack.id
+        (track) => track.id === currentTrack.id,
       );
 
       if (isAlreadyInPlaylist) {
@@ -1147,7 +1156,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       console.log("[FullPlayerModal] Starting lyrics fetch...");
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Lyrics fetch timeout")), 15000)
+        setTimeout(() => reject(new Error("Lyrics fetch timeout")), 15000),
       );
 
       try {
@@ -1172,7 +1181,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       } catch (error) {
         console.error(
           "[FullPlayerModal] Error or timeout fetching lyrics:",
-          error
+          error,
         );
         if (cancelled) {
           return;
@@ -1206,7 +1215,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 ...prev,
                 percentage: Math.max(
                   prev.percentage || 0,
-                  cacheProgress.percentage
+                  cacheProgress.percentage,
                 ),
                 isDownloading: cacheProgress.percentage >= 100 ? false : true,
               }
@@ -1216,7 +1225,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               totalFileSize: 0,
               isFullyCached: false,
               isDownloading: cacheProgress.percentage >= 100 ? false : true,
-            }
+            },
       );
     }
   }, [cacheProgress, currentTrack?.id]);
@@ -1282,7 +1291,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const displayedSeekValue = clamp(
     isSeeking ? seekValue : displayPositionSeconds || 0,
     0,
-    effectiveDurationSeconds || 1
+    effectiveDurationSeconds || 1,
   );
   const seekRatio =
     effectiveDurationSeconds > 0
@@ -1300,7 +1309,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       const ratio = clamp(locationX / seekBarWidth, 0, 1);
       return ratio * effectiveDurationSeconds;
     },
-    [effectiveDurationSeconds, seekBarWidth]
+    [effectiveDurationSeconds, seekBarWidth],
   );
 
   const previewSeekValue = React.useCallback(
@@ -1310,7 +1319,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       setSeekValue(nextValue);
       return nextValue;
     },
-    [resolveSeekValueFromX]
+    [resolveSeekValueFromX],
   );
 
   const commitSeekValue = React.useCallback(
@@ -1321,7 +1330,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
       void handleSeek(clamp(valueSeconds, 0, effectiveDurationSeconds));
     },
-    [canSeek, effectiveDurationSeconds]
+    [canSeek, effectiveDurationSeconds],
   );
 
   const handleSeekBarLayout = React.useCallback((event: LayoutChangeEvent) => {
@@ -1350,7 +1359,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
           setSeekValue(position >= 0 ? position : 0);
         },
       }),
-    [canSeek, commitSeekValue, position, previewSeekValue]
+    [canSeek, commitSeekValue, position, previewSeekValue],
   );
 
   const handleSeekAccessibilityAction = React.useCallback(
@@ -1366,7 +1375,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
         commitSeekValue(displayedSeekValue - SEEK_STEP_SECONDS);
       }
     },
-    [canSeek, commitSeekValue, displayedSeekValue]
+    [canSeek, commitSeekValue, displayedSeekValue],
   );
 
   const handlePlayPause = async () => {
@@ -1411,7 +1420,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
           artist: nextArtist,
           title: nextTitle,
         },
-        { force: true }
+        { force: true },
       );
 
       if (!payload?.lyrics) {
@@ -1536,10 +1545,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                     <CacheOverlay>
                       <CacheInfoContainer>
                         {!isSongLiked(currentTrack.id) ? (
-                          <CacheInfoRow>{copy.cacheHint}</CacheInfoRow>
+                          <CacheInfoRow style={cacheInfoRowTextStyle}>
+                            {copy.cacheHint}
+                          </CacheInfoRow>
                         ) : cacheInfo ? (
                           <>
-                            <CacheInfoRow>
+                            <CacheInfoRow style={cacheInfoRowTextStyle}>
                               {cacheInfo.isDownloading &&
                               !cacheInfo.isFullyCached &&
                               cacheInfo.percentage <= 0
@@ -1547,22 +1558,24 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                                 : cacheInfo.isFullyCached
                                   ? copy.cachedPercent(100)
                                   : copy.cachedPercent(
-                                      Math.round(cacheInfo.percentage)
+                                      Math.round(cacheInfo.percentage),
                                     )}
                             </CacheInfoRow>
                             {cacheInfo.fileSize > 0 && (
-                              <CacheInfoRow>
+                              <CacheInfoRow style={cacheInfoRowTextStyle}>
                                 {copy.downloaded(cacheInfo.fileSize)}
                               </CacheInfoRow>
                             )}
                             {cacheInfo.totalFileSize > 0 && (
-                              <CacheInfoRow>
+                              <CacheInfoRow style={cacheInfoRowTextStyle}>
                                 {copy.total(cacheInfo.totalFileSize)}
                               </CacheInfoRow>
                             )}
                           </>
                         ) : (
-                          <CacheInfoRow>{t("player.caching")}</CacheInfoRow>
+                          <CacheInfoRow style={cacheInfoRowTextStyle}>
+                            {t("player.caching")}
+                          </CacheInfoRow>
                         )}
                       </CacheInfoContainer>
                     </CacheOverlay>
@@ -1585,9 +1598,11 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                     <CacheOverlay>
                       <CacheInfoContainer>
                         {!isSongLiked(currentTrack.id) ? (
-                          <CacheInfoRow>{copy.cacheHint}</CacheInfoRow>
+                          <CacheInfoRow style={cacheInfoRowTextStyle}>
+                            {copy.cacheHint}
+                          </CacheInfoRow>
                         ) : cacheInfo ? (
-                          <CacheInfoRow>
+                          <CacheInfoRow style={cacheInfoRowTextStyle}>
                             {cacheInfo.isDownloading &&
                             !cacheInfo.isFullyCached &&
                             cacheInfo.percentage <= 0
@@ -1595,11 +1610,13 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                               : cacheInfo.isFullyCached
                                 ? copy.cachedPercent(100)
                                 : copy.cachedPercent(
-                                    Math.round(cacheInfo.percentage)
+                                    Math.round(cacheInfo.percentage),
                                   )}
                           </CacheInfoRow>
                         ) : (
-                          <CacheInfoRow>{t("player.caching")}</CacheInfoRow>
+                          <CacheInfoRow style={cacheInfoRowTextStyle}>
+                            {t("player.caching")}
+                          </CacheInfoRow>
                         )}
                       </CacheInfoContainer>
                     </CacheOverlay>
@@ -1655,8 +1672,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 <LikeButton
                   onPress={handleLike}
                   style={{
-                    marginLeft: isRtl ? 16 : 12,
-                    marginRight: isRtl ? 12 : 16,
+                    marginLeft: isRtl ? 0 : 0,
+                    marginRight: isRtl ? 0 : 0,
                   }}
                 >
                   <Entypo
@@ -1722,7 +1739,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                       max: Math.round(effectiveDurationSeconds || 0),
                       now: Math.round(displayedSeekValue),
                       text: `${formatTime(displayedSeekValue * 1000)} / ${formatTime(
-                        (effectiveDurationSeconds || 0) * 1000
+                        (effectiveDurationSeconds || 0) * 1000,
                       )}`,
                     }}
                     onAccessibilityAction={handleSeekAccessibilityAction}
@@ -1911,14 +1928,14 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                     }
                     onScrollBeginDrag={() =>
                       setLyricsManualModeUntil(
-                        Date.now() + LYRICS_MANUAL_SCROLL_HOLD_MS
+                        Date.now() + LYRICS_MANUAL_SCROLL_HOLD_MS,
                       )
                     }
                     contentContainerStyle={{
                       paddingTop: 8,
                       paddingBottom: Math.max(
                         56,
-                        lyricsViewportHeight / 2 - 28
+                        lyricsViewportHeight / 2 - 28,
                       ),
                     }}
                     scrollEventThrottle={16}
@@ -1963,11 +1980,13 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                                   : 0.78,
                             fontFamily: getAppFontFamily(
                               isRtl,
-                              index === currentLyricIndex ? "medium" : "regular"
+                              index === currentLyricIndex
+                                ? "medium"
+                                : "regular",
                             ),
                             ...getTextDirectionStyle(
                               isRtl,
-                              isRtl ? "right" : "left"
+                              isRtl ? "right" : "left",
                             ),
                           }}
                         >
@@ -2286,7 +2305,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                         {playlist.length > 1
                           ? copy.queuePosition(
                               currentIndex + 1,
-                              playlist.length
+                              playlist.length,
                             )
                           : copy.tapToPlay}
                       </Text>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { usePlayer } from "../../contexts/PlayerContext";
 import Playlist from "../Playlist";
+import { useAppLanguage } from "../../hooks/useAppLanguage";
 
 interface PreviouslyPlayedScreenProps {
   navigation: any;
@@ -11,6 +12,7 @@ export const PreviouslyPlayedScreen: React.FC<PreviouslyPlayedScreenProps> = ({
 }) => {
   console.log("[PreviouslyPlayedScreen] Component rendered");
   const { previouslyPlayedSongs } = usePlayer();
+  const { t, isRtl } = useAppLanguage();
 
   // Use library cover instead of album art for Previously Played
   const albumArtUrl = ""; // Empty since we're using library cover
@@ -41,15 +43,22 @@ export const PreviouslyPlayedScreen: React.FC<PreviouslyPlayedScreenProps> = ({
     }, 50);
   };
 
+  const title = t("screens.previously_played.title");
+  const songCountLabel =
+    isRtl || previouslyPlayedSongs.length !== 1
+      ? `${previouslyPlayedSongs.length} ${t("search.songs")}`
+      : `${previouslyPlayedSongs.length} song`;
+
   if (isLoading) {
     return (
       <Playlist
-        title="Previously Played"
+        title={title}
         albumArtUrl={albumArtUrl}
         libraryCover="previously-played"
         songs={[]}
+        isLoading
         onBack={handleGoBack}
-        emptyMessage="Loading..."
+        emptyMessage={t("common.loading")}
         emptySubMessage=""
         showSongOptions={false}
         showHeaderOptions={false}
@@ -60,14 +69,20 @@ export const PreviouslyPlayedScreen: React.FC<PreviouslyPlayedScreenProps> = ({
 
   return (
     <Playlist
-      title="Previously Played"
-      artist={`${previouslyPlayedSongs.length} songs`}
+      title={title}
+      artist={songCountLabel}
       albumArtUrl={albumArtUrl}
       libraryCover="previously-played"
       songs={previouslyPlayedSongs}
       onBack={handleGoBack}
-      emptyMessage="No previously played songs"
-      emptySubMessage="Play some songs to see them here"
+      emptyMessage={
+        isRtl ? "هنوز آهنگی قبلا پخش نشده است" : "No previously played songs"
+      }
+      emptySubMessage={
+        isRtl
+          ? "چند آهنگ پخش کنید تا اینجا نمایش داده شوند"
+          : "Play some songs to see them here"
+      }
       emptyIcon="time"
       showSongOptions={false}
       showHeaderOptions={false}

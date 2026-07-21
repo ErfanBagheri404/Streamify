@@ -38,6 +38,7 @@ export type LocalLibrarySyncSource = {
 
 export type RestoreCloudLibraryOptions = {
   deferTrackMetadataRefresh?: boolean;
+  onLibraryHydrated?: () => void | Promise<void>;
 };
 
 function normalizeString(value: unknown): string {
@@ -77,7 +78,7 @@ function isPlaceholderTrackTitle(value: string): boolean {
 function pickTrackTitle(
   candidates: unknown[],
   expectedId?: string,
-  fallback = "Unknown Track"
+  fallback = "Unknown Track",
 ): string {
   for (const candidate of candidates) {
     const normalized = normalizeString(candidate);
@@ -107,7 +108,7 @@ function isPlaceholderArtistName(value: string): boolean {
 
 function pickTrackArtist(
   candidates: unknown[],
-  fallback = "Unknown Artist"
+  fallback = "Unknown Artist",
 ): string {
   for (const candidate of candidates) {
     const normalized = normalizeString(candidate);
@@ -206,7 +207,7 @@ function normalizeTrack(track: Partial<Track>): Track {
   };
 }
 
-function hasPlaceholderTrackMetadata(track: Partial<Track>): boolean {
+export function hasPlaceholderTrackMetadata(track: Partial<Track>): boolean {
   const title = normalizeString(track.title);
   const artist = normalizeString(track.artist);
   const source = getTrackSource(track);
@@ -218,7 +219,7 @@ function hasPlaceholderTrackMetadata(track: Partial<Track>): boolean {
     looksLikeBareMediaId(title, id) ||
     !artist ||
     artist.toLowerCase() === "unknown artist" ||
-    artist.toLowerCase() === source.toLowerCase()
+    artist.toLowerCase() === source.toLowerCase(),
   );
 }
 
@@ -233,7 +234,7 @@ function createPlaceholderTrack(ref: TrackRef): Track {
 
 function createRestoredTrackSnapshot(
   ref: TrackRef,
-  knownTrack?: Track | null
+  knownTrack?: Track | null,
 ): Track {
   const placeholder = createPlaceholderTrack(ref);
   return knownTrack ? mergeTrack(placeholder, knownTrack) : placeholder;
@@ -241,7 +242,7 @@ function createRestoredTrackSnapshot(
 
 function mergeTrack(
   primary: Partial<Track>,
-  secondary?: Partial<Track> | null
+  secondary?: Partial<Track> | null,
 ): Track {
   const primaryTrack = normalizeTrack(primary);
   const secondaryTrack = secondary ? normalizeTrack(secondary) : null;
@@ -251,11 +252,11 @@ function mergeTrack(
     ...primaryTrack,
     title: pickTrackTitle(
       [primaryTrack.title, secondaryTrack?.title],
-      primaryTrack.id || secondaryTrack?.id
+      primaryTrack.id || secondaryTrack?.id,
     ),
     artist: pickTrackArtist(
       [primaryTrack.artist, secondaryTrack?.artist],
-      getTrackSource(primaryTrack)
+      getTrackSource(primaryTrack),
     ),
     artistId:
       normalizeString(primaryTrack.artistId) ||
@@ -280,7 +281,7 @@ function mergeTrack(
 
 function mergeTracks(
   primaryTracks: Track[],
-  secondaryTracks: Track[]
+  secondaryTracks: Track[],
 ): Track[] {
   const secondaryByKey = new Map<string, Track>();
   for (const track of secondaryTracks) {
@@ -317,11 +318,11 @@ function mergeTracks(
 
 function mergePlaylist(
   primary: Playlist,
-  secondary?: Playlist | null
+  secondary?: Playlist | null,
 ): Playlist {
   const mergedTracks = mergeTracks(
     primary.tracks || [],
-    secondary?.tracks || []
+    secondary?.tracks || [],
   );
   return {
     id: normalizeString(primary.id),
@@ -347,7 +348,7 @@ function mergePlaylist(
 
 function mergePlaylists(
   primaryPlaylists: Playlist[],
-  secondaryPlaylists: Playlist[]
+  secondaryPlaylists: Playlist[],
 ): Playlist[] {
   const secondaryById = new Map<string, Playlist>();
   for (const playlist of secondaryPlaylists) {
@@ -381,7 +382,7 @@ function mergePlaylists(
 
 function createCloudLibrarySnapshot(
   playlists: Playlist[],
-  likedSongs: Track[]
+  likedSongs: Track[],
 ): CloudLibrarySnapshot {
   return {
     playlists: playlists.map((playlist) => ({
@@ -394,20 +395,20 @@ function createCloudLibrarySnapshot(
       songs: dedupeTrackRefs(
         (playlist.tracks || [])
           .map((track) => createTrackRef(track))
-          .filter((track): track is TrackRef => Boolean(track))
+          .filter((track): track is TrackRef => Boolean(track)),
       ),
     })),
     likedSongs: dedupeTrackRefs(
       likedSongs
         .map((track) => createTrackRef(track))
-        .filter((track): track is TrackRef => Boolean(track))
+        .filter((track): track is TrackRef => Boolean(track)),
     ),
   };
 }
 
 export function mergeCloudLibrarySnapshots(
   primarySnapshot: CloudLibrarySnapshot,
-  secondarySnapshot: CloudLibrarySnapshot
+  secondarySnapshot: CloudLibrarySnapshot,
 ): CloudLibrarySnapshot {
   const secondaryPlaylistsById = new Map<string, PlaylistSnapshot>();
   for (const playlist of secondarySnapshot.playlists || []) {
@@ -495,7 +496,7 @@ function normalizeTrackRefs(value: unknown): TrackRef[] {
   return dedupeTrackRefs(
     value
       .map((entry) => normalizeTrackRef(entry))
-      .filter((entry): entry is TrackRef => Boolean(entry))
+      .filter((entry): entry is TrackRef => Boolean(entry)),
   );
 }
 
@@ -521,7 +522,7 @@ function normalizePlaylistSnapshot(value: unknown): PlaylistSnapshot | null {
 }
 
 function normalizeCloudLibrarySnapshot(
-  snapshot: unknown
+  snapshot: unknown,
 ): CloudLibrarySnapshot {
   if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
     return { playlists: [], likedSongs: [] };
@@ -541,7 +542,7 @@ function normalizeCloudLibrarySnapshot(
 function choosePresence(
   base: boolean,
   local: boolean,
-  remote: boolean
+  remote: boolean,
 ): boolean {
   if (local === remote) {
     return local;
@@ -571,7 +572,7 @@ function chooseScalarValue<T>(base: T, local: T, remote: T): T {
 function buildOrderedTrackKeys(
   baseRefs: TrackRef[],
   localRefs: TrackRef[],
-  remoteRefs: TrackRef[]
+  remoteRefs: TrackRef[],
 ): string[] {
   const keys: string[] = [];
   const seen = new Set<string>();
@@ -591,14 +592,14 @@ function buildOrderedTrackKeys(
 function mergeTrackRefsWithBase(
   baseRefs: TrackRef[],
   localRefs: TrackRef[],
-  remoteRefs: TrackRef[]
+  remoteRefs: TrackRef[],
 ): TrackRef[] {
   const baseByKey = new Map(baseRefs.map((ref) => [getTrackRefKey(ref), ref]));
   const localByKey = new Map(
-    localRefs.map((ref) => [getTrackRefKey(ref), ref])
+    localRefs.map((ref) => [getTrackRefKey(ref), ref]),
   );
   const remoteByKey = new Map(
-    remoteRefs.map((ref) => [getTrackRefKey(ref), ref])
+    remoteRefs.map((ref) => [getTrackRefKey(ref), ref]),
   );
 
   const merged: TrackRef[] = [];
@@ -606,7 +607,7 @@ function mergeTrackRefsWithBase(
     const shouldKeep = choosePresence(
       baseByKey.has(key),
       localByKey.has(key),
-      remoteByKey.has(key)
+      remoteByKey.has(key),
     );
 
     if (!shouldKeep) {
@@ -626,12 +627,12 @@ function mergeTrackRefsWithBase(
 function mergePlaylistSnapshotWithBase(
   basePlaylist: PlaylistSnapshot | undefined,
   localPlaylist: PlaylistSnapshot | undefined,
-  remotePlaylist: PlaylistSnapshot | undefined
+  remotePlaylist: PlaylistSnapshot | undefined,
 ): PlaylistSnapshot | null {
   const shouldKeep = choosePresence(
     Boolean(basePlaylist),
     Boolean(localPlaylist),
-    Boolean(remotePlaylist)
+    Boolean(remotePlaylist),
   );
 
   if (!shouldKeep) {
@@ -655,22 +656,22 @@ function mergePlaylistSnapshotWithBase(
     name: chooseScalarValue(
       basePlaylist?.name || "",
       localPlaylist.name,
-      remotePlaylist.name
+      remotePlaylist.name,
     ),
     description: chooseScalarValue(
       basePlaylist?.description || "",
       localPlaylist.description,
-      remotePlaylist.description
+      remotePlaylist.description,
     ),
     createdAt: chooseScalarValue(
       basePlaylist?.createdAt || localPlaylist.createdAt,
       localPlaylist.createdAt,
-      remotePlaylist.createdAt
+      remotePlaylist.createdAt,
     ),
     songs: mergeTrackRefsWithBase(
       basePlaylist?.songs || [],
       localPlaylist.songs,
-      remotePlaylist.songs
+      remotePlaylist.songs,
     ),
   };
 }
@@ -678,20 +679,20 @@ function mergePlaylistSnapshotWithBase(
 function mergeCloudLibrarySnapshotsWithBase(
   baseSnapshot: CloudLibrarySnapshot,
   localSnapshot: CloudLibrarySnapshot,
-  remoteSnapshot: CloudLibrarySnapshot
+  remoteSnapshot: CloudLibrarySnapshot,
 ): CloudLibrarySnapshot {
   const base = normalizeCloudLibrarySnapshot(baseSnapshot);
   const local = normalizeCloudLibrarySnapshot(localSnapshot);
   const remote = normalizeCloudLibrarySnapshot(remoteSnapshot);
 
   const basePlaylistsById = new Map(
-    base.playlists.map((playlist) => [playlist.id, playlist])
+    base.playlists.map((playlist) => [playlist.id, playlist]),
   );
   const localPlaylistsById = new Map(
-    local.playlists.map((playlist) => [playlist.id, playlist])
+    local.playlists.map((playlist) => [playlist.id, playlist]),
   );
   const remotePlaylistsById = new Map(
-    remote.playlists.map((playlist) => [playlist.id, playlist])
+    remote.playlists.map((playlist) => [playlist.id, playlist]),
   );
 
   const playlistIds: string[] = [];
@@ -714,14 +715,14 @@ function mergeCloudLibrarySnapshotsWithBase(
         mergePlaylistSnapshotWithBase(
           basePlaylistsById.get(playlistId),
           localPlaylistsById.get(playlistId),
-          remotePlaylistsById.get(playlistId)
-        )
+          remotePlaylistsById.get(playlistId),
+        ),
       )
       .filter((playlist): playlist is PlaylistSnapshot => Boolean(playlist)),
     likedSongs: mergeTrackRefsWithBase(
       base.likedSongs,
       local.likedSongs,
-      remote.likedSongs
+      remote.likedSongs,
     ),
   };
 }
@@ -730,7 +731,7 @@ async function getAuthenticatedSupabase() {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error(
-      "Cloud sync is unavailable until Supabase environment variables are configured."
+      "Cloud sync is unavailable until Supabase environment variables are configured.",
     );
   }
 
@@ -764,7 +765,7 @@ export async function pullCloudLibrarySnapshot(): Promise<CloudLibrarySnapshot> 
 
   const playlistIds = (playlists || [])
     .map((playlist) =>
-      normalizeString((playlist as Record<string, unknown>).id)
+      normalizeString((playlist as Record<string, unknown>).id),
     )
     .filter(Boolean);
 
@@ -814,10 +815,10 @@ export async function pullCloudLibrarySnapshot(): Promise<CloudLibrarySnapshot> 
           normalizeNumber(
             normalizeString(record.created_at_client)
               ? Date.parse(normalizeString(record.created_at_client))
-              : null
+              : null,
           ) ?? Date.now(),
         songs: dedupeTrackRefs(
-          tracksByPlaylistId.get(normalizeString(record.id)) || []
+          tracksByPlaylistId.get(normalizeString(record.id)) || [],
         ),
       };
     }),
@@ -828,7 +829,7 @@ export async function pullCloudLibrarySnapshot(): Promise<CloudLibrarySnapshot> 
           id: normalizeString(record.track_id),
           source: normalizeString(record.source).toLowerCase(),
         };
-      })
+      }),
     ),
   };
 }
@@ -836,7 +837,7 @@ export async function pullCloudLibrarySnapshot(): Promise<CloudLibrarySnapshot> 
 export async function readLastSyncedCloudLibrarySnapshot(): Promise<CloudLibrarySnapshot | null> {
   try {
     const raw = await StorageService.getItem(
-      LAST_SYNCED_CLOUD_LIBRARY_SNAPSHOT_STORAGE_KEY
+      LAST_SYNCED_CLOUD_LIBRARY_SNAPSHOT_STORAGE_KEY,
     );
     if (!raw) {
       return null;
@@ -848,12 +849,12 @@ export async function readLastSyncedCloudLibrarySnapshot(): Promise<CloudLibrary
 }
 
 export async function saveLastSyncedCloudLibrarySnapshot(
-  snapshot: CloudLibrarySnapshot
+  snapshot: CloudLibrarySnapshot,
 ): Promise<void> {
   try {
     await StorageService.setItem(
       LAST_SYNCED_CLOUD_LIBRARY_SNAPSHOT_STORAGE_KEY,
-      JSON.stringify(normalizeCloudLibrarySnapshot(snapshot))
+      JSON.stringify(normalizeCloudLibrarySnapshot(snapshot)),
     );
   } catch {}
 }
@@ -861,7 +862,7 @@ export async function saveLastSyncedCloudLibrarySnapshot(
 export async function clearLastSyncedCloudLibrarySnapshot(): Promise<void> {
   try {
     await StorageService.removeItem(
-      LAST_SYNCED_CLOUD_LIBRARY_SNAPSHOT_STORAGE_KEY
+      LAST_SYNCED_CLOUD_LIBRARY_SNAPSHOT_STORAGE_KEY,
     );
   } catch {}
 }
@@ -898,7 +899,7 @@ function getJioSaavnRecords(payload: unknown): Record<string, any>[] {
       record.song,
       record.songs,
       record.results,
-      record.more_info
+      record.more_info,
     );
   }
 
@@ -907,13 +908,13 @@ function getJioSaavnRecords(payload: unknown): Record<string, any>[] {
 
 function pickJioSaavnTrackRecord(
   records: Record<string, any>[],
-  ref: TrackRef
+  ref: TrackRef,
 ): Record<string, any> | null {
   const expectedId = normalizeString(ref.id);
 
   for (const record of records) {
     const candidateId = normalizeString(
-      record.id || record.songId || record.songid || record.identifier
+      record.id || record.songId || record.songid || record.identifier,
     );
     if (candidateId && candidateId === expectedId) {
       return record;
@@ -950,7 +951,7 @@ function scoreJioSaavnQuality(value: unknown): number {
 
 function pickJioSaavnAudioUrl(
   record: Record<string, any> | null,
-  knownTrack?: Track | null
+  knownTrack?: Track | null,
 ): string | undefined {
   if (!record) {
     return normalizeString(knownTrack?.audioUrl) || undefined;
@@ -970,11 +971,11 @@ function pickJioSaavnAudioUrl(
       .sort(
         (left: any, right: any) =>
           scoreJioSaavnQuality(right.quality || right.bitrate || right.kbps) -
-          scoreJioSaavnQuality(left.quality || left.bitrate || left.kbps)
+          scoreJioSaavnQuality(left.quality || left.bitrate || left.kbps),
       )
       .map(
         (entry: any) =>
-          entry.url || entry.link || entry.downloadUrl || entry.download_url
+          entry.url || entry.link || entry.downloadUrl || entry.download_url,
       )
       .find(Boolean);
 
@@ -989,7 +990,7 @@ function pickJioSaavnAudioUrl(
         record.mediaUrl ||
         record.vlink ||
         record.preview_url ||
-        record.url
+        record.url,
     ) ||
     normalizeString(knownTrack?.audioUrl) ||
     undefined
@@ -998,7 +999,7 @@ function pickJioSaavnAudioUrl(
 
 function pickJioSaavnArtistName(
   record: Record<string, any> | null,
-  knownTrack?: Track | null
+  knownTrack?: Track | null,
 ): string {
   if (!record) {
     return normalizeString(knownTrack?.artist) || "JioSaavn";
@@ -1009,7 +1010,7 @@ function pickJioSaavnArtistName(
       record.artists?.primary
         ?.map?.((artist: any) => artist?.name)
         ?.filter(Boolean)
-        ?.join(", ")
+        ?.join(", "),
     ) ||
     normalizeString(record.primaryArtists) ||
     normalizeString(record.primary_artists) ||
@@ -1022,7 +1023,7 @@ function pickJioSaavnArtistName(
 
 async function fetchJioSaavnPayload(
   ref: TrackRef,
-  knownTrack?: Track | null
+  knownTrack?: Track | null,
 ): Promise<any | null> {
   const providerEndpoints = await getProviderEndpoints();
   const apiBase = normalizeString(providerEndpoints.providers.jiosaavn.apiBase);
@@ -1074,7 +1075,7 @@ async function fetchJioSaavnPayload(
           },
         },
         2,
-        600
+        600,
       );
     } catch {
       continue;
@@ -1086,7 +1087,7 @@ async function fetchJioSaavnPayload(
 
 async function resolveJioSaavnTrack(
   ref: TrackRef,
-  knownTrack?: Track | null
+  knownTrack?: Track | null,
 ): Promise<Track> {
   try {
     const payload = await fetchJioSaavnPayload(ref, knownTrack);
@@ -1116,7 +1117,7 @@ async function resolveJioSaavnTrack(
             record?.label,
             knownTrack?.title,
           ],
-          ref.id
+          ref.id,
         ),
         artist: pickJioSaavnArtistName(record, knownTrack),
         artistId:
@@ -1138,7 +1139,7 @@ async function resolveJioSaavnTrack(
           normalizeString(knownTrack?.url) ||
           undefined,
       },
-      knownTrack
+      knownTrack,
     );
   } catch {
     return mergeTrack(
@@ -1148,14 +1149,14 @@ async function resolveJioSaavnTrack(
         title: knownTrack?.title || ref.id,
         artist: knownTrack?.artist || "JioSaavn",
       },
-      knownTrack
+      knownTrack,
     );
   }
 }
 
 async function resolveYouTubeTrack(
   ref: TrackRef,
-  knownTrack?: Track | null
+  knownTrack?: Track | null,
 ): Promise<Track> {
   try {
     const result = await searchAPI.getYouTubeVideoInfoWithFallback(ref.id);
@@ -1184,7 +1185,7 @@ async function resolveYouTubeTrack(
           knownTrack?.url ||
           `https://www.youtube.com/watch?v=${encodeURIComponent(ref.id)}`,
       },
-      knownTrack
+      knownTrack,
     );
   } catch {
     return mergeTrack(
@@ -1194,14 +1195,14 @@ async function resolveYouTubeTrack(
         title: pickTrackTitle([knownTrack?.title], ref.id),
         artist: knownTrack?.artist || "YouTube",
       },
-      knownTrack
+      knownTrack,
     );
   }
 }
 
 async function resolveCloudTrackRef(
   ref: TrackRef,
-  knownTrack?: Track | null
+  knownTrack?: Track | null,
 ): Promise<Track> {
   if (ref.source === "jiosaavn") {
     return resolveJioSaavnTrack(ref, knownTrack);
@@ -1218,7 +1219,7 @@ async function resolveCloudTrackRef(
       title: pickTrackTitle([knownTrack?.title], ref.id),
       artist: knownTrack?.artist || ref.source,
     },
-    knownTrack
+    knownTrack,
   );
 }
 
@@ -1249,7 +1250,7 @@ export async function buildCurrentLocalLibrarySyncSource(): Promise<LocalLibrary
 
 export async function pushCloudLibrarySnapshot(
   snapshot: CloudLibrarySnapshot,
-  options: { mergeWithRemote?: boolean } = {}
+  options: { mergeWithRemote?: boolean } = {},
 ) {
   const { supabase, user } = await getAuthenticatedSupabase();
   let mergedSnapshot = snapshot;
@@ -1361,6 +1362,32 @@ export async function pushCloudLibrarySnapshot(
   };
 }
 
+async function mapWithConcurrencyLimit<T, R>(
+  items: T[],
+  limit: number,
+  iterator: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+
+  const worker = async () => {
+    while (cursor < items.length) {
+      const current = cursor;
+      cursor += 1;
+      results[current] = await iterator(items[current], current);
+    }
+  };
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () =>
+    worker(),
+  );
+
+  await Promise.all(workers);
+  return results;
+}
+
+const METADATA_REFRESH_CONCURRENCY = 4;
+
 async function refreshStoredLibraryMetadata() {
   const [playlists, likedSongs, knownLocalTracks] = await Promise.all([
     StorageService.loadPlaylists(),
@@ -1374,16 +1401,30 @@ async function refreshStoredLibraryMetadata() {
     ...playlists.flatMap((playlist) => playlist.tracks || []),
   ]);
 
+  // Only refresh tracks that still need metadata AND whose known copy does not
+  // already have usable metadata (title/artist/thumbnail). This avoids
+  // hammering the network with a cache-existence check for every known track
+  // before any metadata has loaded.
+  const resolveIfNeeded = (track: Partial<Track>): TrackRef | null => {
+    const ref = createTrackRef(track);
+    if (!ref) {
+      return null;
+    }
+    const known = knownTracks.get(getTrackRefKey(ref));
+    if (known && !hasPlaceholderTrackMetadata(known)) {
+      return null;
+    }
+    return ref;
+  };
+
   const trackRefsToRefresh = dedupeTrackRefs([
     ...likedSongs
-      .filter((track) => hasPlaceholderTrackMetadata(track))
-      .map((track) => createTrackRef(track))
+      .map((track) => resolveIfNeeded(track))
       .filter((track): track is TrackRef => Boolean(track)),
     ...playlists.flatMap((playlist) =>
       (playlist.tracks || [])
-        .filter((track) => hasPlaceholderTrackMetadata(track))
-        .map((track) => createTrackRef(track))
-        .filter((track): track is TrackRef => Boolean(track))
+        .map((track) => resolveIfNeeded(track))
+        .filter((track): track is TrackRef => Boolean(track)),
     ),
   ]);
 
@@ -1391,17 +1432,17 @@ async function refreshStoredLibraryMetadata() {
     return { refreshed: 0 };
   }
 
-  const resolvedEntries = await Promise.all(
-    trackRefsToRefresh.map(
-      async (trackRef) =>
-        [
-          getTrackRefKey(trackRef),
-          await resolveCloudTrackRef(
-            trackRef,
-            knownTracks.get(getTrackRefKey(trackRef)) || null
-          ),
-        ] as const
-    )
+  const resolvedEntries = await mapWithConcurrencyLimit(
+    trackRefsToRefresh,
+    METADATA_REFRESH_CONCURRENCY,
+    async (trackRef) =>
+      [
+        getTrackRefKey(trackRef),
+        await resolveCloudTrackRef(
+          trackRef,
+          knownTracks.get(getTrackRefKey(trackRef)) || null,
+        ),
+      ] as const,
   );
 
   const resolvedByKey = new Map<string, Track>(resolvedEntries);
@@ -1432,7 +1473,7 @@ async function refreshStoredLibraryMetadata() {
 
 export async function restoreCloudLibrary(
   snapshot?: CloudLibrarySnapshot,
-  options: RestoreCloudLibraryOptions = {}
+  options: RestoreCloudLibraryOptions = {},
 ) {
   const remoteSnapshot = snapshot || (await pullCloudLibrarySnapshot());
   const knownLocalTracks = await StorageService.loadKnownLibraryTracks();
@@ -1448,8 +1489,8 @@ export async function restoreCloudLibrary(
       const tracks = playlist.songs.map((trackRef) =>
         createRestoredTrackSnapshot(
           trackRef,
-          knownTracks.get(getTrackRefKey(trackRef)) || null
-        )
+          knownTracks.get(getTrackRefKey(trackRef)) || null,
+        ),
       );
 
       return {
@@ -1466,8 +1507,8 @@ export async function restoreCloudLibrary(
     const restoredLikedSongs = remoteSnapshot.likedSongs.map((trackRef) =>
       createRestoredTrackSnapshot(
         trackRef,
-        knownTracks.get(getTrackRefKey(trackRef)) || null
-      )
+        knownTracks.get(getTrackRefKey(trackRef)) || null,
+      ),
     );
 
     await Promise.all([
@@ -1475,7 +1516,10 @@ export async function restoreCloudLibrary(
       StorageService.saveLikedSongs(restoredLikedSongs),
     ]);
 
-    void refreshStoredLibraryMetadata().catch(() => {});
+    void (async () => {
+      await refreshStoredLibraryMetadata().catch(() => {});
+      await options.onLibraryHydrated?.();
+    })();
 
     return {
       restoredPlaylists: restoredPlaylists.length,
@@ -1489,9 +1533,9 @@ export async function restoreCloudLibrary(
         playlist.songs.map((trackRef) =>
           resolveCloudTrackRef(
             trackRef,
-            knownTracks.get(getTrackRefKey(trackRef)) || null
-          )
-        )
+            knownTracks.get(getTrackRefKey(trackRef)) || null,
+          ),
+        ),
       );
 
       return {
@@ -1503,22 +1547,23 @@ export async function restoreCloudLibrary(
         thumbnail: tracks[0]?.thumbnail,
         tracks,
       } satisfies Playlist;
-    })
+    }),
   );
 
   const restoredLikedSongs = await Promise.all(
     remoteSnapshot.likedSongs.map((trackRef) =>
       resolveCloudTrackRef(
         trackRef,
-        knownTracks.get(getTrackRefKey(trackRef)) || null
-      )
-    )
+        knownTracks.get(getTrackRefKey(trackRef)) || null,
+      ),
+    ),
   );
 
   await Promise.all([
     StorageService.savePlaylists(restoredPlaylists),
     StorageService.saveLikedSongs(restoredLikedSongs),
   ]);
+  await options.onLibraryHydrated?.();
 
   return {
     restoredPlaylists: restoredPlaylists.length,
@@ -1539,7 +1584,7 @@ export async function syncCloudLibrarySnapshot() {
       ? mergeCloudLibrarySnapshotsWithBase(
           lastSyncedSnapshot,
           localSource.snapshot,
-          remoteSnapshot
+          remoteSnapshot,
         )
       : mergeCloudLibrarySnapshots(localSource.snapshot, remoteSnapshot);
 

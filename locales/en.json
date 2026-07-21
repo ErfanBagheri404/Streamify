@@ -240,7 +240,8 @@
       "unknown_playlist": "Unknown Playlist",
       "recent_videos": "Recent Videos",
       "popular_videos": "Popular Videos",
-      "official_audio": "Official Audio"
+      "official_audio": "Official Audio",
+      "load_error": "Couldn't load artist"
     },
     "library": {
       "title": "Your Library",
@@ -484,7 +485,8 @@
       "no_image_data": "No image data found in decoded result",
       "http_error": "HTTP {status}",
       "invalid_response": "Invalid response format",
-      "no_songs_found": "No songs found for this album after multiple attempts"
+      "no_songs_found": "No songs found for this album after multiple attempts",
+      "couldnt_load_lyrics": "Couldn't load lyrics for this track"
     },
     "placeholders": {
       "no_image": "No Image",
@@ -737,6 +739,7 @@
   "playback.errorDefault": "Couldn't play this track. Try again or choose another one.",
   "playback.soundcloudRestricted": "SoundCloud is restricted in your country. Use a VPN or change your IP to play SoundCloud songs.",
   "playback.soundcloudTrackUnavailable": "This SoundCloud track couldn't be loaded.",
+  "playback.jiosaavnTrackUnavailable": "This track is not playable from this source.",
   "playback.loadTrackNow": "Couldn't load this track right now.",
   "playback.soundcloudDrmUnsupported": "Encrypted SoundCloud playback is not supported in this browser.",
   "playback.soundcloudDrmMetadataMissing": "Missing SoundCloud DRM license metadata.",
@@ -805,6 +808,8 @@
   "settings.autoplayRecommendedTracksDescription": "When your queue ends, Streamify keeps the session going with related songs or recent favorites.",
   "settings.openNowPlayingAutomatically": "Open Now Playing Automatically",
   "settings.openNowPlayingAutomaticallyDescription": "Jump straight into the full-screen player whenever you start a track from search, home, or your library.",
+  "settings.autoCacheLikedSongs": "Auto-Cache Liked Songs",
+  "settings.autoCacheLikedSongsDescription": "Automatically cache liked songs in the background. When disabled, caching only happens when you manually start it from the Library screen.",
   "settings.discovery": "Discovery",
   "settings.searchPreferences": "Search Preferences",
   "settings.searchPreferencesDescription": "Set the source Streamify should favor first when you open Search without a saved query or direct URL parameters.",
@@ -909,9 +914,13 @@
   "settings.emailAccount": "Email account",
   "settings.continueToSignIn": "Sign In",
   "settings.continueToSignUp": "Sign Up",
+  "settings.quickAccess": "Quick Access",
+  "settings.quickAccessDescription": "Jump straight to any section. If a category is collapsed, it opens automatically.",
   "settings.signOut": "Sign Out",
   "settings.syncLibrary": "Sync Local Library",
   "settings.syncInProgress": "Syncing...",
+  "settings.cloudSyncUnavailable": "Cloud sync is unavailable until Supabase environment variables are configured.",
+  "settings.syncSignInRequired": "Sign in to sync your library.",
   "settings.syncEmpty": "There are no local playlists or liked songs to sync yet.",
   "settings.syncFailed": "Library sync failed.",
   "settings.syncSuccess": "Synced {playlists} playlists and {likes} liked songs.",
@@ -942,6 +951,8 @@
   "source.youtubemusic": "YouTube Music",
   "source.soundcloud": "SoundCloud",
   "source.jiosaavn": "JioSaavn",
+  "source.itunes": "iTunes",
+  "source.deezer": "Deezer",
   "source.spotify": "Spotify",
   "theme.default": "Streamify",
   "theme.ocean": "Ocean",

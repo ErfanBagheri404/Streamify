@@ -46,7 +46,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function readString(
   source: Record<string, unknown> | null,
-  key: string
+  key: string,
 ): string {
   const value = source?.[key];
   return typeof value === "string" ? value.trim().replace(/\/+$/g, "") : "";
@@ -54,7 +54,7 @@ function readString(
 
 function readStringArray(
   source: Record<string, unknown> | null,
-  key: string
+  key: string,
 ): string[] {
   const value = source?.[key];
   if (!Array.isArray(value)) {
@@ -68,7 +68,7 @@ function readStringArray(
 }
 
 function mergeRuntimeServiceConfig(
-  runtimeConfig: StreamifyRuntimeConfig | null
+  runtimeConfig: StreamifyRuntimeConfig | null,
 ): RuntimeServiceConfig {
   const empty = createEmptyRuntimeServiceConfig();
   const extra = asRecord(runtimeConfig?.extra);

@@ -42,12 +42,20 @@ export function SectionHeader({
         style,
       ]}
     >
-      <View style={[styles.textBlock, { alignItems: isRtl ? "flex-end" : "flex-start" }]}>
+      <View
+        style={[
+          styles.textBlock,
+          { alignItems: isRtl ? "flex-end" : "flex-start" },
+        ]}
+      >
         <TitleText numberOfLines={1} style={styles.title}>
           {title}
         </TitleText>
         {subtitle ? (
-          <MutedText numberOfLines={subtitleNumberOfLines} style={styles.subtitle}>
+          <MutedText
+            numberOfLines={subtitleNumberOfLines}
+            style={styles.subtitle}
+          >
             {subtitle}
           </MutedText>
         ) : null}
@@ -88,6 +96,5 @@ const styles = StyleSheet.create({
   subtitle: {
     marginTop: 4,
   },
-  actionText: {
-  },
+  actionText: {},
 });

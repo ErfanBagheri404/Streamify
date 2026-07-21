@@ -1,5 +1,7 @@
 import React from "react";
+import { useIsFocused } from "@react-navigation/native";
 import {
+  Animated,
   ScrollView,
   StyleSheet,
   View,
@@ -8,6 +10,7 @@ import {
 } from "react-native";
 import { SafeAreaView, type Edge } from "react-native-safe-area-context";
 import { useAppLanguage } from "../../hooks/useAppLanguage";
+import { useAppSettings } from "../../hooks/useAppSettings";
 import { useTheme } from "../../hooks/useTheme";
 
 interface ScreenBaseProps {
@@ -35,11 +38,68 @@ type ScreenProps = StaticScreenProps | ScrollScreenProps;
 export function Screen(props: ScreenProps) {
   const { colors } = useTheme();
   const { dir } = useAppLanguage();
+  const { settings } = useAppSettings();
+  const isFocused = useIsFocused();
   const {
     children,
     padded = true,
     safeEdges = ["top", "left", "right"],
   } = props;
+  const entranceOpacity = React.useRef(
+    new Animated.Value(settings.disableAnimations ? 1 : 0),
+  ).current;
+  const entranceTranslateY = React.useRef(
+    new Animated.Value(settings.disableAnimations ? 0 : 10),
+  ).current;
+
+  React.useEffect(() => {
+    if (settings.disableAnimations) {
+      entranceOpacity.setValue(1);
+      entranceTranslateY.setValue(0);
+      return;
+    }
+
+    if (!isFocused) {
+      (entranceOpacity as unknown as { stopAnimation(): void }).stopAnimation();
+      (
+        entranceTranslateY as unknown as { stopAnimation(): void }
+      ).stopAnimation();
+      entranceOpacity.setValue(0);
+      entranceTranslateY.setValue(10);
+      return;
+    }
+
+    entranceOpacity.setValue(0);
+    entranceTranslateY.setValue(10);
+    const animation = Animated.parallel([
+      Animated.timing(entranceOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(entranceTranslateY, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+    ]);
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+    };
+  }, [
+    entranceOpacity,
+    entranceTranslateY,
+    isFocused,
+    settings.disableAnimations,
+  ]);
+
+  const animatedContentStyle = {
+    opacity: entranceOpacity,
+    transform: [{ translateY: entranceTranslateY }],
+  };
 
   const baseScreenStyle = [
     styles.screen,
@@ -76,7 +136,9 @@ export function Screen(props: ScreenProps) {
               contentContainerStyle,
             ]}
           >
-            {children}
+            <Animated.View style={animatedContentStyle}>
+              {children}
+            </Animated.View>
           </ScrollView>
         </View>
       </SafeAreaContainer>
@@ -97,7 +159,9 @@ export function Screen(props: ScreenProps) {
         ]}
       >
         <View {...viewProps} style={baseScreenStyle}>
-          {children}
+          <Animated.View style={[styles.animatedContent, animatedContentStyle]}>
+            {children}
+          </Animated.View>
         </View>
       </View>
     </SafeAreaContainer>
@@ -109,6 +173,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   screen: {
+    flex: 1,
+  },
+  animatedContent: {
     flex: 1,
   },
   padded: {

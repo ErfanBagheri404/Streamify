@@ -8,6 +8,7 @@ import { useTheme, withOpacity } from "../hooks/useTheme";
 import { useAppLanguage } from "../hooks/useAppLanguage";
 import { useAppSettings } from "../hooks/useAppSettings";
 import { getAppFontFamily } from "../utils/fonts";
+import SourceIcon from "./ui/SourceIcon";
 
 const MiniPlayerContainer = styled.View<{ bottomPosition: number }>`
   position: absolute;
@@ -198,7 +199,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
 
   const effectiveDuration = React.useMemo(
     () => (duration > 0 ? duration : currentTrack?.duration || 0),
-    [currentTrack?.duration, duration]
+    [currentTrack?.duration, duration],
   );
   const progressRatio =
     effectiveDuration > 0
@@ -227,7 +228,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
     (event: { nativeEvent: { layout: { width: number } } }) => {
       setProgressBarWidth(event.nativeEvent.layout.width);
     },
-    []
+    [],
   );
 
   const handleProgressPress = React.useCallback(
@@ -238,13 +239,13 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
 
       const ratio = Math.min(
         Math.max(event.nativeEvent.locationX / progressBarWidth, 0),
-        1
+        1,
       );
 
       const targetSeconds = ratio * effectiveDuration;
       await seekTo(targetSeconds);
     },
-    [effectiveDuration, progressBarWidth, seekTo]
+    [effectiveDuration, progressBarWidth, seekTo],
   );
 
   const displayTheme = {
@@ -256,8 +257,8 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
     placeholder: colors.surface2,
     shadow: withOpacity(colors.heroMid, isLight ? 0.18 : 0.42),
   };
-  const previousIconName = isRtl ? "play-forward" : "play-back";
-  const nextIconName = isRtl ? "play-back" : "play-forward";
+  const previousIconName = "play-back";
+  const nextIconName = "play-forward";
 
   if (!currentTrack) {
     return null;
@@ -314,17 +315,29 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
             marginRight: isRtl ? 12 : 0,
           }}
         >
-          <TrackTitle
-            numberOfLines={1}
-            style={{
-              color: displayTheme.text,
-              fontFamily: getAppFontFamily(isRtl, "medium"),
-              textAlign: isRtl ? "right" : "left",
-              writingDirection: isRtl ? "rtl" : "ltr",
-            }}
-          >
-            {currentTrack.title}
-          </TrackTitle>
+          <View style={{
+            flexDirection: isRtl ? "row-reverse" : "row",
+            alignItems: "center",
+          }}>
+            <SourceIcon
+              source={currentTrack.source}
+              size={18}
+            />
+            <TrackTitle
+              numberOfLines={1}
+              style={{
+                color: displayTheme.text,
+                fontFamily: getAppFontFamily(isRtl, "medium"),
+                textAlign: isRtl ? "right" : "left",
+                writingDirection: isRtl ? "rtl" : "ltr",
+                marginLeft: isRtl ? 0 : 6,
+                marginRight: isRtl ? 6 : 0,
+                flex: 1,
+              }}
+            >
+              {currentTrack.title}
+            </TrackTitle>
+          </View>
           {(statusText || currentTrack.artist) && (
             <TrackArtist
               numberOfLines={1}
@@ -350,7 +363,6 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
       <ControlsContainer
         style={{
           zIndex: 1,
-          flexDirection: isRtl ? "row-reverse" : "row",
           marginLeft: isRtl ? 0 : 16,
           marginRight: isRtl ? 16 : 0,
         }}

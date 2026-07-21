@@ -84,10 +84,7 @@ function chooseNonEmptyString(
 
 function sanitizeStoredAudioUrl(value: unknown): string | undefined {
   const normalized = normalizeString(value);
-  if (
-    normalized.startsWith("file://") ||
-    normalized.startsWith("content://")
-  ) {
+  if (normalized.startsWith("file://") || normalized.startsWith("content://")) {
     return normalized;
   }
   return undefined;
@@ -95,7 +92,7 @@ function sanitizeStoredAudioUrl(value: unknown): string | undefined {
 
 function chooseTrackTitle(
   primary: Partial<Track>,
-  secondary?: Partial<Track> | null
+  secondary?: Partial<Track> | null,
 ): string {
   const candidates = [
     normalizeString(primary.title),
@@ -124,7 +121,7 @@ function chooseTrackTitle(
 
 function chooseTrackArtist(
   primary: Partial<Track>,
-  secondary?: Partial<Track> | null
+  secondary?: Partial<Track> | null,
 ): string {
   const primarySource = normalizeTrackSource(primary);
   const secondarySource = secondary ? normalizeTrackSource(secondary) : "";
@@ -175,7 +172,7 @@ function normalizeTrackSnapshot(track: Partial<Track>): Track | null {
 
 function mergeTrackSnapshots(
   primary: Partial<Track>,
-  secondary?: Partial<Track> | null
+  secondary?: Partial<Track> | null,
 ): Track | null {
   const primaryTrack = normalizeTrackSnapshot(primary);
   const secondaryTrack = secondary ? normalizeTrackSnapshot(secondary) : null;
@@ -193,26 +190,26 @@ function mergeTrackSnapshots(
     artist: chooseTrackArtist(primaryTrack || winner, secondaryTrack),
     artistId: chooseNonEmptyString(
       primaryTrack?.artistId,
-      secondaryTrack?.artistId
+      secondaryTrack?.artistId,
     ),
     artistImage: chooseNonEmptyString(
       primaryTrack?.artistImage,
-      secondaryTrack?.artistImage
+      secondaryTrack?.artistImage,
     ),
     artistSource: chooseNonEmptyString(
       primaryTrack?.artistSource,
-      secondaryTrack?.artistSource
+      secondaryTrack?.artistSource,
     ),
     duration:
       normalizeNumber(primaryTrack?.duration) ??
       normalizeNumber(secondaryTrack?.duration),
     thumbnail: chooseNonEmptyString(
       primaryTrack?.thumbnail,
-      secondaryTrack?.thumbnail
+      secondaryTrack?.thumbnail,
     ),
     audioUrl: chooseNonEmptyString(
       primaryTrack?.audioUrl,
-      secondaryTrack?.audioUrl
+      secondaryTrack?.audioUrl,
     ),
     url: chooseNonEmptyString(primaryTrack?.url, secondaryTrack?.url),
     source,
@@ -223,7 +220,7 @@ function mergeTrackSnapshots(
 
 function mergeTrackLists(
   primaryTracks: Track[],
-  secondaryTracks: Track[]
+  secondaryTracks: Track[],
 ): Track[] {
   const secondaryByKey = new Map<string, Track>();
   for (const track of secondaryTracks) {
@@ -249,7 +246,7 @@ function mergeTrackLists(
     seen.add(key);
     const mergedTrack = mergeTrackSnapshots(
       normalized,
-      secondaryByKey.get(key)
+      secondaryByKey.get(key),
     );
     if (mergedTrack) {
       merged.push(mergedTrack);
@@ -282,7 +279,7 @@ function normalizePlaylistSnapshot(playlist: Playlist): Playlist | null {
     description: normalizeString(playlist.description),
     tracks: mergeTrackLists(
       Array.isArray(playlist.tracks) ? playlist.tracks : [],
-      []
+      [],
     ),
     createdAt: normalizeString(playlist.createdAt) || new Date().toISOString(),
     updatedAt: normalizeString(playlist.updatedAt) || new Date().toISOString(),
@@ -291,7 +288,7 @@ function normalizePlaylistSnapshot(playlist: Playlist): Playlist | null {
         playlist.thumbnail,
         Array.isArray(playlist.tracks)
           ? playlist.tracks[0]?.thumbnail
-          : undefined
+          : undefined,
       ) || undefined,
   };
 }
@@ -299,7 +296,7 @@ function normalizePlaylistSnapshot(playlist: Playlist): Playlist | null {
 export function subscribeToLibraryUpdates(listener: () => void) {
   const subscription = DeviceEventEmitter.addListener(
     LIBRARY_UPDATED_EVENT,
-    listener
+    listener,
   );
   return () => {
     const removableSubscription = subscription as unknown as
@@ -340,7 +337,7 @@ export const StorageService = {
     try {
       await AsyncStorage.setItem(
         SONG_METADATA_CACHE_KEY,
-        JSON.stringify(cache)
+        JSON.stringify(cache),
       );
     } catch (error) {
       console.error("Error saving song metadata cache:", error);
@@ -386,7 +383,7 @@ export const StorageService = {
           ...previouslyPlayedSongs,
           ...playlists.flatMap((playlist) => playlist.tracks || []),
         ],
-        []
+        [],
       );
     } catch (error) {
       console.error("Error loading known library tracks:", error);
@@ -421,7 +418,7 @@ export const StorageService = {
           ? parsed
               .map((track) => metadataCache[getTrackStorageKey(track)])
               .filter((track): track is Track => Boolean(track))
-          : []
+          : [],
       );
     } catch (error) {
       console.error("Error loading liked songs:", error);
@@ -490,7 +487,7 @@ export const StorageService = {
           ? parsed
               .map((track) => metadataCache[getTrackStorageKey(track)])
               .filter((track): track is Track => Boolean(track))
-          : []
+          : [],
       );
     } catch (error) {
       console.error("Error loading previously played songs:", error);
@@ -551,7 +548,7 @@ export const StorageService = {
     try {
       await AsyncStorage.setItem(
         APP_SETTINGS_STORAGE_KEY,
-        JSON.stringify(settings)
+        JSON.stringify(settings),
       );
     } catch (error) {
       console.error("Error saving app settings:", error);
@@ -599,7 +596,7 @@ export const StorageService = {
       };
       await AsyncStorage.setItem(
         LAST_SEARCH_STATE_KEY,
-        JSON.stringify(normalizedSearchState)
+        JSON.stringify(normalizedSearchState),
       );
     } catch (error) {
       console.error("Error saving last search state:", error);
@@ -625,7 +622,7 @@ export const StorageService = {
       const jsonValue = JSON.stringify(normalizedPlaylists);
       await AsyncStorage.setItem(PLAYLISTS_KEY, jsonValue);
       await this.updateSongMetadataCache(
-        normalizedPlaylists.flatMap((playlist) => playlist.tracks || [])
+        normalizedPlaylists.flatMap((playlist) => playlist.tracks || []),
       );
       emitLibraryUpdated();
     } catch (error) {
@@ -651,7 +648,7 @@ export const StorageService = {
             playlist.tracks || [],
             (playlist.tracks || [])
               .map((track) => metadataCache[getTrackStorageKey(track)])
-              .filter((track): track is Track => Boolean(track))
+              .filter((track): track is Track => Boolean(track)),
           ),
         }));
     } catch (error) {
@@ -695,6 +692,81 @@ export const StorageService = {
       }
     } catch (error) {
       console.error("Error updating playlist:", error);
+      throw error;
+    }
+  },
+
+  // Reorder tracks within a playlist (drag-and-drop support)
+  async reorderPlaylistTracks(
+    playlistId: string,
+    fromIndex: number,
+    toIndex: number,
+  ): Promise<void> {
+    try {
+      const playlists = await this.loadPlaylists();
+      const index = playlists.findIndex((p) => p.id === playlistId);
+      if (index === -1) return;
+
+      const playlist = playlists[index];
+      const tracks = [...(playlist.tracks || [])];
+      if (
+        fromIndex < 0 ||
+        fromIndex >= tracks.length ||
+        toIndex < 0 ||
+        toIndex >= tracks.length ||
+        fromIndex === toIndex
+      ) {
+        return;
+      }
+
+      const [moved] = tracks.splice(fromIndex, 1);
+      tracks.splice(toIndex, 0, moved);
+
+      playlists[index] = {
+        ...playlist,
+        tracks,
+        updatedAt: new Date().toISOString(),
+      };
+      await this.savePlaylists(playlists);
+      emitLibraryUpdated();
+    } catch (error) {
+      console.error("Error reordering playlist tracks:", error);
+      throw error;
+    }
+  },
+
+  // Add a song to a playlist (deduplicated by storage key)
+  async addSongToPlaylist(
+    playlistId: string,
+    track: Track,
+    avoidDuplicate = true,
+  ): Promise<boolean> {
+    try {
+      const playlists = await this.loadPlaylists();
+      const index = playlists.findIndex((p) => p.id === playlistId);
+      if (index === -1) return false;
+
+      const playlist = playlists[index];
+      const tracks = [...(playlist.tracks || [])];
+
+      if (avoidDuplicate) {
+        const key = getTrackStorageKey(track);
+        const exists = tracks.some((t) => getTrackStorageKey(t) === key);
+        if (exists) return false;
+      }
+
+      tracks.push(track);
+      playlists[index] = {
+        ...playlist,
+        tracks,
+        thumbnail: playlist.thumbnail || track.thumbnail,
+        updatedAt: new Date().toISOString(),
+      };
+      await this.savePlaylists(playlists);
+      emitLibraryUpdated();
+      return true;
+    } catch (error) {
+      console.error("Error adding song to playlist:", error);
       throw error;
     }
   },

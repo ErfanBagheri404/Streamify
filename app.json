@@ -2,7 +2,7 @@
   "expo": {
     "newArchEnabled": false,
     "name": "Streamify",
-    "version": "1.23.23",
+    "version": "1.24.00",
     "slug": "streamify-mobile",
     "scheme": "streamify",
     "sdkVersion": "54.0.0",

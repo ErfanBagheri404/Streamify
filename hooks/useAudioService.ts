@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react';
-import { AppState } from 'react-native';
-import TrackPlayer, { Event, State } from 'react-native-track-player';
-import { useAudioStore } from '../stores/audioStore';
+import { useEffect, useRef } from "react";
+import { AppState } from "react-native";
+import TrackPlayer, { Event, State } from "react-native-track-player";
+import { useAudioStore } from "../stores/audioStore";
 
 export const useAudioService = () => {
   const progressUpdateInterval = useRef<NodeJS.Timeout | null>(null);
@@ -43,7 +43,7 @@ export const useAudioService = () => {
           if (positionStuckCounter.current > 10) {
             // 2.5 seconds stuck
             console.warn(
-              '[AudioService] Position appears stuck, possible audio cutout',
+              "[AudioService] Position appears stuck, possible audio cutout",
             );
           }
         } else {
@@ -52,7 +52,7 @@ export const useAudioService = () => {
         lastPosition.current = position;
       }
     } catch (error) {
-      console.error('[AudioService] Error updating progress:', error);
+      console.error("[AudioService] Error updating progress:", error);
     }
   };
 
@@ -71,13 +71,13 @@ export const useAudioService = () => {
   };
 
   useEffect(() => {
-    console.log('[AudioService] Setting up audio service...');
+    console.log("[AudioService] Setting up audio service...");
 
     // Listen for playback state changes
     const playbackStateListener = TrackPlayer.addEventListener(
       Event.PlaybackState,
       async (event) => {
-        console.log('[AudioService] Playback state changed:', event.state);
+        console.log("[AudioService] Playback state changed:", event.state);
 
         if (event.state === State.Playing) {
           setIsPlaying(true);
@@ -97,7 +97,7 @@ export const useAudioService = () => {
             }
           } catch (error) {
             console.error(
-              '[AudioService] Error getting final position:',
+              "[AudioService] Error getting final position:",
               error,
             );
           }
@@ -113,7 +113,7 @@ export const useAudioService = () => {
     const trackChangedListener = TrackPlayer.addEventListener(
       Event.PlaybackTrackChanged,
       async (event) => {
-        console.log('[AudioService] Track changed:', event);
+        console.log("[AudioService] Track changed:", event);
 
         if (event.nextTrack !== undefined) {
           try {
@@ -124,7 +124,7 @@ export const useAudioService = () => {
               setProgress(0);
             }
           } catch (error) {
-            console.error('[AudioService] Error getting new track:', error);
+            console.error("[AudioService] Error getting new track:", error);
           }
         }
       },
@@ -143,21 +143,21 @@ export const useAudioService = () => {
 
     // Handle app state changes
     const handleAppStateChange = (nextAppState: string) => {
-      if (nextAppState === 'active') {
+      if (nextAppState === "active") {
         // App became active, resume progress tracking
         TrackPlayer.getState().then((state) => {
           if (state === State.Playing) {
             setupProgressTracking();
           }
         });
-      } else if (nextAppState === 'background') {
+      } else if (nextAppState === "background") {
         // App went to background, cleanup but keep state
         cleanup();
       }
     };
 
     const appStateSubscription = AppState.addEventListener(
-      'change',
+      "change",
       handleAppStateChange,
     );
 
@@ -179,7 +179,7 @@ export const useAudioService = () => {
         }
       } catch (error) {
         console.error(
-          '[AudioService] Error initializing audio service:',
+          "[AudioService] Error initializing audio service:",
           error,
         );
       }
@@ -188,7 +188,7 @@ export const useAudioService = () => {
     initializeAudioService();
 
     return () => {
-      console.log('[AudioService] Cleaning up audio service...');
+      console.log("[AudioService] Cleaning up audio service...");
       cleanup();
       playbackStateListener.remove();
       trackChangedListener.remove();

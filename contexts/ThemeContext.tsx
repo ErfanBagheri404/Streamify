@@ -241,7 +241,7 @@ function clampColorChannel(value: number): number {
 function colorToRgb(color: string) {
   const normalized = color.trim();
   const rgbMatch = normalized.match(
-    /^rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)(?:\s*,\s*[0-9.]+\s*)?\)$/i
+    /^rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)(?:\s*,\s*[0-9.]+\s*)?\)$/i,
   );
 
   if (rgbMatch) {
@@ -305,11 +305,11 @@ function buildThemeColors(themeName: AppTheme): ThemeColors {
     surface3: mixColors(
       mixColors(seed.background, neutralTarget, isLight ? 0.9 : 0.1),
       seed.accent,
-      isLight ? 0.08 : 0.12
+      isLight ? 0.08 : 0.12,
     ),
     overlay: withOpacity(
       mixColors(seed.background, seed.accent, isLight ? 0.08 : 0.18),
-      isLight ? 0.94 : 0.86
+      isLight ? 0.94 : 0.86,
     ),
     borderSubtle: withOpacity(seed.accent, isLight ? 0.3 : 0.3),
     muted: withOpacity(seed.foreground, isLight ? 0.72 : 0.7),

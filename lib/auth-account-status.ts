@@ -14,7 +14,7 @@ function normalizeEmail(value: string) {
 }
 
 export async function checkAccountStatus(
-  rawEmail: string
+  rawEmail: string,
 ): Promise<AccountStatusResponse | null> {
   const endpoint = getAccountStatusEndpoint();
   const email = normalizeEmail(rawEmail);

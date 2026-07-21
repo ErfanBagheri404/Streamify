@@ -20,6 +20,6 @@ export function useAppLanguage() {
       t: (key: string, params?: Record<string, string | number | undefined>) =>
         translate(language, key, params),
     }),
-    [language]
+    [language],
   );
 }

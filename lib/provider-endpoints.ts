@@ -188,7 +188,7 @@ function joinUrlPath(base: string, pathVariant: string): string {
 
 function appendQueryParams(
   value: string,
-  query?: Record<string, ProviderQueryValue>
+  query?: Record<string, ProviderQueryValue>,
 ): string {
   if (!query || !value) return value;
 
@@ -207,25 +207,25 @@ function appendQueryParams(
 export function buildProviderUrlCandidates(
   base: string,
   pathVariants: string[] = [],
-  query?: Record<string, ProviderQueryValue>
+  query?: Record<string, ProviderQueryValue>,
 ): string[] {
   const normalizedBase = cleanUrl(base);
   if (!normalizedBase) return [];
 
   const candidates = [
     ...pathVariants.map((pathVariant) =>
-      joinUrlPath(normalizedBase, normalizePathVariant(pathVariant))
+      joinUrlPath(normalizedBase, normalizePathVariant(pathVariant)),
     ),
     normalizedBase,
   ];
 
   return dedupeStrings(
-    candidates.map((candidate) => appendQueryParams(candidate, query))
+    candidates.map((candidate) => appendQueryParams(candidate, query)),
   );
 }
 
 function mergeProviderEndpoints(
-  runtimeConfig: StreamifyRuntimeConfig | null
+  runtimeConfig: StreamifyRuntimeConfig | null,
 ): ProviderEndpoints {
   const empty = createEmptyProviderEndpoints();
   return {
@@ -234,32 +234,32 @@ function mergeProviderEndpoints(
       invidious: cleanUrlList(runtimeConfig?.instances?.client?.invidious),
       server: {
         localProxyBase: cleanUrl(
-          runtimeConfig?.instances?.server?.localProxyBase
+          runtimeConfig?.instances?.server?.localProxyBase,
         ),
         localExpressApiUrl: cleanUrl(
-          runtimeConfig?.instances?.server?.localExpressApiUrl
+          runtimeConfig?.instances?.server?.localExpressApiUrl,
         ),
         localAllowedClientOrigin: cleanUrl(
-          runtimeConfig?.instances?.server?.localAllowedClientOrigin
+          runtimeConfig?.instances?.server?.localAllowedClientOrigin,
         ),
       },
     },
     providers: {
       search: {
         ytifyInstance: cleanUrl(
-          runtimeConfig?.providers?.search?.ytifyInstance
+          runtimeConfig?.providers?.search?.ytifyInstance,
         ),
         searchBackendUrl: cleanUrl(
-          runtimeConfig?.providers?.search?.searchBackendUrl
+          runtimeConfig?.providers?.search?.searchBackendUrl,
         ),
         soundcloudSearchProxyBase: cleanUrl(
-          runtimeConfig?.providers?.search?.soundcloudSearchProxyBase
+          runtimeConfig?.providers?.search?.soundcloudSearchProxyBase,
         ),
       },
       jiosaavn: {
         apiBase: cleanUrl(runtimeConfig?.providers?.jiosaavn?.apiBase),
         fallbackSearchBase: cleanUrl(
-          runtimeConfig?.providers?.jiosaavn?.fallbackSearchBase
+          runtimeConfig?.providers?.jiosaavn?.fallbackSearchBase,
         ),
         webOrigin: cleanUrl(runtimeConfig?.providers?.jiosaavn?.webOrigin),
       },
@@ -269,19 +269,19 @@ function mergeProviderEndpoints(
       lyrics: {
         lrclibBase: cleanUrl(runtimeConfig?.providers?.lyrics?.lrclibBase),
         lyricsOvhBase: cleanUrl(
-          runtimeConfig?.providers?.lyrics?.lyricsOvhBase
+          runtimeConfig?.providers?.lyrics?.lyricsOvhBase,
         ),
       },
       soundcloud: {
         origin: cleanUrl(runtimeConfig?.providers?.soundcloud?.origin),
         mobileOrigin: cleanUrl(
-          runtimeConfig?.providers?.soundcloud?.mobileOrigin
+          runtimeConfig?.providers?.soundcloud?.mobileOrigin,
         ),
         apiBase: cleanUrl(runtimeConfig?.providers?.soundcloud?.apiBase),
         apiV2Base: cleanUrl(runtimeConfig?.providers?.soundcloud?.apiV2Base),
         widgetBase: cleanUrl(runtimeConfig?.providers?.soundcloud?.widgetBase),
         licenseBase: cleanUrl(
-          runtimeConfig?.providers?.soundcloud?.licenseBase
+          runtimeConfig?.providers?.soundcloud?.licenseBase,
         ),
         oembedBase: cleanUrl(runtimeConfig?.providers?.soundcloud?.oembedBase),
       },

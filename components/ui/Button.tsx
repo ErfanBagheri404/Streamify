@@ -34,7 +34,11 @@ export function AccentButton({
 }: AccentButtonProps) {
   const { colors } = useTheme();
   const { isRtl } = useAppLanguage();
-  const textStyle = resolveTextStyle(isRtl, undefined, "semibold");
+  const textStyle = resolveTextStyle(
+    isRtl,
+    { textAlign: "center" },
+    "semibold",
+  );
 
   return (
     <TouchableOpacity

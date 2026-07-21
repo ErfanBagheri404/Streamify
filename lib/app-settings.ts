@@ -2,6 +2,8 @@
 
 export type PreferredSearchSource =
   | "mixed"
+  | "itunes"
+  | "deezer"
   | "youtube"
   | "youtubemusic"
   | "soundcloud"
@@ -69,6 +71,7 @@ export interface AppSettings {
   rememberLastSearch: boolean;
   preferredSearchSource: PreferredSearchSource;
   seekStepSeconds: number;
+  autoCacheLikedSongs: boolean;
   collapsedSettingsSections: Partial<Record<SettingsSectionKey, boolean>>;
 }
 
@@ -144,6 +147,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   rememberLastSearch: true,
   preferredSearchSource: "mixed",
   seekStepSeconds: 10,
+  autoCacheLikedSongs: false,
   collapsedSettingsSections: {},
 };
 
@@ -189,6 +193,8 @@ function isPreferredSearchSource(
 ): value is PreferredSearchSource {
   return (
     value === "mixed" ||
+    value === "itunes" ||
+    value === "deezer" ||
     value === "youtube" ||
     value === "youtubemusic" ||
     value === "soundcloud" ||
@@ -262,6 +268,10 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
     seekStepSeconds: isSeekStepSeconds(record.seekStepSeconds)
       ? record.seekStepSeconds
       : DEFAULT_APP_SETTINGS.seekStepSeconds,
+    autoCacheLikedSongs:
+      typeof record.autoCacheLikedSongs === "boolean"
+        ? record.autoCacheLikedSongs
+        : DEFAULT_APP_SETTINGS.autoCacheLikedSongs,
     collapsedSettingsSections: sanitizeCollapsedSettingsSections(
       record.collapsedSettingsSections,
     ),
@@ -283,6 +293,10 @@ export function getPreferredSourceLabel(source: PreferredSearchSource): string {
   switch (source) {
     case "mixed":
       return "Mixed";
+    case "itunes":
+      return "iTunes";
+    case "deezer":
+      return "Deezer";
     case "youtube":
       return "YouTube";
     case "youtubemusic":

@@ -1,6 +1,6 @@
 {
   "name": "mobile",
-  "version": "1.23.23",
+  "version": "1.24.00",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start",

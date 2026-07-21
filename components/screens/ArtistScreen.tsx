@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Image,
   ScrollView,
   StyleSheet,
@@ -13,6 +12,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePlayer } from "../../contexts/PlayerContext";
 import { Screen } from "../ui/Screen";
 import { BodyText, MutedText, TitleText } from "../ui/Text";
+import { ImageWithSkeleton } from "../ui/ImageWithSkeleton";
+import { SkeletonLoader } from "../SkeletonLoader";
 import { useAppLanguage } from "../../hooks/useAppLanguage";
 import { useTheme, withOpacity } from "../../hooks/useTheme";
 import { getAppFontFamily, getTextDirectionStyle } from "../../utils/fonts";
@@ -152,7 +153,7 @@ function pickBestImageUrl(arr: unknown, base: string): string {
   }
 
   const sorted = [...entries].sort(
-    (left, right) => safeNumber(right.width) - safeNumber(left.width)
+    (left, right) => safeNumber(right.width) - safeNumber(left.width),
   );
   return absolutizeUrl(safeString(sorted[0]?.url), base);
 }
@@ -179,7 +180,7 @@ function pickJioSaavnImage(arr: unknown): string {
   const sorted = [...entries].sort(
     (left, right) =>
       qualityScore(right.quality || right.size) -
-      qualityScore(left.quality || left.size)
+      qualityScore(left.quality || left.size),
   );
 
   for (const image of sorted) {
@@ -229,8 +230,277 @@ function shortenDescription(value?: string, maxLength = 220): string {
   return `${safeText.trimEnd()}...`;
 }
 
+function ArtistScreenSkeleton({
+  colors,
+  insets,
+  isRtl,
+  onBack,
+}: {
+  colors: ReturnType<typeof useTheme>["colors"];
+  insets: ReturnType<typeof useSafeAreaInsets>;
+  isRtl: boolean;
+  onBack: () => void;
+}) {
+  const titleSpacing = isRtl
+    ? { marginRight: 10, marginLeft: 0 }
+    : { marginLeft: 10, marginRight: 0 };
+  const chipSpacing = isRtl
+    ? { marginLeft: 8, marginRight: 0 }
+    : { marginLeft: 0, marginRight: 8 };
+
+  return (
+    <Screen padded={false} safeEdges={["left", "right"]}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <View style={styles.headerSection}>
+            <SkeletonLoader
+              style={[styles.headerImage, { width: "100%", height: "100%" }]}
+            />
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={onBack}
+              style={[
+                styles.backButton,
+                {
+                  top: insets.top + 12,
+                  left: 16,
+                  right: undefined,
+                  backgroundColor: withOpacity(colors.background, 0.48),
+                },
+              ]}
+            >
+              <Ionicons
+                name="chevron-back"
+                size={24}
+                color={colors.foreground}
+              />
+            </TouchableOpacity>
+            <View
+              style={[
+                styles.headerContent,
+                { top: insets.top + HEADER_TOP_RESERVED_SPACE },
+              ]}
+            >
+              <View
+                style={[
+                  styles.headerBadgeRow,
+                  { flexDirection: isRtl ? "row-reverse" : "row" },
+                ]}
+              >
+                <SkeletonLoader
+                  width={72}
+                  height={28}
+                  style={[{ borderRadius: 999 }, chipSpacing]}
+                />
+                <SkeletonLoader
+                  width={88}
+                  height={28}
+                  style={{ borderRadius: 999 }}
+                />
+              </View>
+              <View
+                style={[
+                  styles.artistTitleRow,
+                  { flexDirection: isRtl ? "row-reverse" : "row" },
+                ]}
+              >
+                <SkeletonLoader
+                  width={72}
+                  height={72}
+                  style={{ borderRadius: 999 }}
+                />
+                <View style={[styles.artistName, titleSpacing]}>
+                  <View
+                    style={{ alignItems: isRtl ? "flex-end" : "flex-start" }}
+                  >
+                    <SkeletonLoader
+                      height={34}
+                      style={{
+                        width: "72%",
+                        borderRadius: 12,
+                        marginBottom: 10,
+                      }}
+                    />
+                    <SkeletonLoader
+                      height={24}
+                      style={{ width: "48%", borderRadius: 10 }}
+                    />
+                  </View>
+                </View>
+              </View>
+              <View
+                style={[
+                  styles.metaChipRow,
+                  { flexDirection: isRtl ? "row-reverse" : "row" },
+                ]}
+              >
+                <SkeletonLoader
+                  width={124}
+                  height={30}
+                  style={[{ borderRadius: 999 }, chipSpacing]}
+                />
+                <SkeletonLoader
+                  width={92}
+                  height={30}
+                  style={[{ borderRadius: 999 }, chipSpacing]}
+                />
+                <SkeletonLoader
+                  width={84}
+                  height={30}
+                  style={{ borderRadius: 999 }}
+                />
+              </View>
+              <SkeletonLoader
+                height={18}
+                style={{
+                  width: "88%",
+                  borderRadius: 8,
+                  marginTop: 8,
+                  alignSelf: isRtl ? "flex-end" : "flex-start",
+                }}
+              />
+              <SkeletonLoader
+                height={18}
+                style={{
+                  width: "74%",
+                  borderRadius: 8,
+                  marginTop: 8,
+                  alignSelf: isRtl ? "flex-end" : "flex-start",
+                }}
+              />
+            </View>
+          </View>
+
+          <View
+            style={[
+              styles.contentContainer,
+              { backgroundColor: colors.background },
+            ]}
+          >
+            <View
+              style={[
+                styles.actionsRow,
+                { flexDirection: isRtl ? "row-reverse" : "row" },
+              ]}
+            >
+              <SkeletonLoader
+                width={120}
+                height={48}
+                style={{ borderRadius: 999 }}
+              />
+              <SkeletonLoader
+                width={48}
+                height={48}
+                style={{
+                  borderRadius: 999,
+                  marginLeft: isRtl ? 0 : 12,
+                  marginRight: isRtl ? 12 : 0,
+                }}
+              />
+            </View>
+            <View
+              style={[
+                styles.mainCard,
+                {
+                  backgroundColor: colors.surface1,
+                  borderColor: colors.borderSubtle,
+                },
+              ]}
+            >
+              <SkeletonLoader
+                height={220}
+                style={{ width: "100%", borderRadius: 0 }}
+              />
+              <View style={styles.sectionBlock}>
+                <SkeletonLoader
+                  width={148}
+                  height={28}
+                  style={{
+                    borderRadius: 10,
+                    marginBottom: 14,
+                    alignSelf: isRtl ? "flex-end" : "flex-start",
+                  }}
+                />
+                {Array.from({ length: 4 }, (_, index) => (
+                  <View
+                    key={`artist-song-skeleton-${index}`}
+                    style={[
+                      styles.songRow,
+                      {
+                        backgroundColor: colors.surface2,
+                        borderColor: colors.borderSubtle,
+                        flexDirection: isRtl ? "row-reverse" : "row",
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.trackIndexWrap,
+                        {
+                          marginRight: isRtl ? 0 : 14,
+                          marginLeft: isRtl ? 14 : 0,
+                        },
+                      ]}
+                    >
+                      <SkeletonLoader
+                        width={16}
+                        height={18}
+                        style={{ borderRadius: 6 }}
+                      />
+                    </View>
+                    <SkeletonLoader
+                      width={56}
+                      height={56}
+                      style={{
+                        borderRadius: 14,
+                        marginRight: isRtl ? 0 : 14,
+                        marginLeft: isRtl ? 14 : 0,
+                      }}
+                    />
+                    <View
+                      style={[
+                        styles.songMeta,
+                        { alignItems: isRtl ? "flex-end" : "flex-start" },
+                      ]}
+                    >
+                      <SkeletonLoader
+                        height={20}
+                        style={{
+                          width: "82%",
+                          borderRadius: 8,
+                          marginBottom: 8,
+                        }}
+                      />
+                      <SkeletonLoader
+                        height={18}
+                        style={{ width: "58%", borderRadius: 8 }}
+                      />
+                    </View>
+                    <View
+                      style={[
+                        styles.songEndMeta,
+                        { alignItems: isRtl ? "flex-start" : "flex-end" },
+                      ]}
+                    >
+                      <SkeletonLoader
+                        width={52}
+                        height={16}
+                        style={{ borderRadius: 7 }}
+                      />
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    </Screen>
+  );
+}
+
 const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
-  const { colors } = useTheme();
+  const { colors, isLight } = useTheme();
   const { t, isRtl } = useAppLanguage();
   const { playTrack } = usePlayer();
   const insets = useSafeAreaInsets();
@@ -250,7 +520,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
   const normalizedArtistId = useMemo(
     () => normalizeYouTubeChannelId(String(artistId || "")),
-    [artistId]
+    [artistId],
   );
   const resolvedSource = useMemo<ArtistSource>(() => {
     if (routeSource === "jiosaavn") {
@@ -301,7 +571,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
       return parts.join(" · ");
     },
-    [artistData?.name, formatDuration]
+    [artistData?.name, formatDuration],
   );
 
   const fetchJsonFromCandidates = useCallback(async (urls: string[]) => {
@@ -319,11 +589,11 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
             },
           },
           2,
-          350
+          350,
         );
       } catch (fetchError) {
         errors.push(
-          fetchError instanceof Error ? fetchError.message : String(fetchError)
+          fetchError instanceof Error ? fetchError.message : String(fetchError),
         );
       }
     }
@@ -348,21 +618,21 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
               },
             },
             2,
-            350
+            350,
           );
           return { payload, base: instance, providerEndpoints };
         } catch (fetchError) {
           errors.push(
             fetchError instanceof Error
               ? fetchError.message
-              : String(fetchError)
+              : String(fetchError),
           );
         }
       }
 
       throw new Error(errors.join(" | ") || "All Invidious requests failed");
     },
-    []
+    [],
   );
 
   const fetchArtistData = useCallback(async () => {
@@ -380,15 +650,15 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
           await Promise.all([
             fetchFirstSuccessfulInvidiousJson(
               (instance) =>
-                `${instance}/api/v1/channels/${encodeURIComponent(channelId)}`
+                `${instance}/api/v1/channels/${encodeURIComponent(channelId)}`,
             ).catch(() => null),
             fetchFirstSuccessfulInvidiousJson(
               (instance) =>
-                `${instance}/api/v1/channels/${encodeURIComponent(channelId)}/videos`
+                `${instance}/api/v1/channels/${encodeURIComponent(channelId)}/videos`,
             ).catch(() => null),
             fetchFirstSuccessfulInvidiousJson(
               (instance) =>
-                `${instance}/api/v1/channels/${encodeURIComponent(channelId)}/playlists`
+                `${instance}/api/v1/channels/${encodeURIComponent(channelId)}/playlists`,
             ).catch(() => null),
           ]);
 
@@ -406,12 +676,12 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
         const invidiousChannel = toRecord(channelResult?.payload);
         const latestVideos = toArray<Record<string, unknown>>(
-          invidiousChannel.latestVideos
+          invidiousChannel.latestVideos,
         );
         const videosFallback = Array.isArray(videosResult?.payload)
           ? (videosResult?.payload as Array<Record<string, unknown>>)
           : toArray<Record<string, unknown>>(
-              toRecord(videosResult?.payload).videos
+              toRecord(videosResult?.payload).videos,
             );
         const videosToUse =
           latestVideos.length > 0 ? latestVideos : videosFallback;
@@ -436,13 +706,13 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
           image:
             pickBestImageUrl(
               invidiousChannel.authorThumbnails,
-              invidiousBase
+              invidiousBase,
             ) || String(artistImage || ""),
           banner:
             pickBestImageUrl(invidiousChannel.authorBanners, invidiousBase) ||
             pickBestImageUrl(
               invidiousChannel.authorThumbnails,
-              invidiousBase
+              invidiousBase,
             ) ||
             String(artistImage || ""),
           monthlyListeners: safeNumber(invidiousChannel.subCount),
@@ -474,7 +744,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
         const playlistEntries = Array.isArray(playlistsResult?.payload)
           ? (playlistsResult?.payload as Array<Record<string, unknown>>)
           : toArray<Record<string, unknown>>(
-              toRecord(playlistsResult?.payload).playlists
+              toRecord(playlistsResult?.payload).playlists,
             );
 
         const nextAlbums: CollectionItem[] = [];
@@ -494,7 +764,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
               t("screens.artist.unknown_playlist"),
             thumbnail: absolutizeUrl(
               safeString(playlist.playlistThumbnail),
-              invidiousBase
+              invidiousBase,
             ),
             videoCount: safeNumber(playlist.videoCount),
             type: isAutoGeneratedAlbumPlaylistId(playlistId)
@@ -523,19 +793,19 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
           buildProviderUrlCandidates(jiosaavnApiBase, [
             `/api/artists/${encodeURIComponent(String(artistId || ""))}`,
             `/artists/${encodeURIComponent(String(artistId || ""))}`,
-          ])
+          ]),
         ),
         fetchJsonFromCandidates(
           buildProviderUrlCandidates(jiosaavnApiBase, [
             `/api/artists/${encodeURIComponent(String(artistId || ""))}/songs`,
             `/artists/${encodeURIComponent(String(artistId || ""))}/songs`,
-          ])
+          ]),
         ).catch(() => null),
         fetchJsonFromCandidates(
           buildProviderUrlCandidates(jiosaavnApiBase, [
             `/api/artists/${encodeURIComponent(String(artistId || ""))}/albums`,
             `/artists/${encodeURIComponent(String(artistId || ""))}/albums`,
-          ])
+          ]),
         ).catch(() => null),
       ]);
 
@@ -595,7 +865,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
           return {
             id:
               safeString(
-                record.id || record.songId || record.songid || record.url
+                record.id || record.songId || record.songid || record.url,
               ) || `song_${index}`,
             title:
               safeString(record.title || record.name || record.song) ||
@@ -665,7 +935,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
   const visibleSongs = useMemo(
     () => popularSongs.slice(0, MAX_VISIBLE_SONGS),
-    [popularSongs]
+    [popularSongs],
   );
 
   const featuredSong = useMemo(() => {
@@ -674,7 +944,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
     }
 
     return popularSongs.reduce((best, song) =>
-      song.playCount > best.playCount ? song : best
+      song.playCount > best.playCount ? song : best,
     );
   }, [popularSongs]);
 
@@ -702,7 +972,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
       void playTrack(track, queue, Math.max(index, 0));
     },
-    [artistData?.name, playTrack, popularSongs, resolvedSource, t]
+    [artistData?.name, playTrack, popularSongs, resolvedSource, t],
   );
 
   const handlePlayAll = useCallback(() => {
@@ -727,7 +997,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
         source: item.type === "playlist" ? "youtube" : resolvedSource,
       });
     },
-    [artistData?.name, navigation, resolvedSource, t]
+    [artistData?.name, navigation, resolvedSource, t],
   );
 
   const headerImage =
@@ -740,13 +1010,12 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
   if (loading) {
     return (
-      <Screen padded={false} safeEdges={["left", "right"]}>
-        <View
-          style={[styles.centeredState, { backgroundColor: colors.background }]}
-        >
-          <ActivityIndicator size="large" color={colors.accent} />
-        </View>
-      </Screen>
+      <ArtistScreenSkeleton
+        colors={colors}
+        insets={insets}
+        isRtl={isRtl}
+        onBack={() => navigation.goBack()}
+      />
     );
   }
 
@@ -812,10 +1081,10 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
         <ScrollView showsVerticalScrollIndicator={false}>
           <View style={styles.headerSection}>
             {headerImage ? (
-              <Image
+              <ImageWithSkeleton
                 source={{ uri: headerImage }}
                 resizeMode="cover"
-                style={styles.headerImage}
+                containerStyle={styles.headerImage}
               />
             ) : (
               <View
@@ -850,6 +1119,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                 {
                   top: insets.top + 12,
                   left: 16,
+                  right: undefined,
                   backgroundColor: withOpacity(colors.background, 0.48),
                 },
               ]}
@@ -918,9 +1188,9 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                 ]}
               >
                 {artistData.image ? (
-                  <Image
+                  <ImageWithSkeleton
                     source={{ uri: artistData.image }}
-                    style={styles.artistAvatar}
+                    containerStyle={styles.artistAvatar}
                   />
                 ) : null}
                 <TitleText
@@ -988,7 +1258,18 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
               </View>
 
               {artistData.description ? (
-                <MutedText numberOfLines={3} style={styles.descriptionText}>
+                <MutedText
+                  numberOfLines={3}
+                  style={[
+                    styles.descriptionText,
+                    {
+                      color: withOpacity(
+                        colors.foreground,
+                        isLight ? 0.98 : 0.72,
+                      ),
+                    },
+                  ]}
+                >
                   {shortenDescription(artistData.description)}
                 </MutedText>
               ) : null}
@@ -1064,11 +1345,11 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                   activeOpacity={0.92}
                   onPress={() => {
                     const featuredIndex = popularSongs.findIndex(
-                      (song) => song.id === featuredSong.id
+                      (song) => song.id === featuredSong.id,
                     );
                     handlePlaySong(
                       featuredSong,
-                      featuredIndex >= 0 ? featuredIndex : 0
+                      featuredIndex >= 0 ? featuredIndex : 0,
                     );
                   }}
                   style={[
@@ -1080,10 +1361,10 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                   ]}
                 >
                   {featuredSong.thumbnail ? (
-                    <Image
+                    <ImageWithSkeleton
                       source={{ uri: featuredSong.thumbnail }}
                       resizeMode="cover"
-                      style={styles.featuredImage}
+                      containerStyle={styles.featuredImage}
                     />
                   ) : null}
                   <LinearGradient
@@ -1198,15 +1479,34 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                       </View>
 
                       {song.thumbnail ? (
-                        <Image
+                        <ImageWithSkeleton
                           source={{ uri: song.thumbnail }}
-                          style={[
+                          containerStyle={[
                             styles.songThumb,
                             {
                               marginRight: isRtl ? 0 : 14,
                               marginLeft: isRtl ? 14 : 0,
                             },
                           ]}
+                          fallback={
+                            <View
+                              style={[
+                                styles.songThumb,
+                                styles.songThumbFallback,
+                                {
+                                  backgroundColor: colors.surface3,
+                                  marginRight: isRtl ? 0 : 14,
+                                  marginLeft: isRtl ? 14 : 0,
+                                },
+                              ]}
+                            >
+                              <Ionicons
+                                name="musical-notes-outline"
+                                size={20}
+                                color={colors.muted}
+                              />
+                            </View>
+                          }
                         />
                       ) : (
                         <View
@@ -1276,7 +1576,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
-                    style={isRtl ? styles.horizontalScrollRtl : undefined}
+                    style={isRtl ? styles.rtlScroll : null}
                     contentContainerStyle={[
                       styles.horizontalListContent,
                       isRtl ? styles.horizontalListContentRtl : null,
@@ -1289,17 +1589,29 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                         onPress={() => openCollection(album)}
                         style={[
                           styles.collectionCard,
-                          {
-                            marginRight: isRtl ? 0 : 14,
-                            marginLeft: isRtl ? 14 : 0,
-                            transform: [{ scaleX: isRtl ? -1 : 1 }],
-                          },
+                          { marginRight: 14 },
+                          isRtl ? styles.rtlScrollItem : null,
                         ]}
                       >
                         {album.thumbnail ? (
-                          <Image
+                          <ImageWithSkeleton
                             source={{ uri: album.thumbnail }}
-                            style={styles.collectionImage}
+                            containerStyle={styles.collectionImage}
+                            fallback={
+                              <View
+                                style={[
+                                  styles.collectionImage,
+                                  styles.collectionFallback,
+                                  { backgroundColor: colors.surface2 },
+                                ]}
+                              >
+                                <Ionicons
+                                  name="disc-outline"
+                                  size={28}
+                                  color={colors.muted}
+                                />
+                              </View>
+                            }
                           />
                         ) : (
                           <View
@@ -1369,7 +1681,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
-                    style={isRtl ? styles.horizontalScrollRtl : undefined}
+                    style={isRtl ? styles.rtlScroll : null}
                     contentContainerStyle={[
                       styles.horizontalListContent,
                       isRtl ? styles.horizontalListContentRtl : null,
@@ -1382,17 +1694,29 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                         onPress={() => openCollection(playlist)}
                         style={[
                           styles.collectionCard,
-                          {
-                            marginRight: isRtl ? 0 : 14,
-                            marginLeft: isRtl ? 14 : 0,
-                            transform: [{ scaleX: isRtl ? -1 : 1 }],
-                          },
+                          { marginRight: 14 },
+                          isRtl ? styles.rtlScrollItem : null,
                         ]}
                       >
                         {playlist.thumbnail ? (
-                          <Image
+                          <ImageWithSkeleton
                             source={{ uri: playlist.thumbnail }}
-                            style={styles.collectionImage}
+                            containerStyle={styles.collectionImage}
+                            fallback={
+                              <View
+                                style={[
+                                  styles.collectionImage,
+                                  styles.collectionFallback,
+                                  { backgroundColor: colors.surface2 },
+                                ]}
+                              >
+                                <Ionicons
+                                  name="list-outline"
+                                  size={28}
+                                  color={colors.muted}
+                                />
+                              </View>
+                            }
                           />
                         ) : (
                           <View
@@ -1599,13 +1923,14 @@ const styles = StyleSheet.create({
   },
   mainCard: {
     borderRadius: 26,
-    borderWidth: 1,
     overflow: "hidden",
   },
   featuredCard: {
     height: 220,
     borderBottomWidth: 1,
     overflow: "hidden",
+    borderWidth: 1,
+    borderRadius: 26,
   },
   featuredImage: {
     ...ABSOLUTE_FILL,
@@ -1653,7 +1978,6 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   sectionBlock: {
-    paddingHorizontal: 16,
     paddingTop: 18,
     paddingBottom: 8,
   },
@@ -1671,7 +1995,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   songRow: {
-    borderWidth: 1,
+    borderWidth: 0.5,
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -1719,13 +2043,17 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   horizontalListContent: {
-    paddingRight: 16,
+    paddingHorizontal: 16,
+    minWidth: "100%",
   },
   horizontalListContentRtl: {
-    paddingLeft: 0,
-    paddingRight: 16,
+    paddingLeft: 16,
+    paddingRight: 30,
   },
-  horizontalScrollRtl: {
+  rtlScroll: {
+    transform: [{ scaleX: -1 }],
+  },
+  rtlScrollItem: {
     transform: [{ scaleX: -1 }],
   },
   collectionCard: {

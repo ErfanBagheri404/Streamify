@@ -1,8 +1,9 @@
-import React from "react";
+import React, { type ReactNode } from "react";
 import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  View,
   type StyleProp,
   type TextStyle,
   type ViewStyle,
@@ -23,6 +24,8 @@ interface ChipProps extends TouchableProps {
   selectedTextColor?: string;
   unselectedTextColor?: string;
   style?: StyleProp<ViewStyle>;
+  icon?: ReactNode;
+  iconGap?: number;
 }
 
 export function Chip({
@@ -35,6 +38,8 @@ export function Chip({
   selectedBorderColor,
   selectedTextColor,
   unselectedTextColor,
+  icon,
+  iconGap = 6,
   ...rest
 }: ChipProps) {
   const { colors } = useTheme();
@@ -42,7 +47,7 @@ export function Chip({
   const resolvedTextStyle = resolveTextStyle(
     isRtl,
     textStyle,
-    selected ? "semibold" : "medium"
+    selected ? "semibold" : "medium",
   );
 
   return (
@@ -63,21 +68,28 @@ export function Chip({
         style,
       ]}
     >
-      <Text
-        style={[
-          styles.text,
-          {
-            color: selected
-              ? selectedTextColor || colors.accentContrast
-              : unselectedTextColor || colors.foreground,
-            textAlign: "center",
-          },
-          resolvedTextStyle,
-          textStyle,
-        ]}
-      >
-        {label}
-      </Text>
+      <View style={[styles.contentRow, { flexDirection: isRtl ? "row-reverse" : "row" }]}>
+        {icon ? (
+          <View style={[styles.iconWrapper, { marginEnd: isRtl ? 0 : iconGap, marginStart: isRtl ? iconGap : 0 }]}>
+            {icon}
+          </View>
+        ) : null}
+        <Text
+          style={[
+            styles.text,
+            {
+              color: selected
+                ? selectedTextColor || colors.accentContrast
+                : unselectedTextColor || colors.foreground,
+              textAlign: "center",
+            },
+            resolvedTextStyle,
+            textStyle,
+          ]}
+        >
+          {label}
+        </Text>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -88,6 +100,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 999,
     borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  contentRow: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconWrapper: {
     alignItems: "center",
     justifyContent: "center",
   },

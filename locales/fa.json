@@ -240,7 +240,8 @@
       "unknown_playlist": "لیست پخش ناشناس",
       "recent_videos": "ویدئوهای اخیر",
       "popular_videos": "ویدئوهای محبوب",
-      "official_audio": "صوت رسمی"
+      "official_audio": "صوت رسمی",
+      "load_error": "بارگذاری هنرمند ممکن نشد"
     },
     "library": {
       "title": "کتابخانه شما",
@@ -484,7 +485,8 @@
       "no_image_data": "داده تصویری در نتیجه رمزگشایی شده یافت نشد",
       "http_error": "HTTP {status}",
       "invalid_response": "فرمت پاسخ نامعتبر است",
-      "no_songs_found": "پس از چندین تلاش، هیچ آهنگی برای این آلبوم یافت نشد"
+      "no_songs_found": "پس از چندین تلاش، هیچ آهنگی برای این آلبوم یافت نشد",
+      "couldnt_load_lyrics": "بارگذاری متن ترانه برای این قطعه ممکن نشد"
     },
     "placeholders": {
       "no_image": "بدون تصویر",
@@ -805,6 +807,8 @@
   "settings.autoplayRecommendedTracksDescription": "وقتی صف شما تمام می شود، استریمیفای با آهنگ های مرتبط یا موارد محبوب اخیر پخش را ادامه می دهد.",
   "settings.openNowPlayingAutomatically": "باز کردن خودکار Now Playing",
   "settings.openNowPlayingAutomaticallyDescription": "هر زمان آهنگی از جستجو، خانه یا کتابخانه شروع شد، مستقیم به پلیر تمام صفحه برو.",
+  "settings.autoCacheLikedSongs": "ذخیره خودکار آهنگ‌های لایک‌شده",
+  "settings.autoCacheLikedSongsDescription": "به طور خودکار آهنگ‌های لایک‌شده را در پس‌زمینه ذخیره کن. وقتی غیرفعال است، ذخیره‌سازی فقط زمانی انجام می‌شود که به صورت دستی از صفحه کتابخانه آغاز کنی.",
   "settings.discovery": "کشف",
   "settings.searchPreferences": "ترجیحات جستجو",
   "settings.searchPreferencesDescription": "مشخص کن وقتی جستجو را بدون کوئری ذخیره شده یا پارامتر مستقیم باز می کنی، استریمیفای اول کدام منبع را ترجیح دهد.",
@@ -909,9 +913,13 @@
   "settings.emailAccount": "حساب ایمیلی",
   "settings.continueToSignIn": "ورود",
   "settings.continueToSignUp": "ثبت نام",
+  "settings.quickAccess": "دسترسی سریع",
+  "settings.quickAccessDescription": "برای رفتن مستقیم به هر بخش بزن. اگر آن دسته بسته باشد، خودکار باز می شود.",
   "settings.signOut": "خروج",
   "settings.syncLibrary": "همگام سازی کتابخانه محلی",
   "settings.syncInProgress": "در حال همگام سازی...",
+  "settings.cloudSyncUnavailable": "همگام سازی ابری تا وقتی متغیرهای محیطی Supabase تنظیم نشده باشند در دسترس نیست.",
+  "settings.syncSignInRequired": "برای همگام سازی کتابخانه خود وارد شوید.",
   "settings.syncEmpty": "هنوز پلی لیست یا آهنگ پسندیده محلی برای همگام سازی وجود ندارد.",
   "settings.syncFailed": "همگام سازی کتابخانه انجام نشد.",
   "settings.syncSuccess": "{playlists} پلی لیست و {likes} آهنگ پسندیده همگام شد.",
@@ -942,6 +950,8 @@
   "source.youtubemusic": "یوتیوب موزیک",
   "source.soundcloud": "ساوندکلاد",
   "source.jiosaavn": "جیوساون",
+  "source.itunes": "آیتیونز",
+  "source.deezer": "دیزر",
   "source.spotify": "اسپاتیفای",
   "theme.default": "استریمیفای",
   "theme.ocean": "اقیانوسی",

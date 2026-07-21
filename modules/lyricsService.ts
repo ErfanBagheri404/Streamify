@@ -37,7 +37,7 @@ function normalizeCacheEntry(entry: CachedLyrics): CachedLyrics {
 
 function selectLookupCandidates(
   candidates: LyricsCandidate[],
-  maxCandidates: number
+  maxCandidates: number,
 ): LyricsCandidate[] {
   const selected = candidates.slice(0, maxCandidates);
   const finalFallback =
@@ -48,7 +48,7 @@ function selectLookupCandidates(
     !selected.some(
       (candidate) =>
         candidate.artist.toLowerCase() === finalFallback.artist.toLowerCase() &&
-        candidate.title.toLowerCase() === finalFallback.title.toLowerCase()
+        candidate.title.toLowerCase() === finalFallback.title.toLowerCase(),
     )
   ) {
     selected.push(finalFallback);
@@ -106,7 +106,7 @@ export class LyricsService {
     try {
       await StorageService.setItem(
         LYRICS_CACHE_KEY,
-        JSON.stringify(Array.from(this.cache.entries()))
+        JSON.stringify(Array.from(this.cache.entries())),
       );
     } catch (error) {
       console.error("[Lyrics] Failed to save cache:", error);
@@ -121,7 +121,7 @@ export class LyricsService {
     const controller = new AbortController();
     const timeoutId = setTimeout(
       () => controller.abort(),
-      LYRICS_UPSTREAM_TIMEOUT_MS
+      LYRICS_UPSTREAM_TIMEOUT_MS,
     );
 
     try {
@@ -137,7 +137,7 @@ export class LyricsService {
   }
 
   private async fetchFirstSuccessfulResponse(
-    urls: string[]
+    urls: string[],
   ): Promise<{ response: Response; url: string } | null> {
     for (const url of urls) {
       const response = await this.fetchWithTimeout(url);
@@ -151,7 +151,7 @@ export class LyricsService {
 
   private async fetchLrcLibLyrics(
     candidate: LyricsCandidate,
-    durationSeconds?: number
+    durationSeconds?: number,
   ): Promise<CachedLyrics | null> {
     const providerEndpoints = await getProviderEndpoints();
     const requestVariants = [
@@ -167,7 +167,7 @@ export class LyricsService {
             durationSeconds > 0
               ? Math.round(durationSeconds)
               : undefined,
-        }
+        },
       ),
       buildProviderUrlCandidates(
         providerEndpoints.providers.lyrics.lrclibBase,
@@ -175,7 +175,7 @@ export class LyricsService {
         {
           artist_name: candidate.artist,
           track_name: candidate.title,
-        }
+        },
       ),
     ];
 
@@ -221,15 +221,15 @@ export class LyricsService {
   }
 
   private async fetchLyricsOvhLyrics(
-    candidate: LyricsCandidate
+    candidate: LyricsCandidate,
   ): Promise<CachedLyrics | null> {
     const providerEndpoints = await getProviderEndpoints();
     const encodedPath = `/${encodeURIComponent(
-      candidate.artist
+      candidate.artist,
     )}/${encodeURIComponent(candidate.title)}`;
     const urls = buildProviderUrlCandidates(
       providerEndpoints.providers.lyrics.lyricsOvhBase,
-      [`/v1${encodedPath}`, encodedPath]
+      [`/v1${encodedPath}`, encodedPath],
     );
 
     const result = await this.fetchFirstSuccessfulResponse(urls);
@@ -257,7 +257,7 @@ export class LyricsService {
 
   public async getLyrics(
     track: Track,
-    options?: { force?: boolean }
+    options?: { force?: boolean },
   ): Promise<CachedLyrics | null> {
     await this.loadCache();
 
@@ -296,12 +296,12 @@ export class LyricsService {
 
         const lrclibCandidates = selectLookupCandidates(
           candidates,
-          MAX_LRCLIB_CANDIDATES
+          MAX_LRCLIB_CANDIDATES,
         );
         for (const candidate of lrclibCandidates) {
           const payload = await this.fetchLrcLibLyrics(
             candidate,
-            track.duration
+            track.duration,
           );
           if (!payload) {
             continue;
@@ -319,7 +319,7 @@ export class LyricsService {
 
         const lyricsOvhCandidates = selectLookupCandidates(
           candidates,
-          MAX_LYRICS_OVH_CANDIDATES
+          MAX_LYRICS_OVH_CANDIDATES,
         );
         for (const candidate of lyricsOvhCandidates) {
           const payload = await this.fetchLyricsOvhLyrics(candidate);

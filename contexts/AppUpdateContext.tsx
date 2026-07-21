@@ -66,7 +66,7 @@ type AppUpdateContextType = {
   availableUpdateInfo: UpdateReleaseInfo | null;
   isCheckingForUpdates: boolean;
   checkForUpdates: (
-    options?: CheckForUpdatesOptions
+    options?: CheckForUpdatesOptions,
   ) => Promise<UpdateCheckResult>;
   reopenUpdateModal: () => Promise<UpdateCheckResult>;
   dismissUpdate: () => Promise<void>;
@@ -74,7 +74,7 @@ type AppUpdateContextType = {
 };
 
 const AppUpdateContext = createContext<AppUpdateContextType | undefined>(
-  undefined
+  undefined,
 );
 
 function normalizeVersion(value?: string | null): string {
@@ -112,14 +112,14 @@ function resolveReleaseDownloadUrl(release: GitHubRelease): string {
   const apkAsset =
     assets.find((asset) => asset.name?.toLowerCase().endsWith(".apk")) ||
     assets.find((asset) =>
-      String(asset.content_type || "").toLowerCase().includes("android")
+      String(asset.content_type || "")
+        .toLowerCase()
+        .includes("android"),
     ) ||
     assets[0];
 
   return (
-    apkAsset?.browser_download_url ||
-    release.html_url ||
-    STREAMIFY_REPO_URL
+    apkAsset?.browser_download_url || release.html_url || STREAMIFY_REPO_URL
   );
 }
 
@@ -127,13 +127,11 @@ function isUpdateNewerThanCurrent(version?: string | null): boolean {
   const normalizedVersion = normalizeVersion(version);
   return Boolean(
     normalizedVersion &&
-      compareVersions(normalizedVersion, CURRENT_APP_VERSION) > 0
+    compareVersions(normalizedVersion, CURRENT_APP_VERSION) > 0,
   );
 }
 
-function parseCachedUpdateInfo(
-  value: string | null
-): UpdateReleaseInfo | null {
+function parseCachedUpdateInfo(value: string | null): UpdateReleaseInfo | null {
   if (!value) {
     return null;
   }
@@ -163,8 +161,12 @@ function parseCachedUpdateInfo(
   }
 }
 
-function buildUpdateReleaseInfo(release: GitHubRelease): UpdateReleaseInfo | null {
-  const latestVersion = normalizeVersion(release.tag_name || release.name || "");
+function buildUpdateReleaseInfo(
+  release: GitHubRelease,
+): UpdateReleaseInfo | null {
+  const latestVersion = normalizeVersion(
+    release.tag_name || release.name || "",
+  );
   if (!latestVersion) {
     return null;
   }
@@ -181,11 +183,7 @@ function buildUpdateReleaseInfo(release: GitHubRelease): UpdateReleaseInfo | nul
   };
 }
 
-export function AppUpdateProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
   const [updateInfo, setUpdateInfo] = useState<UpdateReleaseInfo | null>(null);
   const [latestKnownUpdate, setLatestKnownUpdate] =
     useState<UpdateReleaseInfo | null>(null);
@@ -193,14 +191,20 @@ export function AppUpdateProvider({
   const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(true);
   const [hasHydrated, setHasHydrated] = useState(false);
 
-  const persistCachedUpdateInfo = useCallback(async (info: UpdateReleaseInfo | null) => {
-    if (!info) {
-      await StorageService.removeItem(CACHED_UPDATE_INFO_KEY);
-      return;
-    }
+  const persistCachedUpdateInfo = useCallback(
+    async (info: UpdateReleaseInfo | null) => {
+      if (!info) {
+        await StorageService.removeItem(CACHED_UPDATE_INFO_KEY);
+        return;
+      }
 
-    await StorageService.setItem(CACHED_UPDATE_INFO_KEY, JSON.stringify(info));
-  }, []);
+      await StorageService.setItem(
+        CACHED_UPDATE_INFO_KEY,
+        JSON.stringify(info),
+      );
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -217,12 +221,15 @@ export function AppUpdateProvider({
         }
 
         const normalizedDismissedVersion = normalizeVersion(
-          storedDismissedVersion
+          storedDismissedVersion,
         );
         setDismissedVersion(normalizedDismissedVersion || null);
 
         const cachedUpdateInfo = parseCachedUpdateInfo(storedCachedUpdate);
-        if (cachedUpdateInfo && isUpdateNewerThanCurrent(cachedUpdateInfo.version)) {
+        if (
+          cachedUpdateInfo &&
+          isUpdateNewerThanCurrent(cachedUpdateInfo.version)
+        ) {
           setLatestKnownUpdate(cachedUpdateInfo);
         } else if (storedCachedUpdate) {
           void StorageService.removeItem(CACHED_UPDATE_INFO_KEY);
@@ -243,7 +250,7 @@ export function AppUpdateProvider({
 
   const checkForUpdates = useCallback(
     async (
-      options: CheckForUpdatesOptions = {}
+      options: CheckForUpdatesOptions = {},
     ): Promise<UpdateCheckResult> => {
       const cachedAvailableUpdate =
         latestKnownUpdate && isUpdateNewerThanCurrent(latestKnownUpdate.version)
@@ -270,7 +277,10 @@ export function AppUpdateProvider({
         const release = (await response.json()) as GitHubRelease;
         const resolvedUpdate = buildUpdateReleaseInfo(release);
 
-        if (!resolvedUpdate || !isUpdateNewerThanCurrent(resolvedUpdate.version)) {
+        if (
+          !resolvedUpdate ||
+          !isUpdateNewerThanCurrent(resolvedUpdate.version)
+        ) {
           setLatestKnownUpdate(null);
           setUpdateInfo(null);
           await persistCachedUpdateInfo(null);
@@ -312,13 +322,15 @@ export function AppUpdateProvider({
         return {
           status: "error",
           message:
-            error instanceof Error ? error.message : "Unable to check for updates.",
+            error instanceof Error
+              ? error.message
+              : "Unable to check for updates.",
         };
       } finally {
         setIsCheckingForUpdates(false);
       }
     },
-    [dismissedVersion, latestKnownUpdate, persistCachedUpdateInfo]
+    [dismissedVersion, latestKnownUpdate, persistCachedUpdateInfo],
   );
 
   useEffect(() => {
@@ -329,26 +341,27 @@ export function AppUpdateProvider({
     void checkForUpdates();
   }, [checkForUpdates, hasHydrated]);
 
-  const reopenUpdateModal = useCallback(async (): Promise<UpdateCheckResult> => {
-    const cachedAvailableUpdate =
-      latestKnownUpdate && isUpdateNewerThanCurrent(latestKnownUpdate.version)
-        ? latestKnownUpdate
-        : null;
+  const reopenUpdateModal =
+    useCallback(async (): Promise<UpdateCheckResult> => {
+      const cachedAvailableUpdate =
+        latestKnownUpdate && isUpdateNewerThanCurrent(latestKnownUpdate.version)
+          ? latestKnownUpdate
+          : null;
 
-    if (cachedAvailableUpdate) {
-      setUpdateInfo(cachedAvailableUpdate);
-      return {
-        status: "available",
-        info: cachedAvailableUpdate,
-        usedCached: true,
-      };
-    }
+      if (cachedAvailableUpdate) {
+        setUpdateInfo(cachedAvailableUpdate);
+        return {
+          status: "available",
+          info: cachedAvailableUpdate,
+          usedCached: true,
+        };
+      }
 
-    return checkForUpdates({
-      forceShowModal: true,
-      ignoreDismissed: true,
-    });
-  }, [checkForUpdates, latestKnownUpdate]);
+      return checkForUpdates({
+        forceShowModal: true,
+        ignoreDismissed: true,
+      });
+    }, [checkForUpdates, latestKnownUpdate]);
 
   const dismissUpdate = useCallback(async () => {
     if (!updateInfo?.version) {
@@ -361,7 +374,7 @@ export function AppUpdateProvider({
     setUpdateInfo(null);
     await StorageService.setItem(
       DISMISSED_UPDATE_VERSION_KEY,
-      normalizedVersion
+      normalizedVersion,
     );
   }, [updateInfo]);
 
@@ -393,7 +406,7 @@ export function AppUpdateProvider({
       isCheckingForUpdates,
       reopenUpdateModal,
       updateInfo,
-    ]
+    ],
   );
 
   return (

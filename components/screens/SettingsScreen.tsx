@@ -1,4 +1,10 @@
-import React, { useMemo, useState, type ReactNode } from "react";
+import React, {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   ActivityIndicator,
   Image,
@@ -37,6 +43,8 @@ import {
 
 const SEARCH_SOURCES: PreferredSearchSource[] = [
   "mixed",
+  "itunes",
+  "deezer",
   "youtube",
   "youtubemusic",
   "soundcloud",
@@ -82,7 +90,7 @@ const THEME_PREVIEW_ACCENTS: Record<AppTheme, string> = {
 };
 
 function getUserDisplayName(
-  user: { email?: string | null; user_metadata?: any } | null
+  user: { email?: string | null; user_metadata?: any } | null,
 ) {
   if (!user) {
     return "";
@@ -115,7 +123,7 @@ function getUserAccountLabel(
     app_metadata?: any;
     identities?: Array<{ provider?: string | null } | null>;
   } | null,
-  t: (key: string) => string
+  t: (key: string) => string,
 ) {
   const providers = new Set<string>();
   const primaryProvider = user?.app_metadata?.provider;
@@ -152,6 +160,8 @@ function Section({
   collapsed = false,
   onToggle,
   isRtl,
+  sectionKey,
+  onMeasure,
 }: {
   eyebrow: string;
   title: string;
@@ -161,9 +171,17 @@ function Section({
   collapsed?: boolean;
   onToggle?: () => void;
   isRtl: boolean;
+  sectionKey?: SettingsSectionKey;
+  onMeasure?: (section: SettingsSectionKey, y: number) => void;
 }) {
   return (
     <View
+      onLayout={(event) => {
+        if (!sectionKey || !onMeasure) {
+          return;
+        }
+        onMeasure(sectionKey, event.nativeEvent.layout.y);
+      }}
       style={[
         styles.section,
         {
@@ -400,12 +418,36 @@ export default function SettingsScreen({
     message: string;
   } | null>(null);
   const collapsedSections = settings.collapsedSettingsSections;
+  const scrollViewRef = useRef<ScrollView>(null);
+  const sectionOffsetsRef = useRef<Partial<Record<SettingsSectionKey, number>>>(
+    {},
+  );
 
   const accountName = getUserDisplayName(user) || t("settings.accountGuest");
   const accountAvatarUrl = getUserAvatarUrl(user);
   const accountProviderLabel = getUserAccountLabel(user, t);
-  const cloudSyncUnavailableMessage =
-    "Cloud sync is unavailable until Supabase environment variables are configured.";
+  const cloudSyncUnavailableMessage = t("settings.cloudSyncUnavailable");
+  const getLocalizedSyncFeedback = (error: unknown) => {
+    const rawMessage = error instanceof Error ? error.message.trim() : "";
+    const normalizedMessage = rawMessage.toLowerCase();
+
+    if (
+      rawMessage ===
+        "Cloud sync is unavailable until Supabase environment variables are configured." ||
+      normalizedMessage.includes("supabase environment variables")
+    ) {
+      return t("settings.cloudSyncUnavailable");
+    }
+
+    if (
+      rawMessage === "Sign in to sync your library." ||
+      normalizedMessage.includes("sign in to sync")
+    ) {
+      return t("settings.syncSignInRequired");
+    }
+
+    return rawMessage || t("settings.syncFailed");
+  };
 
   const switchTrackColor = {
     false: withOpacity(colors.foreground, 0.22),
@@ -416,12 +458,14 @@ export default function SettingsScreen({
   const sourceLabels: Record<PreferredSearchSource, string> = useMemo(
     () => ({
       mixed: t("search.all"),
+      itunes: t("source.itunes"),
+      deezer: t("source.deezer"),
       youtube: t("source.youtube"),
       youtubemusic: t("source.youtubemusic"),
       soundcloud: t("source.soundcloud"),
       jiosaavn: t("source.jiosaavn"),
     }),
-    [t]
+    [t],
   );
 
   const retryLabels: Record<PlaybackRetryMode, string> = useMemo(
@@ -430,7 +474,7 @@ export default function SettingsScreen({
       always: t("settings.alwaysRetry"),
       never: t("settings.neverRetry"),
     }),
-    [t]
+    [t],
   );
 
   const themeLabels: Record<AppTheme, string> = useMemo(
@@ -440,9 +484,9 @@ export default function SettingsScreen({
           acc[theme] = t(`theme.${theme}`);
           return acc;
         },
-        {} as Record<AppTheme, string>
+        {} as Record<AppTheme, string>,
       ),
-    [t]
+    [t],
   );
 
   const motionLabel = settings.disableAnimations
@@ -500,7 +544,7 @@ export default function SettingsScreen({
     if (!user) {
       setSyncFeedback({
         tone: "error",
-        message: "Sign in to sync your library.",
+        message: t("settings.syncSignInRequired"),
       });
       return;
     }
@@ -534,8 +578,7 @@ export default function SettingsScreen({
     } catch (error) {
       setSyncFeedback({
         tone: "error",
-        message:
-          error instanceof Error ? error.message : t("settings.syncFailed"),
+        message: getLocalizedSyncFeedback(error),
       });
     } finally {
       setIsSyncing(false);
@@ -550,6 +593,65 @@ export default function SettingsScreen({
       },
     });
   };
+  const handleSectionMeasure = useCallback(
+    (section: SettingsSectionKey, y: number) => {
+      sectionOffsetsRef.current[section] = y;
+    },
+    [],
+  );
+  const jumpToSection = useCallback(
+    (section: SettingsSectionKey) => {
+      const isCollapsed = Boolean(collapsedSections?.[section]);
+      if (isCollapsed) {
+        updateSettings({
+          collapsedSettingsSections: {
+            ...collapsedSections,
+            [section]: false,
+          },
+        });
+      }
+
+      const scrollToSection = () => {
+        const offsetY = Math.max(
+          0,
+          (sectionOffsetsRef.current[section] ?? 0) - 96,
+        );
+        (
+          scrollViewRef.current as unknown as {
+            scrollTo: (options: {
+              y?: number;
+              x?: number;
+              animated?: boolean;
+            }) => void;
+          }
+        )?.scrollTo({
+          y: offsetY,
+          animated: !settings.disableAnimations,
+        });
+      };
+
+      if (isCollapsed) {
+        setTimeout(scrollToSection, settings.disableAnimations ? 0 : 180);
+        return;
+      }
+
+      requestAnimationFrame(scrollToSection);
+    },
+    [collapsedSections, settings.disableAnimations, updateSettings],
+  );
+
+  const quickAccessSections = useMemo(
+    () =>
+      [
+        { key: "account", label: t("settings.account") },
+        { key: "appearance", label: t("settings.themeAndMotion") },
+        { key: "playback", label: t("settings.musicBehaves") },
+        { key: "discovery", label: t("settings.searchPreferences") },
+        { key: "lyrics", label: t("settings.readingAndInput") },
+        { key: "updates", label: t("settings.appUpdates") },
+      ] as Array<{ key: SettingsSectionKey; label: string }>,
+    [t],
+  );
 
   if (!hasHydratedSettings) {
     return (
@@ -592,6 +694,7 @@ export default function SettingsScreen({
         </View>
 
         <ScrollView
+          ref={scrollViewRef}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
@@ -661,6 +764,50 @@ export default function SettingsScreen({
             </View>
           </View>
 
+          <View
+            style={[
+              styles.quickAccessCard,
+              {
+                backgroundColor: colors.surface1,
+                borderColor: colors.borderSubtle,
+              },
+            ]}
+          >
+            <MutedText style={styles.quickAccessEyebrow}>
+              {t("settings.quickAccess")}
+            </MutedText>
+            <TitleText style={styles.quickAccessTitle}>
+              {t("settings.quickAccess")}
+            </TitleText>
+            <MutedText style={styles.quickAccessDescription}>
+              {t("settings.quickAccessDescription")}
+            </MutedText>
+            <View
+              style={[
+                styles.quickAccessWrap,
+                { flexDirection: isRtl ? "row-reverse" : "row" },
+              ]}
+            >
+              {quickAccessSections.map((section) => (
+                <TouchableOpacity
+                  key={section.key}
+                  onPress={() => jumpToSection(section.key)}
+                  style={[
+                    styles.quickAccessChip,
+                    {
+                      backgroundColor: colors.surface3,
+                      borderColor: colors.borderSubtle,
+                    },
+                  ]}
+                >
+                  <BodyText style={styles.quickAccessChipText}>
+                    {section.label}
+                  </BodyText>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
           <Section
             eyebrow={t("settings.account")}
             title={t("settings.account")}
@@ -669,6 +816,8 @@ export default function SettingsScreen({
             collapsed={Boolean(collapsedSections.account)}
             onToggle={() => toggleSection("account")}
             isRtl={isRtl}
+            sectionKey="account"
+            onMeasure={handleSectionMeasure}
           >
             <View
               style={[
@@ -841,6 +990,8 @@ export default function SettingsScreen({
             collapsed={Boolean(collapsedSections.appearance)}
             onToggle={() => toggleSection("appearance")}
             isRtl={isRtl}
+            sectionKey="appearance"
+            onMeasure={handleSectionMeasure}
           >
             <SettingRow
               label={t("settings.theme")}
@@ -909,6 +1060,8 @@ export default function SettingsScreen({
             collapsed={Boolean(collapsedSections.playback)}
             onToggle={() => toggleSection("playback")}
             isRtl={isRtl}
+            sectionKey="playback"
+            onMeasure={handleSectionMeasure}
           >
             <SettingRow
               label={t("settings.autoRetryPlayback")}
@@ -962,6 +1115,22 @@ export default function SettingsScreen({
                 />
               }
             />
+            <SettingRow
+              label={t("settings.autoCacheLikedSongs")}
+              description={t("settings.autoCacheLikedSongsDescription")}
+              colors={colors}
+              controlPlacement="inline"
+              control={
+                <Switch
+                  value={settings.autoCacheLikedSongs}
+                  onValueChange={(value) =>
+                    updateSettings({ autoCacheLikedSongs: value })
+                  }
+                  trackColor={switchTrackColor}
+                  thumbColor={switchThumbColor}
+                />
+              }
+            />
           </Section>
 
           <Section
@@ -972,6 +1141,8 @@ export default function SettingsScreen({
             collapsed={Boolean(collapsedSections.discovery)}
             onToggle={() => toggleSection("discovery")}
             isRtl={isRtl}
+            sectionKey="discovery"
+            onMeasure={handleSectionMeasure}
           >
             <SettingRow
               label={t("settings.defaultSearchSource")}
@@ -1019,6 +1190,8 @@ export default function SettingsScreen({
             collapsed={Boolean(collapsedSections.lyrics)}
             onToggle={() => toggleSection("lyrics")}
             isRtl={isRtl}
+            sectionKey="lyrics"
+            onMeasure={handleSectionMeasure}
           >
             <SettingRow
               label={t("settings.lyrics")}
@@ -1099,6 +1272,8 @@ export default function SettingsScreen({
             collapsed={Boolean(collapsedSections.summary)}
             onToggle={() => toggleSection("summary")}
             isRtl={isRtl}
+            sectionKey="summary"
+            onMeasure={handleSectionMeasure}
           >
             <SummaryCard
               label={t("settings.playbackSummary")}
@@ -1152,6 +1327,8 @@ export default function SettingsScreen({
             collapsed={Boolean(collapsedSections.updates)}
             onToggle={() => toggleSection("updates")}
             isRtl={isRtl}
+            sectionKey="updates"
+            onMeasure={handleSectionMeasure}
           >
             <SettingRow
               label={t("settings.checkForUpdates")}
@@ -1242,7 +1419,6 @@ export default function SettingsScreen({
               </View>
             ) : null}
           </Section>
-
         </ScrollView>
       </View>
     </Screen>
@@ -1333,6 +1509,45 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: "500",
+  },
+  quickAccessCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 16,
+  },
+  quickAccessEyebrow: {
+    fontSize: 11,
+    lineHeight: 16,
+    textTransform: "uppercase",
+    letterSpacing: 1.1,
+    fontWeight: "600",
+  },
+  quickAccessTitle: {
+    marginTop: 10,
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: "700",
+  },
+  quickAccessDescription: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  quickAccessWrap: {
+    marginTop: 14,
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  quickAccessChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  quickAccessChipText: {
+    fontSize: 13,
+    lineHeight: 16,
+    fontWeight: "600",
   },
   section: {
     borderRadius: 22,

@@ -25,7 +25,10 @@ module.exports = async function () {
     }
 
     trackPlayerService.reset().catch((error) => {
-      console.error("[PlaybackService] Failed to reset after remote stop:", error);
+      console.error(
+        "[PlaybackService] Failed to reset after remote stop:",
+        error,
+      );
       TrackPlayer.stop().catch(() => {});
     });
   });
@@ -66,7 +69,7 @@ module.exports = async function () {
       trackPlayerService.reset().catch((error) => {
         console.error(
           "[PlaybackService] Failed to reset after permanent duck:",
-          error
+          error,
         );
         TrackPlayer.stop().catch(() => {});
       });

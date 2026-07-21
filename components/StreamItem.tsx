@@ -1,10 +1,12 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback } from "react";
 import { View, Text } from "react-native";
 import styled from "styled-components/native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useAppLanguage } from "../hooks/useAppLanguage";
 import { useTheme } from "../hooks/useTheme";
 import { getAppFontFamily, getTextDirectionStyle } from "../utils/fonts";
+import { ImageWithSkeleton } from "./ui/ImageWithSkeleton";
+import { SkeletonLoader } from "./SkeletonLoader";
 
 export type StreamItemProps = {
   id: string;
@@ -45,44 +47,29 @@ const ThumbWrap = styled.View<{
 }>`
   width: 96px; /* w-24 */
   height: ${(props) => {
+    // Artists & channels: square container for circular cropping
+    if (props.source === "youtube_channel" || props.type === "artist") {
+      return "96px"; /* Square for circular cropping */
+    }
     // JioSaavn albums and songs: square
     if (props.source === "jiosaavn") {
       return "96px";
     }
-    // Channels and artists: square container for circular cropping
-    if (props.source === "youtube_channel" || props.type === "artist") {
-      return "96px"; /* Square for circular cropping */
-    }
     return "54px"; /* Rectangular for videos/songs/albums/playlists */
   }};
   border-radius: ${(props) => {
+    // Artists & channels: circular (50% of width/height)
+    if (props.source === "youtube_channel" || props.type === "artist") {
+      return "48px"; /* 50% of width/height for circular shape */
+    }
     // JioSaavn albums and songs: squared (no circular cropping)
     if (props.source === "jiosaavn") {
       return "8px"; /* Squared with rounded corners for all JioSaavn items */
-    }
-    // Only make circular for YouTube channels and artist items
-    if (props.source === "youtube_channel" || props.type === "artist") {
-      return "48px"; /* 50% of width/height for circular shape */
     }
     return "8px"; /* Default rounded corners for other content */
   }};
   overflow: hidden;
   position: relative;
-`;
-
-const Thumbnail = styled.Image<{
-  imgSource?: string;
-  imgType?: string;
-}>`
-  width: 100%;
-  height: 100%;
-  border-radius: ${(props) => {
-    // Make circular for YouTube channels and artist items
-    if (props.imgSource === "youtube_channel" || props.imgType === "artist") {
-      return "48px"; /* 50% of width/height for circular shape */
-    }
-    return "0px"; /* No border radius for other content */
-  }};
 `;
 
 const DurationBadge = styled.View`
@@ -205,23 +192,12 @@ function StreamItem(props: StreamItemProps) {
   const { colors } = useTheme();
   const { isRtl } = useAppLanguage();
 
-  const [imageError, setImageError] = useState(false);
-  const [imageLoaded, setImageLoaded] = useState(false);
-
-  const handleImageError = useCallback(() => {
-    setImageError(true);
-  }, []);
-
-  const handleImageLoad = useCallback(() => {
-    setImageLoaded(true);
-  }, []);
-
   const formatAuthor = useCallback(
     (
       authorName?: string,
       source?: string,
       type?: string,
-      channelDescription?: string
+      channelDescription?: string,
     ) => {
       if (
         !authorName ||
@@ -244,7 +220,7 @@ function StreamItem(props: StreamItemProps) {
       }
       return authorName.replace(" - Topic", "");
     },
-    []
+    [],
   );
 
   const formatSubMeta = useCallback(
@@ -257,7 +233,7 @@ function StreamItem(props: StreamItemProps) {
       isAlbum?: boolean,
       searchFilter?: string,
       searchSource?: string,
-      albumYear?: string
+      albumYear?: string,
     ) => {
       const parts = [];
 
@@ -288,7 +264,7 @@ function StreamItem(props: StreamItemProps) {
       }
       return parts.join(" • ");
     },
-    []
+    [],
   );
 
   return (
@@ -301,15 +277,36 @@ function StreamItem(props: StreamItemProps) {
           backgroundColor: colors.surface1,
         }}
       >
-        {!!thumbnailUrl && !imageError ? (
-          <Thumbnail
-            imgSource={source}
-            imgType={type}
+        {!!thumbnailUrl ? (
+          <ImageWithSkeleton
             source={{ uri: thumbnailUrl }}
             resizeMode="cover"
-            onError={handleImageError}
-            onLoad={handleImageLoad}
-            fadeDuration={0}
+            containerStyle={{ flex: 1, backgroundColor: colors.surface1 }}
+            style={{
+              borderRadius:
+                source === "youtube_channel" || type === "artist" ? 48 : 0,
+            }}
+            fallback={
+              <View
+                style={{
+                  flex: 1,
+                  backgroundColor: colors.surface2,
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  style={{
+                    color: colors.muted,
+                    fontSize: 12,
+                    fontFamily: getAppFontFamily(isRtl, "regular"),
+                    ...getTextDirectionStyle(isRtl, "center"),
+                  }}
+                >
+                  No Image
+                </Text>
+              </View>
+            }
           />
         ) : (
           <View
@@ -320,30 +317,16 @@ function StreamItem(props: StreamItemProps) {
               alignItems: "center",
             }}
           >
-            {!imageLoaded && (
-              <Text
-                style={{
-                  color: colors.muted,
-                  fontSize: 12,
-                  fontFamily: getAppFontFamily(isRtl, "regular"),
-                  ...getTextDirectionStyle(isRtl, "center"),
-                }}
-              >
-                Loading...
-              </Text>
-            )}
-            {imageLoaded && imageError && (
-              <Text
-                style={{
-                  color: colors.muted,
-                  fontSize: 12,
-                  fontFamily: getAppFontFamily(isRtl, "regular"),
-                  ...getTextDirectionStyle(isRtl, "center"),
-                }}
-              >
-                No Image
-              </Text>
-            )}
+            <Text
+              style={{
+                color: colors.muted,
+                fontSize: 12,
+                fontFamily: getAppFontFamily(isRtl, "regular"),
+                ...getTextDirectionStyle(isRtl, "center"),
+              }}
+            >
+              No Image
+            </Text>
           </View>
         )}
         {/* Blue badge removed from thumbnails - now shown in details row */}
@@ -428,7 +411,7 @@ function StreamItem(props: StreamItemProps) {
               isAlbum,
               searchFilter,
               searchSource,
-              albumYear
+              albumYear,
             )}
             {/* Show blue badge for albums/playlists with video count */}
             {(isAlbum || type === "playlist") && videoCount && (
@@ -446,6 +429,67 @@ function StreamItem(props: StreamItemProps) {
             )}
           </SubMeta>
         </MetaRow>
+      </Content>
+    </Row>
+  );
+}
+
+export function StreamItemSkeleton({
+  source,
+  type,
+}: {
+  source?: string;
+  type?: string;
+}) {
+  const { colors } = useTheme();
+  const { isRtl } = useAppLanguage();
+
+  return (
+    <Row style={{ flexDirection: isRtl ? "row-reverse" : "row" }}>
+      <ThumbWrap
+        source={source}
+        type={type}
+        style={{ backgroundColor: colors.surface1 }}
+      >
+        <SkeletonLoader
+          style={{
+            width: "100%",
+            height: "100%",
+            borderRadius:
+              source === "youtube_channel" || type === "artist" ? 48 : 8,
+          }}
+        />
+      </ThumbWrap>
+      <Content style={{ alignItems: isRtl ? "flex-end" : "flex-start" }}>
+        <SkeletonLoader
+          width={168}
+          height={18}
+          style={{
+            borderRadius: 8,
+            marginBottom: 8,
+            maxWidth: "92%",
+            alignSelf: isRtl ? "flex-end" : "flex-start",
+          }}
+        />
+        <SkeletonLoader
+          width={132}
+          height={16}
+          style={{
+            borderRadius: 7,
+            marginBottom: 6,
+            maxWidth: "76%",
+            alignSelf: isRtl ? "flex-end" : "flex-start",
+          }}
+        />
+        <SkeletonLoader
+          width={108}
+          height={16}
+          style={{
+            borderRadius: 7,
+            maxWidth: "62%",
+            alignSelf: isRtl ? "flex-end" : "flex-start",
+          }}
+        />
       </Content>
     </Row>
   );

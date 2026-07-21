@@ -113,7 +113,7 @@ class DebugStartupBoundary extends React.Component<
 // Register the playback service for proper media session integration
 try {
   TrackPlayer.registerPlaybackService(() =>
-    require("./services/playbackService")
+    require("./services/playbackService"),
   );
   console.log("[App] Playback service registered successfully");
 } catch (error) {
@@ -382,12 +382,11 @@ function StartupLoadingScreen() {
         flex: 1,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#101010",
-        paddingHorizontal: 24,
+        backgroundColor: "#000000",
       }}
     >
       <Image
-        source={require("./assets/StreamifyLoading.png")}
+        source={require("./assets/StreamifyLogo.png")}
         resizeMode="contain"
         style={{ width: 220, height: 220 }}
       />

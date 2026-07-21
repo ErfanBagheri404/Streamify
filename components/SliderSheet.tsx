@@ -1,11 +1,13 @@
 import React from "react";
-import { TouchableOpacity, ScrollView } from "react-native";
+import { TouchableOpacity, ScrollView, Dimensions } from "react-native";
 const { Animated } = require("react-native");
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAppLanguage } from "../hooks/useAppLanguage";
 import { useTheme, withOpacity } from "../hooks/useTheme";
 import { getAppFontFamily, getTextDirectionStyle } from "../utils/fonts";
+
+const FULL_HEIGHT = Dimensions.get("window").height;
 
 interface SheetOption {
   key: string;
@@ -41,7 +43,6 @@ const BottomSheetContainer = styled(Animated.View)`
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
 `;
 
 const BottomSheetInner = styled.View`
@@ -144,7 +145,6 @@ export const SliderSheet: React.FC<SliderSheetProps> = ({
   visible,
   onClose,
   sheetTop,
-  sheetHeight,
   panHandlers,
   currentTrack,
   options,
@@ -165,7 +165,10 @@ export const SliderSheet: React.FC<SliderSheetProps> = ({
   return (
     <>
       <BottomSheetOverlay activeOpacity={1} onPress={onClose} />
-      <BottomSheetContainer style={{ top: sheetTop }} {...panHandlers}>
+      <BottomSheetContainer
+        {...panHandlers}
+        style={{ top: sheetTop, bottom: 0 }}
+      >
         <BottomSheetInner
           style={{
             backgroundColor: colors.background,
@@ -173,12 +176,21 @@ export const SliderSheet: React.FC<SliderSheetProps> = ({
             borderTopRightRadius: 24,
           }}
         >
-          <SheetHandle style={{ backgroundColor: withOpacity(colors.foreground, 0.22) }} />
-          <SheetHeaderRow style={{ flexDirection: isRtl ? "row-reverse" : "row" }}>
+          <SheetHandle
+            {...panHandlers}
+            style={{ backgroundColor: withOpacity(colors.foreground, 0.22) }}
+          />
+          <SheetHeaderRow
+            {...panHandlers}
+            style={{ flexDirection: isRtl ? "row-reverse" : "row" }}
+          >
             {currentTrack.thumbnail ? (
               <SheetHeaderCoverImage
                 source={{ uri: currentTrack.thumbnail }}
-                style={{ marginRight: isRtl ? 0 : 12, marginLeft: isRtl ? 12 : 0 }}
+                style={{
+                  marginRight: isRtl ? 0 : 12,
+                  marginLeft: isRtl ? 12 : 0,
+                }}
               />
             ) : (
               <SheetHeaderCoverPlaceholder
@@ -229,7 +241,10 @@ export const SliderSheet: React.FC<SliderSheetProps> = ({
                 style={{ flexDirection: isRtl ? "row-reverse" : "row" }}
               >
                 <SheetItemIconWrapper
-                  style={{ marginRight: isRtl ? 0 : 16, marginLeft: isRtl ? 16 : 0 }}
+                  style={{
+                    marginRight: isRtl ? 0 : 16,
+                    marginLeft: isRtl ? 16 : 0,
+                  }}
                 >
                   <Ionicons
                     name={option.icon as any}

@@ -1,7 +1,7 @@
 import React from "react";
 import {
+  Animated,
   FlatList,
-  Image,
   StyleSheet,
   TouchableOpacity,
   View,
@@ -15,6 +15,8 @@ import { sanitizeImageUrl } from "./core/image";
 import { useTheme, withOpacity } from "../hooks/useTheme";
 import { getAppFontFamily, getTextDirectionStyle } from "../utils/fonts";
 import { BodyText, MutedText, TitleText } from "./ui/Text";
+import { ImageWithSkeleton } from "./ui/ImageWithSkeleton";
+import { SkeletonLoader } from "./SkeletonLoader";
 
 interface PlaylistProps {
   title: string; // e.g., "Justice"
@@ -29,6 +31,12 @@ interface PlaylistProps {
   onShuffle?: () => void;
   onSongOptionsPress?: (song: any) => void;
   onHeaderOptionsPress?: () => void;
+  onAddSongPress?: () => void;
+  canReorder?: boolean; // Enable drag-to-reorder (user playlists)
+  isReorderMode?: boolean; // Controlled reorder mode state
+  onToggleReorder?: () => void; // Toggle reorder mode (from the options menu)
+  onReorder?: (fromIndex: number, toIndex: number) => void;
+  onSongPress?: (song: any, index: number) => void;
   contentContainerStyle?: any;
   emptyMessage?: string;
   emptySubMessage?: string;
@@ -36,6 +44,7 @@ interface PlaylistProps {
   showSongOptions?: boolean; // Whether to show the options button for songs
   showHeaderOptions?: boolean; // Whether to show the header options button
   type?: "album" | "playlist"; // Type of content being displayed
+  isLoading?: boolean;
 }
 
 export const Playlist: React.FC<PlaylistProps> = ({
@@ -51,6 +60,12 @@ export const Playlist: React.FC<PlaylistProps> = ({
   onShuffle,
   onSongOptionsPress,
   onHeaderOptionsPress,
+  onAddSongPress,
+  canReorder = false,
+  isReorderMode = false,
+  onToggleReorder,
+  onReorder,
+  onSongPress,
   contentContainerStyle,
   emptyMessage = "No songs found",
   emptySubMessage = "This album is currently empty.",
@@ -58,33 +73,122 @@ export const Playlist: React.FC<PlaylistProps> = ({
   showSongOptions,
   showHeaderOptions = true, // Default to true for backward compatibility
   type = "album", // Default to album for backward compatibility
+  isLoading = false,
 }) => {
+  const [localSongs, setLocalSongs] = React.useState<any[] | null>(null);
   const { playTrack } = usePlayer();
   const { colors } = useTheme();
-  const { isRtl } = useAppLanguage();
+  const { isRtl, t } = useAppLanguage();
   const insets = useSafeAreaInsets();
   const resolvedKindLabel =
-    kindLabel || (type === "playlist" ? "Playlist" : "Album");
+    kindLabel ||
+    (type === "playlist" ? t("screens.library.playlist") : t("library.album"));
   const resolvedHeaderTitle = headerTitle || resolvedKindLabel;
-  const headerArtworkOffset = insets.top + 56;
+  const headerArtworkOffset = insets.top + 100;
   const normalizedAlbumArtUrl = sanitizeImageUrl(albumArtUrl);
 
+  const entranceOpacity = React.useRef(new Animated.Value(0)).current;
+  const entranceTranslateY = React.useRef(new Animated.Value(10)).current;
+
+  React.useEffect(() => {
+    entranceOpacity.setValue(0);
+    entranceTranslateY.setValue(10);
+    Animated.parallel([
+      Animated.timing(entranceOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(entranceTranslateY, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [entranceOpacity, entranceTranslateY]);
+
+  const activeSongs = localSongs ?? songs;
+
+  React.useEffect(() => {
+    setLocalSongs(null);
+  }, [songs]);
+
   const handlePlaySong = (song: any, index: number) => {
-    playTrack(song, songs, index);
+    playTrack(song, activeSongs, index);
   };
 
-  const renderSongItem = ({ item, index }: { item: any; index: number }) => (
-    <TouchableOpacity
-      onPress={() => handlePlaySong(item, index)}
-      activeOpacity={0.88}
-      style={[
-        styles.songItem,
-        {
-          flexDirection: isRtl ? "row-reverse" : "row",
-          borderBottomColor: colors.borderSubtle,
-        },
-      ]}
-    >
+  const moveSong = React.useCallback(
+    (fromIndex: number, toIndex: number) => {
+      if (
+        fromIndex === toIndex ||
+        toIndex < 0 ||
+        toIndex >= activeSongs.length
+      ) {
+        return;
+      }
+
+      const next = [...activeSongs];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      setLocalSongs(next);
+
+      if (onReorder) {
+        onReorder(fromIndex, toIndex);
+      }
+    },
+    [activeSongs, onReorder],
+  );
+
+  const renderSongItem = ({ item, index }: { item: any; index: number }) => {
+    const showReorderControls = canReorder && isReorderMode === true;
+
+    const numberOrHandle = showReorderControls ? (
+      <View
+        style={[
+          styles.reorderControls,
+          {
+            flexDirection: isRtl ? "row-reverse" : "row",
+            marginRight: isRtl ? 0 : 6,
+            marginLeft: isRtl ? 6 : 0,
+          },
+        ]}
+      >
+        <TouchableOpacity
+          onPress={() => moveSong(index, index - 1)}
+          disabled={index === 0}
+          hitSlop={8}
+          style={[
+            styles.reorderButton,
+            index === 0 && styles.reorderButtonDisabled,
+          ]}
+        >
+          <Ionicons
+            name="arrow-up"
+            size={18}
+            color={index === 0 ? colors.surface3 : colors.foreground}
+          />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => moveSong(index, index + 1)}
+          disabled={index === activeSongs.length - 1}
+          hitSlop={8}
+          style={[
+            styles.reorderButton,
+            index === activeSongs.length - 1 && styles.reorderButtonDisabled,
+          ]}
+        >
+          <Ionicons
+            name="arrow-down"
+            size={18}
+            color={
+              index === activeSongs.length - 1
+                ? colors.surface3
+                : colors.foreground
+            }
+          />
+        </TouchableOpacity>
+      </View>
+    ) : (
       <BodyText
         style={[
           styles.songNumber,
@@ -97,44 +201,159 @@ export const Playlist: React.FC<PlaylistProps> = ({
       >
         {index + 1}
       </BodyText>
-      {sanitizeImageUrl(item.thumbnail || "") ? (
-        <SongThumbnail
-          source={{ uri: sanitizeImageUrl(item.thumbnail || "") }}
-          isRtl={isRtl}
-        />
-      ) : null}
+    );
+
+    return (
+      <TouchableOpacity
+        onPress={() => handlePlaySong(item, index)}
+        activeOpacity={0.88}
+        style={[
+          styles.songItem,
+          {
+            flexDirection: isRtl ? "row-reverse" : "row",
+          },
+        ]}
+      >
+        {numberOrHandle}
+        {sanitizeImageUrl(item.thumbnail || "") ? (
+          <SongThumbnail
+            source={{ uri: sanitizeImageUrl(item.thumbnail || "") }}
+            isRtl={isRtl}
+          />
+        ) : null}
+        <View
+          style={[
+            styles.songInfo,
+            { alignItems: isRtl ? "flex-end" : "flex-start" },
+          ]}
+        >
+          <TitleText
+            numberOfLines={1}
+            style={[
+              styles.songTitle,
+              {
+                fontFamily: getAppFontFamily(isRtl, "semibold"),
+                ...getTextDirectionStyle(isRtl),
+              },
+            ]}
+          >
+            {item.title}
+          </TitleText>
+          {item.artist && (
+            <MutedText
+              numberOfLines={1}
+              style={[
+                styles.songArtist,
+                {
+                  fontFamily: getAppFontFamily(isRtl, "regular"),
+                  ...getTextDirectionStyle(isRtl),
+                },
+              ]}
+            >
+              {item.artist}
+            </MutedText>
+          )}
+        </View>
+        <View
+          style={[
+            styles.songActions,
+            { marginLeft: isRtl ? 0 : 8, marginRight: isRtl ? 8 : 0 },
+          ]}
+        >
+          {showSongOptions !== false && onSongOptionsPress && (
+            <TouchableOpacity
+              onPress={() => onSongOptionsPress(item)}
+              style={styles.actionButton}
+            >
+              <Ionicons
+                name="ellipsis-vertical"
+                size={20}
+                color={colors.muted}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderEmptyState = () => (
+    <View style={styles.emptyContainer}>
+      <Ionicons name={emptyIcon as any} size={64} color={colors.surface3} />
+      <TitleText style={styles.emptyTitle}>{emptyMessage}</TitleText>
+      <MutedText style={styles.emptySubtitle}>{emptySubMessage}</MutedText>
+    </View>
+  );
+
+  const renderLoadingSongItem = ({ index }: { index: number }) => (
+    <View
+      style={[
+        styles.songItem,
+        {
+          flexDirection: isRtl ? "row-reverse" : "row",
+        },
+      ]}
+      // #region debug-point A:loading-row-layout
+      onLayout={(event) => {
+        const { x, y, width, height } = event.nativeEvent.layout;
+        fetch("http://192.168.1.101:7777/event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: "playlist-cover-skeleton",
+            runId: "pre-fix",
+            hypothesisId: "A",
+            location: "components/Playlist.tsx:renderLoadingSongItem:row",
+            msg: "[DEBUG] Playlist loading row layout measured",
+            data: { index, x, y, width, height, isRtl },
+            ts: Date.now(),
+          }),
+        }).catch(() => {});
+      }}
+      // #endregion
+    >
+      <SkeletonLoader
+        width={24}
+        height={18}
+        style={{
+          borderRadius: 6,
+          marginRight: isRtl ? 0 : 12,
+          marginLeft: isRtl ? 12 : 0,
+        }}
+      />
+      <SkeletonLoader
+        style={[
+          styles.songThumbnail,
+          {
+            marginRight: isRtl ? 0 : 12,
+            marginLeft: isRtl ? 12 : 0,
+            backgroundColor: withOpacity(colors.foreground, 0.14),
+          },
+        ]}
+      />
       <View
         style={[
           styles.songInfo,
           { alignItems: isRtl ? "flex-end" : "flex-start" },
         ]}
       >
-        <TitleText
-          numberOfLines={1}
-          style={[
-            styles.songTitle,
-            {
-              fontFamily: getAppFontFamily(isRtl, "semibold"),
-              ...getTextDirectionStyle(isRtl),
-            },
-          ]}
-        >
-          {item.title}
-        </TitleText>
-        {item.artist && (
-          <MutedText
-            numberOfLines={1}
-            style={[
-              styles.songArtist,
-              {
-                fontFamily: getAppFontFamily(isRtl, "regular"),
-                ...getTextDirectionStyle(isRtl),
-              },
-            ]}
-          >
-            {item.artist}
-          </MutedText>
-        )}
+        <SkeletonLoader
+          height={20}
+          style={{
+            width: "72%",
+            borderRadius: 8,
+            marginBottom: 8,
+            alignSelf: isRtl ? "flex-end" : "flex-start",
+          }}
+        />
+        <SkeletonLoader
+          height={16}
+          style={{
+            width: "46%",
+            borderRadius: 7,
+            alignSelf: isRtl ? "flex-end" : "flex-start",
+          }}
+        />
       </View>
       <View
         style={[
@@ -142,23 +361,8 @@ export const Playlist: React.FC<PlaylistProps> = ({
           { marginLeft: isRtl ? 0 : 8, marginRight: isRtl ? 8 : 0 },
         ]}
       >
-        {showSongOptions !== false && onSongOptionsPress && (
-          <TouchableOpacity
-            onPress={() => onSongOptionsPress(item)}
-            style={styles.actionButton}
-          >
-            <Ionicons name="ellipsis-vertical" size={20} color={colors.muted} />
-          </TouchableOpacity>
-        )}
+        <SkeletonLoader width={28} height={28} style={{ borderRadius: 14 }} />
       </View>
-    </TouchableOpacity>
-  );
-
-  const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <Ionicons name={emptyIcon as any} size={64} color={colors.surface3} />
-      <TitleText style={styles.emptyTitle}>{emptyMessage}</TitleText>
-      <MutedText style={styles.emptySubtitle}>{emptySubMessage}</MutedText>
     </View>
   );
 
@@ -193,7 +397,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
             >
               <LinearGradient
                 style={styles.libraryCoverGradient}
-                colors={[colors.surface2, colors.surface1, colors.heroEnd]}
+                colors={["#2b2b31", "#52525b", "#7c3aed"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
@@ -202,9 +406,9 @@ export const Playlist: React.FC<PlaylistProps> = ({
             </View>
           )
         ) : normalizedAlbumArtUrl ? (
-          <Image
+          <ImageWithSkeleton
             source={{ uri: normalizedAlbumArtUrl }}
-            style={[
+            containerStyle={[
               styles.albumCover,
               {
                 backgroundColor: colors.surface2,
@@ -213,6 +417,19 @@ export const Playlist: React.FC<PlaylistProps> = ({
               },
             ]}
           />
+        ) : isLoading ? (
+          <View style={styles.albumCover}>
+            <SkeletonLoader
+              style={{
+                position: "absolute",
+                top: 0,
+                right: 0,
+                bottom: 0,
+                left: 0,
+                borderRadius: 24,
+              }}
+            />
+          </View>
         ) : (
           <View
             style={[
@@ -270,100 +487,123 @@ export const Playlist: React.FC<PlaylistProps> = ({
             paddingLeft: isRtl ? 16 : 0,
           }}
         >
-          <MutedText
-            style={[
-              styles.kindLabel,
-              {
-                color: withOpacity(colors.foreground, 0.72),
-                fontFamily: getAppFontFamily(isRtl, "semibold"),
-                ...getTextDirectionStyle(isRtl),
-              },
-            ]}
-          >
-            {resolvedKindLabel}
-          </MutedText>
-          <TitleText
-            numberOfLines={1}
-            ellipsizeMode="tail"
-            style={[
-              styles.albumTitle,
-              {
-                fontFamily: getAppFontFamily(isRtl, "bold"),
-                ...getTextDirectionStyle(isRtl),
-              },
-            ]}
-          >
-            {title}
-          </TitleText>
-          {artist && (
-            <MutedText
-              numberOfLines={1}
-              ellipsizeMode="tail"
-              style={[
-                styles.albumArtist,
-                {
-                  fontFamily: getAppFontFamily(isRtl, "regular"),
-                  ...getTextDirectionStyle(isRtl),
-                },
-              ]}
-            >
-              {artist}
-            </MutedText>
+          {isLoading ? (
+            <>
+              <SkeletonLoader
+                width={74}
+                height={12}
+                style={{
+                  borderRadius: 6,
+                  marginBottom: 10,
+                  alignSelf: isRtl ? "flex-end" : "flex-start",
+                }}
+              />
+              <SkeletonLoader
+                height={30}
+                style={{
+                  width: "76%",
+                  borderRadius: 10,
+                  marginBottom: 10,
+                  alignSelf: isRtl ? "flex-end" : "flex-start",
+                }}
+              />
+              <SkeletonLoader
+                height={18}
+                style={{
+                  width: "52%",
+                  borderRadius: 8,
+                  alignSelf: isRtl ? "flex-end" : "flex-start",
+                }}
+              />
+            </>
+          ) : (
+            <>
+              <MutedText
+                style={[
+                  styles.kindLabel,
+                  {
+                    color: withOpacity(colors.foreground, 0.72),
+                    fontFamily: getAppFontFamily(isRtl, "semibold"),
+                    ...getTextDirectionStyle(isRtl),
+                  },
+                ]}
+              >
+                {resolvedKindLabel}
+              </MutedText>
+              <TitleText
+                numberOfLines={1}
+                ellipsizeMode="tail"
+                style={[
+                  styles.albumTitle,
+                  {
+                    fontFamily: getAppFontFamily(isRtl, "bold"),
+                    ...getTextDirectionStyle(isRtl),
+                  },
+                ]}
+              >
+                {title}
+              </TitleText>
+              {artist ? (
+                <MutedText
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                  style={[
+                    styles.albumArtist,
+                    {
+                      fontFamily: getAppFontFamily(isRtl, "regular"),
+                      ...getTextDirectionStyle(isRtl),
+                    },
+                  ]}
+                >
+                  {artist}
+                </MutedText>
+              ) : null}
+            </>
           )}
         </View>
-        <TouchableOpacity
-          onPress={onShuffle}
-          activeOpacity={0.88}
-          style={[
-            styles.shuffleButton,
-            {
-              backgroundColor: colors.surface1,
-              borderColor: colors.borderSubtle,
-            },
-          ]}
-        >
-          <Ionicons name="shuffle" size={22} color={colors.foreground} />
-        </TouchableOpacity>
+        {onShuffle ? (
+          <TouchableOpacity
+            onPress={onShuffle}
+            activeOpacity={0.88}
+            style={[
+              styles.shuffleButton,
+              {
+                backgroundColor: colors.surface1,
+                borderColor: colors.borderSubtle,
+              },
+            ]}
+          >
+            <Ionicons name="shuffle" size={22} color={colors.foreground} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.shuffleSpacer} />
+        )}
       </View>
     </>
   );
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <View
+      <Animated.View
         style={[
-          styles.header,
+          styles.screen,
           {
-            top: insets.top + 8,
+            opacity: entranceOpacity,
+            transform: [{ translateY: entranceTranslateY }],
           },
         ]}
       >
-        <TouchableOpacity
-          onPress={onBack}
+        <View
           style={[
-            styles.headerButton,
+            styles.header,
             {
-              backgroundColor: withOpacity(colors.surface1, 0.92),
-              borderColor: colors.borderSubtle,
+              top: insets.top + 8,
+              flexDirection: "row",
             },
           ]}
         >
-          <Ionicons name="chevron-back" size={24} color={colors.foreground} />
-        </TouchableOpacity>
-        <TitleText
-          style={[
-            styles.headerTitle,
-            {
-              fontFamily: getAppFontFamily(isRtl, "semibold"),
-              ...getTextDirectionStyle(isRtl, "center"),
-            },
-          ]}
-        >
-          {resolvedHeaderTitle}
-        </TitleText>
-        {showHeaderOptions && onHeaderOptionsPress && (
           <TouchableOpacity
-            onPress={onHeaderOptionsPress}
+            onPress={onBack}
             style={[
               styles.headerButton,
               {
@@ -372,33 +612,59 @@ export const Playlist: React.FC<PlaylistProps> = ({
               },
             ]}
           >
-            <Ionicons
-              name="ellipsis-vertical"
-              size={20}
-              color={colors.foreground}
-            />
+            <Ionicons name="chevron-back" size={24} color={colors.foreground} />
           </TouchableOpacity>
-        )}
-        {!showHeaderOptions && <View style={styles.headerSpacer} />}
-      </View>
+          <TitleText
+            style={[
+              styles.headerTitle,
+              {
+                fontFamily: getAppFontFamily(isRtl, "semibold"),
+                ...getTextDirectionStyle(isRtl, "center"),
+              },
+            ]}
+          >
+            {resolvedHeaderTitle}
+          </TitleText>
+          {showHeaderOptions && onHeaderOptionsPress && (
+            <TouchableOpacity
+              onPress={onHeaderOptionsPress}
+              style={[
+                styles.headerButton,
+                {
+                  backgroundColor: withOpacity(colors.surface1, 0.92),
+                  borderColor: colors.borderSubtle,
+                },
+              ]}
+            >
+              <Ionicons
+                name="ellipsis-vertical"
+                size={20}
+                color={colors.foreground}
+              />
+            </TouchableOpacity>
+          )}
+          {!showHeaderOptions && <View style={styles.headerSpacer} />}
+        </View>
 
-      <FlatList
-        data={songs}
-        renderItem={renderSongItem}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={songs.length > 0 ? ListHeader : null}
-        ListEmptyComponent={
-          <>
-            <ListHeader />
-            {renderEmptyState()}
-          </>
-        }
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
-          styles.listContent,
-          contentContainerStyle || null,
-        ]}
-      />
+        <FlatList
+          data={
+            isLoading
+              ? Array.from({ length: 6 }, (_, index) => ({
+                  id: `playlist-skeleton-${index}`,
+                }))
+              : activeSongs
+          }
+          renderItem={isLoading ? renderLoadingSongItem : renderSongItem}
+          keyExtractor={(item) => item.id}
+          ListHeaderComponent={ListHeader}
+          ListEmptyComponent={isLoading ? null : renderEmptyState()}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[
+            styles.listContent,
+            contentContainerStyle || null,
+          ]}
+        />
+      </Animated.View>
     </View>
   );
 };
@@ -413,9 +679,9 @@ const SongThumbnail = ({
   const { colors } = useTheme();
 
   return (
-    <Image
+    <ImageWithSkeleton
       source={source}
-      style={[
+      containerStyle={[
         styles.songThumbnail,
         {
           backgroundColor: colors.surface2,
@@ -465,7 +731,7 @@ const styles = StyleSheet.create({
   albumArtContainer: {
     paddingHorizontal: 20,
     marginTop: 0,
-    marginBottom: 24,
+    marginBottom: 30,
   },
   albumCover: {
     width: "100%",
@@ -511,7 +777,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 18,
     marginHorizontal: 20,
-    marginBottom: 22,
+    marginBottom: 38,
     borderRadius: 24,
     borderWidth: 1,
   },
@@ -539,11 +805,27 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
   },
+  shuffleSpacer: {
+    width: 44,
+    height: 44,
+  },
   songItem: {
     alignItems: "center",
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderBottomWidth: 1,
+    borderBottomWidth: 0,
+  },
+  reorderControls: {
+    alignItems: "center",
+  },
+  reorderButton: {
+    width: 28,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reorderButtonDisabled: {
+    opacity: 0.35,
   },
   songNumber: {
     width: 24,

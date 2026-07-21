@@ -58,12 +58,13 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
   ]);
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [renameValue, setRenameValue] = useState("");
+  const [isReorderMode, setIsReorderMode] = useState(false);
 
   // Song action sheet state
   const [showSongActionSheet, setShowSongActionSheet] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [sheetMode, setSheetMode] = useState<"playlist" | "playlist-song">(
-    "playlist-song"
+    "playlist-song",
   );
   const sheetTop = useRef(new Animated.Value(SHEET_CLOSED_TOP)).current;
   const [sheetHeight, setSheetHeight] = useState(SHEET_HEIGHT);
@@ -138,7 +139,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
 
         animateSheet(target);
       },
-    })
+    }),
   ).current;
 
   const closeSongActionSheet = () => {
@@ -165,22 +166,28 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
     }
 
     if (sheetMode === "playlist") {
-      if (option === "Remove playlist") {
+      if (option === playlistActions.removePlaylist) {
         await StorageService.deletePlaylist(albumId);
         closeSongActionSheet();
         navigation.goBack();
         return;
       }
 
-      if (option === "Rename playlist") {
+      if (option === playlistActions.rename) {
         setRenameValue(albumTitle);
         closeSongActionSheet();
         setShowRenameModal(true);
         return;
       }
+
+      if (option === playlistActions.reorder) {
+        setIsReorderMode((prev) => !prev);
+        closeSongActionSheet();
+        return;
+      }
     }
 
-    if (sheetMode === "playlist-song" && option === "Download") {
+    if (sheetMode === "playlist-song" && option === playlistActions.download) {
       console.log("Download song:", selectedTrack?.title);
       // Add download logic here
       closeSongActionSheet();
@@ -189,7 +196,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
 
     if (
       sheetMode === "playlist-song" &&
-      option === "Remove song from playlist"
+      option === playlistActions.removeSong
     ) {
       const playlists = await StorageService.loadPlaylists();
       const playlist = playlists.find((p) => p.id === albumId);
@@ -199,7 +206,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       }
 
       const updatedTracks = playlist.tracks.filter(
-        (track) => track.id !== selectedTrack.id
+        (track) => track.id !== selectedTrack.id,
       );
       const updatedPlaylist = {
         ...playlist,
@@ -269,22 +276,76 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
   const collectionFallbackTitle = isPlaylistCollection
     ? translateWithFallback(
         "collection.collection",
-        isRtl ? "مجموعه" : "Collection"
+        isRtl ? "مجموعه" : "Collection",
       )
     : translateWithFallback(
         "screens.settings.main.library.album",
-        isRtl ? "آلبوم" : "Album"
+        isRtl ? "آلبوم" : "Album",
       );
   const collectionKindLabel = isPlaylistCollection
     ? translateWithFallback(
         "screens.library.playlist",
-        isRtl ? "لیست پخش" : "Playlist"
+        isRtl ? "لیست پخش" : "Playlist",
       )
     : translateWithFallback(
         "screens.settings.main.library.album",
-        isRtl ? "آلبوم" : "Album"
+        isRtl ? "آلبوم" : "Album",
       );
   const collectionType = isPlaylistCollection ? "playlist" : "album";
+  const playlistActions = {
+    rename: translateWithFallback(
+      "screens.actions.rename_playlist",
+      isRtl ? "تغییر نام پلی لیست" : "Rename playlist",
+    ),
+    reorder: translateWithFallback(
+      "screens.actions.reorder_playlist",
+      isRtl ? "مرتب‌سازی پلی‌لیست" : "Reorder playlist",
+    ),
+    doneReorder: translateWithFallback(
+      "screens.actions.done_reorder",
+      isRtl ? "پایان مرتب‌سازی" : "Done reordering",
+    ),
+    removePlaylist: translateWithFallback(
+      "collection.removePlaylist",
+      isRtl ? "حذف پلی لیست" : "Remove playlist",
+    ),
+    removeSong: translateWithFallback(
+      "screens.actions.remove_song_from_playlist",
+      isRtl ? "حذف آهنگ از پلی لیست" : "Remove song from playlist",
+    ),
+    download: translateWithFallback(
+      "actions.download",
+      isRtl ? "دانلود" : "Download",
+    ),
+    share: translateWithFallback(
+      "actions.share",
+      isRtl ? "اشتراک گذاری" : "Share",
+    ),
+    addToPlaylist: translateWithFallback(
+      "actions.add_to_other_playlist",
+      isRtl ? "افزودن به پلی لیست دیگر" : "Add to other playlist",
+    ),
+    goToAlbum: translateWithFallback(
+      "actions.go_to_album",
+      isRtl ? "برو به آلبوم" : "Go to album",
+    ),
+    goToArtists: translateWithFallback(
+      "actions.go_to_artists",
+      isRtl ? "برو به هنرمندان" : "Go to artists",
+    ),
+    sleepTimer: translateWithFallback(
+      "actions.sleep_timer",
+      isRtl ? "تایمر خواب" : "Sleep timer",
+    ),
+    songRadio: translateWithFallback(
+      "actions.go_to_song_radio",
+      isRtl ? "برو به رادیوی آهنگ" : "Go to song radio",
+    ),
+    playlistName: translateWithFallback(
+      "screens.actions.playlist_name",
+      isRtl ? "نام پلی لیست" : "Playlist name",
+    ),
+  };
 
   console.log("[AlbumPlaylistScreen] Received params:", {
     albumId,
@@ -300,7 +361,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
     const unsubscribe = navigation.addListener("focus", () => {
       if (source === "user-playlist") {
         console.log(
-          "[AlbumPlaylistScreen] Screen focused, refreshing playlist"
+          "[AlbumPlaylistScreen] Screen focused, refreshing playlist",
         );
         loadAlbumSongs();
       }
@@ -330,7 +391,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       if (source === "jiosaavn") {
         const albumDetails = await searchAPI.getJioSaavnAlbumDetails(
           String(albumId),
-          albumName
+          albumName,
         );
 
         if (
@@ -339,7 +400,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           albumDetails.songs.length > 0
         ) {
           console.log(
-            `[AlbumPlaylistScreen] Found ${albumDetails.songs.length} songs in album`
+            `[AlbumPlaylistScreen] Found ${albumDetails.songs.length} songs in album`,
           );
           const songs = albumDetails.songs.map((song: any) => ({
             id: String(song.id),
@@ -390,14 +451,14 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
 
           if (playlist) {
             console.log(
-              `[AlbumPlaylistScreen] Found playlist with ${playlist.tracks.length} songs`
+              `[AlbumPlaylistScreen] Found playlist with ${playlist.tracks.length} songs`,
             );
             setAlbumSongs(playlist.tracks);
             setAlbumTitle(playlist.name);
             setAlbumArtist(
-              `${playlist.tracks.length} ${
-                playlist.tracks.length === 1 ? "song" : "songs"
-              }`
+              isRtl || playlist.tracks.length !== 1
+                ? `${playlist.tracks.length} ${t("search.songs")}`
+                : `${playlist.tracks.length} song`,
             );
             // Use first song's thumbnail as album art if available
             if (playlist.tracks.length > 0 && playlist.tracks[0].thumbnail) {
@@ -426,7 +487,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           const playlistUrlParam =
             typeof albumId === "string" ? albumId : String(albumId);
           const endpoint = `${beatseekApiBase}/playlist?url=${encodeURIComponent(
-            playlistUrlParam
+            playlistUrlParam,
           )}`;
           const res = await fetch(endpoint, {
             headers: {
@@ -469,7 +530,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
               routeArtist ||
                 data?.artist ||
                 data?.user?.username ||
-                "Unknown Artist"
+                "Unknown Artist",
             );
             const cover =
               data?.artwork ||
@@ -489,22 +550,22 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       } else if (source === "youtube" || source === "youtubemusic") {
         // Handle YouTube/YouTube Music playlists
         console.log(
-          "[AlbumPlaylistScreen] Fetching YouTube/YouTube Music playlist details"
+          "[AlbumPlaylistScreen] Fetching YouTube/YouTube Music playlist details",
         );
         console.log(
-          `[AlbumPlaylistScreen] Playlist ID: ${albumId}, Source: ${source}`
+          `[AlbumPlaylistScreen] Playlist ID: ${albumId}, Source: ${source}`,
         );
 
         try {
           const { searchAPI } = await import("../../modules/searchAPI");
           console.log(
-            `[AlbumPlaylistScreen] Calling getYouTubePlaylistDetails for ID: ${albumId}`
+            `[AlbumPlaylistScreen] Calling getYouTubePlaylistDetails for ID: ${albumId}`,
           );
           const playlistDetails =
             await searchAPI.getYouTubePlaylistDetails(albumId);
           console.log(
             "[AlbumPlaylistScreen] Playlist details response:",
-            playlistDetails
+            playlistDetails,
           );
 
           if (
@@ -513,11 +574,11 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
             playlistDetails.videos.length > 0
           ) {
             console.log(
-              `[AlbumPlaylistScreen] SUCCESS: Found ${playlistDetails.videos.length} videos in YouTube playlist`
+              `[AlbumPlaylistScreen] SUCCESS: Found ${playlistDetails.videos.length} videos in YouTube playlist`,
             );
             console.log(
               "[AlbumPlaylistScreen] First video:",
-              playlistDetails.videos[0]
+              playlistDetails.videos[0],
             );
             const songs = playlistDetails.videos.map((video: any) => ({
               id: String(video.id),
@@ -537,24 +598,24 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
 
             console.log(
               `[AlbumPlaylistScreen] SUCCESS: Mapped ${songs.length} songs, first song:`,
-              songs[0]
+              songs[0],
             );
             setAlbumSongs(songs);
             setAlbumTitle(playlistDetails.name || albumName);
             setAlbumArtist(routeArtist || "Various Artists");
             setAlbumArtUrl(
               pickBestImageUrl(playlistDetails) ||
-                sanitizeImageUrl(playlistDetails.thumbnail || "")
+                sanitizeImageUrl(playlistDetails.thumbnail || ""),
             );
             setErrorMessage(""); // Clear any previous error message
             console.log("[AlbumPlaylistScreen] State updated successfully");
           } else {
             console.error(
-              "[AlbumPlaylistScreen] FAIL: No videos found in YouTube playlist"
+              "[AlbumPlaylistScreen] FAIL: No videos found in YouTube playlist",
             );
             console.error(
               "[AlbumPlaylistScreen] playlistDetails:",
-              playlistDetails
+              playlistDetails,
             );
 
             // Enhanced error message based on the response
@@ -571,20 +632,20 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
             setAlbumArtist(routeArtist || "Unknown Artist");
             setErrorMessage(errorMsg);
             console.log(
-              "[AlbumPlaylistScreen] State set to empty with error message"
+              "[AlbumPlaylistScreen] State set to empty with error message",
             );
           }
         } catch (error) {
           console.error(
             "[AlbumPlaylistScreen] ERROR: Exception while loading YouTube playlist:",
-            error
+            error,
           );
           setAlbumSongs([]);
           setAlbumTitle(albumName);
           setAlbumArtist(routeArtist || "Unknown Artist");
 
           setErrorMessage(
-            "Failed to load YouTube playlist. Please check your internet connection or try again later."
+            "Failed to load YouTube playlist. Please check your internet connection or try again later.",
           );
           console.log("[AlbumPlaylistScreen] State set to empty due to error");
         }
@@ -604,7 +665,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       setErrorMessage(
         error instanceof Error
           ? `Failed to load album: ${error.message}`
-          : "Failed to load album tracks. This album may not be available or the service is temporarily unavailable."
+          : "Failed to load album tracks. This album may not be available or the service is temporarily unavailable.",
       );
     } finally {
       setIsLoading(false);
@@ -622,6 +683,18 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
     }
   };
 
+  const handleReorder = async (fromIndex: number, toIndex: number) => {
+    if (source !== "user-playlist" || !albumId) {
+      return;
+    }
+
+    try {
+      await StorageService.reorderPlaylistTracks(albumId, fromIndex, toIndex);
+    } catch (error) {
+      console.error("[AlbumPlaylistScreen] Error reordering tracks:", error);
+    }
+  };
+
   if (isLoading) {
     return (
       <>
@@ -631,11 +704,12 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           kindLabel={collectionKindLabel}
           albumArtUrl={albumArtUrl}
           songs={[]}
+          isLoading
           onBack={handleGoBack}
           onHeaderOptionsPress={handleHeaderOptionsPress}
           emptyMessage={translateWithFallback(
             "screens.album_playlist.loading_album",
-            isRtl ? "در حال بارگذاری آلبوم..." : "Loading album..."
+            isRtl ? "در حال بارگذاری آلبوم..." : "Loading album...",
           )}
           emptySubMessage=""
           type={collectionType}
@@ -661,7 +735,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
             "screens.album_playlist.try_refreshing",
             isRtl
               ? "تلاش برای بارگذاری مجدد یا بررسی اتصال اینترنت خود"
-              : "Try refreshing or check your internet connection"
+              : "Try refreshing or check your internet connection",
           )}
           emptyIcon="error-outline"
           type={collectionType}
@@ -683,13 +757,17 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
         onPlayAll={handlePlayAll}
         onSongOptionsPress={openSongActionSheet}
         onHeaderOptionsPress={handleHeaderOptionsPress}
+        canReorder={source === "user-playlist"}
+        isReorderMode={isReorderMode}
+        onToggleReorder={() => setIsReorderMode((prev) => !prev)}
+        onReorder={handleReorder}
         emptyMessage={translateWithFallback(
           "screens.album_playlist.no_songs_found",
-          isRtl ? "هیچ آهنگی یافت نشد" : "No songs found"
+          isRtl ? "هیچ آهنگی یافت نشد" : "No songs found",
         )}
         emptySubMessage={translateWithFallback(
           "screens.album_playlist.album_empty",
-          isRtl ? "این آلبوم خالی است" : "This album is empty"
+          isRtl ? "این آلبوم خالی است" : "This album is empty",
         )}
         emptyIcon="albums"
         type={collectionType}
@@ -706,7 +784,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
             ? {
                 title: albumTitle || "Playlist",
                 artist: `${albumSongs.length} ${
-                  albumSongs.length === 1 ? "song" : "songs"
+                  isRtl || albumSongs.length !== 1 ? t("search.songs") : "song"
                 }`,
                 thumbnail: albumArtUrl || "",
               }
@@ -715,56 +793,67 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
         options={
           sheetMode === "playlist"
             ? [
+                ...(source === "user-playlist"
+                  ? [
+                      {
+                        key: playlistActions.reorder,
+                        label: isReorderMode
+                          ? playlistActions.doneReorder
+                          : playlistActions.reorder,
+                        icon: "reorder-two",
+                      },
+                    ]
+                  : []),
                 {
-                  key: "Rename playlist",
-                  label: "Rename playlist",
+                  key: playlistActions.rename,
+                  label: playlistActions.rename,
                   icon: "create-outline",
                 },
                 {
-                  key: "Remove playlist",
-                  label: "Remove playlist",
+                  key: playlistActions.removePlaylist,
+                  label: playlistActions.removePlaylist,
                   icon: "trash-outline",
                 },
               ]
             : [
                 {
-                  key: "Download",
-                  label: "Download",
+                  key: playlistActions.download,
+                  label: playlistActions.download,
                   icon: "cloud-download-outline",
                 },
                 {
                   key: "Share",
-                  label: "Share",
+                  label: playlistActions.share,
                   icon: "share-outline",
                 },
                 {
                   key: "Add to other playlist",
-                  label: "Add to other playlist",
+                  label: playlistActions.addToPlaylist,
                   icon: "add-circle-outline",
                 },
                 {
                   key: "Go to album",
-                  label: "Go to album",
+                  label: playlistActions.goToAlbum,
                   icon: "albums-outline",
                 },
                 {
                   key: "Go to artists",
-                  label: "Go to artists",
+                  label: playlistActions.goToArtists,
                   icon: "people-outline",
                 },
                 {
                   key: "Sleep timer",
-                  label: "Sleep timer",
+                  label: playlistActions.sleepTimer,
                   icon: "time-outline",
                 },
                 {
                   key: "Go to song radio",
-                  label: "Go to song radio",
+                  label: playlistActions.songRadio,
                   icon: "radio-outline",
                 },
                 {
-                  key: "Remove song from playlist",
-                  label: "Remove from playlist",
+                  key: playlistActions.removeSong,
+                  label: playlistActions.removeSong,
                   icon: "trash-outline",
                 },
               ]
@@ -805,7 +894,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
                 textAlign: isRtl ? "right" : "left",
               }}
             >
-              Rename playlist
+              {playlistActions.rename}
             </Text>
             <TextInput
               style={{
@@ -820,7 +909,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
                 marginBottom: 16,
                 textAlign: isRtl ? "right" : "left",
               }}
-              placeholder={t("actions.playlist_name")}
+              placeholder={playlistActions.playlistName}
               placeholderTextColor={colors.muted}
               value={renameValue}
               onChangeText={setRenameValue}

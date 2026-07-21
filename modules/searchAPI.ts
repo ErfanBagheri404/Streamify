@@ -28,6 +28,7 @@ import {
   sanitizeImageUrl,
   upgradeSoundCloudImage,
 } from "../components/core/image";
+import { fetchBackendRoute } from "../lib/backend-api";
 
 export interface SearchResult {
   id: string;
@@ -44,7 +45,15 @@ export interface SearchResult {
   videoCount?: string; // For playlists - number of videos
   img?: string;
   thumbnailUrl?: string;
-  source?: "youtube" | "soundcloud" | "jiosaavn" | "youtubemusic";
+  source?:
+    | "youtube"
+    | "soundcloud"
+    | "jiosaavn"
+    | "youtubemusic"
+    | "itunes"
+    | "deezer";
+  playbackSource?: "youtube" | "soundcloud" | "jiosaavn" | "youtubemusic";
+  providerHint?: "itunes" | "deezer";
   type?: "song" | "album" | "artist" | "playlist" | "unknown";
   albumId?: string | null;
   albumName?: string | null;
@@ -60,6 +69,20 @@ export const USER_AGENT =
 
 // Use centralized API configuration
 export const PIPED_INSTANCES = API.piped;
+
+type BackendSearchSource =
+  | "mixed"
+  | "youtube"
+  | "youtubemusic"
+  | "soundcloud"
+  | "jiosaavn"
+  | "itunes"
+  | "deezer";
+
+type BackendSearchResponse = {
+  items: any[];
+  nextpage?: string | null;
+};
 
 // Use dynamic Invidious instances directly from centralized config
 
@@ -163,8 +186,8 @@ function resolveSearchArtistImage(item: Record<string, unknown>): string {
     sanitizeImageUrl(
       absolutizeImageUrl(
         String(item.authorThumbnail || item.uploaderAvatar || ""),
-        ""
-      )
+        "",
+      ),
     ) ||
     ""
   );
@@ -291,28 +314,28 @@ function extractJioSaavnSections(payload: any) {
   const topQuery = pickJioSaavnArray(
     root.topQuery?.results,
     root.topQuery?.data,
-    root.topQuery
+    root.topQuery,
   );
   const songs = pickJioSaavnArray(
     root.songs?.results,
     root.songs?.data,
     root.results,
-    root.songs
+    root.songs,
   );
   const albums = pickJioSaavnArray(
     root.albums?.results,
     root.albums?.data,
-    root.albums
+    root.albums,
   );
   const artists = pickJioSaavnArray(
     root.artists?.results,
     root.artists?.data,
-    root.artists
+    root.artists,
   );
   const playlists = pickJioSaavnArray(
     root.playlists?.results,
     root.playlists?.data,
-    root.playlists
+    root.playlists,
   );
 
   return { topQuery, songs, albums, artists, playlists };
@@ -321,7 +344,7 @@ function extractJioSaavnSections(payload: any) {
 function mergeJioSaavnSectionItems(existing: any[], incoming: any[]): any[] {
   const merged = [...existing];
   const seen = new Set(
-    existing.map((item) => String(item?.id || item?.url || item?.title || ""))
+    existing.map((item) => String(item?.id || item?.url || item?.title || "")),
   );
 
   for (const item of incoming) {
@@ -425,7 +448,7 @@ function pickBestYouTubeThumbnail(item: any, base?: string): string {
 
 function filterJioSaavnSearchResults(
   items: SearchResult[],
-  filter?: string
+  filter?: string,
 ): SearchResult[] {
   const normalizedFilter = (filter || "all").toLowerCase();
   if (!normalizedFilter || normalizedFilter === "all") {
@@ -451,8 +474,215 @@ function filterJioSaavnSearchResults(
   });
 }
 
+async function searchViaBackend(options: {
+  query: string;
+  source: BackendSearchSource;
+  filter?: string;
+  page?: number;
+  limit?: number;
+  nextpage?: string;
+}): Promise<BackendSearchResponse | null> {
+  try {
+    const response = await fetchBackendRoute("/search", {
+      searchParams: {
+        q: options.query,
+        source: options.source,
+        filter: options.filter,
+        page: options.page,
+        limit: options.limit,
+        nextpage: options.nextpage,
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json()) as {
+      items?: unknown[];
+      nextpage?: string | null;
+    };
+
+    return {
+      items: Array.isArray(payload.items) ? payload.items : [],
+      nextpage:
+        typeof payload.nextpage === "string"
+          ? payload.nextpage
+          : (payload.nextpage ?? null),
+    };
+  } catch (error) {
+    console.warn("[API] Backend search failed:", error);
+    return null;
+  }
+}
+
+function inferBackendItemType(item: Record<string, any>): SearchResult["type"] {
+  const rawType =
+    typeof item.type === "string" ? item.type.trim().toLowerCase() : "";
+
+  if (rawType === "stream" || rawType === "video" || rawType === "song") {
+    return "song";
+  }
+  if (rawType === "album") {
+    return "album";
+  }
+  if (rawType === "playlist") {
+    return "playlist";
+  }
+  if (rawType === "artist" || rawType === "channel") {
+    return "artist";
+  }
+  if (
+    typeof item.videoId === "string" ||
+    item.duration != null ||
+    item.lengthSeconds != null
+  ) {
+    return "song";
+  }
+
+  return "unknown";
+}
+
+function pickBackendCatalogAuthor(item: Record<string, any>): string {
+  return (
+    item.primaryArtists ||
+    item.primary_artists ||
+    item.singers ||
+    item.artist ||
+    item.author ||
+    item.description ||
+    "Unknown Artist"
+  );
+}
+
+function normalizeBackendCatalogItem(
+  item: Record<string, any>,
+  requestedSource: BackendSearchSource,
+): SearchResult | null {
+  const providerHint =
+    item.providerHint === "itunes" || item.providerHint === "deezer"
+      ? item.providerHint
+      : undefined;
+  const displaySource =
+    requestedSource === "itunes" || requestedSource === "deezer"
+      ? requestedSource
+      : providerHint || "jiosaavn";
+  const imageUrl =
+    pickBestImageUrl(item.image) ||
+    sanitizeImageUrl(
+      item.thumbnailUrl || item.thumbnail || item.coverUrl || "",
+    );
+  const rawAlbum =
+    item.album && typeof item.album === "object" ? item.album : null;
+  const id = String(item.id || item.url || "");
+
+  if (!id) {
+    return null;
+  }
+
+  return {
+    id,
+    title: item.name || item.title || item.song || "Unknown Title",
+    author: pickBackendCatalogAuthor(item),
+    duration:
+      item.duration != null && item.duration !== ""
+        ? String(item.duration)
+        : "0",
+    thumbnailUrl: imageUrl,
+    img: imageUrl,
+    href: item.url || "",
+    source: displaySource,
+    playbackSource: "jiosaavn",
+    providerHint,
+    type: inferBackendItemType(item),
+    albumId: rawAlbum?.id || null,
+    albumName: rawAlbum?.name || item.album || null,
+    albumUrl: rawAlbum?.url || null,
+    albumYear: item.year || item.albumYear || null,
+  };
+}
+
+function normalizeBackendSoundCloudItem(
+  item: Record<string, any>,
+): SearchResult | null {
+  const id = String(item.id || item.url || item.href || "");
+  if (!id) {
+    return null;
+  }
+
+  const imageUrl = sanitizeImageUrl(
+    item.thumbnailUrl || item.img || item.artwork || item.artworkUrl || "",
+  );
+
+  return {
+    id,
+    title: item.title || "Unknown Title",
+    author: item.author || item.artist || "Unknown Artist",
+    duration:
+      item.duration != null && item.duration !== ""
+        ? String(item.duration)
+        : "0",
+    views: item.views != null ? String(item.views) : undefined,
+    videoCount: item.videoCount != null ? String(item.videoCount) : undefined,
+    uploaded: item.uploaded,
+    thumbnailUrl: imageUrl,
+    img: imageUrl,
+    href: item.href || item.url || "",
+    source: "soundcloud",
+    type: inferBackendItemType(item),
+  };
+}
+
+function normalizeBackendSearchResults(
+  items: any[],
+  requestedSource: BackendSearchSource,
+): SearchResult[] {
+  const normalized = items
+    .map((entry) => {
+      const item =
+        entry && typeof entry === "object" && !Array.isArray(entry)
+          ? (entry as Record<string, any>)
+          : null;
+      if (!item) {
+        return null;
+      }
+
+      const source =
+        typeof item.source === "string" ? item.source : requestedSource;
+      const providerHint =
+        item.providerHint === "itunes" || item.providerHint === "deezer"
+          ? item.providerHint
+          : undefined;
+
+      if (
+        source === "jiosaavn" ||
+        requestedSource === "jiosaavn" ||
+        requestedSource === "itunes" ||
+        requestedSource === "deezer" ||
+        providerHint
+      ) {
+        return normalizeBackendCatalogItem(item, requestedSource);
+      }
+
+      if (source === "soundcloud" || requestedSource === "soundcloud") {
+        return normalizeBackendSoundCloudItem(item);
+      }
+
+      const formatted = searchAPI.formatSearchResults([
+        {
+          ...item,
+          source,
+        },
+      ]);
+      return formatted[0] || null;
+    })
+    .filter((entry): entry is SearchResult => Boolean(entry));
+
+  return dedupeSearchResults(normalized);
+}
+
 function buildMixedSearchResults(
-  resultGroups: SearchResult[][]
+  resultGroups: SearchResult[][],
 ): SearchResult[] {
   const topResults: SearchResult[][] = [];
   const artists: SearchResult[][] = [];
@@ -471,7 +701,7 @@ function buildMixedSearchResults(
 
     for (const item of items) {
       const itemType = normalizeSearchItemType(
-        item as unknown as Record<string, unknown>
+        item as unknown as Record<string, unknown>,
       );
 
       if (itemType === "unknown" || itemType === "hashtag") {
@@ -512,10 +742,10 @@ function buildMixedSearchResults(
 // Robust fetcher for Piped/Invidious
 const fetchWithFallbacks = async (
   instances: string[],
-  endpoint: string
+  endpoint: string,
 ): Promise<any> => {
   console.log(
-    `[API] fetchWithFallbacks called with ${instances.length} instances for endpoint: ${endpoint}`
+    `[API] fetchWithFallbacks called with ${instances.length} instances for endpoint: ${endpoint}`,
   );
   for (const baseUrl of instances) {
     const startTime = Date.now();
@@ -562,11 +792,13 @@ export const searchAPI = {
     query: string,
     source:
       | "mixed"
+      | "itunes"
+      | "deezer"
       | "youtube"
       | "youtubemusic"
       | "soundcloud"
       | "spotify"
-      | "jiosaavn" = "youtube"
+      | "jiosaavn" = "youtube",
   ): Promise<string[]> => {
     if (!query.trim()) {
       return [];
@@ -576,7 +808,7 @@ export const searchAPI = {
     const isMultilingual = /[^\u0000-\u007F]/.test(query);
     if (isMultilingual) {
       console.log(
-        `[API] Detected multilingual query for suggestions: "${query}"`
+        `[API] Detected multilingual query for suggestions: "${query}"`,
       );
     }
 
@@ -586,6 +818,10 @@ export const searchAPI = {
     if (source === "jiosaavn") {
       // For JioSaavn, return simple suggestions based on the query
       const terms = ["song", "remix", "live", "official"];
+      return [query, ...terms.map((term) => `${query} ${term}`)].slice(0, 5);
+    }
+    if (source === "itunes" || source === "deezer") {
+      const terms = ["song", "album", "live", "remix"];
       return [query, ...terms.map((term) => `${query} ${term}`)].slice(0, 5);
     }
     if (source === "spotify") {
@@ -599,16 +835,16 @@ export const searchAPI = {
     if (Array.isArray(data)) {
       if (data.length > 1 && Array.isArray(data[1])) {
         suggestions = (data[1] as any[]).filter(
-          (v): v is string => typeof v === "string"
+          (v): v is string => typeof v === "string",
         );
       } else {
         suggestions = (data as any[]).filter(
-          (v): v is string => typeof v === "string"
+          (v): v is string => typeof v === "string",
         );
       }
     } else if (data && Array.isArray((data as any).suggestions)) {
       suggestions = (data as any).suggestions.filter(
-        (v: any) => typeof v === "string"
+        (v: any) => typeof v === "string",
       );
     }
 
@@ -629,7 +865,7 @@ export const searchAPI = {
 
     return [query, ...fallbackTerms.map((term) => `${query} ${term}`)].slice(
       0,
-      5
+      5,
     );
   },
 
@@ -657,9 +893,23 @@ export const searchAPI = {
     query: string,
     filter?: string,
     page?: number,
-    limit?: number
+    limit?: number,
   ) => {
     console.log(`[API] Starting JioSaavn search for: "${query}"`);
+
+    const backendResult = await searchViaBackend({
+      query,
+      source: "jiosaavn",
+      filter,
+      page,
+      limit,
+    });
+    if (backendResult) {
+      return filterJioSaavnSearchResults(
+        normalizeBackendSearchResults(backendResult.items, "jiosaavn"),
+        filter,
+      );
+    }
 
     try {
       const providerEndpoints = await getProviderEndpoints();
@@ -668,12 +918,12 @@ export const searchAPI = {
         ...buildProviderUrlCandidates(
           providerEndpoints.providers.jiosaavn.apiBase,
           ["/api/search", "/search"],
-          { query }
+          { query },
         ),
         ...buildProviderUrlCandidates(
           runtimeServices.search.jiosaavnSearchFallbackUrl,
           [],
-          { query }
+          { query },
         ),
         ...buildProviderUrlCandidates(
           providerEndpoints.providers.jiosaavn.fallbackSearchBase,
@@ -685,12 +935,12 @@ export const searchAPI = {
             "/search",
             "/api/search",
           ],
-          { query }
+          { query },
         ),
         ...buildProviderUrlCandidates(
           providerEndpoints.providers.jiosaavn.apiBase,
           ["/search", "/api/search", "/search/all", "/api/search/all"],
-          { query }
+          { query },
         ),
         getJioSaavnSearchEndpoint(query),
       ];
@@ -713,7 +963,7 @@ export const searchAPI = {
               },
             },
             1,
-            200
+            200,
           );
 
           const sections = extractJioSaavnSections(data);
@@ -734,7 +984,7 @@ export const searchAPI = {
           }
         } catch (error) {
           endpointErrors.push(
-            `${searchUrl}: ${error instanceof Error ? error.message : String(error)}`
+            `${searchUrl}: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
       }
@@ -747,12 +997,12 @@ export const searchAPI = {
         playlists.length === 0
       ) {
         throw new Error(
-          endpointErrors.join(" | ") || "Invalid JioSaavn response format"
+          endpointErrors.join(" | ") || "Invalid JioSaavn response format",
         );
       }
 
       console.log(
-        `[API] 🟢 JioSaavn Success: Found ${songs.length} songs, ${albums.length} albums, ${artists.length} artists, ${playlists.length} playlists, ${topQuery.length} top queries`
+        `[API] 🟢 JioSaavn Success: Found ${songs.length} songs, ${albums.length} albums, ${artists.length} artists, ${playlists.length} playlists, ${topQuery.length} top queries`,
       );
 
       const topQueryResults: SearchResult[] = [];
@@ -844,17 +1094,43 @@ export const searchAPI = {
           ...artistsResults,
           ...playlistResults,
         ],
-        filter
+        filter,
       );
 
       console.log(
-        `[API] Final JioSaavn results: ${filteredResults.length} total (filter: ${(filter || "all").toLowerCase()})`
+        `[API] Final JioSaavn results: ${filteredResults.length} total (filter: ${(filter || "all").toLowerCase()})`,
       );
       return dedupeSearchResults(filteredResults);
     } catch (e: any) {
       console.warn(`[API] 🔴 JioSaavn Error: ${e.message}`);
       return [];
     }
+  },
+
+  searchWithItunes: async (query: string, page?: number, limit?: number) => {
+    const backendResult = await searchViaBackend({
+      query,
+      source: "itunes",
+      page,
+      limit,
+    });
+
+    return backendResult
+      ? normalizeBackendSearchResults(backendResult.items, "itunes")
+      : [];
+  },
+
+  searchWithDeezer: async (query: string, page?: number, limit?: number) => {
+    const backendResult = await searchViaBackend({
+      query,
+      source: "deezer",
+      page,
+      limit,
+    });
+
+    return backendResult
+      ? normalizeBackendSearchResults(backendResult.items, "deezer")
+      : [];
   },
 
   // COMMENTED OUT: JioSaavn song details disabled to focus on YouTube
@@ -932,7 +1208,7 @@ export const searchAPI = {
   // --- JIOSAAVN ALBUM DETAILS ---
   getJioSaavnAlbumDetails: async (albumId: string, albumName: string) => {
     console.log(
-      `[API] Fetching JioSaavn album details for: "${albumName}" (ID: ${albumId})`
+      `[API] Fetching JioSaavn album details for: "${albumName}" (ID: ${albumId})`,
     );
 
     try {
@@ -951,7 +1227,7 @@ export const searchAPI = {
           ["/api/albums", "/albums"],
           {
             id: albumId,
-          }
+          },
         ),
         ...buildProviderUrlCandidates(jioSaavnApiBase, [
           `/api/albums/${encodeURIComponent(albumId)}`,
@@ -968,7 +1244,7 @@ export const searchAPI = {
             albumUrl,
             { headers },
             2,
-            600
+            600,
           );
           const albumRoot =
             albumData?.data && typeof albumData.data === "object"
@@ -978,7 +1254,7 @@ export const searchAPI = {
 
           if (songs.length > 0) {
             console.log(
-              `[API] 🟢 JioSaavn Album Details Success (Direct): Found ${songs.length} songs for "${albumName}" via ${albumUrl}`
+              `[API] 🟢 JioSaavn Album Details Success (Direct): Found ${songs.length} songs for "${albumName}" via ${albumUrl}`,
             );
 
             return {
@@ -991,7 +1267,7 @@ export const searchAPI = {
                 albumRoot.artists ||
                 songs[0]?.artists?.primary
                   ?.map((artist: any) =>
-                    artist.name?.replace(/\s*-\s*Topic$/i, "")
+                    artist.name?.replace(/\s*-\s*Topic$/i, ""),
                   )
                   .join(", ") ||
                 "",
@@ -1001,7 +1277,7 @@ export const searchAPI = {
         } catch (albumError) {
           console.log(
             `[API] Direct album endpoint failed for ${albumUrl}:`,
-            albumError
+            albumError,
           );
         }
       }
@@ -1020,12 +1296,12 @@ export const searchAPI = {
             ["/api/search", "/search"],
             {
               query,
-            }
+            },
           ),
           ...buildProviderUrlCandidates(
             jioSaavnFallbackSearchBase,
             ["/search", "/api/search"],
-            { query }
+            { query },
           ),
           getJioSaavnSearchEndpoint(query),
         ];
@@ -1040,7 +1316,7 @@ export const searchAPI = {
                 headers,
               },
               2,
-              600
+              600,
             );
 
             const root = data?.data || data || {};
@@ -1056,7 +1332,7 @@ export const searchAPI = {
 
             // Filter songs that belong to the specified album
             let albumSongs = results.filter(
-              (song: any) => song.album && song.album.id === albumId
+              (song: any) => song.album && song.album.id === albumId,
             );
 
             // If no exact album ID match, try fuzzy matching by album name
@@ -1067,13 +1343,13 @@ export const searchAPI = {
                   song.album.name &&
                   song.album.name
                     .toLowerCase()
-                    .includes(albumName.toLowerCase())
+                    .includes(albumName.toLowerCase()),
               );
             }
 
             if (albumSongs.length > 0) {
               console.log(
-                `[API] 🟢 JioSaavn Album Details Success (Search): Found ${albumSongs.length} songs for "${albumName}" using query "${query}" via ${searchUrl}`
+                `[API] 🟢 JioSaavn Album Details Success (Search): Found ${albumSongs.length} songs for "${albumName}" using query "${query}" via ${searchUrl}`,
               );
 
               return {
@@ -1085,7 +1361,7 @@ export const searchAPI = {
                 artists:
                   albumSongs[0].artists?.primary
                     ?.map((artist: any) =>
-                      artist.name?.replace(/\s*-\s*Topic$/i, "")
+                      artist.name?.replace(/\s*-\s*Topic$/i, ""),
                     )
                     .join(", ") || "",
                 language: albumSongs[0].language || "",
@@ -1094,7 +1370,7 @@ export const searchAPI = {
           } catch (searchError) {
             console.log(
               `[API] Search attempt with query "${query}" failed for ${searchUrl}:`,
-              searchError
+              searchError,
             );
           }
         }
@@ -1110,7 +1386,7 @@ export const searchAPI = {
   // --- YOUTUBE PLAYLIST DETAILS ---
   getYouTubePlaylistDetails: async (playlistId: string) => {
     console.log(
-      `[API] Fetching YouTube playlist details for ID: ${playlistId}`
+      `[API] Fetching YouTube playlist details for ID: ${playlistId}`,
     );
 
     let actualPlaylistId = playlistId;
@@ -1120,7 +1396,7 @@ export const searchAPI = {
     ) {
       actualPlaylistId = playlistId.split("list=")[1] || playlistId;
       console.log(
-        `[API] Extracted playlist/mix ID from URL: ${actualPlaylistId}`
+        `[API] Extracted playlist/mix ID from URL: ${actualPlaylistId}`,
       );
     }
     actualPlaylistId = actualPlaylistId.split("&")[0];
@@ -1190,12 +1466,12 @@ export const searchAPI = {
     try {
       const endpoint = `/playlists/${actualPlaylistId}`;
       console.log(
-        `[API] Calling fetchWithFallbacks with endpoint: ${endpoint}`
+        `[API] Calling fetchWithFallbacks with endpoint: ${endpoint}`,
       );
       const data = await fetchWithFallbacks([...PIPED_INSTANCES], endpoint);
       console.log(
         "[API] fetchWithFallbacks returned:",
-        data ? "data object" : "null"
+        data ? "data object" : "null",
       );
 
       // If no data returned from any instance, return null (no fallback)
@@ -1233,7 +1509,7 @@ export const searchAPI = {
       ) {
         videos = data.relatedStreams;
         console.log(
-          `[API] Using 'relatedStreams' field with ${videos.length} videos`
+          `[API] Using 'relatedStreams' field with ${videos.length} videos`,
         );
       } else if (
         data.items &&
@@ -1255,7 +1531,7 @@ export const searchAPI = {
       if (videos && videos.length > 0) {
         console.log(
           "[API] First video structure:",
-          JSON.stringify(videos[0], null, 2)
+          JSON.stringify(videos[0], null, 2),
         );
 
         // Filter out invalid videos and map to standard format
@@ -1299,7 +1575,7 @@ export const searchAPI = {
 
         if (validVideos.length > 0) {
           console.log(
-            `[API] 🟢 YouTube Playlist Success: Found ${validVideos.length} valid videos`
+            `[API] 🟢 YouTube Playlist Success: Found ${validVideos.length} valid videos`,
           );
 
           // Use first valid video's thumbnail if playlist thumbnail is not available
@@ -1316,7 +1592,7 @@ export const searchAPI = {
           };
 
           console.log(
-            `[API] Returning playlist with ${result.videos.length} videos`
+            `[API] Returning playlist with ${result.videos.length} videos`,
           );
           return result;
         } else {
@@ -1331,7 +1607,7 @@ export const searchAPI = {
       console.warn("[API] Available data keys:", Object.keys(data));
       console.warn(
         "[API] Data structure preview:",
-        JSON.stringify(data).substring(0, 500)
+        JSON.stringify(data).substring(0, 500),
       );
       return null;
     } catch (e: any) {
@@ -1345,10 +1621,10 @@ export const searchAPI = {
     filter: string,
     page?: number,
     limit?: number,
-    nextpage?: string
+    nextpage?: string,
   ) => {
     console.log(
-      `[API] Searching Piped: "${query}", page: ${page}, nextpage: ${nextpage ? "present" : "none"}`
+      `[API] Searching Piped: "${query}", page: ${page}, nextpage: ${nextpage ? "present" : "none"}`,
     );
 
     // Enhanced multilingual search - preserve original query but also try transliterated version
@@ -1367,7 +1643,7 @@ export const searchAPI = {
     let endpoint: string;
     if (nextpage) {
       console.log(
-        `[API] Using nextpage endpoint with token: ${nextpage.substring(0, 50)}...`
+        `[API] Using nextpage endpoint with token: ${nextpage.substring(0, 50)}...`,
       );
       endpoint = `/nextpage/search?nextpage=${encodeURIComponent(nextpage)}`;
     } else {
@@ -1385,12 +1661,12 @@ export const searchAPI = {
       !nextpage
     ) {
       console.log(
-        "[API] No results for multilingual query, trying broader search"
+        "[API] No results for multilingual query, trying broader search",
       );
       const broadEndpoint = `/search?q=${encodeURIComponent(query)}&filter=all`;
       const broadData = await fetchWithFallbacks(
         preferredPipedInstances,
-        broadEndpoint
+        broadEndpoint,
       );
       return {
         items:
@@ -1406,12 +1682,12 @@ export const searchAPI = {
       !nextpage
     ) {
       console.log(
-        `[API] No results with filter "${filterParam}", trying with "all" filter`
+        `[API] No results with filter "${filterParam}", trying with "all" filter`,
       );
       const fallbackEndpoint = `/search?q=${encodeURIComponent(query)}&filter=all`;
       const fallbackData = await fetchWithFallbacks(
         preferredPipedInstances,
-        fallbackEndpoint
+        fallbackEndpoint,
       );
       return {
         items:
@@ -1433,13 +1709,13 @@ export const searchAPI = {
     query: string,
     sortType: string,
     page?: number,
-    limit?: number
+    limit?: number,
   ) => {
     console.log(`[API] Searching Invidious: "${query}", page: ${page || 1}`);
     const sortParam = sortType === "date" ? "upload_date" : "view_count";
     const pageParam = page && page > 1 ? `&page=${page}` : "";
     const endpoint = `/search?q=${encodeURIComponent(
-      query
+      query,
     )}&sort_by=${sortParam}${pageParam}`;
     const invidiousInstances =
       DYNAMIC_INVIDIOUS_INSTANCES.length > 0
@@ -1454,8 +1730,19 @@ export const searchAPI = {
     query: string,
     filter?: string,
     page?: number,
-    limit?: number
+    limit?: number,
   ) => {
+    const backendResult = await searchViaBackend({
+      query,
+      source: "soundcloud",
+      filter,
+      page,
+      limit,
+    });
+    if (backendResult) {
+      return normalizeBackendSearchResults(backendResult.items, "soundcloud");
+    }
+
     try {
       const f = (filter || "").toLowerCase();
       if (f === "playlists" || f === "albums") {
@@ -1464,7 +1751,7 @@ export const searchAPI = {
           query,
           type,
           page,
-          limit
+          limit,
         );
         if (!Array.isArray(collections)) {
           return [];
@@ -1541,8 +1828,23 @@ export const searchAPI = {
     filter: string,
     page?: number,
     limit?: number,
-    nextpage?: string
+    nextpage?: string,
   ) => {
+    const backendResult = await searchViaBackend({
+      query,
+      source: "youtubemusic",
+      filter,
+      page,
+      limit,
+      nextpage,
+    });
+    if (backendResult) {
+      return {
+        items: backendResult.items || [],
+        nextpage: backendResult.nextpage ?? null,
+      };
+    }
+
     // Map YouTube Music filter names to Piped music filter names
     const musicFilterMap: Record<string, string> = {
       songs: "music_songs",
@@ -1559,7 +1861,7 @@ export const searchAPI = {
     const musicFilter = musicFilterMap[filter] || filter;
 
     console.log(
-      `[API] YouTube Music search: "${query}", filter: "${filter}" -> "${musicFilter}"`
+      `[API] YouTube Music search: "${query}", filter: "${filter}" -> "${musicFilter}"`,
     );
 
     let result = await searchAPI.searchWithPiped(
@@ -1567,7 +1869,7 @@ export const searchAPI = {
       musicFilter,
       page,
       limit,
-      nextpage
+      nextpage,
     );
 
     if ((!result.items || result.items.length === 0) && !nextpage) {
@@ -1584,14 +1886,14 @@ export const searchAPI = {
       const fallbackFilter = genericFallbackMap[filter] || "all";
 
       console.log(
-        `[API] YouTube Music search empty with "${musicFilter}", retrying with web-style fallback "${fallbackFilter}"`
+        `[API] YouTube Music search empty with "${musicFilter}", retrying with web-style fallback "${fallbackFilter}"`,
       );
 
       result = await searchAPI.searchYouTubeWithFallback(
         query,
         fallbackFilter,
         page,
-        limit
+        limit,
       );
     }
 
@@ -1610,8 +1912,22 @@ export const searchAPI = {
     query: string,
     filter: string = "all",
     page: number = 1,
-    limit: number = 20
+    limit: number = 20,
   ) => {
+    const backendResult = await searchViaBackend({
+      query,
+      source: "mixed",
+      filter,
+      page,
+      limit,
+    });
+    if (backendResult) {
+      return normalizeBackendSearchResults(backendResult.items, "mixed").slice(
+        0,
+        Math.max(limit * 3, 40),
+      );
+    }
+
     const normalizedFilter = (filter || "all").toLowerCase();
     const youtubeFilter =
       normalizedFilter === "playlists" ? "playlists" : "all";
@@ -1626,13 +1942,13 @@ export const searchAPI = {
               query,
               "playlists",
               page,
-              Math.max(8, Math.floor(limit / 2))
+              Math.max(8, Math.floor(limit / 2)),
             ),
             searchAPI.searchWithSoundCloud(
               query,
               "albums",
               page,
-              Math.max(8, Math.floor(limit / 2))
+              Math.max(8, Math.floor(limit / 2)),
             ),
           ];
 
@@ -1652,13 +1968,13 @@ export const searchAPI = {
       (youtubeResult.items || []).map((item) => ({
         ...item,
         source: "youtube" as const,
-      }))
+      })),
     );
     const youtubeMusicItems = searchAPI.formatSearchResults(
       (youtubeMusicResult.items || []).map((item) => ({
         ...item,
         source: "youtubemusic" as const,
-      }))
+      })),
     );
     const soundCloudItems = soundCloudResults as SearchResult[][];
     const jioSaavnItems = jioSaavnResult as SearchResult[];
@@ -1781,7 +2097,7 @@ export const searchAPI = {
             views: String(item.views || item.viewCount || "0"),
             videoCount: undefined, // Channels don't have video count
             uploaded: fmtTimeAgo(
-              Number(item.published || item.uploaded || Date.now())
+              Number(item.published || item.uploaded || Date.now()),
             ),
             thumbnailUrl,
             img: thumbnailUrl,
@@ -1815,10 +2131,10 @@ export const searchAPI = {
                 ? item.videoCount
                 : item.videos && item.videos > 0
                   ? item.videos
-                  : ""
+                  : "",
             ), // Keep for visual layers but hide badge
             uploaded: fmtTimeAgo(
-              Number(item.published || item.uploaded || Date.now())
+              Number(item.published || item.uploaded || Date.now()),
             ),
             thumbnailUrl,
             img: thumbnailUrl,
@@ -1845,7 +2161,7 @@ export const searchAPI = {
           views: String(item.views || item.viewCount || "0"),
           videoCount: undefined,
           uploaded: fmtTimeAgo(
-            Number(item.published || item.uploaded || Date.now())
+            Number(item.published || item.uploaded || Date.now()),
           ),
           thumbnailUrl,
           img: thumbnailUrl,
@@ -1872,7 +2188,7 @@ export const searchAPI = {
   scrapeSoundCloudSearch: async (
     query: string,
     page?: number,
-    limit?: number
+    limit?: number,
   ) => {
     try {
       const soundCloudSearchProxyBase = getSoundCloudSearchProxyBase();
@@ -1882,7 +2198,7 @@ export const searchAPI = {
       const pageSize = limit && limit > 0 ? limit : 20;
       const offset = page && page > 1 ? (page - 1) * pageSize : 0;
       const url = `${soundCloudSearchProxyBase}/tracks?q=${encodeURIComponent(
-        query
+        query,
       )}&limit=${pageSize}&offset=${offset}`;
       const res = await fetch(url, {
         headers: {
@@ -1922,7 +2238,7 @@ export const searchAPI = {
     query: string,
     type: "playlists" | "albums",
     page?: number,
-    limit?: number
+    limit?: number,
   ) => {
     try {
       const beatseekApiBase = getBeatseekApiBase();
@@ -1973,18 +2289,18 @@ export const searchAPI = {
       let items =
         beatseekApiBase.length > 0
           ? await fetchCollections(
-              `${beatseekApiBase}/search?${beatseekParams.toString()}`
+              `${beatseekApiBase}/search?${beatseekParams.toString()}`,
             )
           : [];
       const baseUrl = `${soundCloudSearchProxyBase}/${type}`;
       if (items.length === 0) {
         items = await fetchCollections(
-          `${baseUrl}?q=${encodeURIComponent(query)}&limit=${pageSize}&offset=${offset}`
+          `${baseUrl}?q=${encodeURIComponent(query)}&limit=${pageSize}&offset=${offset}`,
         );
       }
       if (items.length === 0) {
         items = await fetchCollections(
-          `${baseUrl}?query=${encodeURIComponent(query)}&limit=${pageSize}&offset=${offset}`
+          `${baseUrl}?query=${encodeURIComponent(query)}&limit=${pageSize}&offset=${offset}`,
         );
       }
       return items.map((item: any) => ({
@@ -2031,11 +2347,26 @@ export const searchAPI = {
     filter: string = "all",
     page?: number,
     limit?: number,
-    nextpage?: string
+    nextpage?: string,
   ) => {
     console.log(
-      `[API] YouTube fallback search: "${query}", filter: "${filter}"`
+      `[API] YouTube fallback search: "${query}", filter: "${filter}"`,
     );
+
+    const backendResult = await searchViaBackend({
+      query,
+      source: "youtube",
+      filter,
+      page,
+      limit,
+      nextpage,
+    });
+    if (backendResult) {
+      return {
+        items: backendResult.items || [],
+        nextpage: backendResult.nextpage ?? null,
+      };
+    }
 
     // Try Piped first
     try {
@@ -2045,7 +2376,7 @@ export const searchAPI = {
         filter,
         page,
         limit,
-        nextpage
+        nextpage,
       );
       if (
         pipedResults &&
@@ -2053,12 +2384,12 @@ export const searchAPI = {
         pipedResults.items.length > 0
       ) {
         console.log(
-          `[API] Piped search successful, found ${pipedResults.items.length} results`
+          `[API] Piped search successful, found ${pipedResults.items.length} results`,
         );
         return pipedResults;
       }
       console.log(
-        `[API] Piped search returned ${pipedResults?.items?.length || 0} results, trying Invidious...`
+        `[API] Piped search returned ${pipedResults?.items?.length || 0} results, trying Invidious...`,
       );
     } catch (error) {
       console.log("[API] ❌ Piped search failed:", error.message);
@@ -2078,11 +2409,11 @@ export const searchAPI = {
         query,
         invidiousSort,
         page,
-        limit
+        limit,
       );
       if (invidiousResults && invidiousResults.length > 0) {
         console.log(
-          `[API] Invidious search successful, found ${invidiousResults.length} results`
+          `[API] Invidious search successful, found ${invidiousResults.length} results`,
         );
         return {
           items: invidiousResults,

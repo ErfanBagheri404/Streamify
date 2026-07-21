@@ -8,7 +8,7 @@ export type AppFontWeight =
   | "black";
 
 function normalizeWeight(
-  weight?: string | number | null
+  weight?: string | number | null,
 ): AppFontWeight | undefined {
   if (weight == null) {
     return undefined;
@@ -33,7 +33,7 @@ function normalizeWeight(
 
 export function getAppFontFamily(
   isRtl: boolean,
-  weight: AppFontWeight = "regular"
+  weight: AppFontWeight = "regular",
 ): string {
   if (isRtl) {
     switch (weight) {
@@ -64,7 +64,7 @@ export function getAppFontFamily(
 
 export function getTextDirectionStyle(
   isRtl: boolean,
-  textAlign?: string
+  textAlign?: string,
 ): TextStyle {
   return {
     writingDirection: isRtl ? "rtl" : "ltr",
@@ -76,7 +76,7 @@ export function getTextDirectionStyle(
 export function resolveTextStyle(
   isRtl: boolean,
   style: StyleProp<TextStyle>,
-  fallbackWeight: AppFontWeight
+  fallbackWeight: AppFontWeight,
 ): TextStyle {
   const flattened = Array.isArray(style)
     ? style.reduce(
@@ -100,7 +100,7 @@ export function resolveTextStyle(
       getAppFontFamily(isRtl, resolvedWeight),
     ...getTextDirectionStyle(
       isRtl,
-      typeof flattened.textAlign === "string" ? flattened.textAlign : undefined
+      typeof flattened.textAlign === "string" ? flattened.textAlign : undefined,
     ),
   };
 }

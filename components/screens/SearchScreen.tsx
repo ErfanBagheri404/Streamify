@@ -17,10 +17,11 @@ import {
 } from "react-native";
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
-import { default as StreamItem } from "../StreamItem";
+import StreamItem, { StreamItemSkeleton } from "../StreamItem";
 import { searchAPI } from "../../modules/searchAPI";
 import { Screen } from "../ui/Screen";
 import { Chip } from "../ui/Chip";
+import SourceIcon from "../ui/SourceIcon";
 import { AccentButton } from "../ui/Button";
 import { MutedText } from "../ui/Text";
 import { SectionHeader } from "../ui/SectionHeader";
@@ -89,14 +90,16 @@ const toPlayableSearchTrack = (item: any) => ({
   artist: item.author,
   artistId: item.artistId,
   artistImage: item.artistImage || item.thumbnailUrl || item.img,
-  artistSource: item.artistSource || item.source || "youtube",
+  artistSource:
+    item.artistSource || item.playbackSource || item.source || "youtube",
   duration: parseInt(item.duration) || 0,
   thumbnail: item.thumbnailUrl || item.img,
   audioUrl: undefined,
   url: item.href,
-  source: item.source || "youtube",
+  source: item.playbackSource || item.source || "youtube",
+  providerHint: item.providerHint,
   _isSoundCloud: item.source === "soundcloud",
-  _isJioSaavn: item.source === "jiosaavn",
+  _isJioSaavn: item.playbackSource === "jiosaavn" || item.source === "jiosaavn",
 });
 
 const getDefaultFilterForSource = (source: SourceType): string => {
@@ -110,6 +113,10 @@ const getDefaultFilterForSource = (source: SourceType): string => {
 
   if (source === "youtubemusic") {
     return "songs";
+  }
+
+  if (source === "itunes" || source === "deezer") {
+    return "";
   }
 
   return "all";
@@ -128,10 +135,12 @@ interface SearchSourceOption {
 
 const normalizeSearchSource = (
   source: string | undefined,
-  fallback: SourceType
+  fallback: SourceType,
 ): SourceType => {
   const validSources: SourceType[] = [
     "mixed",
+    "itunes",
+    "deezer",
     "youtube",
     "youtubemusic",
     "soundcloud",
@@ -144,7 +153,7 @@ const normalizeSearchSource = (
 };
 
 const normalizePreferredSource = (
-  source: PreferredSearchSource
+  source: PreferredSearchSource,
 ): SourceType => {
   return source as SourceType;
 };
@@ -191,40 +200,6 @@ const ClearButton = styled.TouchableOpacity`
 
 const ResultsContainer = styled.ScrollView`
   flex: 1;
-  padding: 0px 10px 0px 10px;
-`;
-
-const SkeletonRow = styled.View`
-  flex-direction: row;
-  padding-vertical: 10px;
-  align-items: center;
-`;
-
-const SkeletonThumbnail = styled.View`
-  width: 64px;
-  height: 64px;
-  border-radius: 12px;
-  background-color: #404040;
-  margin-right: 12px;
-`;
-
-const SkeletonTextBlock = styled.View`
-  flex: 1;
-`;
-
-const SkeletonLinePrimary = styled.View`
-  width: 100%;
-  height: 16px;
-  border-radius: 8px;
-  background-color: #404040;
-  margin-bottom: 6px;
-`;
-
-const SkeletonLineSecondary = styled.View`
-  height: 12px;
-  border-radius: 6px;
-  background-color: #262626;
-  width: 100%;
 `;
 
 const NoResultsText = styled.Text`
@@ -325,7 +300,7 @@ const SearchSection = memo(
 
     return (
       <SectionContainer>
-        <SectionHeader title={title} style={{ paddingHorizontal: 16 }} />
+        <SectionHeader title={title} />
         {items.map((item) => (
           <TouchableOpacity
             key={`${item.source || "yt"}-${item.id}`}
@@ -337,7 +312,7 @@ const SearchSection = memo(
               author={item.author}
               duration={formatDuration(
                 parseInt(item.duration) || 0,
-                item.source
+                item.source,
               )}
               views={
                 item.source === "jiosaavn" ||
@@ -364,11 +339,13 @@ const SearchSection = memo(
         ))}
       </SectionContainer>
     );
-  }
+  },
 );
 
 type SourceType =
   | "mixed"
+  | "itunes"
+  | "deezer"
   | "youtube"
   | "youtubemusic"
   | "soundcloud"
@@ -389,10 +366,14 @@ interface SearchResult {
   thumbnailUrl?: string;
   source?:
     | "youtube"
+    | "itunes"
+    | "deezer"
     | "soundcloud"
     | "jiosaavn"
     | "youtube_channel"
     | "youtubemusic";
+  playbackSource?: "youtube" | "youtubemusic" | "soundcloud" | "jiosaavn";
+  providerHint?: "itunes" | "deezer";
   type?: "song" | "album" | "artist" | "playlist" | "unknown";
   albumId?: string;
   albumName?: string;
@@ -401,6 +382,8 @@ interface SearchResult {
 
 const SEARCH_SOURCE_OPTIONS: SearchSourceOption[] = [
   { id: "mixed", labelKey: "source.mixed", color: "#1ed760" },
+  { id: "itunes", labelKey: "source.itunes", color: "#fa243c" },
+  { id: "deezer", labelKey: "source.deezer", color: "#a238ff" },
   { id: "youtube", labelKey: "source.youtube", color: "#ff0000" },
   { id: "youtubemusic", labelKey: "source.youtubemusic", color: "#ff0000" },
   { id: "soundcloud", labelKey: "source.soundcloud", color: "#ff7700" },
@@ -500,6 +483,9 @@ function getFiltersForSource(source: SourceType): SearchFilterOption[] {
       return SOUNDCLOUD_FILTER_OPTIONS;
     case "jiosaavn":
       return JIOSAAVN_FILTER_OPTIONS;
+    case "itunes":
+    case "deezer":
+      return [];
     default:
       return [];
   }
@@ -507,7 +493,7 @@ function getFiltersForSource(source: SourceType): SearchFilterOption[] {
 
 function normalizeFilterForSource(
   source: SourceType,
-  filterValue: string | undefined
+  filterValue: string | undefined,
 ): string {
   const options = getFiltersForSource(source);
   if (options.some((option) => option.value === filterValue)) {
@@ -569,36 +555,23 @@ export default function SearchScreen({ navigation }: any) {
 
   const [selectedSource, setSelectedSource] = useState<SourceType>("mixed");
   const [selectedFilter, setSelectedFilter] = useState(
-    getDefaultFilterForSource("mixed")
+    getDefaultFilterForSource("mixed"),
   );
   const activeSourceOption =
     SEARCH_SOURCE_OPTIONS.find((source) => source.id === selectedSource) ||
     SEARCH_SOURCE_OPTIONS[0];
   const activeFilterOptions = useMemo(
     () => getFiltersForSource(selectedSource),
-    [selectedSource]
+    [selectedSource],
   );
   const visibleCategoryPlaylists = useMemo(
     () =>
       categoryPlaylists.length > 0
         ? categoryPlaylists
         : DEFAULT_SEARCH_CATEGORY_CARDS,
-    [categoryPlaylists]
+    [categoryPlaylists],
   );
-  const orderedSourceOptions = useMemo(() => {
-    const selectedOption = SEARCH_SOURCE_OPTIONS.find(
-      (option) => option.id === selectedSource
-    );
-
-    if (!selectedOption) {
-      return SEARCH_SOURCE_OPTIONS;
-    }
-
-    return [
-      selectedOption,
-      ...SEARCH_SOURCE_OPTIONS.filter((option) => option.id !== selectedSource),
-    ];
-  }, [selectedSource]);
+  const orderedSourceOptions = SEARCH_SOURCE_OPTIONS;
   const filtersAnimation = useRef(new Animated.Value(0)).current;
   const filterPanelHeight = activeFilterOptions.length > 0 ? 92 : 48;
 
@@ -608,8 +581,9 @@ export default function SearchScreen({ navigation }: any) {
       topResult: t("search.topResult"),
       endResults: t("search.endResults"),
       loadMore: t("common.loadMore"),
+      loadingMore: t("common.loadingMore"),
     }),
-    [t]
+    [t],
   );
   const handleCategorySelect = useCallback(
     (category: SearchCategoryPlaylist) => {
@@ -627,28 +601,28 @@ export default function SearchScreen({ navigation }: any) {
         source,
       });
     },
-    [navigation]
+    [navigation],
   );
   const localizedTextStyle = useMemo(
     () => ({
       fontFamily: getAppFontFamily(isRtl, "regular"),
       ...getTextDirectionStyle(isRtl),
     }),
-    [isRtl]
+    [isRtl],
   );
   const centeredLocalizedTextStyle = useMemo(
     () => ({
       fontFamily: getAppFontFamily(isRtl, "regular"),
       ...getTextDirectionStyle(isRtl, "center"),
     }),
-    [isRtl]
+    [isRtl],
   );
   const centeredCategoryTextStyle = useMemo(
     () => ({
       fontFamily: getAppFontFamily(isRtl, "black"),
       ...getTextDirectionStyle(isRtl, "center"),
     }),
-    [isRtl]
+    [isRtl],
   );
   const trimmedSearchQuery = searchQuery.trim();
 
@@ -670,14 +644,14 @@ export default function SearchScreen({ navigation }: any) {
     isLoadingMore: false,
     nextpage: null as string | null,
   });
+  const resultsEntranceOpacity = useRef(new Animated.Value(1)).current;
+  const resultsEntranceTranslateY = useRef(new Animated.Value(0)).current;
+  const resultsAnimationSignatureRef = useRef("");
 
   const retryRef = useRef({
     attempts: 0,
     maxAttempts: 3,
   });
-
-  const skeletonPulse = useRef(new Animated.Value(0)).current;
-  const skeletonAnimationRef = useRef<any>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -712,6 +686,61 @@ export default function SearchScreen({ navigation }: any) {
   }, [filtersAnimation, settings.disableAnimations, showFilters]);
 
   useEffect(() => {
+    if (!trimmedSearchQuery.length) {
+      resultsAnimationSignatureRef.current = "";
+      resultsEntranceOpacity.setValue(1);
+      resultsEntranceTranslateY.setValue(0);
+      return;
+    }
+
+    if (isLoading || isLoadingMore) {
+      return;
+    }
+
+    const nextSignature = [
+      trimmedSearchQuery,
+      selectedSource,
+      selectedFilter,
+    ].join("|");
+    const shouldAnimate =
+      resultsAnimationSignatureRef.current !== nextSignature &&
+      searchResults.length > 0;
+
+    resultsAnimationSignatureRef.current = nextSignature;
+
+    if (settings.disableAnimations || !shouldAnimate) {
+      resultsEntranceOpacity.setValue(1);
+      resultsEntranceTranslateY.setValue(0);
+      return;
+    }
+
+    resultsEntranceOpacity.setValue(0);
+    resultsEntranceTranslateY.setValue(14);
+    Animated.parallel([
+      Animated.timing(resultsEntranceOpacity, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.timing(resultsEntranceTranslateY, {
+        toValue: 0,
+        duration: 240,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [
+    isLoading,
+    isLoadingMore,
+    resultsEntranceOpacity,
+    resultsEntranceTranslateY,
+    searchResults.length,
+    selectedFilter,
+    selectedSource,
+    settings.disableAnimations,
+    trimmedSearchQuery,
+  ]);
+
+  useEffect(() => {
     if (!hasHydratedSettings || hasRestoredSearchRef.current) {
       return;
     }
@@ -721,7 +750,7 @@ export default function SearchScreen({ navigation }: any) {
 
     const restoreSearchState = async () => {
       const preferredSource = normalizePreferredSource(
-        settings.preferredSearchSource
+        settings.preferredSearchSource,
       );
 
       if (!settings.rememberLastSearch) {
@@ -729,7 +758,7 @@ export default function SearchScreen({ navigation }: any) {
         if (!cancelled) {
           setSelectedSource(preferredSource);
           setSelectedFilter(
-            normalizeFilterForSource(preferredSource, undefined)
+            normalizeFilterForSource(preferredSource, undefined),
           );
         }
         return;
@@ -748,11 +777,11 @@ export default function SearchScreen({ navigation }: any) {
 
       const restoredSource = normalizeSearchSource(
         lastSearchState.source,
-        preferredSource
+        preferredSource,
       );
       const restoredFilter = normalizeFilterForSource(
         restoredSource,
-        lastSearchState.filter
+        lastSearchState.filter,
       );
       const restoredResults = Array.isArray(lastSearchState.results)
         ? (lastSearchState.results as SearchResult[])
@@ -773,8 +802,15 @@ export default function SearchScreen({ navigation }: any) {
           isLoadingMore: false,
           nextpage: null,
         };
+        lastSearchRef.current = {
+          query: lastSearchState.query.trim(),
+          source: restoredSource,
+          filter: restoredFilter,
+        };
+        pendingRestoreQueryRef.current = null;
+      } else {
+        pendingRestoreQueryRef.current = lastSearchState.query;
       }
-      pendingRestoreQueryRef.current = lastSearchState.query;
     };
 
     void restoreSearchState();
@@ -796,36 +832,6 @@ export default function SearchScreen({ navigation }: any) {
     void StorageService.clearLastSearchState();
   }, [hasHydratedSettings, settings.rememberLastSearch]);
 
-  useEffect(() => {
-    if (isLoading) {
-      if (skeletonAnimationRef.current) {
-        skeletonAnimationRef.current.stop();
-      }
-      skeletonPulse.setValue(0);
-      const animation = Animated.loop(
-        Animated.sequence([
-          Animated.timing(skeletonPulse, {
-            toValue: 1,
-            duration: 700,
-            useNativeDriver: true,
-          }),
-          Animated.timing(skeletonPulse, {
-            toValue: 0,
-            duration: 700,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      skeletonAnimationRef.current = animation;
-      animation.start();
-    } else {
-      if (skeletonAnimationRef.current) {
-        skeletonAnimationRef.current.stop();
-        skeletonAnimationRef.current = null;
-      }
-    }
-  }, [isLoading, skeletonPulse]);
-
   // --- Helper Functions ---
 
   function shortCount(num: number | string): string {
@@ -845,10 +851,33 @@ export default function SearchScreen({ navigation }: any) {
     return `${(n / 1000000000).toFixed(1).replace(".0", "")}B`;
   }
 
-  const skeletonOpacity = skeletonPulse.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.4, 1],
-  });
+  const searchSkeletonProps = useMemo(() => {
+    if (selectedFilter === "artists" || selectedFilter === "channels") {
+      return {
+        source: selectedSource === "jiosaavn" ? "jiosaavn" : "youtube_channel",
+        type: "artist",
+      };
+    }
+
+    if (selectedFilter === "albums") {
+      return {
+        source: selectedSource === "jiosaavn" ? "jiosaavn" : selectedSource,
+        type: "album",
+      };
+    }
+
+    if (selectedFilter === "playlists") {
+      return {
+        source: selectedSource,
+        type: "playlist",
+      };
+    }
+
+    return {
+      source: selectedSource,
+      type: selectedFilter,
+    };
+  }, [selectedFilter, selectedSource]);
 
   // --- Search Handling ---
 
@@ -866,16 +895,16 @@ export default function SearchScreen({ navigation }: any) {
       const requestFilter = selectedFilter;
 
       const last = lastSearchRef.current;
+      const isSameSearchAsLast =
+        Boolean(last) &&
+        last?.query === trimmedQuery &&
+        last?.source === requestSource &&
+        last?.filter === requestFilter;
+      const shouldPreserveExistingResults =
+        !loadMore && isSameSearchAsLast && searchResults.length > 0;
 
       // For new searches (not load more), check if we're repeating the same search
-      if (
-        !loadMore &&
-        searchResults.length > 0 &&
-        last &&
-        last.query === trimmedQuery &&
-        last.source === requestSource &&
-        last.filter === requestFilter
-      ) {
+      if (!loadMore && searchResults.length > 0 && last && isSameSearchAsLast) {
         return;
       }
 
@@ -888,7 +917,7 @@ export default function SearchScreen({ navigation }: any) {
           "[Search] Loading more results for page:",
           paginationRef.current.page,
           "current results:",
-          searchResults.length
+          searchResults.length,
         );
       } else {
         setIsLoading(true);
@@ -909,6 +938,7 @@ export default function SearchScreen({ navigation }: any) {
       // Only clear results if we're doing a new search (not loading more)
       if (
         !loadMore &&
+        !shouldPreserveExistingResults &&
         (searchQuery !== queryToUse || searchResults.length === 0)
       ) {
         setSearchResults([]);
@@ -918,7 +948,7 @@ export default function SearchScreen({ navigation }: any) {
         let results: any[] = [];
 
         console.log(
-          `[Search] Making API call with page: ${paginationRef.current.page}, limit: 20`
+          `[Search] Making API call with page: ${paginationRef.current.page}, limit: 20`,
         );
 
         if (requestSource === "mixed") {
@@ -926,7 +956,7 @@ export default function SearchScreen({ navigation }: any) {
             trimmedQuery,
             requestFilter,
             paginationRef.current.page,
-            20
+            20,
           );
           paginationRef.current.nextpage = null;
         } else if (requestSource === "soundcloud") {
@@ -935,7 +965,7 @@ export default function SearchScreen({ navigation }: any) {
             trimmedQuery,
             requestFilter,
             paginationRef.current.page,
-            20
+            20,
           );
         } else if (requestSource === "jiosaavn") {
           // JioSaavn Search
@@ -944,7 +974,19 @@ export default function SearchScreen({ navigation }: any) {
             trimmedQuery,
             requestFilter,
             paginationRef.current.page,
-            20
+            20,
+          );
+        } else if (requestSource === "itunes") {
+          results = await searchAPI.searchWithItunes(
+            trimmedQuery,
+            paginationRef.current.page,
+            20,
+          );
+        } else if (requestSource === "deezer") {
+          results = await searchAPI.searchWithDeezer(
+            trimmedQuery,
+            paginationRef.current.page,
+            20,
           );
         } else if (requestSource === "youtubemusic") {
           const youtubeMusicResponse = await searchAPI.searchWithYouTubeMusic(
@@ -952,7 +994,7 @@ export default function SearchScreen({ navigation }: any) {
             requestFilter,
             paginationRef.current.page,
             20,
-            paginationRef.current.nextpage || undefined
+            paginationRef.current.nextpage || undefined,
           );
           if (youtubeMusicResponse.nextpage) {
             paginationRef.current.nextpage = youtubeMusicResponse.nextpage;
@@ -967,12 +1009,12 @@ export default function SearchScreen({ navigation }: any) {
             requestFilter,
             paginationRef.current.page,
             20,
-            paginationRef.current.nextpage || undefined
+            paginationRef.current.nextpage || undefined,
           );
           if (youtubeResponse.nextpage) {
             paginationRef.current.nextpage = youtubeResponse.nextpage;
             console.log(
-              `[Search] Extracted nextpage token: ${youtubeResponse.nextpage.substring(0, 50)}...`
+              `[Search] Extracted nextpage token: ${youtubeResponse.nextpage.substring(0, 50)}...`,
             );
           } else {
             paginationRef.current.nextpage = null;
@@ -987,7 +1029,7 @@ export default function SearchScreen({ navigation }: any) {
           results.slice(0, 3).map((item) => ({
             id: item.videoId || item.id,
             title: item.title,
-          }))
+          })),
         );
 
         if (requestId !== activeSearchRequestRef.current) {
@@ -1077,7 +1119,7 @@ export default function SearchScreen({ navigation }: any) {
 
         const existingIds = new Set(searchResults.map((item) => item.id));
         const uniqueNewItems = formattedResults.filter(
-          (item) => !existingIds.has(item.id)
+          (item) => !existingIds.has(item.id),
         );
         const persistedResults = loadMore
           ? [...searchResults, ...uniqueNewItems]
@@ -1090,24 +1132,24 @@ export default function SearchScreen({ navigation }: any) {
             formattedResults.length,
             "new items to existing",
             searchResults.length,
-            "items"
+            "items",
           );
           console.log(
             "[Search] First few new items:",
             formattedResults
               .slice(0, 3)
-              .map((item) => ({ id: item.id, title: item.title }))
+              .map((item) => ({ id: item.id, title: item.title })),
           );
           // Deduplicate results by ID to prevent duplicates
           setSearchResults((prev) => {
             const existingIds = new Set(prev.map((item) => item.id));
             const newItems = formattedResults.filter(
-              (item) => !existingIds.has(item.id)
+              (item) => !existingIds.has(item.id),
             );
             console.log(
               "[Search] Deduplication: removed",
               formattedResults.length - newItems.length,
-              "duplicates"
+              "duplicates",
             );
             console.log("[Search] Adding", newItems.length, "unique items");
 
@@ -1119,20 +1161,20 @@ export default function SearchScreen({ navigation }: any) {
                 paginationRef.current.nextpage
               ) {
                 console.log(
-                  "[Search] All results were duplicates but nextpage exists, keeping pagination alive"
+                  "[Search] All results were duplicates but nextpage exists, keeping pagination alive",
                 );
               } else if (
                 retryRef.current.attempts < retryRef.current.maxAttempts
               ) {
                 retryRef.current.attempts++;
                 console.log(
-                  `[Search] ⚠️ All results were duplicates! Retrying with next page... (Attempt ${retryRef.current.attempts}/${retryRef.current.maxAttempts})`
+                  `[Search] ⚠️ All results were duplicates! Retrying with next page... (Attempt ${retryRef.current.attempts}/${retryRef.current.maxAttempts})`,
                 );
                 // Don't update the results, stay in loading state and retry
                 setTimeout(() => {
                   const nextRetryPage = paginationRef.current.page + 1;
                   console.log(
-                    `[Search] 🔄 Retrying load more with page: ${nextRetryPage}`
+                    `[Search] 🔄 Retrying load more with page: ${nextRetryPage}`,
                   );
                   paginationRef.current.page = nextRetryPage;
                   handleSearch(searchQuery, true);
@@ -1140,7 +1182,7 @@ export default function SearchScreen({ navigation }: any) {
                 return prev; // Return previous results without changes
               } else {
                 console.log(
-                  "[Search] ❌ Max retry attempts reached. Stopping pagination."
+                  "[Search] ❌ Max retry attempts reached. Stopping pagination.",
                 );
                 // Reset retry counter and stop pagination
                 retryRef.current.attempts = 0;
@@ -1171,7 +1213,7 @@ export default function SearchScreen({ navigation }: any) {
             "[Search] Load more complete. Total results now:",
             searchResults.length + formattedResults.length,
             "Has more:",
-            hasMore
+            hasMore,
           );
         } else {
           setSearchResults(formattedResults);
@@ -1187,7 +1229,7 @@ export default function SearchScreen({ navigation }: any) {
             "[Search] New search complete. Results:",
             formattedResults.length,
             "Has more:",
-            hasMore
+            hasMore,
           );
         }
 
@@ -1210,7 +1252,7 @@ export default function SearchScreen({ navigation }: any) {
           return;
         }
         console.error("Search error:", error);
-        if (!loadMore) {
+        if (!loadMore && !shouldPreserveExistingResults) {
           setSearchResults([]);
         }
         setHasMoreResults(false);
@@ -1237,7 +1279,7 @@ export default function SearchScreen({ navigation }: any) {
       selectedSource,
       searchResults,
       settings.rememberLastSearch,
-    ]
+    ],
   );
 
   // Load more results for pagination
@@ -1372,7 +1414,7 @@ export default function SearchScreen({ navigation }: any) {
 
     const albums = searchResults.filter((item) => item.type === "album");
     const playlists = searchResults.filter(
-      (item) => item.type === "playlist" || item.href?.includes("&list=")
+      (item) => item.type === "playlist" || item.href?.includes("&list="),
     );
 
     const songs = searchResults.filter((item) => {
@@ -1410,7 +1452,7 @@ export default function SearchScreen({ navigation }: any) {
         "[Filter] Sample IDs:",
         searchResults
           .slice(0, 3)
-          .map((item) => ({ id: item.id, type: item.type, title: item.title }))
+          .map((item) => ({ id: item.id, type: item.type, title: item.title })),
       );
     }
 
@@ -1418,8 +1460,9 @@ export default function SearchScreen({ navigation }: any) {
   }, [searchResults, searchQuery]);
 
   const playableSearchQueue = useMemo(
-    () => searchResults.filter(isPlayableSearchResult).map(toPlayableSearchTrack),
-    [searchResults]
+    () =>
+      searchResults.filter(isPlayableSearchResult).map(toPlayableSearchTrack),
+    [searchResults],
   );
 
   // Optimized item press handlers
@@ -1445,13 +1488,13 @@ export default function SearchScreen({ navigation }: any) {
       // Play track using player context (for regular songs/videos)
       const track = toPlayableSearchTrack(item);
       const currentIndex = playableSearchQueue.findIndex(
-        (result) => result.id === item.id
+        (result) => result.id === item.id,
       );
 
       await playTrack(
         track,
         playableSearchQueue,
-        currentIndex >= 0 ? currentIndex : 0
+        currentIndex >= 0 ? currentIndex : 0,
       );
     },
     [
@@ -1460,7 +1503,7 @@ export default function SearchScreen({ navigation }: any) {
       navigation,
       playTrack,
       playableSearchQueue,
-    ]
+    ],
   );
 
   const handleArtistPress = useCallback(
@@ -1478,7 +1521,7 @@ export default function SearchScreen({ navigation }: any) {
         source: item.source === "jiosaavn" ? "jiosaavn" : "youtube",
       });
     },
-    [navigation, showSuggestions, setShowSuggestions]
+    [navigation, showSuggestions, setShowSuggestions],
   );
 
   const handleAlbumPress = useCallback(
@@ -1532,7 +1575,7 @@ export default function SearchScreen({ navigation }: any) {
         });
       }
     },
-    [navigation, showSuggestions, setShowSuggestions]
+    [navigation, showSuggestions, setShowSuggestions],
   );
 
   // Handle JioSaavn album songs - open album playlist
@@ -1545,7 +1588,7 @@ export default function SearchScreen({ navigation }: any) {
       try {
         const albumDetails = await searchAPI.getJioSaavnAlbumDetails(
           String(item.albumId),
-          item.albumName
+          item.albumName,
         );
 
         if (
@@ -1564,7 +1607,7 @@ export default function SearchScreen({ navigation }: any) {
             artist:
               song.artists?.primary
                 ?.map((artist: any) =>
-                  artist.name?.replace(/\s*-\s*Topic$/i, "")
+                  artist.name?.replace(/\s*-\s*Topic$/i, ""),
                 )
                 .join(", ") ||
               song.singers?.replace(/\s*-\s*Topic$/i, "") ||
@@ -1582,7 +1625,7 @@ export default function SearchScreen({ navigation }: any) {
 
           // Find the index of the selected song in the album
           const selectedIndex = albumPlaylist.findIndex(
-            (song: any) => song.id === item.id
+            (song: any) => song.id === item.id,
           );
 
           // Open the album playlist without auto-playing
@@ -1600,7 +1643,7 @@ export default function SearchScreen({ navigation }: any) {
 
       return false; // Fallback to direct play
     },
-    [navigation]
+    [navigation],
   );
 
   const handleSongPress = useCallback(
@@ -1622,13 +1665,13 @@ export default function SearchScreen({ navigation }: any) {
       // Play track using player context
       const track = toPlayableSearchTrack(item);
       const currentIndex = playableSearchQueue.findIndex(
-        (result) => result.id === item.id
+        (result) => result.id === item.id,
       );
 
       await playTrack(
         track,
         playableSearchQueue,
-        currentIndex >= 0 ? currentIndex : 0
+        currentIndex >= 0 ? currentIndex : 0,
       );
     },
     [
@@ -1637,7 +1680,7 @@ export default function SearchScreen({ navigation }: any) {
       handleJioSaavnAlbumSong,
       playTrack,
       playableSearchQueue,
-    ]
+    ],
   );
 
   const handleTextChange = useCallback(
@@ -1684,7 +1727,7 @@ export default function SearchScreen({ navigation }: any) {
           setShowSuggestions(true);
           const newSuggestions = await searchAPI.getSuggestions(
             text,
-            selectedSource
+            selectedSource,
           );
 
           setSuggestions(newSuggestions.slice(0, 5));
@@ -1704,7 +1747,7 @@ export default function SearchScreen({ navigation }: any) {
         }
       }, 300); // 300ms delay for faster search response
     },
-    [selectedSource, searchResults.length]
+    [selectedSource, searchResults.length],
   );
 
   const handleSourceSelect = useCallback((sourceId: SourceType) => {
@@ -1849,14 +1892,6 @@ export default function SearchScreen({ navigation }: any) {
               inputRange: [0, 1],
               outputRange: [0, 12],
             }),
-            transform: [
-              {
-                translateY: filtersAnimation.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [-8, 0],
-                }),
-              },
-            ],
           },
         ]}
       >
@@ -1874,29 +1909,43 @@ export default function SearchScreen({ navigation }: any) {
               },
             ]}
           >
-            {orderedSourceOptions.map((source) => (
-              <Chip
-                key={source.id}
-                label={t(source.labelKey)}
-                selected={selectedSource === source.id}
-                onPress={() => handleSourceSelect(source.id)}
-                chipStyle={[
-                  styles.searchChip,
-                  {
-                    marginRight: isRtl ? 0 : 8,
-                    marginLeft: isRtl ? 8 : 0,
-                  },
-                ]}
-                textStyle={[
-                  styles.searchChipText,
-                  isRtl ? styles.searchChipTextRtl : null,
-                ]}
-                selectedBackgroundColor={source.color}
-                selectedBorderColor={source.color}
-                selectedTextColor="#000000"
-                unselectedTextColor={colors.muted}
-              />
-            ))}
+            {SEARCH_SOURCE_OPTIONS.map((source) => {
+              const isSelected = selectedSource === source.id;
+              return (
+                <Chip
+                  key={source.id}
+                  label={t(source.labelKey)}
+                  selected={isSelected}
+                  onPress={() => handleSourceSelect(source.id)}
+                  chipStyle={[
+                    styles.searchChip,
+                    {
+                      marginRight: isRtl ? 0 : 8,
+                      marginLeft: isRtl ? 8 : 0,
+                      backgroundColor: isSelected
+                        ? source.color + "2E" // ~18% opacity via hex
+                        : "transparent",
+                      borderColor: isSelected
+                        ? source.color + "6B" // ~42% opacity
+                        : colors.borderSubtle,
+                    },
+                  ]}
+                  textStyle={[
+                    styles.searchChipText,
+                    isRtl ? styles.searchChipTextRtl : null,
+                  ]}
+                  icon={
+                    <SourceIcon
+                      source={source.id}
+                      size={16}
+                      color={isSelected ? colors.foreground : colors.muted}
+                    />
+                  }
+                  selectedTextColor={colors.foreground}
+                  unselectedTextColor={colors.muted}
+                />
+              );
+            })}
           </ScrollView>
           {activeFilterOptions.length > 0 ? (
             <ScrollView
@@ -1923,6 +1972,7 @@ export default function SearchScreen({ navigation }: any) {
                     {
                       marginRight: isRtl ? 0 : 8,
                       marginLeft: isRtl ? 8 : 0,
+                      opacity: selectedFilter === filter.value ? 1 : 0.72,
                     },
                   ]}
                   textStyle={[
@@ -2010,7 +2060,7 @@ export default function SearchScreen({ navigation }: any) {
       <ResultsContainer
         ref={scrollViewRef}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: 120 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 144 }}
         onScrollBeginDrag={handleOutsidePress}
         onScroll={(event) => {
           scrollPositionRef.current = event.nativeEvent.contentOffset.y;
@@ -2019,34 +2069,11 @@ export default function SearchScreen({ navigation }: any) {
       >
         {isLoading &&
           [...Array(6)].map((_, index) => (
-            <Animated.View
+            <StreamItemSkeleton
               key={`skeleton-${index}`}
-              style={{ opacity: skeletonOpacity }}
-            >
-              <SkeletonRow
-                style={{ flexDirection: isRtl ? "row-reverse" : "row" }}
-              >
-                <SkeletonThumbnail
-                  style={{
-                    backgroundColor: withOpacity(colors.foreground, 0.12),
-                    marginRight: isRtl ? 0 : 12,
-                    marginLeft: isRtl ? 12 : 0,
-                  }}
-                />
-                <SkeletonTextBlock>
-                  <SkeletonLinePrimary
-                    style={{
-                      backgroundColor: withOpacity(colors.foreground, 0.12),
-                    }}
-                  />
-                  <SkeletonLineSecondary
-                    style={{
-                      backgroundColor: withOpacity(colors.foreground, 0.08),
-                    }}
-                  />
-                </SkeletonTextBlock>
-              </SkeletonRow>
-            </Animated.View>
+              source={searchSkeletonProps.source}
+              type={searchSkeletonProps.type}
+            />
           ))}
 
         {!isLoading && !trimmedSearchQuery && (
@@ -2058,7 +2085,7 @@ export default function SearchScreen({ navigation }: any) {
                 ];
               const isWideCategory = category.category === "Synthwave";
               const hasPlaylistTarget = Boolean(
-                getSearchCategoryPlaylistId(category)
+                getSearchCategoryPlaylistId(category),
               );
 
               return (
@@ -2102,17 +2129,29 @@ export default function SearchScreen({ navigation }: any) {
           trimmedSearchQuery.length > 0 &&
           hasSearched &&
           searchResults.length === 0 && (
-            <NoResultsText
-              style={[{ color: colors.muted }, centeredLocalizedTextStyle]}
+            <Animated.View
+              style={{
+                opacity: resultsEntranceOpacity,
+                transform: [{ translateY: resultsEntranceTranslateY }],
+              }}
             >
-              {copy.noResults}
-            </NoResultsText>
+              <NoResultsText
+                style={[{ color: colors.muted }, centeredLocalizedTextStyle]}
+              >
+                {copy.noResults}
+              </NoResultsText>
+            </Animated.View>
           )}
 
         {!isLoading &&
           trimmedSearchQuery.length > 0 &&
           searchResults.length > 0 && (
-            <>
+            <Animated.View
+              style={{
+                opacity: resultsEntranceOpacity,
+                transform: [{ translateY: resultsEntranceTranslateY }],
+              }}
+            >
               {/* Top Query Results */}
               {filteredResults.topResults.length > 0 && (
                 <SearchSection
@@ -2203,13 +2242,33 @@ export default function SearchScreen({ navigation }: any) {
               {/* Load More Button or End of Results - Only at the end of all content */}
               {!hasMoreResults && searchResults.length > 0 ? (
                 <View style={{ paddingVertical: 20, alignItems: "center" }}>
-                  <MutedText>{copy.endResults}</MutedText>
+                  <MutedText
+                    style={[
+                      centeredLocalizedTextStyle,
+                      { color: colors.muted, width: "100%" },
+                    ]}
+                  >
+                    {copy.endResults}
+                  </MutedText>
                 </View>
               ) : (
                 hasMoreResults && (
                   <View style={{ paddingVertical: 20, alignItems: "center" }}>
                     {isLoadingMore ? (
-                      <ActivityIndicator size="small" color={colors.accent} />
+                      <>
+                        <ActivityIndicator size="small" color={colors.accent} />
+                        <MutedText
+                          style={[
+                            centeredLocalizedTextStyle,
+                            {
+                              marginTop: 10,
+                              color: colors.muted,
+                            },
+                          ]}
+                        >
+                          {copy.loadingMore}
+                        </MutedText>
+                      </>
                     ) : (
                       <AccentButton
                         title={copy.loadMore}
@@ -2219,7 +2278,7 @@ export default function SearchScreen({ navigation }: any) {
                   </View>
                 )
               )}
-            </>
+            </Animated.View>
           )}
       </ResultsContainer>
     </Screen>
@@ -2277,7 +2336,6 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 18,
     lineHeight: 22,
-    paddingHorizontal: 14,
     paddingBottom: 14,
     fontFamily: "GoogleSansBold",
     textShadowColor: "rgba(0, 0, 0, 0.45)",

@@ -25,14 +25,14 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function readString(
   source: Record<string, unknown> | null,
-  key: string
+  key: string,
 ): string {
   const value = source?.[key];
   return typeof value === "string" ? value.trim() : "";
 }
 
 function normalizeCategoryPlaylist(
-  value: unknown
+  value: unknown,
 ): SearchCategoryPlaylist | null {
   const item = asRecord(value);
   const category = readString(item, "category");
@@ -59,7 +59,7 @@ function normalizeCategoryPlaylist(
 }
 
 function normalizeCategoryPlaylists(
-  runtimeConfig: StreamifyRuntimeConfig | null
+  runtimeConfig: StreamifyRuntimeConfig | null,
 ): SearchCategoryPlaylist[] {
   const curated = asRecord(runtimeConfig?.curated);
   const rawPlaylists = curated?.categoryPlaylists;
@@ -88,7 +88,7 @@ export async function getSearchCategoryPlaylists(options?: {
 }
 
 export function getSearchCategoryPlaylistId(
-  playlist: SearchCategoryPlaylist
+  playlist: SearchCategoryPlaylist,
 ): string {
   const source = playlist.source || "youtube";
 

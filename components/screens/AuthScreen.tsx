@@ -44,7 +44,7 @@ function normalizeEmail(value: string) {
 function getExistingAccountMessage(
   status: AccountStatusResponse,
   intent: "signup" | "password" | "google",
-  t: (key: string) => string
+  t: (key: string) => string,
 ) {
   if (status.duplicate) {
     return t("auth.multipleAccountsDetected");
@@ -131,13 +131,13 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
         ? getExistingAccountMessage(
             accountStatus,
             isSignUp ? "signup" : "password",
-            t
+            t,
           )
         : null;
 
       if (isSignUp && accountStatus && !accountStatus.available) {
         setErrorMessage(
-          accountStatus.error || t("auth.accountCheckUnavailable")
+          accountStatus.error || t("auth.accountCheckUnavailable"),
         );
         return;
       }
@@ -188,7 +188,7 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
       }
 
       setErrorMessage(
-        error instanceof Error ? error.message : t("auth.genericError")
+        error instanceof Error ? error.message : t("auth.genericError"),
       );
     } finally {
       setIsSubmitting(false);
@@ -240,7 +240,7 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
       await Linking.openURL(data.url);
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : t("auth.googleUnavailable")
+        error instanceof Error ? error.message : t("auth.googleUnavailable"),
       );
     } finally {
       setIsGoogleSubmitting(false);
@@ -253,10 +253,11 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
         <LinearGradient
           colors={[
             withOpacity(colors.heroStart, isLight ? 0.18 : 0.12),
-            withOpacity(colors.heroMid, isLight ? 0.3 : 0.22),
+            withOpacity(colors.heroMid, isLight ? 0.24 : 0.18),
+            withOpacity(colors.heroEnd, isLight ? 0.14 : 0.12),
             withOpacity(colors.background, 1),
           ]}
-          start={{ x: 0, y: 0 }}
+          start={{ x: 0.04, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={ABSOLUTE_FILL}
         />
@@ -264,28 +265,58 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
         <View
           pointerEvents="none"
           style={[
-            styles.glow,
+            styles.aura,
+            {
+              backgroundColor: withOpacity(colors.accent, isLight ? 0.14 : 0.1),
+              top: insets.top + 42,
+              [isRtl ? "right" : "left"]: -46,
+            },
+          ]}
+        />
+        <LinearGradient
+          pointerEvents="none"
+          colors={[
+            withOpacity(colors.heroMid, 0),
+            withOpacity(colors.heroMid, isLight ? 0.16 : 0.11),
+            withOpacity(colors.heroEnd, 0),
+          ]}
+          style={[
+            styles.ribbon,
+            {
+              top: insets.top + 136,
+              [isRtl ? "left" : "right"]: -86,
+              transform: [{ rotate: isRtl ? "-22deg" : "22deg" }],
+            },
+          ]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+        <View
+          pointerEvents="none"
+          style={[
+            styles.aura,
+            styles.auraLarge,
             {
               backgroundColor: withOpacity(
-                colors.accent,
-                isLight ? 0.16 : 0.12
+                colors.heroStart,
+                isLight ? 0.14 : 0.11,
               ),
-              top: 90,
-              [isRtl ? "right" : "left"]: -70,
+              bottom: 104,
+              [isRtl ? "left" : "right"]: -84,
             },
           ]}
         />
         <View
           pointerEvents="none"
           style={[
-            styles.glow,
+            styles.softHalo,
             {
               backgroundColor: withOpacity(
-                colors.heroStart,
-                isLight ? 0.18 : 0.14
+                colors.foreground,
+                isLight ? 0.04 : 0.03,
               ),
-              bottom: 120,
-              [isRtl ? "left" : "right"]: -60,
+              top: insets.top + 210,
+              alignSelf: "center",
             },
           ]}
         />
@@ -328,9 +359,10 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
               {
                 backgroundColor: withOpacity(
                   colors.surface1,
-                  isLight ? 0.92 : 0.9
+                  isLight ? 0.92 : 0.88,
                 ),
                 borderColor: colors.borderSubtle,
+                shadowColor: colors.foreground,
               },
             ]}
           >
@@ -380,7 +412,7 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
                   {
                     backgroundColor: withOpacity(
                       colors.surface2,
-                      isLight ? 0.55 : 0.7
+                      isLight ? 0.55 : 0.7,
                     ),
                     borderColor: colors.borderSubtle,
                   },
@@ -412,7 +444,7 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
                   {
                     backgroundColor: withOpacity(
                       colors.surface2,
-                      isLight ? 0.55 : 0.7
+                      isLight ? 0.55 : 0.7,
                     ),
                     borderColor: colors.borderSubtle,
                     flexDirection: isRtl ? "row-reverse" : "row",
@@ -456,7 +488,7 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
                     {
                       backgroundColor: withOpacity(
                         colors.surface2,
-                        isLight ? 0.55 : 0.7
+                        isLight ? 0.55 : 0.7,
                       ),
                       borderColor: colors.borderSubtle,
                       flexDirection: isRtl ? "row-reverse" : "row",
@@ -539,7 +571,7 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
                   {
                     backgroundColor: withOpacity(
                       colors.surface2,
-                      isLight ? 0.58 : 0.8
+                      isLight ? 0.58 : 0.8,
                     ),
                     borderColor: colors.borderSubtle,
                   },
@@ -680,10 +712,26 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
   },
-  glow: {
+  aura: {
     position: "absolute",
-    width: 220,
+    width: 180,
+    height: 180,
+    borderRadius: 56,
+  },
+  auraLarge: {
+    width: 260,
     height: 220,
+  },
+  ribbon: {
+    position: "absolute",
+    width: 240,
+    height: 150,
+    borderRadius: 44,
+  },
+  softHalo: {
+    position: "absolute",
+    width: 280,
+    height: 180,
     borderRadius: 999,
   },
   header: {
@@ -720,6 +768,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 18,
     paddingBottom: 20,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.16,
+    shadowRadius: 34,
+    elevation: 8,
   },
   badge: {
     borderRadius: 999,

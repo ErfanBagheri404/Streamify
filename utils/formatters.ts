@@ -7,14 +7,14 @@
  */
 export const formatTime = (milliseconds: number): string => {
   if (isNaN(milliseconds) || milliseconds < 0) {
-    return '0:00';
+    return "0:00";
   }
 
   const totalSeconds = Math.floor(milliseconds / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
 
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 };
 
 /**
@@ -22,14 +22,14 @@ export const formatTime = (milliseconds: number): string => {
  */
 export const formatTimeSeconds = (seconds: number): string => {
   if (isNaN(seconds) || seconds < 0) {
-    return '0:00';
+    return "0:00";
   }
 
   const totalSeconds = Math.floor(seconds);
   const minutes = Math.floor(totalSeconds / 60);
   const remainingSeconds = totalSeconds % 60;
 
-  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
 };
 
 /**
@@ -91,7 +91,7 @@ export const handleDurationEdgeCase = (duration: number): number => {
   // Handle extremely large durations (likely corrupted)
   if (duration > 86400) {
     // 24 hours in seconds
-    console.warn('[AudioUtils] Duration exceeds 24 hours, clamping to 0');
+    console.warn("[AudioUtils] Duration exceeds 24 hours, clamping to 0");
     return 0;
   }
 
@@ -118,7 +118,7 @@ export const handleProgressEdgeCase = (
   // Handle progress exceeding duration
   if (duration > 0 && progress > duration) {
     console.warn(
-      '[AudioUtils] Progress exceeds duration, clamping to duration',
+      "[AudioUtils] Progress exceeds duration, clamping to duration",
     );
     return duration;
   }

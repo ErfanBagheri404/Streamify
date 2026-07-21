@@ -31,6 +31,7 @@ import { sanitizeImageUrl } from "../core/image";
 import { getAppFontFamily, getTextDirectionStyle } from "../../utils/fonts";
 import { useAuth } from "../../hooks/useAuth";
 import { syncCloudLibrarySnapshot } from "../../lib/cloud-library-sync";
+import { ImageWithSkeleton } from "../ui/ImageWithSkeleton";
 
 const LibraryShell = styled.View`
   flex: 1;
@@ -130,6 +131,8 @@ const GridRow = styled.View`
   flex-direction: row;
   justify-content: flex-start;
   margin-bottom: 16px;
+  margin-horizontal: 0;
+  padding-horizontal: 0;
 `;
 
 const CollectionCard = styled.TouchableOpacity`
@@ -182,8 +185,7 @@ const StopCachingButton = styled.TouchableOpacity`
 const StopCachingText = styled.Text`
   color: #fff;
   font-size: 13px;
-  font-family: GoogleSansMedium;
-  line-height: 16px;
+  line-height: 18px;
 `;
 
 const LikedCoverWrapper = styled.View`
@@ -285,7 +287,7 @@ const sortModes: LibrarySortMode[] = ["recents", "alphabetical", "creator"];
 
 function getPlaylistArtworkUri(playlist: Playlist) {
   return sanitizeImageUrl(
-    playlist.tracks.find((track) => track.thumbnail?.trim())?.thumbnail || ""
+    playlist.tracks.find((track) => track.thumbnail?.trim())?.thumbnail || "",
   );
 }
 
@@ -332,7 +334,7 @@ function interleaveItems<T>(left: T[], right: T[]): T[] {
 }
 
 function normalizeArtistSource(
-  track: Pick<Track, "artistSource" | "source" | "_isJioSaavn">
+  track: Pick<Track, "artistSource" | "source" | "_isJioSaavn">,
 ): "youtube" | "jiosaavn" | "soundcloud" {
   if (track._isJioSaavn || track.artistSource === "jiosaavn") {
     return "jiosaavn";
@@ -379,6 +381,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     getCacheInfo,
     cacheProgress,
     stopCachingAndUnlike,
+    startCacheQueue,
   } = usePlayer();
   const [downloadingTracks, setDownloadingTracks] = React.useState<
     { track: Track; percentage: number; status: "caching" | "queued" }[]
@@ -389,9 +392,45 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+  const sectionChipsRef = useRef<any>(null);
   const sheetTop = useRef(new Animated.Value(SHEET_CLOSED_TOP)).current;
+  const contentOpacity = useRef(new Animated.Value(1)).current;
+  const contentTranslateY = useRef(new Animated.Value(0)).current;
   const [sheetHeight, setSheetHeight] = useState(SHEET_HEIGHT);
   const sheetStateRef = useRef<"closed" | "half" | "full">("closed");
+  const syncRtlChipStart = React.useCallback(() => {
+    if (!isRtl || !sectionChipsRef.current) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      sectionChipsRef.current?.scrollToEnd?.({ animated: false });
+    });
+  }, [isRtl]);
+  const getLocalizedSyncFeedback = React.useCallback(
+    (error: unknown) => {
+      const rawMessage = error instanceof Error ? error.message.trim() : "";
+      const normalizedMessage = rawMessage.toLowerCase();
+
+      if (
+        rawMessage ===
+          "Cloud sync is unavailable until Supabase environment variables are configured." ||
+        normalizedMessage.includes("supabase environment variables")
+      ) {
+        return t("settings.cloudSyncUnavailable");
+      }
+
+      if (
+        rawMessage === "Sign in to sync your library." ||
+        normalizedMessage.includes("sign in to sync")
+      ) {
+        return t("settings.syncSignInRequired");
+      }
+
+      return rawMessage || t("settings.syncFailed");
+    },
+    [t],
+  );
 
   const animateSheet = (state: "closed" | "half" | "full") => {
     let toValue = SHEET_CLOSED_TOP;
@@ -452,7 +491,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
         animateSheet(target);
       },
-    })
+    }),
   ).current;
 
   const closeSongActionSheet = () => {
@@ -561,19 +600,19 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           return null;
         }
         return null;
-      })
+      }),
     );
 
     setDownloadingTracks(
       results.filter(
         (
-          item
+          item,
         ): item is {
           track: Track;
           percentage: number;
           status: "caching" | "queued";
-        } => Boolean(item)
-      )
+        } => Boolean(item),
+      ),
     );
   }, [cacheProgress?.trackId, getCacheInfo, likedSongs]);
 
@@ -596,7 +635,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           return null;
         }
         return null;
-      })
+      }),
     );
 
     setDownloadedTracks(results.filter((item): item is Track => Boolean(item)));
@@ -634,6 +673,30 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
     return () => clearInterval(interval);
   }, [likedSongs.length, loadDownloadingTracks, loadDownloadedTracks]);
+
+  React.useEffect(() => {
+    contentOpacity.setValue(0.58);
+    contentTranslateY.setValue(12);
+    Animated.parallel([
+      Animated.timing(contentOpacity, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.timing(contentTranslateY, {
+        toValue: 0,
+        duration: 240,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [
+    activeSection,
+    contentOpacity,
+    contentTranslateY,
+    libraryQuery,
+    sortMode,
+    viewMode,
+  ]);
 
   const copy = React.useMemo(
     () => ({
@@ -681,7 +744,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       sleepTimer: language === "fa" ? "تایمر خواب" : "Sleep timer",
       songRadio: language === "fa" ? "رفتن به رادیوی آهنگ" : "Go to song radio",
     }),
-    [language, t]
+    [language, t],
   );
 
   const formatSongCount = React.useCallback(
@@ -689,7 +752,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       language === "fa"
         ? `${count} ${copy.songs}`
         : `${count} ${count === 1 ? "song" : copy.songs}`,
-    [copy.songs, language]
+    [copy.songs, language],
   );
 
   const sectionLabels = React.useMemo(
@@ -700,7 +763,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         Downloaded: t("screens.library.sections.downloaded"),
         Downloading: language === "fa" ? "در حال دانلود" : "Downloading",
       }) as Record<LibrarySection, string>,
-    [language, t]
+    [language, t],
   );
 
   const cycleSortMode = React.useCallback(() => {
@@ -712,22 +775,18 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
   const handleSyncLibrary = React.useCallback(async () => {
     if (!isConfigured) {
-      setSyncFeedback(
-        "Cloud sync is unavailable until Supabase environment variables are configured."
-      );
+      setSyncFeedback(t("settings.cloudSyncUnavailable"));
       return;
     }
 
     if (!user) {
-      setSyncFeedback(
-        language === "fa" ? "ابتدا وارد شوید" : "Sign in to sync"
-      );
+      setSyncFeedback(t("settings.syncSignInRequired"));
       return;
     }
 
     setIsSyncing(true);
     setSyncFeedback(
-      language === "fa" ? "در حال همگام سازی..." : "Syncing library..."
+      language === "fa" ? "در حال همگام سازی..." : "Syncing library...",
     );
 
     try {
@@ -737,7 +796,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         setSyncFeedback(
           language === "fa"
             ? "کتابخانه شما برای همگام سازی خالی است"
-            : "Your library is empty"
+            : "Your library is empty",
         );
         return;
       }
@@ -745,20 +804,15 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       setSyncFeedback(
         language === "fa"
           ? `${result.syncedPlaylists ?? 0} پلی‌لیست و ${result.syncedLikes ?? 0} لایک همگام شد`
-          : `Synced ${result.syncedPlaylists ?? 0} playlists and ${result.syncedLikes ?? 0} likes`
+          : `Synced ${result.syncedPlaylists ?? 0} playlists and ${result.syncedLikes ?? 0} likes`,
       );
+      await Promise.all([loadDownloadingTracks(), loadDownloadedTracks()]);
     } catch (error) {
-      setSyncFeedback(
-        error instanceof Error
-          ? error.message
-          : language === "fa"
-            ? "همگام سازی انجام نشد"
-            : "Sync failed"
-      );
+      setSyncFeedback(getLocalizedSyncFeedback(error));
     } finally {
       setIsSyncing(false);
     }
-  }, [isConfigured, language, user]);
+  }, [getLocalizedSyncFeedback, isConfigured, t, user]);
 
   const sortLabel = React.useMemo(() => {
     if (sortMode === "alphabetical") return copy.alphabetical;
@@ -769,7 +823,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
   const downloadedTrackIds = React.useMemo(
     () => new Set(downloadedTracks.map((track) => track.id).filter(Boolean)),
-    [downloadedTracks]
+    [downloadedTracks],
   );
 
   const downloadingProgressByTrackId = React.useMemo(() => {
@@ -881,7 +935,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           void playTrack(
             queue[currentIndex >= 0 ? currentIndex : 0],
             queue,
-            currentIndex >= 0 ? currentIndex : 0
+            currentIndex >= 0 ? currentIndex : 0,
           );
         },
         onLongPress: () => openSongActionSheet(track),
@@ -904,7 +958,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
   const mixedLibraryItems = React.useMemo<LibraryDisplayItem[]>(
     () => interleaveItems(recentPlayedItems, topArtistItems),
-    [recentPlayedItems, topArtistItems]
+    [recentPlayedItems, topArtistItems],
   );
 
   const playlistItems = React.useMemo<LibraryDisplayItem[]>(
@@ -943,7 +997,6 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         artworkKind: "history",
         onPress: handlePreviouslyPlayedPress,
       },
-      ...mixedLibraryItems,
       ...playlists.map((playlist) => {
         const artworkUri = getPlaylistArtworkUri(playlist);
         return {
@@ -958,7 +1011,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             playlist.description,
             playlist.tracks
               .map((track) =>
-                [track.title, track.artist].filter(Boolean).join(" ")
+                [track.title, track.artist].filter(Boolean).join(" "),
               )
               .join(" "),
           ]
@@ -976,10 +1029,9 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       copy.previouslyPlayed,
       formatSongCount,
       likedSongs,
-      mixedLibraryItems,
       playlists,
       previouslyPlayedSongs,
-    ]
+    ],
   );
 
   const downloadedItems = React.useMemo<LibraryDisplayItem[]>(
@@ -1003,12 +1055,12 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           void playTrack(
             queue[currentIndex >= 0 ? currentIndex : 0],
             queue,
-            currentIndex >= 0 ? currentIndex : 0
+            currentIndex >= 0 ? currentIndex : 0,
           );
         },
         onLongPress: () => openSongActionSheet(track),
       })),
-    [copy.downloaded, downloadedTracks, openSongActionSheet, playTrack, t]
+    [copy.downloaded, downloadedTracks, openSongActionSheet, playTrack, t],
   );
 
   const downloadingItems = React.useMemo<LibraryDisplayItem[]>(
@@ -1060,36 +1112,41 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       sectionLabels.Downloading,
       stopCachingAndUnlike,
       downloadingTracks,
-    ]
+    ],
   );
 
   const extraCacheItems = React.useMemo<LibraryDisplayItem[]>(() => {
     const existingTrackIds = new Set(
       playlistItems
         .map((item) => item.trackId)
-        .filter((trackId): trackId is string => Boolean(trackId))
+        .filter((trackId): trackId is string => Boolean(trackId)),
     );
     const downloadedIds = new Set(
       downloadedItems
         .map((item) => item.trackId)
-        .filter((trackId): trackId is string => Boolean(trackId))
+        .filter((trackId): trackId is string => Boolean(trackId)),
     );
 
     return [
       ...downloadedItems.filter(
-        (item) => !item.trackId || !existingTrackIds.has(item.trackId)
+        (item) => !item.trackId || !existingTrackIds.has(item.trackId),
       ),
       ...downloadingItems.filter(
         (item) =>
           (!item.trackId || !existingTrackIds.has(item.trackId)) &&
-          (!item.trackId || !downloadedIds.has(item.trackId))
+          (!item.trackId || !downloadedIds.has(item.trackId)),
       ),
     ];
   }, [downloadedItems, downloadingItems, playlistItems]);
 
   const activeItems = React.useMemo<LibraryDisplayItem[]>(() => {
     if (activeSection === null) {
-      return [...playlistItems, ...extraCacheItems];
+      return [
+        ...playlistItems.slice(0, 2),
+        ...mixedLibraryItems,
+        ...playlistItems.slice(2),
+        ...extraCacheItems,
+      ];
     }
     if (activeSection === "Artists") return topArtistItems;
     if (activeSection === "Downloaded") return downloadedItems;
@@ -1100,6 +1157,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     downloadedItems,
     downloadingItems,
     extraCacheItems,
+    mixedLibraryItems,
     playlistItems,
     topArtistItems,
   ]);
@@ -1112,7 +1170,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             .filter(Boolean)
             .join(" ")
             .toLowerCase()
-            .includes(query)
+            .includes(query),
         )
       : activeItems;
 
@@ -1159,7 +1217,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       return language === "fa"
         ? `${playlists.length + 2} پلی‌لیست • ${formatSongCount(likedSongs.length)}`
         : `${playlists.length + 2} playlists • ${formatSongCount(
-            likedSongs.length
+            likedSongs.length,
           )}`;
     }
 
@@ -1190,7 +1248,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       const isFullWidth = size === "full";
       const iconSize = Math.max(
         26,
-        Math.round((typeof size === "number" ? size : 160) * 0.34)
+        Math.round((typeof size === "number" ? size : 160) * 0.34),
       );
       const boxStyle = {
         width: isFullWidth ? "100%" : size,
@@ -1253,9 +1311,10 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       const baseContent =
         item.artworkKind === "image" &&
         sanitizeImageUrl(item.imageUri || "") ? (
-          <Image
+          <ImageWithSkeleton
             source={{ uri: sanitizeImageUrl(item.imageUri || "") }}
-            style={boxStyle}
+            containerStyle={boxStyle}
+            fallback={fallback}
           />
         ) : (
           fallback
@@ -1292,13 +1351,18 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       colors.surface2,
       colors.surface3,
       viewMode,
-    ]
+    ],
   );
 
   return (
     <UiScreen padded={false}>
       <LibraryShell style={{ backgroundColor: colors.background }}>
-        <Header style={{ paddingBottom: 12 }}>
+        <Header
+          style={{
+            paddingBottom: 12,
+            flexDirection: isRtl ? "row-reverse" : "row",
+          }}
+        >
           <HeaderLeft style={{ flexDirection: isRtl ? "row-reverse" : "row" }}>
             <HeaderTitle
               style={{
@@ -1335,6 +1399,25 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
               </HeaderIconButton>
             ) : null}
             <HeaderIconButton
+              disabled={!likedSongs.length}
+              onPress={() => {
+                startCacheQueue();
+              }}
+              style={{
+                marginLeft: isRtl ? 0 : 8,
+                marginRight: isRtl ? 8 : 0,
+                opacity: likedSongs.length === 0 ? 0.4 : 1,
+              }}
+            >
+              <HeaderIconText>
+                <Ionicons
+                  name="cloud-download-outline"
+                  size={20}
+                  color={colors.foreground}
+                />
+              </HeaderIconText>
+            </HeaderIconButton>
+            <HeaderIconButton
               onPress={() => setShowCreatePlaylistModal(true)}
               style={{ marginLeft: isRtl ? 0 : 8, marginRight: isRtl ? 8 : 0 }}
             >
@@ -1368,48 +1451,57 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         </Header>
 
         <FilterChipsRow
+          ref={sectionChipsRef}
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}
+          style={{ direction: isRtl ? "rtl" : "ltr" }}
           contentContainerStyle={{
             flexDirection: isRtl ? "row-reverse" : "row",
             paddingLeft: 16,
             paddingRight: 16,
           }}
+          onContentSizeChange={syncRtlChipStart}
         >
           {sections.map((label) => {
             const isActive = label === activeSection;
             return (
-              <UiChip
+              <View
                 key={label}
-                label={sectionLabels[label]}
-                selected={isActive}
-                onPress={() =>
-                  setActiveSection((current) =>
-                    current === label ? null : label
-                  )
-                }
-                chipStyle={{
-                  marginRight: isRtl ? 0 : 8,
-                  marginLeft: isRtl ? 8 : 0,
-                  minHeight: 32,
-                  paddingHorizontal: 16,
-                  backgroundColor: isActive ? colors.surface3 : colors.surface2,
+                style={{
+                  opacity: isActive ? 1 : 0.72,
                 }}
-                style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}
-                selectedBackgroundColor={colors.surface3}
-                selectedBorderColor={colors.borderSubtle}
-                selectedTextColor={colors.foreground}
-                unselectedTextColor={colors.foreground}
-                textStyle={{
-                  fontSize: 13,
-                  lineHeight: 13,
-                  fontFamily: getAppFontFamily(
-                    isRtl,
-                    isActive ? "bold" : "medium"
-                  ),
-                }}
-              />
+              >
+                <UiChip
+                  label={sectionLabels[label]}
+                  selected={isActive}
+                  onPress={() =>
+                    setActiveSection((current) =>
+                      current === label ? null : label,
+                    )
+                  }
+                  chipStyle={{
+                    marginRight: isRtl ? 0 : 8,
+                    marginLeft: isRtl ? 8 : 0,
+                    minHeight: 32,
+                    paddingHorizontal: 16,
+                    backgroundColor: isActive
+                      ? colors.surface3
+                      : colors.surface2,
+                  }}
+                  selectedBackgroundColor={colors.surface3}
+                  selectedBorderColor={colors.borderSubtle}
+                  selectedTextColor={colors.foreground}
+                  unselectedTextColor={colors.foreground}
+                  textStyle={{
+                    fontSize: 13,
+                    lineHeight: 13,
+                    fontFamily: getAppFontFamily(
+                      isRtl,
+                      isActive ? "bold" : "medium",
+                    ),
+                  }}
+                />
+              </View>
             );
           })}
         </FilterChipsRow>
@@ -1549,176 +1641,70 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         <Grid
           contentContainerStyle={{
             paddingBottom: 156,
-            paddingHorizontal: viewMode === "grid" ? 16 : 0,
+            paddingHorizontal: 16,
           }}
         >
-          {displayedItems.length === 0 ? (
-            <View
-              style={{
-                marginHorizontal: 16,
-                borderRadius: 18,
-                borderWidth: 1,
-                borderColor: colors.borderSubtle,
-                backgroundColor: colors.surface1,
-                padding: 18,
-              }}
-            >
-              <MutedText style={{ textAlign: "center" }}>
-                {activeSection === "Downloading"
-                  ? copy.downloadingEmpty
-                  : activeSection === "Artists"
-                    ? copy.artistsEmpty
-                    : activeSection === "Downloaded"
-                      ? copy.downloadedEmpty
-                      : activeSection === null
-                        ? copy.playlistsEmpty
-                        : copy.playlistsEmpty}
-              </MutedText>
-            </View>
-          ) : viewMode === "list" ? (
-            <View style={{ paddingHorizontal: 16 }}>
-              {displayedItems.map((item, index) => (
-                <TouchableOpacity
-                  key={item.id}
-                  activeOpacity={0.88}
-                  onPress={item.onPress}
-                  onLongPress={item.onLongPress}
-                  style={{
-                    flexDirection: isRtl ? "row-reverse" : "row",
-                    alignItems: "center",
-                    padding: 12,
-                    marginBottom: index === displayedItems.length - 1 ? 0 : 10,
-                    borderRadius: 18,
-                    borderWidth: 1,
-                    borderColor: colors.borderSubtle,
-                    backgroundColor: colors.surface1,
-                  }}
-                >
-                  {renderArtwork(item, 68)}
-                  <View
+          <Animated.View
+            style={{
+              opacity: contentOpacity,
+              transform: [{ translateY: contentTranslateY }],
+            }}
+          >
+            {displayedItems.length === 0 ? (
+              <View
+                style={{
+                  borderRadius: 18,
+                  borderWidth: 1,
+                  borderColor: colors.borderSubtle,
+                  backgroundColor: colors.surface1,
+                  padding: 18,
+                  alignSelf: "stretch",
+                }}
+              >
+                <MutedText style={{ textAlign: "center" }}>
+                  {activeSection === "Downloading"
+                    ? copy.downloadingEmpty
+                    : activeSection === "Artists"
+                      ? copy.artistsEmpty
+                      : activeSection === "Downloaded"
+                        ? copy.downloadedEmpty
+                        : activeSection === null
+                          ? copy.playlistsEmpty
+                          : copy.playlistsEmpty}
+                </MutedText>
+              </View>
+            ) : viewMode === "list" ? (
+              <View>
+                {displayedItems.map((item, index) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    activeOpacity={0.88}
+                    onPress={item.onPress}
+                    onLongPress={item.onLongPress}
                     style={{
-                      flex: 1,
-                      marginLeft: isRtl ? 0 : 12,
-                      marginRight: isRtl ? 12 : 0,
+                      flexDirection: isRtl ? "row-reverse" : "row",
+                      alignItems: "center",
+                      padding: 12,
+                      marginBottom:
+                        index === displayedItems.length - 1 ? 0 : 10,
+                      borderRadius: 18,
+                      borderWidth: 1,
+                      borderColor: colors.borderSubtle,
+                      backgroundColor: colors.surface1,
                     }}
                   >
-                    <CollectionTitle
-                      numberOfLines={1}
+                    {renderArtwork(item, 68)}
+                    <View
                       style={{
-                        marginTop: 0,
-                        color: colors.foreground,
-                        fontFamily: getAppFontFamily(isRtl, "semibold"),
-                        ...getTextDirectionStyle(isRtl),
+                        flex: 1,
+                        marginLeft: isRtl ? 0 : 12,
+                        marginRight: isRtl ? 12 : 0,
                       }}
                     >
-                      {item.title}
-                    </CollectionTitle>
-                    <CollectionMeta
-                      numberOfLines={1}
-                      style={{
-                        color: withOpacity(colors.foreground, 0.76),
-                        fontFamily: getAppFontFamily(isRtl, "regular"),
-                        ...getTextDirectionStyle(isRtl),
-                      }}
-                    >
-                      {item.subtitle}
-                    </CollectionMeta>
-                    <CollectionMeta
-                      numberOfLines={1}
-                      style={{
-                        fontFamily: getAppFontFamily(isRtl, "regular"),
-                        ...getTextDirectionStyle(isRtl),
-                      }}
-                    >
-                      {item.meta}
-                    </CollectionMeta>
-                  </View>
-                  {item.onSecondaryAction ? (
-                    <TouchableOpacity
-                      onPress={item.onSecondaryAction}
-                      style={{
-                        paddingHorizontal: 12,
-                        paddingVertical: 8,
-                        borderRadius: 999,
-                        backgroundColor: colors.surface2,
-                        borderWidth: 1,
-                        borderColor: colors.borderSubtle,
-                      }}
-                    >
-                      <CollectionMeta
+                      <CollectionTitle
+                        numberOfLines={1}
                         style={{
                           marginTop: 0,
-                          color: colors.foreground,
-                          fontFamily: getAppFontFamily(isRtl, "regular"),
-                          ...getTextDirectionStyle(isRtl),
-                        }}
-                      >
-                        {item.secondaryActionLabel}
-                      </CollectionMeta>
-                    </TouchableOpacity>
-                  ) : null}
-                </TouchableOpacity>
-              ))}
-            </View>
-          ) : (
-            Array.from({
-              length: Math.ceil(displayedItems.length / 2),
-            }).map((_, rowIndex) => {
-              const rowItems = displayedItems.slice(
-                rowIndex * 2,
-                (rowIndex + 1) * 2
-              );
-
-              return (
-                <GridRow
-                  key={`row-${rowIndex}`}
-                  style={{
-                    flexDirection: isRtl ? "row-reverse" : "row",
-                    justifyContent: "space-between",
-                    marginHorizontal: 0,
-                  }}
-                >
-                  {rowItems.map((item) => (
-                    <CollectionCard
-                      key={item.id}
-                      activeOpacity={0.88}
-                      onPress={item.onPress}
-                      onLongPress={item.onLongPress}
-                      style={{ width: "48%", paddingHorizontal: 0 }}
-                    >
-                      <View
-                        style={{
-                          position: "relative",
-                          borderRadius: 14,
-                          overflow: "hidden",
-                        }}
-                      >
-                        {renderArtwork(item, "full")}
-                        {item.onSecondaryAction ? (
-                          <TouchableOpacity
-                            onPress={item.onSecondaryAction}
-                            style={{
-                              position: "absolute",
-                              right: isRtl ? undefined : 10,
-                              left: isRtl ? 10 : undefined,
-                              bottom: 10,
-                              paddingHorizontal: 10,
-                              paddingVertical: 7,
-                              borderRadius: 999,
-                              backgroundColor: "rgba(0, 0, 0, 0.72)",
-                              borderWidth: 1,
-                              borderColor: "rgba(255, 255, 255, 0.14)",
-                            }}
-                          >
-                            <StopCachingText>
-                              {item.secondaryActionLabel}
-                            </StopCachingText>
-                          </TouchableOpacity>
-                        ) : null}
-                      </View>
-                      <CollectionTitle
-                        numberOfLines={2}
-                        style={{
                           color: colors.foreground,
                           fontFamily: getAppFontFamily(isRtl, "semibold"),
                           ...getTextDirectionStyle(isRtl),
@@ -1729,7 +1715,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                       <CollectionMeta
                         numberOfLines={1}
                         style={{
-                          color: withOpacity(colors.foreground, 0.66),
+                          color: withOpacity(colors.foreground, 0.76),
                           fontFamily: getAppFontFamily(isRtl, "regular"),
                           ...getTextDirectionStyle(isRtl),
                         }}
@@ -1739,22 +1725,154 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                       <CollectionMeta
                         numberOfLines={1}
                         style={{
-                          color: withOpacity(colors.foreground, 0.66),
                           fontFamily: getAppFontFamily(isRtl, "regular"),
                           ...getTextDirectionStyle(isRtl),
                         }}
                       >
                         {item.meta}
                       </CollectionMeta>
-                    </CollectionCard>
-                  ))}
-                  {rowItems.length === 1 ? (
-                    <View style={{ width: "48%" }} />
-                  ) : null}
-                </GridRow>
-              );
-            })
-          )}
+                    </View>
+                    {item.onSecondaryAction ? (
+                      <TouchableOpacity
+                        onPress={item.onSecondaryAction}
+                        style={{
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          borderRadius: 999,
+                          backgroundColor: colors.surface2,
+                          borderWidth: 1,
+                          borderColor: colors.borderSubtle,
+                        }}
+                      >
+                        <CollectionMeta
+                          style={{
+                            marginTop: 0,
+                            color: colors.foreground,
+                            fontFamily: getAppFontFamily(isRtl, "regular"),
+                            ...getTextDirectionStyle(isRtl),
+                          }}
+                        >
+                          {item.secondaryActionLabel}
+                        </CollectionMeta>
+                      </TouchableOpacity>
+                    ) : null}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
+              Array.from({
+                length: Math.ceil(displayedItems.length / 2),
+              }).map((_, rowIndex) => {
+                const rowItems = displayedItems.slice(
+                  rowIndex * 2,
+                  (rowIndex + 1) * 2,
+                );
+                const rowCards: Array<LibraryDisplayItem | null> = isRtl
+                  ? rowItems.length === 1
+                    ? [null, rowItems[0]]
+                    : [rowItems[1], rowItems[0]]
+                  : rowItems;
+
+                return (
+                  <GridRow
+                    key={`row-${rowIndex}`}
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      marginHorizontal: 0,
+                      paddingHorizontal: 0,
+                    }}
+                  >
+                    {rowCards.map((item, columnIndex) =>
+                      item ? (
+                        <CollectionCard
+                          key={item.id}
+                          activeOpacity={0.88}
+                          onPress={item.onPress}
+                          onLongPress={item.onLongPress}
+                          style={{ width: "48%", paddingHorizontal: 0 }}
+                        >
+                          <View
+                            style={{
+                              position: "relative",
+                              borderRadius: 14,
+                              overflow: "hidden",
+                            }}
+                          >
+                            {renderArtwork(item, "full")}
+                            {item.onSecondaryAction ? (
+                              <TouchableOpacity
+                                onPress={item.onSecondaryAction}
+                                style={{
+                                  position: "absolute",
+                                  right: isRtl ? undefined : 10,
+                                  left: isRtl ? 10 : undefined,
+                                  bottom: 10,
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 7,
+                                  borderRadius: 999,
+                                  backgroundColor: "rgba(0, 0, 0, 0.72)",
+                                  borderWidth: 1,
+                                  borderColor: "rgba(255, 255, 255, 0.14)",
+                                }}
+                              >
+                                <StopCachingText
+                                  style={{
+                                    fontFamily: getAppFontFamily(
+                                      isRtl,
+                                      "medium",
+                                    ),
+                                    ...getTextDirectionStyle(isRtl, "center"),
+                                  }}
+                                >
+                                  {item.secondaryActionLabel}
+                                </StopCachingText>
+                              </TouchableOpacity>
+                            ) : null}
+                          </View>
+                          <CollectionTitle
+                            numberOfLines={2}
+                            style={{
+                              color: colors.foreground,
+                              fontFamily: getAppFontFamily(isRtl, "semibold"),
+                              ...getTextDirectionStyle(isRtl),
+                            }}
+                          >
+                            {item.title}
+                          </CollectionTitle>
+                          <CollectionMeta
+                            numberOfLines={1}
+                            style={{
+                              color: withOpacity(colors.foreground, 0.66),
+                              fontFamily: getAppFontFamily(isRtl, "regular"),
+                              ...getTextDirectionStyle(isRtl),
+                            }}
+                          >
+                            {item.subtitle}
+                          </CollectionMeta>
+                          <CollectionMeta
+                            numberOfLines={1}
+                            style={{
+                              color: withOpacity(colors.foreground, 0.66),
+                              fontFamily: getAppFontFamily(isRtl, "regular"),
+                              ...getTextDirectionStyle(isRtl),
+                            }}
+                          >
+                            {item.meta}
+                          </CollectionMeta>
+                        </CollectionCard>
+                      ) : (
+                        <View
+                          key={`spacer-${rowIndex}-${columnIndex}`}
+                          style={{ width: "48%" }}
+                        />
+                      ),
+                    )}
+                  </GridRow>
+                );
+              })
+            )}
+          </Animated.View>
         </Grid>
 
         <PlaylistCreateModal

@@ -69,7 +69,7 @@ export function PlaylistCreateModal({
         <View
           style={[
             styles.backdrop,
-            { backgroundColor: withOpacity(colors.background, 0.72) },
+            { backgroundColor: withOpacity(colors.background, 0.985) },
           ]}
         >
           <TouchableOpacity style={styles.backdropDismiss} onPress={onClose} />
