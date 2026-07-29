@@ -79,7 +79,7 @@ type RuntimeConfigCacheRecord = {
 
 const RUNTIME_CONFIG_CACHE_KEY = "@streamify_runtime_config";
 const DEFAULT_RUNTIME_CONFIG_URL =
-  "https://streamifyinstances.erfannodes.workers.dev/config";
+  "https://instances.helloify.workers.dev/config";
 const RUNTIME_CONFIG_TTL_MS = 5 * 60 * 1000;
 
 let memoryCachedRuntimeConfig: RuntimeConfigCacheRecord | null = null;

@@ -64,11 +64,16 @@ export type ProviderEndpoints = {
 
 export type ProviderQueryValue = string | number | boolean | null | undefined;
 
-function createEmptyProviderEndpoints(): ProviderEndpoints {
+function createDefaultProviderEndpoints(): ProviderEndpoints {
   return {
     instances: {
-      piped: [],
-      invidious: [],
+      piped: ["https://api.piped.private.coffee"],
+      invidious: [
+        "https://yt.omada.cafe",
+        "https://invidious.schenkel.eti.br",
+        "https://invidious.kemonomimi.nl",
+        "https://lekker.gay",
+      ],
       server: {
         localProxyBase: "",
         localExpressApiUrl: "",
@@ -77,48 +82,48 @@ function createEmptyProviderEndpoints(): ProviderEndpoints {
     },
     providers: {
       search: {
-        ytifyInstance: "",
+        ytifyInstance: "https://api.ytify.workers.dev",
         searchBackendUrl: "",
-        soundcloudSearchProxyBase: "",
+        soundcloudSearchProxyBase: "https://proxy.searchsoundcloud.com",
       },
       jiosaavn: {
-        apiBase: "",
-        fallbackSearchBase: "",
-        webOrigin: "",
+        apiBase: "https://streamifyjiosaavn.vercel.app",
+        fallbackSearchBase: "https://jiosaavn-api.vercel.app",
+        webOrigin: "https://www.jiosaavn.com",
       },
       beatseek: {
-        apiBase: "",
+        apiBase: "https://beatseek.io/api",
       },
       lyrics: {
-        lrclibBase: "",
-        lyricsOvhBase: "",
+        lrclibBase: "https://lrclib.net/api",
+        lyricsOvhBase: "https://api.lyrics.ovh/v1",
       },
       soundcloud: {
-        origin: "",
-        mobileOrigin: "",
-        apiBase: "",
-        apiV2Base: "",
-        widgetBase: "",
-        licenseBase: "",
-        oembedBase: "",
+        origin: "https://soundcloud.com",
+        mobileOrigin: "https://m.soundcloud.com",
+        apiBase: "https://api.soundcloud.com",
+        apiV2Base: "https://api-v2.soundcloud.com",
+        widgetBase: "https://w.soundcloud.com",
+        licenseBase: "https://license.media-streaming.soundcloud.cloud",
+        oembedBase: "https://soundcloud.com/oembed",
       },
       youtube: {
-        webBase: "",
-        musicBase: "",
-        oembedBase: "",
-        imageBase: "",
+        webBase: "https://www.youtube.com",
+        musicBase: "https://music.youtube.com",
+        oembedBase: "https://www.youtube.com/oembed",
+        imageBase: "https://i.ytimg.com",
       },
     },
     headers: {
       origins: {
-        soundcloud: "",
-        youtube: "",
-        jiosaavn: "",
+        soundcloud: "https://soundcloud.com",
+        youtube: "https://www.youtube.com",
+        jiosaavn: "https://www.jiosaavn.com",
       },
       referers: {
-        soundcloud: "",
-        youtube: "",
-        jiosaavn: "",
+        soundcloud: "https://soundcloud.com/",
+        youtube: "https://www.youtube.com/",
+        jiosaavn: "https://www.jiosaavn.com/",
       },
     },
   };
@@ -227,7 +232,7 @@ export function buildProviderUrlCandidates(
 function mergeProviderEndpoints(
   runtimeConfig: StreamifyRuntimeConfig | null,
 ): ProviderEndpoints {
-  const empty = createEmptyProviderEndpoints();
+  const empty = createDefaultProviderEndpoints();
   return {
     instances: {
       piped: cleanUrlList(runtimeConfig?.instances?.client?.piped),
