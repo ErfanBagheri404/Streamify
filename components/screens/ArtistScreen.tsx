@@ -356,7 +356,7 @@ function ArtistScreenSkeleton({
                   width: "88%",
                   borderRadius: 8,
                   marginTop: 8,
-                  alignSelf: isRtl ? "flex-end" : "flex-start",
+                  alignSelf: "flex-start",
                 }}
               />
               <SkeletonLoader
@@ -365,7 +365,7 @@ function ArtistScreenSkeleton({
                   width: "74%",
                   borderRadius: 8,
                   marginTop: 8,
-                  alignSelf: isRtl ? "flex-end" : "flex-start",
+                  alignSelf: "flex-start",
                 }}
               />
             </View>
@@ -393,8 +393,8 @@ function ArtistScreenSkeleton({
                 height={48}
                 style={{
                   borderRadius: 999,
-                  marginLeft: isRtl ? 0 : 12,
-                  marginRight: isRtl ? 12 : 0,
+                  marginLeft: 12,
+                  marginRight: 12,
                 }}
               />
             </View>
@@ -418,7 +418,7 @@ function ArtistScreenSkeleton({
                   style={{
                     borderRadius: 10,
                     marginBottom: 14,
-                    alignSelf: isRtl ? "flex-end" : "flex-start",
+                    alignSelf: "flex-start",
                   }}
                 />
                 {Array.from({ length: 4 }, (_, index) => (
@@ -437,8 +437,8 @@ function ArtistScreenSkeleton({
                       style={[
                         styles.trackIndexWrap,
                         {
-                          marginRight: isRtl ? 0 : 14,
-                          marginLeft: isRtl ? 14 : 0,
+                          marginRight: 14,
+                          marginLeft: 14,
                         },
                       ]}
                     >
@@ -453,8 +453,8 @@ function ArtistScreenSkeleton({
                       height={56}
                       style={{
                         borderRadius: 14,
-                        marginRight: isRtl ? 0 : 14,
-                        marginLeft: isRtl ? 14 : 0,
+                        marginRight: 14,
+                        marginLeft: 14,
                       }}
                     />
                     <View
@@ -501,7 +501,7 @@ function ArtistScreenSkeleton({
 
 const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
   const { colors, isLight } = useTheme();
-  const { t, isRtl } = useAppLanguage();
+  const { t, isRtl, dir } = useAppLanguage();
   const { playTrack } = usePlayer();
   const insets = useSafeAreaInsets();
   const [artistData, setArtistData] = useState<Artist | null>(null);
@@ -1002,8 +1002,6 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
 
   const headerImage =
     artistData?.banner || artistData?.image || String(artistImage || "");
-  const sourceLabel =
-    artistData?.source === "jiosaavn" ? "JioSaavn" : "YouTube";
   const titleSpacing = isRtl
     ? { marginRight: 10, marginLeft: 0 }
     : { marginLeft: 10, marginRight: 0 };
@@ -1119,7 +1117,6 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                 {
                   top: insets.top + 12,
                   left: 16,
-                  right: undefined,
                   backgroundColor: withOpacity(colors.background, 0.48),
                 },
               ]}
@@ -1147,13 +1144,23 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                     styles.headerBadge,
                     {
                       backgroundColor: withOpacity("#000000", 0.26),
-                      borderColor: withOpacity("#ffffff", 0.14),
+                      borderWidth: 0,
                     },
                   ]}
                 >
-                  <MutedText style={styles.headerBadgeText}>
-                    {sourceLabel}
-                  </MutedText>
+                  {artistData.source === "youtube" ? (
+                    <Ionicons
+                      name="logo-youtube"
+                      size={16}
+                      color="#ff0000"
+                    />
+                  ) : (
+                    <Ionicons
+                      name="disc"
+                      size={14}
+                      color={colors.foreground}
+                    />
+                  )}
                 </View>
                 {artistData.verified ? (
                   <View
@@ -1170,8 +1177,8 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                       size={14}
                       color={colors.accent}
                       style={{
-                        marginRight: isRtl ? 0 : 6,
-                        marginLeft: isRtl ? 6 : 0,
+                        marginRight: 6,
+                        marginLeft: 6,
                       }}
                     />
                     <MutedText style={styles.headerBadgeText}>
@@ -1306,8 +1313,8 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                     styles.primaryActionText,
                     {
                       color: colors.accentContrast,
-                      marginLeft: isRtl ? 0 : 8,
-                      marginRight: isRtl ? 8 : 0,
+                      marginLeft: 8,
+                      marginRight: 8,
                     },
                   ]}
                 >
@@ -1322,8 +1329,8 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                   {
                     backgroundColor: colors.surface1,
                     borderColor: colors.borderSubtle,
-                    marginLeft: isRtl ? 0 : 12,
-                    marginRight: isRtl ? 12 : 0,
+                    marginLeft: 12,
+                    marginRight: 12,
                   },
                 ]}
               >
@@ -1435,7 +1442,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                     { flexDirection: isRtl ? "row-reverse" : "row" },
                   ]}
                 >
-                  <TitleText style={styles.sectionTitle}>
+                  <TitleText style={[styles.sectionTitle, getTextDirectionStyle(isRtl)]}>
                     {isYouTubeChannel
                       ? t("screens.artist.videos")
                       : t("screens.artist.songs")}
@@ -1466,8 +1473,8 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                         style={[
                           styles.trackIndexWrap,
                           {
-                            marginRight: isRtl ? 0 : 14,
-                            marginLeft: isRtl ? 14 : 0,
+                            marginRight: 4,
+                            marginLeft: 0,
                           },
                         ]}
                       >
@@ -1484,8 +1491,8 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                           containerStyle={[
                             styles.songThumb,
                             {
-                              marginRight: isRtl ? 0 : 14,
-                              marginLeft: isRtl ? 14 : 0,
+                              marginRight: 10,
+                              marginLeft: 10,
                             },
                           ]}
                           fallback={
@@ -1495,8 +1502,8 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                                 styles.songThumbFallback,
                                 {
                                   backgroundColor: colors.surface3,
-                                  marginRight: isRtl ? 0 : 14,
-                                  marginLeft: isRtl ? 14 : 0,
+                                  marginRight: 10,
+                                  marginLeft: 10,
                                 },
                               ]}
                             >
@@ -1515,8 +1522,8 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                             styles.songThumbFallback,
                             {
                               backgroundColor: colors.surface3,
-                              marginRight: isRtl ? 0 : 14,
-                              marginLeft: isRtl ? 14 : 0,
+                              marginRight: 10,
+                              marginLeft: 10,
                             },
                           ]}
                         >
@@ -1566,7 +1573,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                       { flexDirection: isRtl ? "row-reverse" : "row" },
                     ]}
                   >
-                    <TitleText style={styles.sectionTitle}>
+                    <TitleText style={[styles.sectionTitle, getTextDirectionStyle(isRtl)]}>
                       {t("screens.artist.albums")}
                     </TitleText>
                     <MutedText style={styles.sectionMeta}>
@@ -1576,13 +1583,14 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
-                    style={isRtl ? styles.rtlScroll : null}
+                    style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}
                     contentContainerStyle={[
                       styles.horizontalListContent,
-                      isRtl ? styles.horizontalListContentRtl : null,
+                      ...(isRtl ? [{ paddingEnd: 16 }] : []),
                     ]}
                   >
                     {albums.map((album) => (
+                      <View key={`album-wrap-${album.id}`} style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
                       <TouchableOpacity
                         key={album.id}
                         activeOpacity={0.9}
@@ -1590,7 +1598,6 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                         style={[
                           styles.collectionCard,
                           { marginRight: 14 },
-                          isRtl ? styles.rtlScrollItem : null,
                         ]}
                       >
                         {album.thumbnail ? (
@@ -1658,6 +1665,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                                 : t("common.noneYet"))}
                         </MutedText>
                       </TouchableOpacity>
+                      </View>
                     ))}
                   </ScrollView>
                 </View>
@@ -1671,7 +1679,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                       { flexDirection: isRtl ? "row-reverse" : "row" },
                     ]}
                   >
-                    <TitleText style={styles.sectionTitle}>
+                    <TitleText style={[styles.sectionTitle, getTextDirectionStyle(isRtl)]}>
                       {t("screens.artist.playlists")}
                     </TitleText>
                     <MutedText style={styles.sectionMeta}>
@@ -1681,13 +1689,14 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
-                    style={isRtl ? styles.rtlScroll : null}
+                    style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}
                     contentContainerStyle={[
                       styles.horizontalListContent,
-                      isRtl ? styles.horizontalListContentRtl : null,
+                      ...(isRtl ? [{ paddingEnd: 16 }] : []),
                     ]}
                   >
                     {playlists.map((playlist) => (
+                      <View key={`playlist-wrap-${playlist.id}`} style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
                       <TouchableOpacity
                         key={playlist.id}
                         activeOpacity={0.9}
@@ -1695,7 +1704,6 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                         style={[
                           styles.collectionCard,
                           { marginRight: 14 },
-                          isRtl ? styles.rtlScrollItem : null,
                         ]}
                       >
                         {playlist.thumbnail ? (
@@ -1760,6 +1768,7 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
                             : t("common.noneYet")}
                         </MutedText>
                       </TouchableOpacity>
+                      </View>
                     ))}
                   </ScrollView>
                 </View>
@@ -2047,8 +2056,7 @@ const styles = StyleSheet.create({
     minWidth: "100%",
   },
   horizontalListContentRtl: {
-    paddingLeft: 16,
-    paddingRight: 30,
+    paddingHorizontal: 16,
   },
   rtlScroll: {
     transform: [{ scaleX: -1 }],

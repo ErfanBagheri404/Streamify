@@ -758,15 +758,6 @@ export class TrackPlayerService {
     );
   }
 
-  private async validateYouTubeUrl(url: string): Promise<boolean> {
-    if (!url) {
-      console.warn("[TrackPlayerService] YouTube URL validation: empty URL");
-      return false;
-    }
-    // Assume non-empty googlevideo/youtube URLs are usable; rely on playback errors for real failures
-    return true;
-  }
-
   private convertTrackToTrackPlayer(
     track: Track,
     index: number,
@@ -895,29 +886,7 @@ export class TrackPlayerService {
         "[TrackPlayerService] Player setup complete, proceeding with addTracks",
       );
 
-      // Validate YouTube URLs before adding tracks
-      console.log("[TrackPlayerService] Validating YouTube URLs...");
-      const validatedTracks = await Promise.all(
-        tracks.map(async (track) => {
-          if (
-            track.audioUrl &&
-            (track.source === "youtube" ||
-              track.audioUrl.includes("googlevideo.com"))
-          ) {
-            const isValid = await this.validateYouTubeUrl(track.audioUrl);
-            if (!isValid) {
-              console.warn(
-                `[TrackPlayerService] YouTube URL validation failed for track: ${track.title}`,
-              );
-              return {
-                ...track,
-                audioUrl: undefined, // Mark as invalid
-              };
-            }
-          }
-          return track;
-        }),
-      );
+      const validatedTracks = tracks.map((track) => track);
 
       const playableTracks: Track[] = [];
       const playableIndexMap: number[] = [];
@@ -1005,13 +974,8 @@ export class TrackPlayerService {
           // Keep a short settle time without forcing a visible playback pause.
           await new Promise((resolve) => setTimeout(resolve, 150));
 
-          // Validate the YouTube URL before playing
-          const isValid = await this.validateYouTubeUrl(currentTrack.audioUrl);
-          if (!isValid) {
-            console.error(
-              "[TrackPlayerService] YouTube URL validation failed before playback",
-            );
-            throw new Error("YouTube stream URL is no longer valid");
+          if (!currentTrack.audioUrl) {
+            throw new Error("YouTube stream URL is empty");
           }
         }
       }
@@ -1121,16 +1085,9 @@ export class TrackPlayerService {
             audioUrl.includes("youtube.com"));
 
         if (isYouTubeStream) {
-          console.log(
-            "[TrackPlayerService] Validating YouTube URL before track update...",
-          );
-          const isValid = await this.validateYouTubeUrl(audioUrl);
-          if (!isValid) {
-            throw new Error(
-              "Cannot update track: YouTube URL is no longer valid",
-            );
+          if (!audioUrl) {
+            throw new Error("Cannot update track: YouTube URL is empty");
           }
-          console.log("[TrackPlayerService] YouTube URL validation passed");
         }
 
         // Update the current track's audio URL

@@ -44,7 +44,6 @@ const SHEET_CLOSED_TOP = height;
 const SHEET_HALF_TOP = height - SHEET_HEIGHT;
 
 const Header = styled.View`
-  flex-direction: row;
   align-items: center;
   justify-content: space-between;
   padding: 16px;
@@ -69,7 +68,7 @@ const HeaderActions = styled.View`
 
 const HeaderIconButton = styled.TouchableOpacity`
   padding: 8px;
-  margin-left: 8px;
+  marginStart: 8px;
 `;
 
 const HeaderIconText = styled.Text`
@@ -87,7 +86,7 @@ const SortRow = styled.View`
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  paddingStart: 16px;
   margin-bottom: 12px;
 `;
 
@@ -99,7 +98,7 @@ const SortLeft = styled.TouchableOpacity`
 const SortIcon = styled.Text`
   color: #a3a3a3;
   font-size: 16px;
-  margin-right: 8px;
+  marginEnd: 8px;
   font-family: GoogleSansRegular;
   line-height: 20px;
 `;
@@ -362,7 +361,7 @@ function canOpenArtistRoute(artistId?: string, source?: string): boolean {
 
 export default function LibraryScreen({ navigation }: { navigation: any }) {
   const { colors } = useTheme();
-  const { t, language, isRtl } = useAppLanguage();
+  const { t, language, isRtl, dir } = useAppLanguage();
   const { user, isConfigured } = useAuth();
   const [activeSection, setActiveSection] =
     React.useState<LibrarySection | null>(null);
@@ -575,6 +574,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   }, [navigation]);
 
   const loadDownloadingTracks = React.useCallback(async () => {
+    if (!likedSongs) return;
     const candidates = new Map<string, Track>();
     likedSongs.forEach((track) => {
       if (track?.id && !candidates.has(track.id)) {
@@ -587,7 +587,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         try {
           const info = await getCacheInfo(track.id);
           const percentage = info?.percentage ?? 0;
-          if (!info?.isFullyCached) {
+          if (!info?.isFullyCached && percentage < 100) {
             const isActivelyCaching =
               info?.isDownloading || cacheProgress?.trackId === track.id;
             return {
@@ -617,6 +617,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   }, [cacheProgress?.trackId, getCacheInfo, likedSongs]);
 
   const loadDownloadedTracks = React.useCallback(async () => {
+    if (!likedSongs) return;
     const candidates = new Map<string, Track>();
     likedSongs.forEach((track) => {
       if (track?.id && !candidates.has(track.id)) {
@@ -666,13 +667,19 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       return;
     }
 
+    // Only poll when something is actively downloading; otherwise data is
+    // refreshed by the cacheProgress effect and on focus.
+    if (downloadingTracks.length === 0) {
+      return;
+    }
+
     const interval = setInterval(() => {
       void loadDownloadingTracks();
       void loadDownloadedTracks();
-    }, 1000);
+    }, 5000);
 
     return () => clearInterval(interval);
-  }, [likedSongs.length, loadDownloadingTracks, loadDownloadedTracks]);
+  }, [likedSongs.length, downloadingTracks.length, loadDownloadingTracks, loadDownloadedTracks]);
 
   React.useEffect(() => {
     contentOpacity.setValue(0.58);
@@ -741,6 +748,12 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         language === "fa" ? "افزودن به پلی‌لیست دیگر" : "Add to other playlist",
       goToAlbum: language === "fa" ? "رفتن به آلبوم" : "Go to album",
       goToArtists: language === "fa" ? "رفتن به هنرمندان" : "Go to artists",
+      downloadMoreQueued:
+        language === "fa"
+          ? (count: number) =>
+              `و ${count} آهنگ دیگر در صف هستند`
+          : (count: number) =>
+              `and ${count} more songs queued`,
       sleepTimer: language === "fa" ? "تایمر خواب" : "Sleep timer",
       songRadio: language === "fa" ? "رفتن به رادیوی آهنگ" : "Go to song radio",
     }),
@@ -828,7 +841,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
   const downloadingProgressByTrackId = React.useMemo(() => {
     const progressById = new Map<string, number>();
-    downloadingTracks.forEach(({ track, percentage }) => {
+    (downloadingTracks || []).forEach(({ track, percentage }) => {
       if (track.id) {
         progressById.set(track.id, percentage);
       }
@@ -838,7 +851,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
   const downloadingStatusByTrackId = React.useMemo(() => {
     const statusById = new Map<string, "caching" | "queued">();
-    downloadingTracks.forEach(({ track, status }) => {
+    (downloadingTracks || []).forEach(({ track, status }) => {
       if (track.id) {
         statusById.set(track.id, status);
       }
@@ -897,25 +910,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     const queue = dedupeTracksById(previouslyPlayedSongs).slice(0, 10);
 
     return queue.map((track) => {
-      const cacheProgress = downloadingProgressByTrackId.get(track.id);
-      const cacheStatus = downloadingStatusByTrackId.get(track.id);
-      const clampedProgress =
-        typeof cacheProgress === "number"
-          ? Math.min(100, Math.max(0, cacheProgress))
-          : null;
-      const meta = downloadedTrackIds.has(track.id)
-        ? copy.downloaded
-        : cacheStatus === "caching" && clampedProgress !== null
-          ? language === "fa"
-            ? `${Math.round(clampedProgress)}٪ ${copy.cachingLabel}`
-            : `${copy.cachingLabel} ${Math.round(clampedProgress)}%`
-          : cacheStatus === "queued"
-            ? clampedProgress && clampedProgress > 0
-              ? language === "fa"
-                ? `${Math.round(clampedProgress)}٪ ${copy.queuedLabel}`
-                : `${copy.queuedLabel} ${Math.round(clampedProgress)}%`
-              : copy.queuedLabel
-            : formatTrackDuration(track.duration) || copy.previouslyPlayed;
+      const meta = formatTrackDuration(track.duration) || copy.previouslyPlayed;
 
       return {
         id: `history-track-${track.id}`,
@@ -942,14 +937,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       };
     });
   }, [
-    copy.cachingLabel,
-    copy.downloaded,
     copy.previouslyPlayed,
-    copy.queuedLabel,
-    downloadedTrackIds,
-    downloadingProgressByTrackId,
-    downloadingStatusByTrackId,
-    language,
     openSongActionSheet,
     playTrack,
     previouslyPlayedSongs,
@@ -1115,48 +1103,43 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     ],
   );
 
-  const extraCacheItems = React.useMemo<LibraryDisplayItem[]>(() => {
-    const existingTrackIds = new Set(
-      playlistItems
-        .map((item) => item.trackId)
-        .filter((trackId): trackId is string => Boolean(trackId)),
-    );
-    const downloadedIds = new Set(
-      downloadedItems
-        .map((item) => item.trackId)
-        .filter((trackId): trackId is string => Boolean(trackId)),
-    );
-
-    return [
-      ...downloadedItems.filter(
-        (item) => !item.trackId || !existingTrackIds.has(item.trackId),
-      ),
-      ...downloadingItems.filter(
-        (item) =>
-          (!item.trackId || !existingTrackIds.has(item.trackId)) &&
-          (!item.trackId || !downloadedIds.has(item.trackId)),
-      ),
-    ];
-  }, [downloadedItems, downloadingItems, playlistItems]);
-
   const activeItems = React.useMemo<LibraryDisplayItem[]>(() => {
     if (activeSection === null) {
       return [
         ...playlistItems.slice(0, 2),
         ...mixedLibraryItems,
         ...playlistItems.slice(2),
-        ...extraCacheItems,
       ];
     }
     if (activeSection === "Artists") return topArtistItems;
     if (activeSection === "Downloaded") return downloadedItems;
-    if (activeSection === "Downloading") return downloadingItems;
+    if (activeSection === "Downloading") {
+      const VISIBLE = 6;
+      const visible = downloadingItems.slice(0, VISIBLE);
+      const remaining = downloadingItems.length - VISIBLE;
+      if (remaining > 0) {
+        const next = downloadingItems[VISIBLE];
+        visible.push({
+          id: "downloading-more-summary",
+          trackId: next.trackId,
+          title: next.title,
+          subtitle: copy.downloadMoreQueued(remaining),
+          meta: "",
+          searchText: "",
+          artworkKind: next.artworkKind,
+          itemType: "collection",
+          imageShape: "rounded",
+          imageUri: next.imageUri,
+        });
+      }
+      return visible;
+    }
     return playlistItems;
   }, [
     activeSection,
+    copy.downloadMoreQueued,
     downloadedItems,
     downloadingItems,
-    extraCacheItems,
     mixedLibraryItems,
     playlistItems,
     topArtistItems,
@@ -1315,6 +1298,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             source={{ uri: sanitizeImageUrl(item.imageUri || "") }}
             containerStyle={boxStyle}
             fallback={fallback}
+            resizeMode="cover"
           />
         ) : (
           fallback
@@ -1361,9 +1345,12 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           style={{
             paddingBottom: 12,
             flexDirection: isRtl ? "row-reverse" : "row",
+            direction: dir,
+            paddingHorizontal: 16,
+            paddingVertical: 16,
           }}
         >
-          <HeaderLeft style={{ flexDirection: isRtl ? "row-reverse" : "row" }}>
+          <HeaderLeft style={{ flexDirection: "row" }}>
             <HeaderTitle
               style={{
                 color: colors.foreground,
@@ -1384,8 +1371,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                   void handleSyncLibrary();
                 }}
                 style={{
-                  marginLeft: isRtl ? 0 : 8,
-                  marginRight: isRtl ? 8 : 0,
+                  marginStart: 6,
+                  marginEnd: 6,
                   opacity: isSyncing ? 0.6 : 1,
                 }}
               >
@@ -1404,8 +1391,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                 startCacheQueue();
               }}
               style={{
-                marginLeft: isRtl ? 0 : 8,
-                marginRight: isRtl ? 8 : 0,
+                marginStart: 6,
+                marginEnd: 6,
                 opacity: likedSongs.length === 0 ? 0.4 : 1,
               }}
             >
@@ -1419,14 +1406,14 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             </HeaderIconButton>
             <HeaderIconButton
               onPress={() => setShowCreatePlaylistModal(true)}
-              style={{ marginLeft: isRtl ? 0 : 8, marginRight: isRtl ? 8 : 0 }}
+              style={{ marginStart: 6, marginEnd: 8 }}
             >
               <HeaderIconText>
                 <FontAwesome6 name="add" size={20} color={colors.foreground} />
               </HeaderIconText>
             </HeaderIconButton>
             <HeaderIconButton
-              style={{ marginLeft: isRtl ? 0 : 8, marginRight: isRtl ? 8 : 0 }}
+              style={{ marginStart: 6, marginEnd: 8 }}
               onPress={() =>
                 setViewMode((current) => (current === "grid" ? "list" : "grid"))
               }
@@ -1441,7 +1428,12 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             </HeaderIconButton>
             <HeaderIconButton
               onPress={() => navigation.navigate("Settings")}
-              style={{ marginLeft: isRtl ? 0 : 8, marginRight: isRtl ? 8 : 0 }}
+              style={{
+                marginStart: isRtl ? 0 : 6,
+                marginEnd: isRtl ? 6 : 0,
+                paddingLeft: isRtl ? 0 : 8,
+                paddingRight: isRtl ? 8 : 0,
+              }}
             >
               <HeaderIconText>
                 <FontAwesome6 name="gear" size={20} color={colors.foreground} />
@@ -1454,21 +1446,23 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           ref={sectionChipsRef}
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={{ direction: isRtl ? "rtl" : "ltr" }}
-          contentContainerStyle={{
-            flexDirection: isRtl ? "row-reverse" : "row",
-            paddingLeft: 16,
-            paddingRight: 16,
+          style={{
+            paddingHorizontal: 16,
+            ...(isRtl ? { transform: [{ scaleX: -1 }] } : {}),
           }}
-          onContentSizeChange={syncRtlChipStart}
+          contentContainerStyle={{
+            alignItems: "center",
+            ...(isRtl ? { paddingEnd: 16 } : {}),
+          }}
         >
-          {sections.map((label) => {
+          {sections.map((label, index) => {
             const isActive = label === activeSection;
             return (
               <View
                 key={label}
                 style={{
                   opacity: isActive ? 1 : 0.72,
+                  transform: isRtl ? [{ scaleX: -1 }] : undefined,
                 }}
               >
                 <UiChip
@@ -1480,10 +1474,10 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                     )
                   }
                   chipStyle={{
-                    marginRight: isRtl ? 0 : 8,
-                    marginLeft: isRtl ? 8 : 0,
+                    marginLeft: !isRtl && index === 0 ? 0 : 8,
+                    marginRight: 0,
                     minHeight: 32,
-                    paddingHorizontal: 16,
+                    paddingHorizontal: 14,
                     backgroundColor: isActive
                       ? colors.surface3
                       : colors.surface2,
@@ -1504,6 +1498,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
               </View>
             );
           })}
+          <View style={{ width: 16 }} />
         </FilterChipsRow>
 
         <View style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
@@ -1511,12 +1506,13 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             style={{
               flexDirection: isRtl ? "row-reverse" : "row",
               alignItems: "center",
+              direction: dir,
             }}
           >
             <View
               style={{
                 flex: 1,
-                flexDirection: isRtl ? "row-reverse" : "row",
+                flexDirection: "row",
                 alignItems: "center",
                 minHeight: 44,
                 paddingHorizontal: 12,
@@ -1539,8 +1535,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                 style={{
                   flex: 1,
                   color: colors.foreground,
-                  marginLeft: isRtl ? 0 : 10,
-                  marginRight: isRtl ? 10 : 0,
+                  marginStart: 10,
+                  marginEnd: 10,
                   fontFamily: getAppFontFamily(isRtl, "regular"),
                   ...getTextDirectionStyle(isRtl),
                 }}
@@ -1560,7 +1556,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
               onPress={cycleSortMode}
               activeOpacity={0.85}
               style={{
-                flexDirection: isRtl ? "row-reverse" : "row",
+                flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "center",
                 minHeight: 44,
@@ -1583,8 +1579,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
               <SortLabel
                 style={{
                   color: colors.foreground,
-                  marginLeft: showSortIcon && !isRtl ? 8 : 0,
-                  marginRight: showSortIcon && isRtl ? 8 : 0,
+                  marginStart: showSortIcon ? 8 : 0,
+                  marginEnd: 0,
                   fontFamily: getAppFontFamily(isRtl, "regular"),
                   ...getTextDirectionStyle(isRtl),
                 }}
@@ -1596,7 +1592,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
           <View
             style={{
-              flexDirection: isRtl ? "row-reverse" : "row",
+              flexDirection: "row",
               justifyContent: "space-between",
               alignItems: "center",
               marginTop: 12,
@@ -1640,8 +1636,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
         <Grid
           contentContainerStyle={{
-            paddingBottom: 156,
-            paddingHorizontal: 16,
+            paddingBottom: 200,
+            paddingHorizontal: 14,
           }}
         >
           <Animated.View
@@ -1682,7 +1678,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                     onPress={item.onPress}
                     onLongPress={item.onLongPress}
                     style={{
-                      flexDirection: isRtl ? "row-reverse" : "row",
+                      flexDirection: "row",
                       alignItems: "center",
                       padding: 12,
                       marginBottom:
@@ -1697,8 +1693,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                     <View
                       style={{
                         flex: 1,
-                        marginLeft: isRtl ? 0 : 12,
-                        marginRight: isRtl ? 12 : 0,
+                        marginStart: 12,
+                        marginEnd: 12,
                       }}
                     >
                       <CollectionTitle
@@ -1783,8 +1779,9 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                       paddingHorizontal: 0,
                     }}
                   >
-                    {rowCards.map((item, columnIndex) =>
-                      item ? (
+                    {rowCards.map((item, columnIndex) => {
+                      if (!item) return null;
+                      return (
                         <CollectionCard
                           key={item.id}
                           activeOpacity={0.88}
@@ -1799,14 +1796,14 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                               overflow: "hidden",
                             }}
                           >
-                            {renderArtwork(item, "full")}
+                             {renderArtwork(item, "full")}
                             {item.onSecondaryAction ? (
                               <TouchableOpacity
                                 onPress={item.onSecondaryAction}
                                 style={{
                                   position: "absolute",
-                                  right: isRtl ? undefined : 10,
-                                  left: isRtl ? 10 : undefined,
+                                  right: 10,
+                                  left: 10,
                                   bottom: 10,
                                   paddingHorizontal: 10,
                                   paddingVertical: 7,
@@ -1861,13 +1858,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                             {item.meta}
                           </CollectionMeta>
                         </CollectionCard>
-                      ) : (
-                        <View
-                          key={`spacer-${rowIndex}-${columnIndex}`}
-                          style={{ width: "48%" }}
-                        />
-                      ),
-                    )}
+                      );
+                    })}
                   </GridRow>
                 );
               })

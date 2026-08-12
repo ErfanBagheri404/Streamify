@@ -317,6 +317,9 @@ export class AudioStreamManager {
   private readonly CACHE_DIR_INIT_COOLDOWN = 10000;
 
   // Cache for getCacheInfo results to prevent excessive filesystem calls
+  // TTL raised to 10s so batched library queries (54+ tracks via Promise.all)
+  // share a single loadAudioCacheIndex call instead of each one re-reading
+  // AsyncStorage individually.
   private cacheInfoCache = new Map<
     string,
     {
@@ -332,7 +335,7 @@ export class AudioStreamManager {
       timestamp: number;
     }
   >();
-  private readonly CACHE_INFO_TTL = 1000;
+  private readonly CACHE_INFO_TTL = 10_000;
 
   private buildCacheProgressUpdate(trackId: string): AudioCacheProgressUpdate {
     const progress = this.cacheProgress.get(trackId);
@@ -375,29 +378,6 @@ export class AudioStreamManager {
     }
 
     const update = this.buildCacheProgressUpdate(trackId);
-    // #region debug-point A:emit-cache-progress
-    fetch("http://192.168.1.106:7777/event", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: "cache-progress-stuck",
-        runId: "pre-fix",
-        hypothesisId: "A",
-        location: "audioStreaming:emitCacheProgressUpdate",
-        msg: "[DEBUG] cache progress emitted",
-        data: {
-          trackId,
-          percentage: update.percentage,
-          fileSize: update.fileSize,
-          totalFileSize: update.totalFileSize ?? null,
-          isDownloading: update.isDownloading ?? null,
-          isFullyCached: update.isFullyCached,
-          listenerCount: this.cacheProgressListeners.size,
-        },
-        ts: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     this.cacheProgressListeners.forEach((listener) => {
       try {
         listener(update);
@@ -2127,22 +2107,7 @@ export class AudioStreamManager {
     retryCount?: number;
   }> {
     try {
-      // #region debug-point B:get-cache-info-entry
-      fetch("http://192.168.1.106:7777/event", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: "cache-progress-stuck",
-          runId: "pre-fix",
-          hypothesisId: "B",
-          location: "audioStreaming:getCacheInfo:entry",
-          msg: "[DEBUG] getCacheInfo called",
-          data: { trackId, hasActiveProgress: this.cacheProgress.has(trackId) },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
-      // Check cache first (with 5 second TTL)
+      // Check cache first (with CACHE_INFO_TTL)
       const cached = this.cacheInfoCache.get(trackId);
       if (cached && Date.now() - cached.timestamp < this.CACHE_INFO_TTL) {
         console.log(
@@ -2304,30 +2269,6 @@ export class AudioStreamManager {
             downloadSpeed: activeProgress.downloadSpeed || 0,
             retryCount: activeProgress.retryCount || 0,
           };
-          // #region debug-point B:get-cache-info-downloading
-          fetch("http://192.168.1.106:7777/event", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              sessionId: "cache-progress-stuck",
-              runId: "pre-fix",
-              hypothesisId: "B",
-              location: "audioStreaming:getCacheInfo:downloading",
-              msg: "[DEBUG] getCacheInfo returning active download state",
-              data: {
-                trackId,
-                activePercentage: activeProgress.percentage,
-                safePercentage: livePercentage,
-                downloadedSize: liveFileSizeMb,
-                lastFileSize: activeProgress.lastFileSize,
-                estimatedTotalSize: liveTotalFileSizeMb ?? null,
-                downloadSpeed: activeProgress.downloadSpeed ?? null,
-                retryCount: activeProgress.retryCount || 0,
-              },
-              ts: Date.now(),
-            }),
-          }).catch(() => {});
-          // #endregion
           console.log(
             `[Audio] === getCacheInfo END (downloading) for ${trackId} ===`,
             result,
@@ -4219,568 +4160,123 @@ export class AudioStreamManager {
    * Continue caching a track in the background while it's playing
    * This method downloads the rest of the track incrementally
    */
+
   public async continueCachingTrack(
     streamUrl: string,
     trackId: string,
     controller: AbortController,
     onProgress?: (percentage: number) => void,
   ): Promise<void> {
-    console.log(
-      `[Audio] Starting continuous background caching for track: ${trackId}`,
-    );
-
+    console.log("[Audio] Starting background caching for track: " + trackId);
     try {
-      // #region debug-point D:continue-cache-entry
-      fetch("http://192.168.1.106:7777/event", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: "yt-cache-stuck",
-          runId: "pre-fix",
-          hypothesisId: "D",
-          location: "audioStreaming:continueCachingTrack:entry",
-          msg: "[DEBUG] continueCachingTrack started",
-          data: {
-            trackId,
-            streamUrlStartsWithFile: streamUrl.startsWith("file://"),
-            streamUrlPrefix: streamUrl.slice(0, 80),
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
-      // Get current cache status
-      const cacheInfo = await this.getCacheInfo(trackId);
-
-      if (cacheInfo.isFullyCached) {
-        console.log(`[Audio] Track ${trackId} is already fully cached`);
+      const cacheDir = await this.getCacheDirectory();
+      if (!cacheDir) {
+        console.warn("[Audio] No cache directory available for caching");
         return;
       }
 
+      const cacheFilePath = cacheDir + trackId + ".cache";
+      const properCacheFilePath = cacheFilePath.startsWith("file://")
+        ? cacheFilePath
+        : "file://" + cacheFilePath;
+
+      // Check if a partial download already exists — preserve the known percentage
+      let partialBytes = 0;
+      try {
+        const partialInfo = await FileSystem.getInfoAsync(properCacheFilePath);
+        if (partialInfo.exists && typeof partialInfo.size === "number" && partialInfo.size > 1024) {
+          partialBytes = partialInfo.size;
+        }
+      } catch {}
+
       this.markDownloadStarted(trackId, streamUrl);
-      this.updateCacheProgress(
-        trackId,
-        cacheInfo.percentage,
-        cacheInfo.fileSize,
+
+      // Seed progress from partial file if available
+      if (partialBytes > 0) {
+        const cur = this.cacheProgress.get(trackId);
+        if (cur) {
+          cur.percentage = Math.min(99, 1); // show at least 1% so user knows it's alive
+          cur.downloadedSize = partialBytes;
+          cur.lastFileSize = partialBytes;
+        }
+      }
+
+      markCacheUrlActive(streamUrl);
+
+      // Use native background download -- does NOT block the JS thread
+      const downloadPromise = FileSystem.downloadAsync(
+        streamUrl,
+        properCacheFilePath,
         {
-          isDownloading: true,
-          estimatedTotalSize: cacheInfo.totalFileSize
-            ? cacheInfo.totalFileSize * 1024 * 1024
-            : undefined,
-          originalStreamUrl: streamUrl,
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          },
+          sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
         },
       );
 
-      // Get the cache directory
-      const cacheDir = await this.getCacheDirectory();
-      if (!cacheDir) {
-        console.warn(
-          "[Audio] No cache directory available for continuous caching",
-        );
+      // Poll file size every 800ms to update percentage during download
+      const existingProgress = this.cacheProgress.get(trackId);
+      const estimatedTotal = existingProgress?.estimatedTotalSize || 0;
+      const pollTimer = setInterval(async () => {
+        if (controller.signal.aborted) { clearInterval(pollTimer); return; }
+        try {
+          const info = await FileSystem.getInfoAsync(properCacheFilePath);
+          if (info.exists && typeof info.size === "number" && info.size > 0) {
+            const pct = estimatedTotal > 0
+              ? Math.min(99, Math.round((info.size / estimatedTotal) * 100))
+              : Math.min(99, Math.round(Math.min(info.size / (3 * 1024 * 1024), 0.99) * 100));
+            const cur = this.cacheProgress.get(trackId);
+            if (cur) {
+              cur.percentage = pct;
+              cur.lastFileSize = info.size;
+              cur.downloadedSize = info.size;
+              this.emitCacheProgressUpdate(trackId);
+            }
+          }
+        } catch {}
+      }, 800);
+
+      const result = await downloadPromise;
+      clearInterval(pollTimer);
+
+      if (controller.signal.aborted) {
+        markCacheUrlInactive(streamUrl);
+        await FileSystem.deleteAsync(properCacheFilePath, { idempotent: true });
         return;
       }
 
-      const cacheFilePath = `${cacheDir}${trackId}.cache`;
-      const properCacheFilePath = cacheFilePath.startsWith("file://")
-        ? cacheFilePath
-        : `file://${cacheFilePath}`;
-
-      // Check if cache file exists, if not create it
-      const fileInfo = await FileSystem.getInfoAsync(properCacheFilePath);
-      if (!fileInfo.exists) {
-        console.log(
-          `[Audio] Cache file doesn't exist, creating empty file at: ${properCacheFilePath}`,
-        );
-        await FileSystem.writeAsStringAsync(properCacheFilePath, "", {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-      }
-
-      // Continue downloading in chunks until fully cached
-      let currentPosition = 0;
-      const initialFileInfo =
-        await FileSystem.getInfoAsync(properCacheFilePath);
-      if (initialFileInfo.exists && typeof initialFileInfo.size === "number") {
-        currentPosition = initialFileInfo.size;
-      }
-      const chunkSize = 512 * 1024; // 512KB chunks
-      let consecutiveErrors = 0;
-      const maxErrors = 3;
-
-      while (!controller.signal.aborted && consecutiveErrors < maxErrors) {
-        // Get updated cache info for each iteration
-        const currentCacheInfo = await this.getCacheInfo(trackId);
-        if (currentCacheInfo.isFullyCached) {
-          console.log(
-            `[Audio] Track ${trackId} is now fully cached, stopping download`,
-          );
-          break;
+      if (result.status === 200 || result.status === 206) {
+        const fileInfo = await FileSystem.getInfoAsync(properCacheFilePath);
+        if (fileInfo.exists && typeof fileInfo.size === "number" && fileInfo.size > 1024) {
+          this.registerValidatedFullTrackPath(trackId, properCacheFilePath);
+          this.markDownloadCompleted(trackId, fileInfo.size / (1024 * 1024));
+          console.log("[Audio] Cached: " + trackId + " (" + fileInfo.size + " bytes)");
+          onProgress?.(100);
         }
-        try {
-          console.log(
-            `[Audio] Downloading chunk from position ${currentPosition} for ${trackId}`,
-          );
-
-          // Download next chunk
-          const chunkFilePath = `${properCacheFilePath}.chunk_${currentPosition}`;
-          const chunkTimeout = new Promise<never>((_, reject) => {
-            setTimeout(
-              () =>
-                reject(
-                  new Error(
-                    `Chunk download timed out after ${CACHE_CHUNK_REQUEST_TIMEOUT_MS}ms`,
-                  ),
-                ),
-              CACHE_CHUNK_REQUEST_TIMEOUT_MS,
-            );
-          });
-          const chunkResult = (await Promise.race([
-            FileSystem.downloadAsync(streamUrl, chunkFilePath, {
-              headers: {
-                Range: `bytes=${currentPosition}-${currentPosition + chunkSize - 1}`,
-                "User-Agent":
-                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-                ...getYouTubeHeaders(),
-              },
-              sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
-            }),
-            chunkTimeout,
-          ])) as Awaited<ReturnType<typeof FileSystem.downloadAsync>>;
-
-          // #region debug-point A:chunk-response
-          fetch("http://192.168.1.106:7777/event", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              sessionId: "yt-cache-stuck",
-              runId: "pre-fix",
-              hypothesisId: "A",
-              location: "audioStreaming:continueCachingTrack:chunk-response",
-              msg: "[DEBUG] chunk response received",
-              data: {
-                trackId,
-                currentPosition,
-                chunkSize,
-                status: chunkResult.status,
-              },
-              ts: Date.now(),
-            }),
-          }).catch(() => {});
-          // #endregion
-
-          if (chunkResult.status === 206 || chunkResult.status === 200) {
-            const chunkInfo = await FileSystem.getInfoAsync(chunkFilePath);
-            const isLikelyFullResponse =
-              chunkResult.status === 200 &&
-              chunkInfo.exists &&
-              typeof chunkInfo.size === "number" &&
-              chunkInfo.size > chunkSize * 1.1;
-
-            if (chunkResult.status === 200 && currentPosition > 0) {
-              if (isLikelyFullResponse) {
-                await FileSystem.copyAsync({
-                  from: chunkFilePath,
-                  to: properCacheFilePath,
-                });
-                await FileSystem.deleteAsync(chunkFilePath, {
-                  idempotent: true,
-                });
-
-                this.registerValidatedFullTrackPath(
-                  trackId,
-                  properCacheFilePath,
-                );
-
-                const fullInfo =
-                  await FileSystem.getInfoAsync(properCacheFilePath);
-                if (fullInfo.exists && typeof fullInfo.size === "number") {
-                  this.markDownloadCompleted(
-                    trackId,
-                    fullInfo.size / (1024 * 1024),
-                  );
-                }
-                onProgress?.(100);
-                break;
-              } else {
-                console.warn(
-                  `[Audio] Range not respected for ${trackId}, switching to full download fallback`,
-                );
-                await FileSystem.deleteAsync(chunkFilePath, {
-                  idempotent: true,
-                });
-                await this.downloadFullTrackInBackground(
-                  streamUrl,
-                  properCacheFilePath,
-                  trackId,
-                  controller,
-                  { skipConcurrentCheck: true },
-                );
-                break;
-              }
-            }
-
-            const existingInfo =
-              await FileSystem.getInfoAsync(properCacheFilePath);
-            const existingSize =
-              existingInfo.exists && typeof existingInfo.size === "number"
-                ? existingInfo.size
-                : 0;
-            const chunkSizeBytes =
-              chunkInfo.exists && typeof chunkInfo.size === "number"
-                ? chunkInfo.size
-                : 0;
-            const combinedSize = existingSize + chunkSizeBytes;
-            const maxCombineSize = 24 * 1024 * 1024;
-
-            if (combinedSize > maxCombineSize) {
-              console.warn(
-                `[Audio] Combined cache size ${combinedSize} bytes too large for in-memory append, switching to full download for ${trackId}`,
-              );
-              await FileSystem.deleteAsync(chunkFilePath, {
-                idempotent: true,
-              });
-              await this.downloadFullTrackInBackground(
-                streamUrl,
-                properCacheFilePath,
-                trackId,
-                controller,
-                { skipConcurrentCheck: true },
-              );
-              break;
-            }
-
-            // Append chunk to main file using binary-safe approach
-            try {
-              // Create a temporary combined file
-              const tempCombinedPath = `${properCacheFilePath}.combined`;
-
-              // First copy the existing file to temp location
-              await FileSystem.copyAsync({
-                from: properCacheFilePath,
-                to: tempCombinedPath,
-              });
-
-              // Read both files as Base64 and combine them
-              const existingContent = await FileSystem.readAsStringAsync(
-                tempCombinedPath,
-                { encoding: FileSystem.EncodingType.Base64 },
-              );
-              const chunkContent = await FileSystem.readAsStringAsync(
-                chunkFilePath,
-                { encoding: FileSystem.EncodingType.Base64 },
-              );
-
-              // Decode both base64 strings to binary, concatenate, then re-encode
-              const existingBinary = toByteArray(existingContent);
-              const chunkBinary = toByteArray(chunkContent);
-              const combinedBinary = new Uint8Array(
-                existingBinary.length + chunkBinary.length,
-              );
-              combinedBinary.set(existingBinary);
-              combinedBinary.set(chunkBinary, existingBinary.length);
-              const combinedBase64 = fromByteArray(combinedBinary);
-
-              // Write combined content back
-              await FileSystem.writeAsStringAsync(
-                tempCombinedPath,
-                combinedBase64,
-                { encoding: FileSystem.EncodingType.Base64 },
-              );
-
-              // Replace the original file with the combined one
-              await FileSystem.copyAsync({
-                from: tempCombinedPath,
-                to: properCacheFilePath,
-              });
-
-              // Clean up temp files
-              await FileSystem.deleteAsync(tempCombinedPath, {
-                idempotent: true,
-              });
-
-              console.log("[Audio] Successfully appended chunk to cache file");
-            } catch (chunkCombineError) {
-              console.error(
-                "[Audio] Error combining chunk:",
-                chunkCombineError,
-              );
-              await FileSystem.deleteAsync(chunkFilePath, {
-                idempotent: true,
-              });
-              await this.downloadFullTrackInBackground(
-                streamUrl,
-                properCacheFilePath,
-                trackId,
-                controller,
-                { skipConcurrentCheck: true },
-              );
-              break;
-            }
-
-            // Clean up chunk file
-            await FileSystem.deleteAsync(chunkFilePath, { idempotent: true });
-
-            // Update track cache with the combined file
-            this.trackCache.set(trackId, properCacheFilePath);
-
-            // Clear cache info cache since we updated the file
-            this.clearCacheInfoCache(trackId);
-
-            const updatedFileInfo =
-              await FileSystem.getInfoAsync(properCacheFilePath);
-            if (
-              updatedFileInfo.exists &&
-              typeof updatedFileInfo.size === "number"
-            ) {
-              currentPosition = updatedFileInfo.size;
-            } else {
-              currentPosition += chunkSize;
-            }
-            consecutiveErrors = 0; // Reset error counter
-
-            // Update cache info
-            const updatedCacheInfo = await this.getCacheInfo(trackId);
-            this.updateCacheProgress(
-              trackId,
-              updatedCacheInfo.percentage,
-              updatedCacheInfo.fileSize,
-              {
-                isDownloading: true,
-                estimatedTotalSize: updatedCacheInfo.totalFileSize
-                  ? updatedCacheInfo.totalFileSize * 1024 * 1024
-                  : undefined,
-              },
-            );
-            void updateAudioCacheIndexEntry(trackId, {
-              isDownloading: true,
-              isFullyCached: false,
-              estimatedSizeBytes: updatedCacheInfo.totalFileSize
-                ? Math.round(updatedCacheInfo.totalFileSize * 1024 * 1024)
-                : undefined,
-              downloadedBytes: Math.round(
-                updatedCacheInfo.fileSize * 1024 * 1024,
-              ),
-            });
-
-            console.log(
-              `[Audio] Chunk downloaded. Cache progress: ${updatedCacheInfo.percentage}%`,
-            );
-            // #region debug-point D:chunk-progress
-            fetch("http://192.168.1.106:7777/event", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                sessionId: "yt-cache-stuck",
-                runId: "pre-fix",
-                hypothesisId: "D",
-                location: "audioStreaming:continueCachingTrack:chunk",
-                msg: "[DEBUG] chunk progress updated",
-                data: {
-                  trackId,
-                  currentPosition,
-                  updatedPercentage: updatedCacheInfo.percentage,
-                  fileSize: updatedCacheInfo.fileSize,
-                  totalFileSize: updatedCacheInfo.totalFileSize ?? null,
-                  isDownloading: updatedCacheInfo.isDownloading ?? null,
-                  isFullyCached: updatedCacheInfo.isFullyCached,
-                },
-                ts: Date.now(),
-              }),
-            }).catch(() => {});
-            // #endregion
-            onProgress?.(updatedCacheInfo.percentage);
-
-            // Only mark completion when we can prove a real full cached file exists.
-            if (updatedCacheInfo.percentage >= 95) {
-              const fullCachedPath = await this.getFullCachedFilePath(trackId);
-              if (fullCachedPath) {
-                console.log(
-                  `[Audio] Track ${trackId} has a validated full cached file at ${updatedCacheInfo.percentage}%`,
-                );
-                this.markDownloadCompleted(trackId, updatedCacheInfo.fileSize);
-                break;
-              }
-            }
-
-            // Update current position for next chunk
-            currentPosition = updatedCacheInfo.fileSize * 1024 * 1024;
-
-            // Small delay between chunks to be gentle on the server
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-          } else {
-            console.log(
-              `[Audio] Chunk download failed with status: ${chunkResult.status}`,
-            );
-            // #region debug-point A:chunk-non-success
-            fetch("http://192.168.1.106:7777/event", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                sessionId: "yt-cache-stuck",
-                runId: "pre-fix",
-                hypothesisId: "A",
-                location:
-                  "audioStreaming:continueCachingTrack:chunk-non-success",
-                msg: "[DEBUG] chunk returned non-success status",
-                data: {
-                  trackId,
-                  currentPosition,
-                  status: chunkResult.status,
-                  consecutiveErrors,
-                },
-                ts: Date.now(),
-              }),
-            }).catch(() => {});
-            // #endregion
-            consecutiveErrors++;
-
-            if (chunkResult.status === 416) {
-              // Range not satisfiable - reached end of file
-              console.log(`[Audio] Reached end of file for ${trackId}`);
-              // If the server says the range is not satisfiable, treat it as completion
-              const finalInfo =
-                await FileSystem.getInfoAsync(properCacheFilePath);
-              if (finalInfo.exists && typeof finalInfo.size === "number") {
-                this.registerValidatedFullTrackPath(
-                  trackId,
-                  properCacheFilePath,
-                );
-                this.markDownloadCompleted(
-                  trackId,
-                  finalInfo.size / (1024 * 1024),
-                );
-                onProgress?.(100);
-              }
-              break;
-            }
-          }
-        } catch (chunkError) {
-          console.error(
-            `[Audio] Error downloading chunk for ${trackId}:`,
-            chunkError,
-          );
-          // #region debug-point A:chunk-error
-          fetch("http://192.168.1.106:7777/event", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              sessionId: "yt-cache-stuck",
-              runId: "pre-fix",
-              hypothesisId: "A",
-              location: "audioStreaming:continueCachingTrack:chunk-error",
-              msg: "[DEBUG] chunk download threw error",
-              data: {
-                trackId,
-                currentPosition,
-                consecutiveErrors,
-                error:
-                  chunkError instanceof Error
-                    ? chunkError.message
-                    : String(chunkError),
-              },
-              ts: Date.now(),
-            }),
-          }).catch(() => {});
-          // #endregion
-
-          if (
-            chunkError instanceof Error &&
-            chunkError.message.includes("Chunk download timed out")
-          ) {
-            console.warn(
-              `[Audio] Chunk download timed out for ${trackId}, ending this pass so the queue can refresh the stream URL`,
-            );
-            break;
-          }
-          consecutiveErrors++;
-
-          // Wait a bit longer before retrying
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-        }
-      }
-
-      console.log(`[Audio] Continuous caching completed for track: ${trackId}`);
-
-      // Final check: only finalize when a validated full cached file exists.
-      try {
-        const finalCacheInfo = await this.getCacheInfo(trackId);
-        const fullCachedPath = await this.getFullCachedFilePath(trackId);
-        // #region debug-point B:continue-cache-final-state
-        fetch("http://192.168.1.106:7777/event", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sessionId: "yt-cache-stuck",
-            runId: "pre-fix",
-            hypothesisId: "B",
-            location: "audioStreaming:continueCachingTrack:final-state",
-            msg: "[DEBUG] continueCachingTrack final state",
-            data: {
-              trackId,
-              percentage: finalCacheInfo.percentage,
-              fileSize: finalCacheInfo.fileSize,
-              totalFileSize: finalCacheInfo.totalFileSize ?? null,
-              isDownloading: finalCacheInfo.isDownloading ?? null,
-              isFullyCached: finalCacheInfo.isFullyCached,
-              hasFullCachedPath: Boolean(fullCachedPath),
-            },
-            ts: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
-        if (
-          fullCachedPath &&
-          finalCacheInfo.percentage >= 95 &&
-          finalCacheInfo.percentage < 100
-        ) {
-          console.log(
-            `[Audio] Force completing cache at ${finalCacheInfo.percentage}% for ${trackId}`,
-          );
-          this.markDownloadCompleted(trackId, finalCacheInfo.fileSize);
-        }
-      } catch (finalCheckError) {
-        console.warn(
-          `[Audio] Final cache check failed for ${trackId}:`,
-          finalCheckError,
-        );
-      }
-    } catch (error) {
-      console.error(`[Audio] Continuous caching failed for ${trackId}:`, error);
-    } finally {
-      const progress = this.cacheProgress.get(trackId);
-      // #region debug-point C:continue-cache-finally
-      fetch("http://192.168.1.106:7777/event", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: "yt-cache-stuck",
-          runId: "pre-fix",
-          hypothesisId: "C",
-          location: "audioStreaming:continueCachingTrack:finally",
-          msg: "[DEBUG] continueCachingTrack finally state",
-          data: {
-            trackId,
-            hasProgress: Boolean(progress),
-            progressPercentage: progress?.percentage ?? null,
-            progressIsDownloading: progress?.isDownloading ?? null,
-            progressIsFullyCached: progress?.isFullyCached ?? null,
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
-      if (progress) {
-        this.cacheProgress.set(trackId, {
-          ...progress,
+      } else {
+        // Non-success status — clear downloading flag so track isn't stuck
+        this.cacheProgress.delete(trackId);
+        void updateAudioCacheIndexEntry(trackId, {
           isDownloading: false,
-          lastUpdate: Date.now(),
+          isFullyCached: false,
         });
+        console.warn("[Audio] Download returned " + result.status + " for " + trackId);
       }
+      markCacheUrlInactive(streamUrl);
+    } catch (error) {
+      markCacheUrlInactive(streamUrl);
+      // On failure, clear the downloading flag so the track isn't stuck at 0% forever
+      this.cacheProgress.delete(trackId);
       void updateAudioCacheIndexEntry(trackId, {
         isDownloading: false,
+        isFullyCached: false,
       });
+      console.error("[Audio] Failed to cache " + trackId + ":", error);
     }
   }
+
 
   static getInstance(): AudioStreamManager {
     if (!AudioStreamManager.instance) {
@@ -7094,25 +6590,6 @@ export class AudioStreamManager {
     let resumeFilePath: string;
 
     try {
-      // #region debug-point D:resume-entry
-      fetch("http://192.168.1.106:7777/event", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: "yt-cache-stuck",
-          runId: "pre-fix",
-          hypothesisId: "D",
-          location: "audioStreaming:resumeCacheDownload:entry",
-          msg: "[DEBUG] resumeCacheDownload started",
-          data: {
-            trackId,
-            startPosition,
-            streamUrlPrefix: streamUrl.slice(0, 80),
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       console.log(
         `[Audio] Resuming cache download from position ${startPosition} for track: ${trackId}`,
       );
@@ -7165,26 +6642,6 @@ export class AudioStreamManager {
         }),
         resumeTimeout,
       ])) as Awaited<ReturnType<typeof FileSystem.downloadAsync>>;
-
-      // #region debug-point D:resume-response
-      fetch("http://192.168.1.106:7777/event", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: "yt-cache-stuck",
-          runId: "pre-fix",
-          hypothesisId: "D",
-          location: "audioStreaming:resumeCacheDownload:response",
-          msg: "[DEBUG] resumeCacheDownload response received",
-          data: {
-            trackId,
-            startPosition,
-            status: resumeResult.status,
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
 
       if (resumeResult.status === 200 || resumeResult.status === 206) {
         console.log(`[Audio] Resume download successful for track: ${trackId}`);
@@ -7299,28 +6756,6 @@ export class AudioStreamManager {
         this.registerValidatedFullTrackPath(trackId, properCacheFilePath);
         const updatedCacheInfo = await this.getCacheInfo(trackId);
         onProgress?.(updatedCacheInfo.percentage);
-        // #region debug-point E:resume-updated-cache
-        fetch("http://192.168.1.106:7777/event", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sessionId: "yt-cache-stuck",
-            runId: "pre-fix",
-            hypothesisId: "E",
-            location: "audioStreaming:resumeCacheDownload:updated-cache",
-            msg: "[DEBUG] resumeCacheDownload updated cache info",
-            data: {
-              trackId,
-              percentage: updatedCacheInfo.percentage,
-              fileSize: updatedCacheInfo.fileSize,
-              totalFileSize: updatedCacheInfo.totalFileSize ?? null,
-              isDownloading: updatedCacheInfo.isDownloading ?? null,
-              isFullyCached: updatedCacheInfo.isFullyCached,
-            },
-            ts: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
         console.log(
           `[Audio] Updated cache progress after resume: ${updatedCacheInfo.percentage}%`,
         );
@@ -7333,25 +6768,6 @@ export class AudioStreamManager {
         );
       }
     } catch (error) {
-      // #region debug-point D:resume-error
-      fetch("http://192.168.1.106:7777/event", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: "yt-cache-stuck",
-          runId: "pre-fix",
-          hypothesisId: "D",
-          location: "audioStreaming:resumeCacheDownload:error",
-          msg: "[DEBUG] resumeCacheDownload threw error",
-          data: {
-            trackId,
-            startPosition,
-            error: error instanceof Error ? error.message : String(error),
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       console.error(
         `[Audio] Failed to resume cache download for track ${trackId}:`,
         error,
@@ -7852,7 +7268,7 @@ const CACHE_RESUME_REQUEST_TIMEOUT_MS = 25000;
 
 const toMB = (bytes: number) => Math.max(0, bytes / (1024 * 1024));
 
-const loadAudioCacheIndex = async (): Promise<AudioCacheIndex> => {
+export const loadAudioCacheIndex = async (): Promise<AudioCacheIndex> => {
   try {
     const raw = await AsyncStorage.getItem(AUDIO_CACHE_INDEX_KEY);
     if (raw) {
@@ -7867,6 +7283,86 @@ const loadAudioCacheIndex = async (): Promise<AudioCacheIndex> => {
   } catch {}
   return { totalBytes: 0, entries: {} };
 };
+
+/**
+ * Load cache status for ALL tracks in one AsyncStorage read.
+ * Returns a Map<trackId, { percentage, isFullyCached, isDownloading }>.
+ */
+export async function getAllTrackCacheStatus(): Promise<
+  Map<string, { percentage: number; isFullyCached: boolean; isDownloading: boolean }>
+> {
+  const index = await loadAudioCacheIndex();
+  const manager = AudioStreamManager.getInstance();
+  const result = new Map<string, { percentage: number; isFullyCached: boolean; isDownloading: boolean }>();
+
+  for (const [trackId, entry] of Object.entries(index.entries)) {
+    // Check in-memory progress first (more up-to-date)
+    const progress = (manager as any).cacheProgress?.get?.(trackId);
+    if (progress) {
+      result.set(trackId, {
+        percentage: progress.percentage ?? 0,
+        isFullyCached: !!progress.isFullyCached,
+        isDownloading: !!progress.isDownloading,
+      });
+    } else {
+      const downloaded = entry.downloadedBytes || 0;
+      const estimated = entry.estimatedSizeBytes || 0;
+      const percentage = estimated > 0 ? Math.min(100, Math.round((downloaded / estimated) * 100)) : 0;
+      result.set(trackId, {
+        percentage,
+        isFullyCached: !!entry.isFullyCached,
+        isDownloading: !!entry.isDownloading,
+      });
+    }
+  }
+
+  // Also include tracks that are in in-memory progress but NOT in the cache index
+  // (e.g. markDownloadCompleted wrote to memory but AsyncStorage hasn't flushed yet)
+  const memProgress: Map<string, any> | undefined = (manager as any).cacheProgress;
+  if (memProgress && typeof memProgress.forEach === "function") {
+    memProgress.forEach((progress: any, trackId: string) => {
+      if (!result.has(trackId)) {
+        result.set(trackId, {
+          percentage: progress.percentage ?? 0,
+          isFullyCached: !!progress.isFullyCached,
+          isDownloading: !!progress.isDownloading,
+        });
+      }
+    });
+  }
+
+  // Also check offline directory for fully-cached tracks that may be missing
+  // from the index (e.g. cached in a previous app session).
+  try {
+    const offlineDir = await manager.getOfflineDirectory();
+    if (offlineDir) {
+      const files = await FileSystem.readDirectoryAsync(offlineDir);
+      for (const file of files) {
+        // Files are named {trackId}.{ext} — extract the trackId
+        const dotIdx = file.lastIndexOf(".");
+        if (dotIdx <= 0) continue;
+        const trackId = file.substring(0, dotIdx);
+        if (result.has(trackId)) continue; // already in the map
+        const ext = file.substring(dotIdx);
+        const validExts = [".mp3", ".webm", ".m4a", ".ogg", ".oga", ".aac", ".cache"];
+        if (!validExts.includes(ext)) continue;
+        // File exists on disk — check it's valid (>1KB)
+        try {
+          const info = await FileSystem.getInfoAsync(offlineDir + file);
+          if (info.exists && typeof info.size === "number" && info.size > 1024) {
+            result.set(trackId, {
+              percentage: 100,
+              isFullyCached: true,
+              isDownloading: false,
+            });
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
+  return result;
+}
 
 const saveAudioCacheIndex = async (index: AudioCacheIndex): Promise<void> => {
   try {
@@ -8006,9 +7502,24 @@ try {
   videoCacheConvertAsync = null;
 }
 
+// URLs currently being cached — skip native proxy for these to avoid
+// "could not invoke videocache" crashes when the same URL is locked.
+const activeCacheUrls = new Set<string>();
+
+export function markCacheUrlActive(url: string) {
+  activeCacheUrls.add(url);
+}
+export function markCacheUrlInactive(url: string) {
+  activeCacheUrls.delete(url);
+}
+
 const getProxyUrl = async (
   url: string,
 ): Promise<{ url: string; isProxy: boolean }> => {
+  // If this URL is currently being cached, skip the native proxy to avoid crashes.
+  if (activeCacheUrls.has(url)) {
+    return { url, isProxy: false };
+  }
   if (videoCacheConvertAsync) {
     try {
       const timeout = new Promise<string>((_, reject) =>
@@ -8018,7 +7529,10 @@ const getProxyUrl = async (
         ),
       );
       const proxyUrl = await Promise.race([
-        videoCacheConvertAsync(url),
+        videoCacheConvertAsync(url).catch((e: any) => {
+          console.warn("[Audio] videoCache.convertAsync failed:", e?.message);
+          return url;
+        }),
         timeout,
       ]);
       return { url: proxyUrl, isProxy: proxyUrl !== url };
@@ -8064,6 +7578,13 @@ export async function prepareCachedStreamUrl(
           isDownloading: false,
         },
       };
+    }
+
+    // If the track already has a cache entry (in queue but not fully cached),
+    // skip the native proxy to avoid crashes — just stream normally.
+    const existingIndex = await loadAudioCacheIndex();
+    if (existingIndex.entries[trackId]) {
+      return { url, cacheInfo: null };
     }
   }
 

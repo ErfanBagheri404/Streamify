@@ -153,7 +153,7 @@ export const CategoryBadges: React.FC<CategoryBadgeProps> = ({
   const { isRtl } = useAppLanguage();
 
   return (
-    <BadgeContainer style={{ flexDirection: isRtl ? "row-reverse" : "row" }}>
+    <BadgeContainer style={{ flexDirection: "row" }}>
       {categories.map((category) => (
         <Badge
           key={category}
@@ -164,8 +164,8 @@ export const CategoryBadges: React.FC<CategoryBadgeProps> = ({
           <BadgeContent>
             <BadgeIcon
               style={{
-                marginRight: isRtl ? 0 : 6,
-                marginLeft: isRtl ? 6 : 0,
+                marginRight: 6,
+                marginLeft: 6,
               }}
             >
               {CategoryEmoji[category as keyof typeof CategoryEmoji]}
@@ -186,8 +186,8 @@ export const CategoryBadges: React.FC<CategoryBadgeProps> = ({
               <BadgeCount
                 active={selectedCategories.includes(category)}
                 style={{
-                  marginLeft: isRtl ? 0 : 4,
-                  marginRight: isRtl ? 4 : 0,
+                  marginLeft: 4,
+                  marginRight: 4,
                   fontFamily: getAppFontFamily(isRtl, "medium"),
                   ...getTextDirectionStyle(isRtl, "center"),
                 }}
@@ -292,7 +292,7 @@ export const BadgeHeader: React.FC<BadgeHeaderProps> = ({
         {subtitle}
       </BadgeHeaderSubtitle>
       <BadgeHeaderStats
-        style={{ flexDirection: isRtl ? "row-reverse" : "row" }}
+        style={{ flexDirection: "row" }}
       >
         <BadgeStat>
           <BadgeStatText

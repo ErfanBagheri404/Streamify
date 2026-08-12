@@ -101,13 +101,13 @@ export const PlaylistCardSkeleton: React.FC = () => {
     <PlaylistCardSkeletonContainer
       style={{
         width: 168,
-        marginRight: isRtl ? 0 : 16,
-        marginLeft: isRtl ? 16 : 0,
+        marginRight: 16,
+        marginLeft: 16,
       }}
     >
       <SkeletonLoader width={168} height={168} style={{ borderRadius: 22 }} />
-      <SkeletonTitle style={{ alignSelf: isRtl ? "flex-end" : "flex-start" }} />
-      <SkeletonMeta style={{ alignSelf: isRtl ? "flex-end" : "flex-start" }} />
+      <SkeletonTitle style={{ alignSelf: "flex-start" }} />
+      <SkeletonMeta style={{ alignSelf: "flex-start" }} />
     </PlaylistCardSkeletonContainer>
   );
 };
@@ -123,7 +123,7 @@ export const PlaylistSkeletonRow: React.FC<{ count?: number }> = ({
 
   return (
     <SkeletonRowContainer
-      style={{ flexDirection: isRtl ? "row-reverse" : "row" }}
+      style={{ flexDirection: "row" }}
     >
       {Array.from({ length: count }, (_, i) => (
         <PlaylistCardSkeleton key={i} />
@@ -245,34 +245,34 @@ export const RecommendationsSkeleton: React.FC<{
   return (
     <RecommendationSkeletonContainer>
       <SkeletonRowContainer
-        style={{ flexDirection: isRtl ? "row-reverse" : "row" }}
+        style={{ flexDirection: "row" }}
       >
         {Array.from({ length: columns }, (_, columnIndex) => (
           <RecommendationSkeletonColumn
             key={`rec-skel-col-${columnIndex}`}
             style={{
-              marginRight: isRtl ? 0 : 16,
-              marginLeft: isRtl ? 16 : 0,
+              marginRight: 16,
+              marginLeft: 16,
             }}
           >
             {Array.from({ length: rows }, (_, rowIndex) => (
               <RecommendationSkeletonItem
                 key={`rec-skel-${columnIndex}-${rowIndex}`}
-                style={{ flexDirection: isRtl ? "row-reverse" : "row" }}
+                style={{ flexDirection: "row" }}
               >
                 <RecommendationSkeletonThumb />
                 <RecommendationSkeletonText
                   style={{
-                    marginLeft: isRtl ? 0 : 10,
-                    marginRight: isRtl ? 10 : 0,
-                    alignItems: isRtl ? "flex-end" : "flex-start",
+                    marginLeft: 10,
+                    marginRight: 10,
+                    alignItems: "flex-start",
                   }}
                 >
                   <RecommendationSkeletonTitle
-                    style={{ alignSelf: isRtl ? "flex-end" : "flex-start" }}
+                    style={{ alignSelf: "flex-start" }}
                   />
                   <RecommendationSkeletonMeta
-                    style={{ alignSelf: isRtl ? "flex-end" : "flex-start" }}
+                    style={{ alignSelf: "flex-start" }}
                   />
                 </RecommendationSkeletonText>
               </RecommendationSkeletonItem>

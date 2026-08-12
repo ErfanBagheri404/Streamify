@@ -335,6 +335,12 @@ export function sanitizeImageUrl(url: string, base?: string): string {
     return buildProxiedYouTubeThumbnailUrl({ url: normalized }) || normalized;
   }
 
+  // Bare video ID (e.g. "MZEc76Cdjmg") — construct a thumbnail URL
+  const bareVideoId = extractYouTubeVideoId(normalized);
+  if (bareVideoId && bareVideoId === normalized) {
+    return buildProxiedYouTubeThumbnailUrl({ videoId: bareVideoId }) || "";
+  }
+
   if (normalized.includes("googleusercontent.com")) {
     return upgradeYouTubeImage(normalized);
   }

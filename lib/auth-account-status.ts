@@ -27,12 +27,16 @@ export async function checkAccountStatus(
     const url = new URL(endpoint);
     url.searchParams.set("email", email);
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
     const response = await fetch(url.toString(), {
       headers: {
         Accept: "application/json",
       },
       cache: "no-store",
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     return (await response.json()) as AccountStatusResponse;
   } catch {

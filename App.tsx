@@ -4,6 +4,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { enableScreens } from "react-native-screens";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import TrackPlayer from "./utils/safeTrackPlayer";
 import {
   View,
@@ -26,6 +27,18 @@ import { Ionicons } from "@expo/vector-icons";
 import StreamifyLogoIcon from "./assets/StreamifyLogo.svg";
 import LibraryIcon from "./assets/Library.svg";
 
+// Suppress harmless React Navigation forEach errors during direction changes
+const _origConsoleError = console.error;
+console.error = (...args: any[]) => {
+  if (
+    args[0] instanceof TypeError &&
+    String(args[0]?.message).includes("forEach")
+  ) {
+    return; // swallow — RN internal layout effect null during dir switch
+  }
+  _origConsoleError(...args);
+};
+
 // Context
 import { PlayerProvider } from "./contexts/PlayerContext";
 import {
@@ -47,6 +60,10 @@ import { FullPlayerModal } from "./components/FullPlayerModal";
 import { CloudLibraryBridge } from "./components/CloudLibraryBridge";
 import { useAppLanguage } from "./hooks/useAppLanguage";
 import { getAppFontFamily } from "./utils/fonts";
+import {
+  hasCompletedOnboarding,
+  markOnboardingCompleted,
+} from "./utils/storage";
 
 // Screens
 import HomeScreen from "./components/screens/HomeScreen";
@@ -61,6 +78,7 @@ import ArtistScreen from "./components/screens/ArtistScreen";
 import SettingsScreen from "./components/screens/SettingsScreen";
 import SignInScreen from "./components/screens/SignInScreen";
 import SignUpScreen from "./components/screens/SignUpScreen";
+import OnboardingScreen from "./components/screens/OnboardingScreen";
 
 enableScreens();
 
@@ -158,6 +176,7 @@ const TabBarIcon: React.FC<IconProps> = ({ name, color, size, focused }) => {
 function CustomTabBar({ state, descriptors, navigation }: any) {
   const { colors, isLight } = useTheme();
   const { dir, isRtl } = useAppLanguage();
+  const insets = useSafeAreaInsets();
 
   return (
     <LinearGradient
@@ -174,8 +193,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
         bottom: 0,
         left: 0,
         right: 0,
-        height: 60,
-        paddingBottom: 6,
+        paddingBottom: insets.bottom + 6,
         paddingTop: 6,
       }}
     >
@@ -185,7 +203,6 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           flex: 1,
           alignItems: "center",
           justifyContent: "space-around",
-          direction: dir,
         }}
       >
         {state.routes.map((route: any, index: number) => {
@@ -419,6 +436,14 @@ function AppShell() {
   // Track current screen name for MiniPlayer positioning
   const [currentScreen, setCurrentScreen] = React.useState<string>("Home");
 
+  // Onboarding: check if first launch
+  const [onboardingDone, setOnboardingDone] = React.useState<boolean | null>(
+    null,
+  );
+  React.useEffect(() => {
+    hasCompletedOnboarding().then((done) => setOnboardingDone(done));
+  }, []);
+
   React.useEffect(() => {
     console.log("[App] Current screen updated:", currentScreen);
   }, [currentScreen]);
@@ -454,17 +479,23 @@ function AppShell() {
     setCurrentScreen(screenName);
   }, []);
   const shouldHideMiniPlayer =
-    currentScreen === "SignIn" || currentScreen === "SignUp";
+    currentScreen === "SignIn" ||
+    currentScreen === "SignUp" ||
+    currentScreen === "Onboarding";
 
   return (
     <View
-      style={{ flex: 1, backgroundColor: colors.background, direction: dir }}
+      style={{ flex: 1, backgroundColor: colors.background }}
     >
       <StatusBar
         barStyle={isLight ? "dark-content" : "light-content"}
         backgroundColor={colors.background}
         translucent={true}
       />
+      <SafeAreaProvider>
+      {onboardingDone === null ? (
+        <StartupLoadingScreen />
+      ) : (
       <NavigationContainer
         ref={navigationRef}
         onReady={() => syncCurrentScreen()}
@@ -472,7 +503,7 @@ function AppShell() {
       >
         <Stack.Navigator
           id="MainStack"
-          initialRouteName="Home"
+          initialRouteName={onboardingDone === false ? "Onboarding" : "Home"}
           screenOptions={{
             headerShown: false,
             animation: "slide_from_right",
@@ -549,29 +580,44 @@ function AppShell() {
             }}
           />
           <Stack.Screen
+            name="Onboarding"
+            component={OnboardingScreen}
+            options={{
+              animation: "fade",
+              contentStyle: { backgroundColor: colors.background },
+            }}
+          />
+          <Stack.Screen
             name="SignIn"
             component={SignInScreen}
             options={{
-              animation: "slide_from_right",
-              animationDuration: 200,
-              gestureEnabled: true,
-              gestureDirection: "horizontal",
-              contentStyle: { backgroundColor: colors.background },
+              presentation: "modal",
+              animation: "slide_from_bottom",
+              gestureEnabled: false,
+              contentStyle: {
+                backgroundColor: colors.background,
+                borderTopLeftRadius: 28,
+                borderTopRightRadius: 28,
+              },
             }}
           />
           <Stack.Screen
             name="SignUp"
             component={SignUpScreen}
             options={{
-              animation: "slide_from_right",
-              animationDuration: 200,
-              gestureEnabled: true,
-              gestureDirection: "horizontal",
-              contentStyle: { backgroundColor: colors.background },
+              presentation: "modal",
+              animation: "slide_from_bottom",
+              gestureEnabled: false,
+              contentStyle: {
+                backgroundColor: colors.background,
+                borderTopLeftRadius: 28,
+                borderTopRightRadius: 28,
+              },
             }}
           />
         </Stack.Navigator>
       </NavigationContainer>
+      )}
 
       {/* Persistent Player Components */}
       {!shouldHideMiniPlayer ? (
@@ -737,7 +783,7 @@ function AppShell() {
 
               <View
                 style={{
-                  flexDirection: isRtl ? "row-reverse" : "row",
+                  flexDirection: "row",
                   marginTop: 18,
                 }}
               >
@@ -751,8 +797,8 @@ function AppShell() {
                     borderRadius: 16,
                     alignItems: "center",
                     justifyContent: "center",
-                    marginRight: isRtl ? 0 : 8,
-                    marginLeft: isRtl ? 8 : 0,
+                    marginRight: 8,
+                    marginLeft: 8,
                     backgroundColor: withOpacity(colors.foreground, 0.08),
                     borderWidth: 1,
                     borderColor: withOpacity(colors.borderSubtle, 0.8),
@@ -783,8 +829,8 @@ function AppShell() {
                     borderRadius: 16,
                     alignItems: "center",
                     justifyContent: "center",
-                    marginLeft: isRtl ? 0 : 8,
-                    marginRight: isRtl ? 8 : 0,
+                    marginLeft: 8,
+                    marginRight: 8,
                     backgroundColor: colors.foreground,
                   }}
                 >
@@ -804,6 +850,7 @@ function AppShell() {
           </View>
         </View>
       </Modal>
+      </SafeAreaProvider>
     </View>
   );
 }

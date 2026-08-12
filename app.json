@@ -8,7 +8,9 @@
     "sdkVersion": "54.0.0",
     "orientation": "portrait",
     "icon": "./assets/StreamifyLogo.png",
-    "platforms": ["android"],
+    "platforms": [
+      "android"
+    ],
     "plugins": [
       "expo-font",
       "expo-task-manager",
@@ -43,6 +45,11 @@
       "eas": {
         "projectId": "f2a4600c-e6c6-46c1-ad8b-311d9c30d9d9"
       }
+    },
+    "splash": {
+      "image": "./assets/StreamifyLogo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
     }
   }
 }

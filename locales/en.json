@@ -986,5 +986,8 @@
   "theme.sage": "Sage",
   "theme.ice": "Ice",
   "theme.sand": "Sand",
-  "theme.blush": "Blush"
+  "theme.blush": "Blush",
+  "onboarding.headline": "ONE ACCOUNT\nFOR ALL THE\nMUSIC IN THE\nWORLD",
+  "onboarding.getStarted": "Get Started",
+  "onboarding.skip": "Skip"
 }

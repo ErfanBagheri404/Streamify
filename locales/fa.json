@@ -985,5 +985,8 @@
   "theme.sage": "مریم گلی",
   "theme.ice": "یخی روشن",
   "theme.sand": "شنی",
-  "theme.blush": "رژگونه ای"
+  "theme.blush": "رژگونه ای",
+  "onboarding.headline": "یک حساب\nبرای تمام\nموسیقی\nجهان",
+  "onboarding.getStarted": "شروع کنید",
+  "onboarding.skip": "رد شدن"
 }

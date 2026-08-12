@@ -72,6 +72,9 @@ export interface AppSettings {
   preferredSearchSource: PreferredSearchSource;
   seekStepSeconds: number;
   autoCacheLikedSongs: boolean;
+  /** When true, playing a queued song auto-removes it from download queue.
+   * When false, shows a confirmation popup first. */
+  autoQueueConflictAutoRemove: boolean;
   collapsedSettingsSections: Partial<Record<SettingsSectionKey, boolean>>;
 }
 
@@ -148,6 +151,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   preferredSearchSource: "mixed",
   seekStepSeconds: 10,
   autoCacheLikedSongs: false,
+  autoQueueConflictAutoRemove: false,
   collapsedSettingsSections: {},
 };
 
@@ -272,6 +276,11 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
       typeof record.autoCacheLikedSongs === "boolean"
         ? record.autoCacheLikedSongs
         : DEFAULT_APP_SETTINGS.autoCacheLikedSongs,
+    autoQueueConflictAutoRemove:
+      typeof record.autoQueueConflictAutoRemove === "boolean"
+        ? record.autoQueueConflictAutoRemove
+        : DEFAULT_APP_SETTINGS.autoQueueConflictAutoRemove,
+
     collapsedSettingsSections: sanitizeCollapsedSettingsSections(
       record.collapsedSettingsSections,
     ),

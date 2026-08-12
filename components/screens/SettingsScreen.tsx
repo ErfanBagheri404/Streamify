@@ -196,7 +196,7 @@ function Section({
         onPress={onToggle}
         style={[
           styles.sectionHeader,
-          { flexDirection: isRtl ? "row-reverse" : "row" },
+          { flexDirection: "row" },
         ]}
       >
         <View style={styles.sectionHeaderCopy}>
@@ -712,8 +712,8 @@ export default function SettingsScreen({
                 styles.heroBadge,
                 {
                   backgroundColor: withOpacity(colors.foreground, 0.06),
-                  alignSelf: isRtl ? "flex-end" : "flex-start",
-                  flexDirection: isRtl ? "row-reverse" : "row",
+                  alignSelf: "flex-start",
+                  flexDirection: "row",
                 },
               ]}
             >
@@ -735,7 +735,7 @@ export default function SettingsScreen({
             <View
               style={[
                 styles.heroPills,
-                { flexDirection: isRtl ? "row-reverse" : "row" },
+                { flexDirection: "row" },
               ]}
             >
               {[
@@ -785,7 +785,7 @@ export default function SettingsScreen({
             <View
               style={[
                 styles.quickAccessWrap,
-                { flexDirection: isRtl ? "row-reverse" : "row" },
+                { flexDirection: "row" },
               ]}
             >
               {quickAccessSections.map((section) => (
@@ -825,7 +825,7 @@ export default function SettingsScreen({
                 {
                   backgroundColor: colors.surface3,
                   borderColor: colors.borderSubtle,
-                  flexDirection: isRtl ? "row-reverse" : "row",
+                  flexDirection: "row",
                 },
               ]}
             >
@@ -868,7 +868,7 @@ export default function SettingsScreen({
                 <View
                   style={[
                     styles.accountActions,
-                    { flexDirection: isRtl ? "row-reverse" : "row" },
+                    { flexDirection: "row" },
                   ]}
                 >
                   {user ? (
@@ -908,7 +908,7 @@ export default function SettingsScreen({
                     <>
                       <TouchableOpacity
                         disabled={!isConfigured}
-                        onPress={() => navigation.navigate("SignIn")}
+                        onPress={() => navigation.navigate("Onboarding", { openAuth: "signin" })}
                         style={[
                           styles.secondaryButton,
                           {
@@ -924,7 +924,7 @@ export default function SettingsScreen({
                       </TouchableOpacity>
                       <TouchableOpacity
                         disabled={!isConfigured}
-                        onPress={() => navigation.navigate("SignUp")}
+                        onPress={() => navigation.navigate("Onboarding", { openAuth: "signup" })}
                         style={[
                           styles.secondaryButton,
                           {
@@ -1338,7 +1338,7 @@ export default function SettingsScreen({
                 <View
                   style={[
                     styles.accountActions,
-                    { flexDirection: isRtl ? "row-reverse" : "row" },
+                    { flexDirection: "row" },
                   ]}
                 >
                   <AccentButton
@@ -1361,7 +1361,7 @@ export default function SettingsScreen({
                       {
                         backgroundColor: colors.surface2,
                         borderColor: colors.borderSubtle,
-                        flexDirection: isRtl ? "row-reverse" : "row",
+                        flexDirection: "row",
                         alignItems: "center",
                         gap: 8,
                         opacity: 1,

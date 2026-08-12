@@ -128,7 +128,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
         setSession(exchangedSession);
         setUser(exchangedSession?.user ?? null);
-      } catch {
+      } catch (error) {
+        console.warn("[AuthContext] OAuth code exchange failed:", error);
         handledAuthCodesRef.current.delete(code);
       }
     };

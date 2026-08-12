@@ -1,8 +1,36 @@
 <img width="1632" height="656" alt="StreamifyBanner" src="https://github.com/user-attachments/assets/d5eedf8e-ff9f-4cfa-bd05-f780a91b216f" />
 
+<div align="center">
+
+[![Downloads](https://img.shields.io/github/downloads/ErfanBagheri404/Streamify/total?style=flat-square&logo=github)](https://github.com/ErfanBagheri404/Streamify/releases/)
+[![Last Version](https://img.shields.io/github/release/ErfanBagheri404/Streamify/all.svg?style=flat-square)](https://github.com/ErfanBagheri404/Streamify/releases/)
+
+</div>
+
 # Streamify 🎵
 
 A modern, feature-rich music streaming application built with React Native and Expo, designed to deliver seamless audio experiences across Android devices.
+
+## 📥 Direct Download
+
+<div align=left>
+<table>
+    <thead align=left>
+        <tr>
+            <th>Platform</th>
+            <th>Download</th>
+        </tr>
+    </thead>
+    <tbody align=left>
+        <tr>
+            <td>Android</td>
+            <td>
+                <a href="https://github.com/ErfanBagheri404/Streamify/releases/latest/download/app-release.apk"><img src="https://img.shields.io/badge/APK-Universal-044d29.svg?logo=android"></a>
+            </td>
+        </tr>
+    </tbody>
+</table>
+</div>
 
 ## Features ✨
 

@@ -56,7 +56,7 @@ export default function ListItem(props: ListItemProps) {
   const { isRtl } = useAppLanguage();
 
   return (
-    <Row style={{ flexDirection: isRtl ? "row-reverse" : "row" }}>
+    <Row style={{ flexDirection: "row" }}>
       {!!thumbnail && <Thumb source={{ uri: thumbnail }} resizeMode="cover" />}
       <Content>
         <Title

@@ -18,13 +18,17 @@ import {
   clearAudioCacheForTrack,
   continueCachingTrack,
   monitorAndResumeCache,
+  AudioStreamManager,
   subscribeToAudioCacheProgress,
 } from "../modules/audioStreaming";
+import { cacheTrackThumbnail } from "../utils/thumbnailCache";
 
 import { StorageService, subscribeToLibraryUpdates } from "../utils/storage";
 import { trackPlayerService } from "../services/TrackPlayerService";
 import { t } from "../utils/localization";
 import { useAppSettings } from "../hooks/useAppSettings";
+import { CacheToast } from "../components/ui/CacheToast";
+import { QueueConflictModal } from "../components/ui/QueueConflictModal";
 import { hasPlaceholderTrackMetadata } from "../lib/cloud-library-sync";
 
 export interface Track {
@@ -91,6 +95,14 @@ function normalizeCachePercentage(
   return isFullyCached ? 100 : Math.max(0, Math.min(99, rounded));
 }
 
+// ── Cache queue rate limiting ──────────────────────────────────────────
+// Process this many liked songs per batch before taking a cooldown break.
+const CACHE_BATCH_SIZE = 3;
+// Milliseconds to wait between individual songs in a batch (spreads API calls).
+const CACHE_SONG_DELAY_MS = 10_000;
+// Milliseconds to wait after finishing a batch before starting the next one.
+const CACHE_BATCH_COOLDOWN_MS = 120_000;
+
 interface PlayerContextType {
   currentTrack: Track | null;
   playlist: Track[];
@@ -125,6 +137,10 @@ interface PlayerContextType {
     percentage: number;
     fileSize: number;
   } | null;
+  /** Increments whenever a track finishes caching — library screens listen to this. */
+  cacheQueueVersion: number;
+  /** Seconds remaining in cooldown, or 0 if not in cooldown. */
+  cacheCooldownSeconds: number;
   isTransitioning: boolean;
   streamRetryCount: number;
   hasStreamFailed: boolean;
@@ -219,11 +235,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [],
   );
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const [cacheToast, setCacheToast] = useState<{ visible: boolean; message: string }>({ visible: false, message: "" });
+  const [queueConflictModal, setQueueConflictModal] = useState<{ visible: boolean; trackTitle: string }>({ visible: false, trackTitle: "" });
+  const [cacheQueueVersion, setCacheQueueVersion] = useState(0);
+  const [cacheCooldownSeconds, setCacheCooldownSeconds] = useState(0);
+  const queueConflictResolverRef = useRef<((choice: "cancel" | "play") => void) | null>(null);
   const originalPlaylistRef = useRef<Track[]>([]);
   const currentPlaylistContextRef = useRef<Track[]>([]);
   const streamCheckRef = useRef<{ position: number; time: number } | null>(
     null,
   );
+  const seekGuardRef = useRef(0);
   const playRequestIdRef = useRef(0);
   const suppressNonPlayingStateRef = useRef(false);
   const playStateSuppressionTimeoutRef = useRef<ReturnType<
@@ -231,6 +253,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   > | null>(null);
   const likedSongsRef = useRef<Track[]>([]);
   const isCacheQueueProcessingRef = useRef(false);
+  const isPlayingRef = useRef(false);
+  const manualDownloadRef = useRef(false);
+  const canceledTrackIdsRef = useRef(new Set<string>());
   const cacheQueueAbortControllerRef = useRef<AbortController | null>(null);
   const activeCacheTrackIdRef = useRef<string | null>(null);
   const lastAppliedCachedUrlRef = useRef<string | null>(null);
@@ -559,10 +584,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, [clearPlayStateSuppression, currentTrack, normalizePlaybackError]);
 
-  const syncCurrentTrackFromPlayer = useCallback(async () => {
+  const syncCurrentTrackFromPlayer = useCallback(async (retryCount = 0) => {
     try {
       const queue = await TrackPlayer.getQueue();
       if (!Array.isArray(queue) || queue.length === 0) {
+        if (retryCount < 3) {
+          await new Promise((r) => setTimeout(r, 300));
+          return syncCurrentTrackFromPlayer(retryCount + 1);
+        }
         return;
       }
 
@@ -576,6 +605,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         activeTrackIndex < 0 ||
         activeTrackIndex >= queue.length
       ) {
+        if (retryCount < 3) {
+          await new Promise((r) => setTimeout(r, 300));
+          return syncCurrentTrackFromPlayer(retryCount + 1);
+        }
         return;
       }
 
@@ -815,6 +848,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     if (!trackId) {
       return;
     }
+    // Mark as user-canceled so the auto-cache queue won't re-queue it.
+    canceledTrackIdsRef.current.add(trackId);
     if (activeCacheTrackIdRef.current === trackId) {
       cacheQueueAbortControllerRef.current?.abort();
       cacheQueueAbortControllerRef.current = null;
@@ -933,6 +968,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
     isCacheQueueProcessingRef.current = true;
     const attemptedTrackIds = new Set<string>();
+    let songsInBatch = 0;
 
     try {
       while (true) {
@@ -942,29 +978,91 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           fileSize: number;
         } | null = null;
 
-        for (const likedTrack of likedSongsRef.current) {
-          if (!likedTrack?.id || attemptedTrackIds.has(likedTrack.id)) {
-            continue;
+        // ── Wait while user is actively playing ────────────────────
+        // The cache queue yields completely during playback so the JS
+        // thread and network bandwidth go to the player.
+        // Skip this wait when the user manually pressed the download button.
+        if (!manualDownloadRef.current) {
+          while (isPlayingRef.current) {
+            await new Promise<void>((resolve) =>
+              setTimeout(() => resolve(), 2000),
+            );
+            if (!isCacheQueueProcessingRef.current) {
+              return; // Queue was stopped externally
+            }
+          }
+        }
+
+        // Enforce batch cooldown: after processing CACHE_BATCH_SIZE songs,
+        // pause before starting the next batch to reduce API pressure.
+        if (songsInBatch >= CACHE_BATCH_SIZE) {
+          songsInBatch = 0;
+          // Use setInterval so React state updates aren't batched by concurrent mode
+          const totalSec = Math.ceil(CACHE_BATCH_COOLDOWN_MS / 1000);
+          await new Promise<void>((resolve) => {
+            let remaining = totalSec;
+            setCacheCooldownSeconds(remaining);
+            const timer = setInterval(() => {
+              remaining -= 1;
+              if (remaining <= 0) {
+                clearInterval(timer);
+                setCacheCooldownSeconds(0);
+                resolve();
+              } else {
+                setCacheCooldownSeconds(remaining);
+              }
+            }, 1000);
+          });
+        }
+
+        // ── Find the next track to cache ──────────────────────────
+        // Scan the liked list and pick the first un-cached, un-queued
+        // track.  We batch the getAudioCacheInfo calls so each iteration
+        // does at most 10 filesystem reads instead of 50+.
+        const SCAN_BATCH = 10;
+        const tracks = likedSongsRef.current.filter(
+          (t) =>
+            t?.id &&
+            t.title &&
+            !attemptedTrackIds.has(t.id) &&
+            !canceledTrackIdsRef.current.has(t.id),
+        );
+
+        for (let i = 0; i < tracks.length; i += SCAN_BATCH) {
+          // Yield between scan batches so UI stays responsive
+          if (i > 0) {
+            await new Promise<void>((resolve) =>
+              setTimeout(() => resolve(), 50),
+            );
           }
 
-          // Skip tracks with incomplete metadata (e.g. restored from cloud sync
-          // before enrichment completes) to avoid stalling and network churn.
-          if (hasPlaceholderTrackMetadata(likedTrack)) {
-            attemptedTrackIds.add(likedTrack.id);
-            continue;
-          }
+          const batch = tracks.slice(i, i + SCAN_BATCH);
+          const infoResults = await Promise.all(
+            batch.map(async (t) => {
+              if (hasPlaceholderTrackMetadata(t)) {
+                return { track: t, info: null as null };
+              }
+              const info = await getAudioCacheInfo(t.id);
+              return { track: t, info };
+            }),
+          );
 
-          const info = await getAudioCacheInfo(likedTrack.id);
-          if (info.isFullyCached || info.isDownloading) {
-            continue;
+          for (const r of infoResults) {
+            if (!r.info) {
+              attemptedTrackIds.add(r.track.id);
+              continue;
+            }
+            if (r.info.isFullyCached || r.info.isDownloading) {
+              continue;
+            }
+            nextTrackToCache = r.track;
+            initialCacheInfo = {
+              percentage: r.info.percentage,
+              fileSize: r.info.fileSize,
+            };
+            break;
           }
-
-          nextTrackToCache = likedTrack;
-          initialCacheInfo = {
-            percentage: info.percentage,
-            fileSize: info.fileSize,
-          };
-          break;
+          if (nextTrackToCache) break;
         }
 
         if (!nextTrackToCache) {
@@ -976,6 +1074,21 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         const controller = new AbortController();
         cacheQueueAbortControllerRef.current = controller;
 
+        // Resolve the stream URL — yields JS thread naturally.
+        // Do this BEFORE setting cacheProgress so failed resolutions
+        // don't leave a stale "caching 0%" entry.
+        const streamUrl = await resolveTrackStreamUrl(nextTrackToCache);
+        if (!streamUrl || streamUrl.startsWith("file://")) {
+          await reconcileFinalCacheInfo(nextTrackToCache.id);
+          // Yield after each track so UI can repaint
+          await new Promise<void>((resolve) =>
+            setTimeout(() => resolve(), 100),
+          );
+          cacheQueueAbortControllerRef.current = null;
+          activeCacheTrackIdRef.current = null;
+          continue;
+        }
+
         setCacheProgress(
           buildCacheProgressState(
             nextTrackToCache.id,
@@ -984,11 +1097,25 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           ),
         );
 
-        const streamUrl = await resolveTrackStreamUrl(nextTrackToCache);
-        if (!streamUrl || streamUrl.startsWith("file://")) {
-          await reconcileFinalCacheInfo(nextTrackToCache.id);
-          continue;
-        }
+        // Poll AudioStreamManager's in-memory progress and push to React state
+        // so LibraryScreen's loadDownloadingTracks fires and shows live percentage.
+        const reactProgressPoll = setInterval(() => {
+          try {
+            const mgr = AudioStreamManager.getInstance();
+            const p = (mgr as any).cacheProgress?.get?.(nextTrackToCache.id);
+            if (p && typeof p.percentage === "number") {
+              setCacheProgress({
+                trackId: nextTrackToCache.id,
+                percentage: Math.round(p.percentage),
+                fileSize: typeof p.lastFileSize === "number"
+                  ? Math.round(p.lastFileSize / (1024 * 1024))
+                  : typeof p.downloadedSize === "number"
+                    ? Math.round(p.downloadedSize / (1024 * 1024))
+                    : 0,
+              });
+            }
+          } catch {}
+        }, 1000);
 
         try {
           await continueCachingTrack(
@@ -1003,43 +1130,100 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           );
         }
 
-        await reconcileFinalCacheInfo(nextTrackToCache.id);
+        // Stop polling — download finished (success or fail)
+        clearInterval(reactProgressPoll);
 
-        const finalCacheInfo = await getAudioCacheInfo(nextTrackToCache.id);
-        const shouldMonitorRecovery =
-          !finalCacheInfo.isFullyCached &&
-          !finalCacheInfo.isDownloading &&
+        // Quick reconcile — read cache status once and move on.
+        // Don't block the queue on stale AsyncStorage reads.
+        let latestInfo = await getAudioCacheInfo(nextTrackToCache.id);
+        publishCacheInfo(nextTrackToCache.id, latestInfo);
+
+        const isFullyDone =
+          latestInfo.isFullyCached ||
+          latestInfo.percentage >= 100;
+
+        if (isFullyDone) {
+          // Cache thumbnail for offline use — fire-and-forget
+          cacheTrackThumbnail(nextTrackToCache.id, nextTrackToCache.thumbnail);
+          // Track completed — show toast and bump version so library refreshes.
+          setCacheToast({
+            visible: true,
+            message: `${nextTrackToCache.title} cached`,
+          });
+          setCacheQueueVersion((v) => v + 1);
+        } else if (
+          !latestInfo.isDownloading &&
           !!streamUrl &&
-          (streamUrl.startsWith("http://") || streamUrl.startsWith("https://"));
-
-        if (shouldMonitorRecovery) {
+          (streamUrl.startsWith("http://") || streamUrl.startsWith("https://"))
+        ) {
+          // Not done and not downloading — start recovery monitor
+          // but don't block the queue; fire-and-forget.
           void monitorAndResumeCache(nextTrackToCache.id, streamUrl);
         }
+        // If still downloading, the monitor will handle it. Move on.
 
         cacheQueueAbortControllerRef.current = null;
         activeCacheTrackIdRef.current = null;
+        songsInBatch += 1;
+
+        // Yield a generous gap between songs so UI can process events
+        await new Promise<void>((resolve) =>
+          setTimeout(() => resolve(), CACHE_SONG_DELAY_MS),
+        );
       }
     } finally {
       cacheQueueAbortControllerRef.current = null;
       activeCacheTrackIdRef.current = null;
       isCacheQueueProcessingRef.current = false;
+      manualDownloadRef.current = false;
     }
-  }, [reconcileFinalCacheInfo, resolveTrackStreamUrl]);
+  }, [resolveTrackStreamUrl, publishCacheInfo]);
+
+  // Sync isPlayingRef so the cache queue can check it without depending
+  // on the isPlaying state (which would re-create the callback).
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
   useEffect(() => {
-    if (settings.autoCacheLikedSongs) {
+    if (!settings.autoCacheLikedSongs) {
+      return;
+    }
+
+    // If playback just started, abort the current cache download so the JS
+    // thread and network bandwidth go to the player, not the cache queue.
+    if (isPlaying && cacheQueueAbortControllerRef.current) {
+      cacheQueueAbortControllerRef.current.abort();
+      cacheQueueAbortControllerRef.current = null;
+      activeCacheTrackIdRef.current = null;
+    }
+
+    // Wait until metadata is loaded for all liked songs before caching
+    const hasMissingMetadata = likedSongs.some((t) =>
+      hasPlaceholderTrackMetadata(t),
+    );
+
+    if (!hasMissingMetadata) {
       void processLikedSongsCacheQueue();
     }
-  }, [likedSongs, processLikedSongsCacheQueue, settings.autoCacheLikedSongs]);
+  }, [
+    likedSongs,
+    isPlaying,
+    processLikedSongsCacheQueue,
+    settings.autoCacheLikedSongs,
+  ]);
 
   useEffect(() => {
     if (likedSongs.length === 0 || !settings.autoCacheLikedSongs) {
       return;
     }
 
+    // Poll less frequently to reduce unnecessary wake-ups.  The cache queue
+    // processes continuously while active; this interval only restarts it
+    // after the queue drains (e.g. after all tracks are cached or skipped).
     const interval = setInterval(() => {
       void processLikedSongsCacheQueue();
-    }, 15000);
+    }, 130_000);
 
     return () => {
       clearInterval(interval);
@@ -1138,8 +1322,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   ]);
 
   useEffect(() => {
+    if (!settings.autoCacheLikedSongs) {
+      return;
+    }
     const subscription = AppState.addEventListener("change", (nextAppState) => {
-      if (nextAppState === "active") {
+      if (nextAppState === "active" && settings.autoCacheLikedSongs) {
         void processLikedSongsCacheQueue();
       }
     });
@@ -1147,11 +1334,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => {
       subscription.remove();
     };
-  }, [processLikedSongsCacheQueue]);
+  }, [processLikedSongsCacheQueue, settings.autoCacheLikedSongs]);
 
   const startCacheQueue = useCallback(() => {
+    // Abort any existing queue so this manual trigger restarts fresh
+    // instead of silently being ignored by the isCacheQueueProcessingRef guard.
+    if (isCacheQueueProcessingRef.current) {
+      cacheQueueAbortControllerRef.current?.abort();
+      cacheQueueAbortControllerRef.current = null;
+      activeCacheTrackIdRef.current = null;
+      isCacheQueueProcessingRef.current = false;
+    }
+    // Mark as manual download so the queue skips the play-state wait
+    // and processes tracks immediately even while music is playing.
+    manualDownloadRef.current = true;
+    // Clear canceled set so manual download can re-queue previously canceled tracks.
+    canceledTrackIdsRef.current.clear();
     void processLikedSongsCacheQueue();
-  }, [processLikedSongsCacheQueue]);
+  }, []);
 
   const removeLikedSong = useCallback(
     (trackId: string) => {
@@ -1326,6 +1526,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       let effectivePlaylist: Track[];
       let effectiveIndex: number;
 
+      if (!track) {
+        console.error("[PlayerContext] playTrack() called with null/undefined track");
+        setIsTransitioning(false);
+        setIsLoading(false);
+        return;
+      }
+
       if (playlistData.length > 0) {
         // Explicit playlist provided (e.g. search results, album, artist)
         effectivePlaylist = playlistData;
@@ -1349,6 +1556,42 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         suppressNonPlayingStateTemporarily();
         setIsLoading(true);
         setIsTransitioning(true);
+
+        // Cancel any ongoing cache download for this track to prevent
+        // FileSystem.write conflicts and native crashes when playing a
+        // song that is currently being cached in the background.
+        const isFullyCached = track?.audioUrl?.startsWith("file://");
+        // For already-cached songs (file:// URL), skip the expensive async checks
+        let isActivelyCaching = false;
+        let isQueuedForCaching = false;
+        if (!isFullyCached) {
+          isActivelyCaching = !!(track?.id && activeCacheTrackIdRef.current === track.id);
+          const isLikedSong = track?.id && likedSongsRef.current.some((s) => s.id === track.id);
+          // Also check actual cache status — a downloaded song may still have its original HTTP URL
+          const cacheInfo = track?.id ? await getAudioCacheInfo(track.id) : null;
+          const isReallyCached = isFullyCached || cacheInfo?.isFullyCached || false;
+          isQueuedForCaching = isLikedSong && !isReallyCached && !canceledTrackIdsRef.current.has(track.id);
+        }
+        if (isActivelyCaching || isQueuedForCaching) {
+          if (settings.autoQueueConflictAutoRemove) {
+            // Auto-remove mode: just cancel and proceed with playback
+            cancelCaching(track.id);
+          } else {
+            // Ask user mode - show themed modal
+            const choice = await new Promise<'cancel' | 'play'>((resolve) => {
+              queueConflictResolverRef.current = resolve;
+              setQueueConflictModal({ visible: true, trackTitle: track.title || "" });
+            });
+            setQueueConflictModal({ visible: false, trackTitle: "" });
+            queueConflictResolverRef.current = null;
+            if (choice === 'cancel') {
+              setIsLoading(false);
+              setIsTransitioning(false);
+              return;
+            }
+            cancelCaching(track.id);
+          }
+        }
 
         // Reset position and cache tracking for the new track
         setCacheProgress(null);
@@ -1391,12 +1634,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         // Stop current playback if any
         try {
           await trackPlayerService.stop();
+          // Brief delay to ensure native player fully releases audio
+          await new Promise((resolve) => setTimeout(resolve, 50));
         } catch (error) {
           console.log(
             "[PlayerContext] Error stopping current playback:",
             error,
           );
         }
+        // Ensure isPlaying is false after stop
+        setIsPlaying(false);
 
         // Get audio URL using the streaming manager
         let audioUrl = track.audioUrl;
@@ -1480,7 +1727,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
         if (finalAudioUrl && track.id) {
           const isLiked = likedSongs.some((song) => song.id === track.id);
-          if (isLiked) {
+          const wasJustCanceled = canceledTrackIdsRef.current.has(track.id);
+          if (isLiked && !wasJustCanceled) {
             try {
               const cached = await prepareCachedStreamUrl(
                 finalAudioUrl,
@@ -1559,6 +1807,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             console.log(
               "[PlayerContext] Checking TrackPlayer initialization status...",
             );
+
+            // Set now-playing metadata BEFORE the queue resets, so the
+            // lockscreen/notification doesn't go blank during loading.
+            try {
+              TrackPlayer.updateNowPlayingMetadata({
+                id: track.id,
+                title: track.title,
+                artist: track.artist || "",
+                album: "Streamify",
+                artwork: track.thumbnail || undefined,
+              });
+            } catch {}
 
             await trackPlayerService.addTracks(updatedPlaylist, effectiveIndex);
             await trackPlayerService.play();
@@ -1647,6 +1907,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           async (event) => {
             const position = event.position;
             const duration = event.duration;
+
+            // Skip stale progress events that arrive during a seek
+            if (seekGuardRef.current > 0) {
+              seekGuardRef.current--;
+              return;
+            }
 
             setPosition(position);
             setDuration(duration);
@@ -1767,6 +2033,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       clearPlayStateSuppression,
       suppressNonPlayingStateTemporarily,
       syncResolvedTrackUrlInState,
+      settings.autoQueueConflictAutoRemove,
+      cancelCaching,
     ],
   );
 
@@ -1979,9 +2247,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log(
           `[PlayerContext] Seeking to positionSeconds: ${safePositionSeconds}`,
         );
+        seekGuardRef.current++;
+        const guardId = seekGuardRef.current;
         setPosition(safePositionSeconds);
         await trackPlayerService.seekTo(safePositionSeconds);
-        setPosition(safePositionSeconds);
+        if (seekGuardRef.current === guardId) {
+          setPosition(safePositionSeconds);
+        }
         setDuration((prevDuration) =>
           prevDuration > 0 ? prevDuration : currentTrack.duration || 0,
         );
@@ -2463,8 +2735,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
         return updatedSongs;
       });
+
+      // Trigger immediate caching if auto-cache is enabled
+      if (settings.autoCacheLikedSongs) {
+        setTimeout(() => {
+          void processLikedSongsCacheQueue();
+        }, 100); // Small delay to let React state settle
+      }
     },
-    [removeLikedSong],
+    [removeLikedSong, settings.autoCacheLikedSongs, processLikedSongsCacheQueue],
   );
 
   const isSongLiked = useCallback(
@@ -2527,6 +2806,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     likedSongs,
     previouslyPlayedSongs,
     cacheProgress,
+    cacheQueueVersion,
+    cacheCooldownSeconds,
     isTransitioning,
     streamRetryCount,
     hasStreamFailed,
@@ -2558,7 +2839,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   return (
-    <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>
+    <>
+      <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>
+      <CacheToast
+        visible={cacheToast.visible}
+        message={cacheToast.message}
+        onHide={() => setCacheToast({ visible: false, message: "" })}
+      />
+      <QueueConflictModal
+        visible={queueConflictModal.visible}
+        trackTitle={queueConflictModal.trackTitle}
+        onCancel={() => {
+          queueConflictResolverRef.current?.("cancel");
+        }}
+        onRemoveAndPlay={() => {
+          queueConflictResolverRef.current?.("play");
+        }}
+      />
+    </>
   );
 };
 

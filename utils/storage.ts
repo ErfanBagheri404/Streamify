@@ -771,3 +771,25 @@ export const StorageService = {
     }
   },
 };
+
+// ---------------------------------------------------------------------------
+// Onboarding
+// ---------------------------------------------------------------------------
+const ONBOARDING_COMPLETED_KEY = "@streamify_onboarding_completed";
+
+export async function hasCompletedOnboarding(): Promise<boolean> {
+  try {
+    const value = await AsyncStorage.getItem(ONBOARDING_COMPLETED_KEY);
+    return value === "true";
+  } catch {
+    return false;
+  }
+}
+
+export async function markOnboardingCompleted(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(ONBOARDING_COMPLETED_KEY, "true");
+  } catch {
+    // silent
+  }
+}

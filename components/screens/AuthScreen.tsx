@@ -7,7 +7,6 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import * as Linking from "expo-linking";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Screen } from "../ui/Screen";
@@ -250,138 +249,36 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
   return (
     <Screen padded={false} safeEdges={["left", "right"]}>
       <View style={[styles.screen, { backgroundColor: colors.background }]}>
-        <LinearGradient
-          colors={[
-            withOpacity(colors.heroStart, isLight ? 0.18 : 0.12),
-            withOpacity(colors.heroMid, isLight ? 0.24 : 0.18),
-            withOpacity(colors.heroEnd, isLight ? 0.14 : 0.12),
-            withOpacity(colors.background, 1),
-          ]}
-          start={{ x: 0.04, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={ABSOLUTE_FILL}
-        />
+        {/* Drag handle */}
+        <View style={styles.dragHandleRow}>
+          <View
+            style={[
+              styles.dragHandle,
+              { backgroundColor: withOpacity(colors.foreground, 0.2) },
+            ]}
+          />
+        </View>
 
-        <View
-          pointerEvents="none"
+        {/* Close button */}
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
           style={[
-            styles.aura,
+            styles.closeButton,
             {
-              backgroundColor: withOpacity(colors.accent, isLight ? 0.14 : 0.1),
-              top: insets.top + 42,
-              [isRtl ? "right" : "left"]: -46,
-            },
-          ]}
-        />
-        <LinearGradient
-          pointerEvents="none"
-          colors={[
-            withOpacity(colors.heroMid, 0),
-            withOpacity(colors.heroMid, isLight ? 0.16 : 0.11),
-            withOpacity(colors.heroEnd, 0),
-          ]}
-          style={[
-            styles.ribbon,
-            {
-              top: insets.top + 136,
-              [isRtl ? "left" : "right"]: -86,
-              transform: [{ rotate: isRtl ? "-22deg" : "22deg" }],
-            },
-          ]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        />
-        <View
-          pointerEvents="none"
-          style={[
-            styles.aura,
-            styles.auraLarge,
-            {
-              backgroundColor: withOpacity(
-                colors.heroStart,
-                isLight ? 0.14 : 0.11,
-              ),
-              bottom: 104,
-              [isRtl ? "left" : "right"]: -84,
-            },
-          ]}
-        />
-        <View
-          pointerEvents="none"
-          style={[
-            styles.softHalo,
-            {
-              backgroundColor: withOpacity(
-                colors.foreground,
-                isLight ? 0.04 : 0.03,
-              ),
-              top: insets.top + 210,
-              alignSelf: "center",
-            },
-          ]}
-        />
-
-        <View
-          style={[
-            styles.header,
-            {
-              flexDirection: "row",
-              paddingTop: insets.top + 18,
+              backgroundColor: withOpacity(colors.surface1, 0.92),
+              borderColor: colors.borderSubtle,
             },
           ]}
         >
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={[
-              styles.backButton,
-              {
-                backgroundColor: withOpacity(colors.surface1, 0.92),
-                borderColor: colors.borderSubtle,
-              },
-            ]}
-          >
-            <Ionicons name="chevron-back" size={22} color={colors.foreground} />
-          </TouchableOpacity>
-          <View style={styles.headerSpacer} />
-        </View>
+          <Ionicons name="close" size={20} color={colors.foreground} />
+        </TouchableOpacity>
 
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingTop: insets.top + 104 },
-          ]}
+          contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          <View
-            style={[
-              styles.card,
-              {
-                backgroundColor: withOpacity(
-                  colors.surface1,
-                  isLight ? 0.92 : 0.88,
-                ),
-                borderColor: colors.borderSubtle,
-                shadowColor: colors.foreground,
-              },
-            ]}
-          >
-            <View
-              style={[
-                styles.badge,
-                {
-                  alignSelf: isRtl ? "flex-end" : "flex-start",
-                  backgroundColor: withOpacity(colors.foreground, 0.05),
-                  borderColor: withOpacity(colors.foreground, 0.08),
-                },
-              ]}
-            >
-              <MutedText style={styles.badgeText}>
-                {t("auth.brandBadge")}
-              </MutedText>
-            </View>
-
-            <TitleText
+          <TitleText
               style={[
                 styles.title,
                 {
@@ -447,7 +344,7 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
                       isLight ? 0.55 : 0.7,
                     ),
                     borderColor: colors.borderSubtle,
-                    flexDirection: isRtl ? "row-reverse" : "row",
+                    flexDirection: "row",
                   },
                 ]}
               >
@@ -491,7 +388,7 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
                         isLight ? 0.55 : 0.7,
                       ),
                       borderColor: colors.borderSubtle,
-                      flexDirection: isRtl ? "row-reverse" : "row",
+                      flexDirection: "row",
                     },
                   ]}
                 >
@@ -582,8 +479,8 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
                   size={18}
                   color={colors.foreground}
                   style={{
-                    marginRight: isRtl ? 0 : 10,
-                    marginLeft: isRtl ? 10 : 0,
+                    marginRight: 10,
+                    marginLeft: 10,
                   }}
                 />
                 <BodyText
@@ -656,7 +553,7 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
               style={[
                 styles.switchRow,
                 {
-                  flexDirection: isRtl ? "row-reverse" : "row",
+                  flexDirection: "row",
                 },
               ]}
             >
@@ -701,7 +598,6 @@ export default function AuthScreen({ navigation, mode }: AuthScreenProps) {
             >
               {t("auth.termsNote")}
             </MutedText>
-          </View>
         </ScrollView>
       </View>
     </Screen>
@@ -718,85 +614,48 @@ const styles = StyleSheet.create({
     height: 180,
     borderRadius: 56,
   },
-  auraLarge: {
-    width: 260,
-    height: 220,
-  },
-  ribbon: {
-    position: "absolute",
-    width: 240,
-    height: 150,
-    borderRadius: 44,
-  },
-  softHalo: {
-    position: "absolute",
-    width: 280,
-    height: 180,
-    borderRadius: 999,
-  },
-  header: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 2,
-    flexDirection: "row",
-    justifyContent: "space-between",
+  dragHandleRow: {
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
-  backButton: {
-    width: 42,
-    height: 42,
+  dragHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+  },
+  closeButton: {
+    position: "absolute",
+    top: 12,
+    right: 16,
+    width: 36,
+    height: 36,
     borderRadius: 999,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-  },
-  headerSpacer: {
-    width: 42,
+    zIndex: 10,
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: 24,
+    paddingTop: 8,
     paddingBottom: 56,
   },
-  card: {
-    borderRadius: 28,
-    borderWidth: 1,
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 20,
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.16,
-    shadowRadius: 34,
-    elevation: 8,
-  },
-  badge: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  badgeText: {
-    fontSize: 11,
-    lineHeight: 14,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-  },
   title: {
-    marginTop: 18,
-    fontSize: 32,
-    lineHeight: 38,
+    marginTop: 8,
+    fontSize: 28,
+    lineHeight: 34,
+    textAlign: "center",
   },
   description: {
-    marginTop: 10,
+    marginTop: 8,
     fontSize: 14,
     lineHeight: 20,
+    textAlign: "center",
   },
   form: {
-    marginTop: 22,
+    marginTop: 24,
     gap: 12,
   },
   inputShell: {

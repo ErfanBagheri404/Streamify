@@ -182,22 +182,22 @@ export const SliderSheet: React.FC<SliderSheetProps> = ({
           />
           <SheetHeaderRow
             {...panHandlers}
-            style={{ flexDirection: isRtl ? "row-reverse" : "row" }}
+            style={{ flexDirection: "row" }}
           >
             {currentTrack.thumbnail ? (
               <SheetHeaderCoverImage
                 source={{ uri: currentTrack.thumbnail }}
                 style={{
-                  marginRight: isRtl ? 0 : 12,
-                  marginLeft: isRtl ? 12 : 0,
+                  marginRight: 12,
+                  marginLeft: 12,
                 }}
               />
             ) : (
               <SheetHeaderCoverPlaceholder
                 style={{
                   backgroundColor: colors.surface2,
-                  marginRight: isRtl ? 0 : 12,
-                  marginLeft: isRtl ? 12 : 0,
+                  marginRight: 12,
+                  marginLeft: 12,
                 }}
               >
                 <Ionicons
@@ -238,12 +238,12 @@ export const SliderSheet: React.FC<SliderSheetProps> = ({
               <SheetItem
                 key={option.key}
                 onPress={() => handleOptionPress(option.key)}
-                style={{ flexDirection: isRtl ? "row-reverse" : "row" }}
+                style={{ flexDirection: "row" }}
               >
                 <SheetItemIconWrapper
                   style={{
-                    marginRight: isRtl ? 0 : 16,
-                    marginLeft: isRtl ? 16 : 0,
+                    marginRight: 16,
+                    marginLeft: 16,
                   }}
                 >
                   <Ionicons

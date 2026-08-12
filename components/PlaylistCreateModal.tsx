@@ -90,7 +90,7 @@ export function PlaylistCreateModal({
               <View
                 style={[
                   styles.headerRow,
-                  { flexDirection: isRtl ? "row-reverse" : "row" },
+                  { flexDirection: "row" },
                 ]}
               >
                 <View style={styles.headerTextBlock}>
@@ -119,9 +119,7 @@ export function PlaylistCreateModal({
                   {
                     flexDirection: stacked
                       ? "column"
-                      : isRtl
-                        ? "row-reverse"
-                        : "row",
+                      : "row",
                   },
                 ]}
               >
@@ -221,7 +219,7 @@ export function PlaylistCreateModal({
                   styles.footer,
                   stacked
                     ? styles.footerStacked
-                    : { flexDirection: isRtl ? "row-reverse" : "row" },
+                    : { flexDirection: "row" },
                 ]}
               >
                 <TouchableOpacity onPress={onClose} style={styles.cancelButton}>

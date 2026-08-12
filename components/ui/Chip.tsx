@@ -68,9 +68,9 @@ export function Chip({
         style,
       ]}
     >
-      <View style={[styles.contentRow, { flexDirection: isRtl ? "row-reverse" : "row" }]}>
+      <View style={[styles.contentRow, { flexDirection: "row" }]}>
         {icon ? (
-          <View style={[styles.iconWrapper, { marginEnd: isRtl ? 0 : iconGap, marginStart: isRtl ? iconGap : 0 }]}>
+          <View style={[styles.iconWrapper, { marginEnd: iconGap, marginStart: 0 }]}>
             {icon}
           </View>
         ) : null}

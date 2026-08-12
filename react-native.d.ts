@@ -24,6 +24,14 @@ declare module "react-native" {
     static addEventListener(event: string, handler: Function): Subscription;
     static removeListener(event: string, handler: Function): void;
   }
+  export interface AlertButton {
+    text?: string;
+    onPress?: () => void;
+    style?: "default" | "cancel" | "destructive";
+  }
+  export class Alert {
+    static alert(title: string, message?: string, buttons?: AlertButton[]): void;
+  }
   export class Dimensions {
     static get(dim: string): { width: number; height: number };
   }

@@ -127,12 +127,12 @@ export function Screen(props: ScreenProps) {
             {...scrollProps}
             style={[
               styles.screen,
-              { backgroundColor: colors.background, direction: dir },
+              { backgroundColor: colors.background },
               style,
             ]}
             contentContainerStyle={[
               padded ? styles.padded : null,
-              { direction: dir },
+              {  },
               contentContainerStyle,
             ]}
           >

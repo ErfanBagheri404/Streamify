@@ -1,4 +1,5 @@
 import { fetchWithRetry } from "../components/core/api";
+import { getSoundCloudApiV2Base } from "../components/core/api";
 import { pickBestImageUrl, sanitizeImageUrl } from "../components/core/image";
 import type { Track } from "../contexts/PlayerContext";
 import {
@@ -39,6 +40,7 @@ export type LocalLibrarySyncSource = {
 export type RestoreCloudLibraryOptions = {
   deferTrackMetadataRefresh?: boolean;
   onLibraryHydrated?: () => void | Promise<void>;
+  onSoundCloudRestricted?: (count: number) => void;
 };
 
 function normalizeString(value: unknown): string {
@@ -1194,10 +1196,103 @@ async function resolveYouTubeTrack(
         source: ref.source,
         title: pickTrackTitle([knownTrack?.title], ref.id),
         artist: knownTrack?.artist || "YouTube",
+        thumbnail: knownTrack?.thumbnail || sanitizeImageUrl(ref.id) || undefined,
       },
       knownTrack,
     );
   }
+}
+
+const SOUNDCLOUD_CLIENT_ID = "gqKBMSuBw5rbN9rDRYPqKNvF17ovlObu";
+const SOUNDCLOUD_RESTRICTED_MSG =
+  "SoundCloud is restricted in your region. Use a VPN to access SoundCloud songs.";
+
+function isSoundCloudRestrictedError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("restricted") ||
+    lower.includes("403") ||
+    lower.includes("forbidden") ||
+    lower.includes("license") ||
+    lower.includes("drm") ||
+    lower.includes("encrypted") ||
+    lower.includes("not available in your country")
+  );
+}
+
+async function resolveSoundCloudTrack(
+  ref: TrackRef,
+  knownTrack?: Track | null,
+): Promise<Track> {
+  const apiV2Base = getSoundCloudApiV2Base();
+  if (!apiV2Base) {
+    return mergeTrack(
+      {
+        id: ref.id,
+        source: "soundcloud",
+        title: pickTrackTitle([knownTrack?.title], ref.id),
+        artist: knownTrack?.artist || "SoundCloud",
+      },
+      knownTrack,
+    );
+  }
+
+  try {
+    const url = `${apiV2Base}/tracks/${encodeURIComponent(ref.id)}?client_id=${SOUNDCLOUD_CLIENT_ID}`;
+    const data = await fetchWithRetry<any>(url, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+    }, 1);
+
+    if (data && data.title) {
+      const artwork = data.artwork_url
+        ? data.artwork_url.replace("-large", "-original")
+        : data.user?.avatar_url || null;
+      // Build resolved track directly — bypass mergeTrack/normalizeTrack
+      // which call pickTrackTitle and may strip the real title
+      const resolved: Track = {
+        id: ref.id,
+        source: "soundcloud",
+        _isSoundCloud: true,
+        title: data.title,
+        artist: data.user?.username || "SoundCloud",
+        thumbnail: artwork ? sanitizeImageUrl(artwork) : undefined,
+        duration: typeof data.duration === "number" ? Math.round(data.duration / 1000) : undefined,
+        audioUrl: undefined,
+        url: data.permalink_url || undefined,
+        artistId: undefined,
+        artistImage: undefined,
+        artistSource: undefined,
+      };
+      // Merge knownTrack fields that resolved track doesn't have
+      if (knownTrack) {
+        if (!resolved.audioUrl && knownTrack.audioUrl) resolved.audioUrl = knownTrack.audioUrl;
+        if (!resolved.thumbnail && knownTrack.thumbnail) resolved.thumbnail = knownTrack.thumbnail;
+      }
+      return resolved;
+    }
+  } catch (error: any) {
+    const msg = error?.message || String(error);
+    if (isSoundCloudRestrictedError(msg)) {
+      console.warn("[CloudSync] SoundCloud restricted:", ref.id, msg);
+    } else {
+      console.warn("[CloudSync] SoundCloud resolve failed:", ref.id, msg);
+    }
+  }
+
+  // Fallback — return what we have
+  return mergeTrack(
+    {
+      id: ref.id,
+      source: "soundcloud",
+      title: pickTrackTitle([knownTrack?.title], ref.id),
+      artist: knownTrack?.artist || "SoundCloud",
+    },
+    knownTrack,
+  );
 }
 
 async function resolveCloudTrackRef(
@@ -1210,6 +1305,10 @@ async function resolveCloudTrackRef(
 
   if (ref.source === "youtube" || ref.source === "youtubemusic") {
     return resolveYouTubeTrack(ref, knownTrack);
+  }
+
+  if (ref.source === "soundcloud") {
+    return resolveSoundCloudTrack(ref, knownTrack);
   }
 
   return mergeTrack(
@@ -1386,7 +1485,7 @@ async function mapWithConcurrencyLimit<T, R>(
   return results;
 }
 
-const METADATA_REFRESH_CONCURRENCY = 4;
+const METADATA_REFRESH_CONCURRENCY = 2;
 
 async function refreshStoredLibraryMetadata() {
   const [playlists, likedSongs, knownLocalTracks] = await Promise.all([
@@ -1447,7 +1546,18 @@ async function refreshStoredLibraryMetadata() {
 
   const resolvedByKey = new Map<string, Track>(resolvedEntries);
   if (resolvedByKey.size === 0) {
-    return { refreshed: 0 };
+    return { refreshed: 0, soundcloudFailed: 0 };
+  }
+
+  // Count SoundCloud tracks that still have placeholder metadata
+  let soundcloudFailed = 0;
+  for (const [key, track] of resolvedByKey) {
+    if (
+      (track.source === "soundcloud" || track._isSoundCloud) &&
+      (!track.title || track.title === track.id)
+    ) {
+      soundcloudFailed++;
+    }
   }
 
   const nextPlaylists = playlists.map((playlist) => ({
@@ -1468,7 +1578,7 @@ async function refreshStoredLibraryMetadata() {
     StorageService.saveLikedSongs(nextLikedSongs),
   ]);
 
-  return { refreshed: resolvedByKey.size };
+  return { refreshed: resolvedByKey.size, soundcloudFailed };
 }
 
 export async function restoreCloudLibrary(
@@ -1517,7 +1627,10 @@ export async function restoreCloudLibrary(
     ]);
 
     void (async () => {
-      await refreshStoredLibraryMetadata().catch(() => {});
+      const result = await refreshStoredLibraryMetadata().catch(() => ({ refreshed: 0, soundcloudFailed: 0 }));
+      if (result.soundcloudFailed > 0 && options.onSoundCloudRestricted) {
+        options.onSoundCloudRestricted(result.soundcloudFailed);
+      }
       await options.onLibraryHydrated?.();
     })();
 
@@ -1571,7 +1684,9 @@ export async function restoreCloudLibrary(
   };
 }
 
-export async function syncCloudLibrarySnapshot() {
+export async function syncCloudLibrarySnapshot(
+  options?: { onSoundCloudRestricted?: (count: number) => void },
+) {
   const localSource = await buildCurrentLocalLibrarySyncSource();
   const remoteSnapshot = await pullCloudLibrarySnapshot();
   const lastSyncedSnapshot = await readLastSyncedCloudLibrarySnapshot();
@@ -1590,6 +1705,7 @@ export async function syncCloudLibrarySnapshot() {
 
     await restoreCloudLibrary(mergedSnapshot, {
       deferTrackMetadataRefresh: true,
+      onSoundCloudRestricted: options?.onSoundCloudRestricted,
     });
 
     const uploadResult = await pushCloudLibrarySnapshot(mergedSnapshot, {
@@ -1607,6 +1723,7 @@ export async function syncCloudLibrarySnapshot() {
   if (hasSnapshotData(remoteSnapshot)) {
     await restoreCloudLibrary(remoteSnapshot, {
       deferTrackMetadataRefresh: true,
+      onSoundCloudRestricted: options?.onSoundCloudRestricted,
     });
     await saveLastSyncedCloudLibrarySnapshot(remoteSnapshot);
 

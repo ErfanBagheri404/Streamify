@@ -352,7 +352,7 @@ function StreamItem(props: StreamItemProps) {
             </DurationBadge>
           )}
       </ThumbWrap>
-      <Content>
+      <Content style={{ alignItems: isRtl ? "flex-end" : "flex-start" }}>
         <View
           style={{
             flexDirection: isRtl ? "row-reverse" : "row",
@@ -371,8 +371,8 @@ function StreamItem(props: StreamItemProps) {
           {verified && (
             <VerifiedBadge
               style={{
-                marginLeft: isRtl ? 0 : 4,
-                marginRight: isRtl ? 4 : 0,
+                marginLeft: 4,
+                marginRight: 4,
               }}
             >
               <MaterialIcons name="verified" size={16} color="#3b82f6" />
@@ -419,8 +419,8 @@ function StreamItem(props: StreamItemProps) {
                 style={{
                   color: colors.muted,
                   fontFamily: getAppFontFamily(isRtl, "regular"),
-                  marginLeft: isRtl ? 0 : 8,
-                  marginRight: isRtl ? 8 : 0,
+                  marginLeft: 8,
+                  marginRight: 8,
                   ...getTextDirectionStyle(isRtl),
                 }}
               >

@@ -172,12 +172,12 @@ const SearchContainer = styled.View`
   align-items: center;
   background-color: #262626;
   border-radius: 24px;
-  padding-right: 8px;
+  paddingEnd: 8px;
 `;
 
 const SearchIconWrapper = styled.View`
-  padding-left: 12px;
-  padding-right: 4px;
+  paddingStart: 12px;
+  paddingEnd: 4px;
 `;
 
 const SearchInput = styled.TextInput`
@@ -194,7 +194,7 @@ const SearchInput = styled.TextInput`
 
 const ClearButton = styled.TouchableOpacity`
   padding: 8px;
-  margin-right: 4px;
+  marginEnd: 4px;
   opacity: ${(props) => (props.disabled ? 0.3 : 1)};
 `;
 
@@ -507,7 +507,7 @@ function normalizeFilterForSource(
 
 export default function SearchScreen({ navigation }: any) {
   const { colors } = useTheme();
-  const { t, isRtl } = useAppLanguage();
+  const { t, isRtl, dir } = useAppLanguage();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -1806,21 +1806,22 @@ export default function SearchScreen({ navigation }: any) {
 
   return (
     <Screen padded={false}>
-      <Header style={{ flexDirection: isRtl ? "row-reverse" : "row" }}>
+      <Header style={{ flexDirection: isRtl ? "row-reverse" : "row", direction: dir, paddingStart: 0 }}>
         <SearchContainer
           style={{
             flexDirection: isRtl ? "row-reverse" : "row",
             backgroundColor: colors.surface1,
             borderColor: colors.borderSubtle,
             borderWidth: 1,
-            paddingRight: isRtl ? 0 : 8,
-            paddingLeft: isRtl ? 8 : 0,
+            paddingEnd: 0,
+            paddingStart: 0,
+            direction: dir,
           }}
         >
           <SearchIconWrapper
             style={{
-              paddingLeft: isRtl ? 4 : 12,
-              paddingRight: isRtl ? 12 : 4,
+              paddingStart: 12,
+              paddingEnd: 12,
             }}
           >
             <Ionicons name="search" size={18} color={colors.muted} />
@@ -1847,8 +1848,8 @@ export default function SearchScreen({ navigation }: any) {
               onPress={clearSearch}
               disabled={!searchQuery}
               style={{
-                marginRight: isRtl ? 0 : 4,
-                marginLeft: isRtl ? 4 : 0,
+                marginEnd: 4,
+                marginStart: 4,
               }}
             >
               <Ionicons name="close-circle" size={20} color={colors.muted} />
@@ -1899,19 +1900,19 @@ export default function SearchScreen({ navigation }: any) {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            style={styles.filterRow}
+            style={[styles.filterRow, isRtl && { transform: [{ scaleX: -1 }] }]}
             contentContainerStyle={[
               styles.filterRowContent,
               {
                 flexGrow: 1,
-                flexDirection: isRtl ? "row-reverse" : "row",
-                justifyContent: "flex-start",
+                paddingEnd: 16,
               },
             ]}
           >
-            {SEARCH_SOURCE_OPTIONS.map((source) => {
+            {SEARCH_SOURCE_OPTIONS.map((source, index) => {
               const isSelected = selectedSource === source.id;
               return (
+                <View key={source.id} style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
                 <Chip
                   key={source.id}
                   label={t(source.labelKey)}
@@ -1920,8 +1921,7 @@ export default function SearchScreen({ navigation }: any) {
                   chipStyle={[
                     styles.searchChip,
                     {
-                      marginRight: isRtl ? 0 : 8,
-                      marginLeft: isRtl ? 8 : 0,
+                      marginLeft: !isRtl && index === 0 ? 0 : 8,
                       backgroundColor: isSelected
                         ? source.color + "2E" // ~18% opacity via hex
                         : "transparent",
@@ -1944,6 +1944,7 @@ export default function SearchScreen({ navigation }: any) {
                   selectedTextColor={colors.foreground}
                   unselectedTextColor={colors.muted}
                 />
+                </View>
               );
             })}
           </ScrollView>
@@ -1951,7 +1952,7 @@ export default function SearchScreen({ navigation }: any) {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={styles.filterRowSpacing}
+              style={[styles.filterRowSpacing, { direction: dir }]}
               contentContainerStyle={[
                 styles.filterRowContent,
                 {
@@ -1961,7 +1962,7 @@ export default function SearchScreen({ navigation }: any) {
                 },
               ]}
             >
-              {activeFilterOptions.map((filter) => (
+              {activeFilterOptions.map((filter, index) => (
                 <Chip
                   key={filter.value || "all"}
                   label={t(filter.labelKey)}
@@ -1970,8 +1971,7 @@ export default function SearchScreen({ navigation }: any) {
                   chipStyle={[
                     styles.searchChip,
                     {
-                      marginRight: isRtl ? 0 : 8,
-                      marginLeft: isRtl ? 8 : 0,
+                      marginLeft: !isRtl && index === 0 ? 0 : 8,
                       opacity: selectedFilter === filter.value ? 1 : 0.72,
                     },
                   ]}
@@ -2028,7 +2028,7 @@ export default function SearchScreen({ navigation }: any) {
                 key={`${item}-${index}`}
                 onPress={() => onSuggestionPress(item)}
                 style={{
-                  flexDirection: isRtl ? "row-reverse" : "row",
+                  flexDirection: "row",
                   borderBottomColor:
                     index === suggestions.length - 1
                       ? "transparent"
@@ -2040,7 +2040,7 @@ export default function SearchScreen({ navigation }: any) {
                   style={[
                     { color: colors.foreground },
                     localizedTextStyle,
-                    isRtl ? styles.suggestionTextRtl : null,
+                    null,
                   ]}
                 >
                   {item}
@@ -2048,7 +2048,6 @@ export default function SearchScreen({ navigation }: any) {
                 <SuggestionMeta
                   style={{ color: withOpacity(colors.foreground, 0.32) }}
                 >
-                  {String(index + 1).padStart(2, "0")}
                 </SuggestionMeta>
               </SuggestionItem>
             ))
@@ -2062,6 +2061,7 @@ export default function SearchScreen({ navigation }: any) {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 144 }}
         onScrollBeginDrag={handleOutsidePress}
+        style={{ direction: dir }}
         onScroll={(event) => {
           scrollPositionRef.current = event.nativeEvent.contentOffset.y;
         }}
@@ -2345,14 +2345,13 @@ const styles = StyleSheet.create({
   filterToggleButton: {
     width: 48,
     height: 48,
-    marginLeft: 12,
     borderRadius: 24,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
   filterRow: {
-    marginHorizontal: 16,
+    paddingHorizontal: 16,
     marginBottom: 0,
     maxHeight: 36,
   },
@@ -2361,15 +2360,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   filterRowSpacing: {
-    marginHorizontal: 16,
+    paddingHorizontal: 16,
     marginTop: 8,
     maxHeight: 36,
   },
   searchChip: {
     height: 32,
     minHeight: 32,
-    marginRight: 8,
-    paddingHorizontal: 12,
+    marginEnd: 0,
+    paddingHorizontal: 10,
     alignSelf: "center",
   },
   searchChipText: {
@@ -2383,7 +2382,7 @@ const styles = StyleSheet.create({
     textTransform: "none",
   },
   suggestionTextRtl: {
-    marginLeft: 0,
-    marginRight: 10,
+    marginStart: 0,
+    marginEnd: 0,
   },
 });

@@ -31,21 +31,21 @@ export function SectionHeader({
   ...rest
 }: SectionHeaderProps) {
   const { colors } = useTheme();
-  const { isRtl } = useAppLanguage();
+  const { isRtl, dir } = useAppLanguage();
 
   return (
     <View
       {...rest}
       style={[
         styles.container,
-        { flexDirection: isRtl ? "row-reverse" : "row" },
+        { flexDirection: isRtl ? "row-reverse" : "row", writingDirection: dir },
         style,
       ]}
     >
       <View
         style={[
           styles.textBlock,
-          { alignItems: isRtl ? "flex-end" : "flex-start" },
+          { alignItems: isRtl ? "flex-end" : "flex-start", writingDirection: dir },
         ]}
       >
         <TitleText numberOfLines={1} style={styles.title}>

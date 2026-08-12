@@ -147,9 +147,8 @@ export const Playlist: React.FC<PlaylistProps> = ({
         style={[
           styles.reorderControls,
           {
-            flexDirection: isRtl ? "row-reverse" : "row",
-            marginRight: isRtl ? 0 : 6,
-            marginLeft: isRtl ? 6 : 0,
+            flexDirection: "row",
+            marginRight: 6,
           },
         ]}
       >
@@ -194,8 +193,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
           styles.songNumber,
           {
             color: colors.muted,
-            marginRight: isRtl ? 0 : 12,
-            marginLeft: isRtl ? 12 : 0,
+            marginRight: 12,
           },
         ]}
       >
@@ -210,7 +208,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
         style={[
           styles.songItem,
           {
-            flexDirection: isRtl ? "row-reverse" : "row",
+            flexDirection: "row",
           },
         ]}
       >
@@ -224,7 +222,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
         <View
           style={[
             styles.songInfo,
-            { alignItems: isRtl ? "flex-end" : "flex-start" },
+            { alignItems: "flex-start" },
           ]}
         >
           <TitleText
@@ -257,7 +255,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
         <View
           style={[
             styles.songActions,
-            { marginLeft: isRtl ? 0 : 8, marginRight: isRtl ? 8 : 0 },
+            { marginLeft: 8 },
           ]}
         >
           {showSongOptions !== false && onSongOptionsPress && (
@@ -290,7 +288,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
       style={[
         styles.songItem,
         {
-          flexDirection: isRtl ? "row-reverse" : "row",
+          flexDirection: "row",
         },
       ]}
       // #region debug-point A:loading-row-layout
@@ -317,16 +315,14 @@ export const Playlist: React.FC<PlaylistProps> = ({
         height={18}
         style={{
           borderRadius: 6,
-          marginRight: isRtl ? 0 : 12,
-          marginLeft: isRtl ? 12 : 0,
+          marginRight: 12,
         }}
       />
       <SkeletonLoader
         style={[
           styles.songThumbnail,
           {
-            marginRight: isRtl ? 0 : 12,
-            marginLeft: isRtl ? 12 : 0,
+            marginRight: 12,
             backgroundColor: withOpacity(colors.foreground, 0.14),
           },
         ]}
@@ -334,7 +330,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
       <View
         style={[
           styles.songInfo,
-          { alignItems: isRtl ? "flex-end" : "flex-start" },
+          { alignItems: "flex-start" },
         ]}
       >
         <SkeletonLoader
@@ -343,7 +339,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
             width: "72%",
             borderRadius: 8,
             marginBottom: 8,
-            alignSelf: isRtl ? "flex-end" : "flex-start",
+            alignSelf: "flex-start",
           }}
         />
         <SkeletonLoader
@@ -351,14 +347,14 @@ export const Playlist: React.FC<PlaylistProps> = ({
           style={{
             width: "46%",
             borderRadius: 7,
-            alignSelf: isRtl ? "flex-end" : "flex-start",
+            alignSelf: "flex-start",
           }}
         />
       </View>
       <View
         style={[
           styles.songActions,
-          { marginLeft: isRtl ? 0 : 8, marginRight: isRtl ? 8 : 0 },
+          { marginLeft: 8 },
         ]}
       >
         <SkeletonLoader width={28} height={28} style={{ borderRadius: 14 }} />
@@ -416,6 +412,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
                 shadowColor: colors.foreground,
               },
             ]}
+            resizeMode="cover"
           />
         ) : isLoading ? (
           <View style={styles.albumCover}>
@@ -460,8 +457,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
             {
               backgroundColor: colors.accent,
               shadowColor: "#000000",
-              right: isRtl ? undefined : 36,
-              left: isRtl ? 36 : undefined,
+              right: 36,
               opacity: songs.length === 0 ? 0.55 : 1,
             },
           ]}
@@ -483,8 +479,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
         <View
           style={{
             flex: 1,
-            paddingRight: isRtl ? 0 : 16,
-            paddingLeft: isRtl ? 16 : 0,
+            paddingEnd: 16,
           }}
         >
           {isLoading ? (
@@ -495,7 +490,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
                 style={{
                   borderRadius: 6,
                   marginBottom: 10,
-                  alignSelf: isRtl ? "flex-end" : "flex-start",
+                  alignSelf: "flex-start",
                 }}
               />
               <SkeletonLoader
@@ -504,7 +499,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
                   width: "76%",
                   borderRadius: 10,
                   marginBottom: 10,
-                  alignSelf: isRtl ? "flex-end" : "flex-start",
+                  alignSelf: "flex-start",
                 }}
               />
               <SkeletonLoader
@@ -512,7 +507,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
                 style={{
                   width: "52%",
                   borderRadius: 8,
-                  alignSelf: isRtl ? "flex-end" : "flex-start",
+                  alignSelf: "flex-start",
                 }}
               />
             </>
@@ -685,8 +680,7 @@ const SongThumbnail = ({
         styles.songThumbnail,
         {
           backgroundColor: colors.surface2,
-          marginRight: isRtl ? 0 : 12,
-          marginLeft: isRtl ? 12 : 0,
+          marginRight: 12,
         },
       ]}
     />

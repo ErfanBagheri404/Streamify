@@ -3,6 +3,7 @@ import { TouchableOpacity, ActivityIndicator, View } from "react-native";
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePlayer } from "../contexts/PlayerContext";
 import { useTheme, withOpacity } from "../hooks/useTheme";
 import { useAppLanguage } from "../hooks/useAppLanguage";
@@ -151,6 +152,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
   const { colors, isLight } = useTheme();
   const { language, isRtl, t } = useAppLanguage();
   const { settings } = useAppSettings();
+  const insets = useSafeAreaInsets();
 
   // Keep the compact player closer to the content on immersive detail screens.
   const compactPlayerScreens = [
@@ -160,9 +162,9 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
     "Artist",
     "Settings",
   ];
-  const targetBottomPosition = compactPlayerScreens.includes(currentScreen)
-    ? 15
-    : 65;
+  const targetBottomPosition =
+    (compactPlayerScreens.includes(currentScreen) ? 15 : 65) +
+    insets.bottom;
   // Use state to create smooth animation
   const [currentBottomPosition, setCurrentBottomPosition] =
     React.useState(targetBottomPosition);
@@ -296,7 +298,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
         }}
       >
         {currentTrack.thumbnail ? (
-          <Thumbnail source={{ uri: currentTrack.thumbnail }} />
+          <Thumbnail source={{ uri: currentTrack.thumbnail }} resizeMode="cover" />
         ) : (
           <PlaceholderThumbnail
             style={{ backgroundColor: displayTheme.placeholder }}
@@ -311,8 +313,8 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
 
         <TrackInfo
           style={{
-            marginLeft: isRtl ? 0 : 12,
-            marginRight: isRtl ? 12 : 0,
+            marginLeft: isRtl ? 0 : 8,
+            marginRight: isRtl ? 8 : 0,
           }}
         >
           <View style={{
@@ -330,8 +332,8 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
                 fontFamily: getAppFontFamily(isRtl, "medium"),
                 textAlign: isRtl ? "right" : "left",
                 writingDirection: isRtl ? "rtl" : "ltr",
-                marginLeft: isRtl ? 0 : 6,
-                marginRight: isRtl ? 6 : 0,
+                marginStart: 6,
+                marginEnd: 6,
                 flex: 1,
               }}
             >
@@ -363,8 +365,8 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
       <ControlsContainer
         style={{
           zIndex: 1,
-          marginLeft: isRtl ? 0 : 16,
-          marginRight: isRtl ? 16 : 0,
+          marginStart: 0,
+          marginEnd: 0,
         }}
       >
         <ControlButton
@@ -374,7 +376,9 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
           accessibilityLabel={t("player.play_previous")}
           style={{
             opacity: canSkipPrevious ? 1 : 0.38,
-            marginHorizontal: 4,
+            marginLeft: isRtl ? 0 : 4,
+            marginRight: isRtl ? 4 : 4,
+            paddingLeft: isRtl ? 0 : 8,
           }}
         >
           <Ionicons

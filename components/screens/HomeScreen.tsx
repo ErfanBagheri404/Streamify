@@ -292,7 +292,7 @@ function HeroCard({
   eyebrow?: string;
   description?: string;
 }) {
-  const { isRtl } = useAppLanguage();
+  const { isRtl, dir } = useAppLanguage();
 
   if (empty) {
     return (
@@ -406,7 +406,7 @@ function SongCard({
   colors: ReturnType<typeof useTheme>["colors"];
   onPress: () => void;
 }) {
-  const { isRtl } = useAppLanguage();
+  const { isRtl, dir } = useAppLanguage();
 
   return (
     <TouchableOpacity
@@ -446,8 +446,8 @@ function SongCard({
             {
               backgroundColor: colors.accent,
               shadowColor: "#000000",
-              right: isRtl ? undefined : 12,
-              left: isRtl ? 12 : undefined,
+              right: 12,
+              left: 12,
             },
           ]}
         >
@@ -492,7 +492,7 @@ function ArtistCard({
   onPress: () => void;
   playLabel: string;
 }) {
-  const { isRtl } = useAppLanguage();
+  const { isRtl, dir } = useAppLanguage();
 
   return (
     <TouchableOpacity
@@ -558,7 +558,7 @@ function EmptyStateCard({
 }
 
 function HorizontalSongSkeletonList({ count = 3 }: { count?: number }) {
-  const { isRtl } = useAppLanguage();
+  const { isRtl, dir } = useAppLanguage();
 
   return (
     <ScrollView
@@ -566,7 +566,8 @@ function HorizontalSongSkeletonList({ count = 3 }: { count?: number }) {
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={[
         styles.horizontalListContent,
-        isRtl ? styles.horizontalListContentRtl : null,
+        isRtl && { paddingLeft: 0 },
+        null,
       ]}
     >
       {Array.from({ length: count }, (_, index) => (
@@ -574,7 +575,7 @@ function HorizontalSongSkeletonList({ count = 3 }: { count?: number }) {
           key={`home-song-skeleton-${index}`}
           style={[
             styles.songCard,
-            { alignItems: isRtl ? "flex-end" : "flex-start" },
+            { alignItems: "flex-start" },
           ]}
         >
           <SkeletonLoader
@@ -601,15 +602,17 @@ function HorizontalSongSkeletonList({ count = 3 }: { count?: number }) {
 }
 
 function HorizontalArtistSkeletonList({ count = 3 }: { count?: number }) {
-  const { isRtl } = useAppLanguage();
+  const { isRtl, dir } = useAppLanguage();
 
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
+      style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}
       contentContainerStyle={[
         styles.horizontalListContent,
-        isRtl ? styles.horizontalListContentRtl : null,
+        isRtl && { paddingLeft: 0 },
+        null,
       ]}
     >
       {Array.from({ length: count }, (_, index) => (
@@ -617,7 +620,8 @@ function HorizontalArtistSkeletonList({ count = 3 }: { count?: number }) {
           key={`home-artist-skeleton-${index}`}
           style={[
             styles.artistCard,
-            { alignItems: isRtl ? "flex-end" : "center" },
+            { alignItems: "center" },
+            isRtl && { transform: [{ scaleX: -1 }] },
           ]}
         >
           <SkeletonLoader
@@ -654,7 +658,7 @@ function HeaderPillButton({
   filled?: boolean;
   emphasized?: boolean;
 }) {
-  const { isRtl } = useAppLanguage();
+  const { isRtl, dir } = useAppLanguage();
 
   return (
     <TouchableOpacity
@@ -715,7 +719,7 @@ function AccountPillButton({
         {
           backgroundColor: colors.surface3,
           borderColor: colors.borderSubtle,
-          flexDirection: isRtl ? "row-reverse" : "row",
+          flexDirection: "row",
         },
       ]}
     >
@@ -748,7 +752,7 @@ function AccountPillButton({
 
 export default function HomeScreen({ navigation }: any) {
   const { colors, isLight } = useTheme();
-  const { isRtl, t } = useAppLanguage();
+  const { isRtl, dir, t } = useAppLanguage();
   const { playTrack } = usePlayer();
   const { user, isLoading: isAuthLoading } = useAuth();
   const [currentHour, setCurrentHour] = useState(() => new Date().getHours());
@@ -1293,10 +1297,10 @@ export default function HomeScreen({ navigation }: any) {
     navigation.navigate("Settings");
   }, [navigation]);
   const handleOpenSignUp = useCallback(() => {
-    navigation.navigate("SignUp");
+    navigation.navigate("Onboarding", { openAuth: "signup" });
   }, [navigation]);
   const handleOpenSignIn = useCallback(() => {
-    navigation.navigate("SignIn");
+    navigation.navigate("Onboarding", { openAuth: "signin" });
   }, [navigation]);
   const accountDisplayName = getUserDisplayName(user);
   const accountAvatarUrl = getUserAvatarUrl(user);
@@ -1372,7 +1376,7 @@ export default function HomeScreen({ navigation }: any) {
         <View
           style={[
             styles.header,
-            { flexDirection: isRtl ? "row-reverse" : "row" },
+            { flexDirection: isRtl ? "row-reverse" : "row", writingDirection: dir },
           ]}
         >
           <View
@@ -1380,6 +1384,7 @@ export default function HomeScreen({ navigation }: any) {
               styles.headerTextBlock,
               {
                 alignItems: isRtl ? "flex-end" : "flex-start",
+                writingDirection: dir,
               },
             ]}
           >
@@ -1438,12 +1443,15 @@ export default function HomeScreen({ navigation }: any) {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}
               contentContainerStyle={[
                 styles.horizontalListContent,
-                isRtl ? styles.horizontalListContentRtl : null,
+                isRtl && { paddingLeft: 0 },
+                null,
               ]}
             >
               {uniqueRecentSongs.map((track) => (
+                <View key={track.id} style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
                 <SongCard
                   key={track.id}
                   title={track.title}
@@ -1458,6 +1466,7 @@ export default function HomeScreen({ navigation }: any) {
                     void playQueue(uniqueRecentSongs, track);
                   }}
                 />
+                </View>
               ))}
             </ScrollView>
           ) : isLoadingHistory ? (
@@ -1484,12 +1493,14 @@ export default function HomeScreen({ navigation }: any) {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}
               contentContainerStyle={[
                 styles.horizontalListContent,
-                isRtl ? styles.horizontalListContentRtl : null,
+              isRtl && { paddingLeft: 0 },
               ]}
             >
               {madeForYouTracks.map((track) => (
+                <View key={track.id} style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
                 <SongCard
                   key={track.id}
                   title={track.title}
@@ -1504,6 +1515,7 @@ export default function HomeScreen({ navigation }: any) {
                     void playSuggestedQueue(madeForYouTracks, track);
                   }}
                 />
+                </View>
               ))}
             </ScrollView>
           ) : isLoadingMadeForYou ? (
@@ -1525,12 +1537,14 @@ export default function HomeScreen({ navigation }: any) {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}
               contentContainerStyle={[
                 styles.horizontalListContent,
-                isRtl ? styles.horizontalListContentRtl : null,
+              isRtl && { paddingLeft: 0 },
               ]}
             >
               {navigablePlayedArtists.map((artist) => (
+                <View key={artist.key} style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
                 <ArtistCard
                   key={artist.key}
                   artist={artist}
@@ -1545,6 +1559,7 @@ export default function HomeScreen({ navigation }: any) {
                     });
                   }}
                 />
+                </View>
               ))}
             </ScrollView>
           ) : isLoadingArtists ? (
@@ -1565,12 +1580,14 @@ export default function HomeScreen({ navigation }: any) {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}
               contentContainerStyle={[
                 styles.horizontalListContent,
-                isRtl ? styles.horizontalListContentRtl : null,
+              isRtl && { paddingLeft: 0 },
               ]}
             >
               {heroTracks.map((track) => (
+                <View key={track.id} style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
                 <SongCard
                   key={track.id}
                   title={track.title}
@@ -1585,6 +1602,7 @@ export default function HomeScreen({ navigation }: any) {
                     void playSuggestedQueue(heroTracks, track);
                   }}
                 />
+                </View>
               ))}
             </ScrollView>
           </View>
@@ -1608,7 +1626,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 140,
+    paddingBottom: 200,
   },
   header: {
     flexDirection: "row",
@@ -1742,7 +1760,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   horizontalListContentRtl: {
-    flexDirection: "row-reverse",
+    flexDirection: "row",
   },
   songCard: {
     width: 168,

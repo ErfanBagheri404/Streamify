@@ -22,6 +22,7 @@ const ABSOLUTE_FILL = {
 
 interface ImageWithSkeletonProps extends Omit<NativeImageProps, "source"> {
   source?: NativeImageSource | null;
+  fallbackSource?: NativeImageSource | null;
   containerStyle?: StyleProp<ViewStyle>;
   skeletonStyle?: StyleProp<ViewStyle>;
   fallback?: React.ReactNode;
@@ -48,11 +49,24 @@ function getSourceKey(source?: NativeImageSource | null): string {
       ? JSON.stringify(source.headers)
       : "";
 
-  return uri || cache || headers ? `${uri}|${cache}|${headers}` : "static";
+  return uri || cache || headers ? `${uri}|${cache}|headers` : "static";
+}
+
+function isYouTubeHqUrl(uri: string): boolean {
+  return uri.includes("hqdefault");
+}
+
+function upgradeToMaxres(uri: string): string {
+  return uri.replace("hqdefault", "maxresdefault");
+}
+
+function downgradeToHqdefault(uri: string): string {
+  return uri.replace("maxresdefault", "hqdefault");
 }
 
 export function ImageWithSkeleton({
   source,
+  fallbackSource,
   containerStyle,
   skeletonStyle,
   fallback,
@@ -66,16 +80,86 @@ export function ImageWithSkeleton({
   const { colors } = useTheme();
   const [hasLoaded, setHasLoaded] = React.useState(false);
   const [hasError, setHasError] = React.useState(false);
+  /**
+   * 0 = original source
+   * 1 = upgraded to maxres (waiting for load or error)
+   * 2 = downgraded back to hqdefault (maxres failed)
+   */
+  const [attempt, setAttempt] = React.useState(0);
   const hasImageSource = Boolean(source);
   const sourceKey = React.useMemo(() => getSourceKey(source), [source]);
 
+  // Auto-upgrade: if the original URL is hqdefault, start with maxres immediately
   React.useEffect(() => {
     setHasLoaded(false);
     setHasError(false);
+    const uri =
+      source && typeof source === "object" && !Array.isArray(source)
+        ? (source as { uri?: string }).uri
+        : undefined;
+    if (uri && isYouTubeHqUrl(uri)) {
+      setAttempt(1);
+    } else {
+      setAttempt(0);
+    }
   }, [sourceKey]);
 
   const shouldShowSkeleton =
     showSkeleton && hasImageSource && !hasLoaded && !hasError;
+
+  const activeSource = React.useMemo(() => {
+    if (fallbackSource && attempt === 2) return fallbackSource;
+
+    const uri =
+      source && typeof source === "object" && !Array.isArray(source)
+        ? (source as { uri?: string }).uri
+        : undefined;
+    if (!uri) return source;
+
+    if (attempt === 1 && isYouTubeHqUrl(uri)) {
+      return { ...source, uri: upgradeToMaxres(uri) };
+    }
+    if (attempt === 2 && uri.includes("maxresdefault")) {
+      return { ...source, uri: downgradeToHqdefault(uri) };
+    }
+    return source;
+  }, [attempt, fallbackSource, source]);
+
+  const handleLoad = React.useCallback(
+    (event: any) => {
+      setHasLoaded(true);
+      onLoad?.(event);
+    },
+    [onLoad],
+  );
+
+  const handleLoadEnd = React.useCallback(
+    (event: any) => {
+      setHasLoaded(true);
+      onLoadEnd?.(event);
+    },
+    [onLoadEnd],
+  );
+
+  const handleError = React.useCallback(
+    (event: any) => {
+      const uri =
+        source && typeof source === "object" && !Array.isArray(source)
+          ? (source as { uri?: string }).uri
+          : undefined;
+
+      if (attempt === 1) {
+        // Maxres failed → fall back to hqdefault
+        setAttempt(2);
+        setHasLoaded(false);
+      } else {
+        // Everything failed
+        setHasError(true);
+        onError?.(event);
+      }
+    },
+    [attempt, source, onError],
+  );
 
   return (
     <View
@@ -88,25 +172,13 @@ export function ImageWithSkeleton({
       {hasImageSource && !hasError ? (
         <Image
           {...imageProps}
-          source={source as NativeImageSource}
-          style={[
-            ABSOLUTE_FILL,
-            style,
-            shouldShowSkeleton ? styles.hiddenImage : null,
-          ]}
+          source={activeSource as NativeImageSource}
+          resizeMode={imageProps.resizeMode ?? "cover"}
+          style={[ABSOLUTE_FILL, style]}
           fadeDuration={0}
-          onLoad={(event) => {
-            setHasLoaded(true);
-            onLoad?.(event);
-          }}
-          onLoadEnd={(event) => {
-            setHasLoaded(true);
-            onLoadEnd?.(event);
-          }}
-          onError={(event) => {
-            setHasError(true);
-            onError?.(event);
-          }}
+          onLoad={handleLoad}
+          onLoadEnd={handleLoadEnd}
+          onError={handleError}
         />
       ) : null}
       {shouldShowSkeleton ? (
@@ -120,8 +192,5 @@ export function ImageWithSkeleton({
 const styles = StyleSheet.create({
   container: {
     overflow: "hidden",
-  },
-  hiddenImage: {
-    opacity: 0,
   },
 });

@@ -486,6 +486,7 @@ const LyricLine = styled.Text<{ isActive: boolean }>`
   opacity: 1;
   font-family: GoogleSansRegular;
   line-height: 22px;
+  align-self: stretch;
 `;
 
 const CacheOverlay = styled.View`
@@ -1493,8 +1494,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
           />
         </BackgroundContainer>
         <SafeArea edges={["top"]}>
-          <View style={{ flex: 1, direction: isRtl ? "rtl" : "ltr" }}>
-            <Header style={{ flexDirection: isRtl ? "row-reverse" : "row" }}>
+          <View style={{ flex: 1 }}>
+            <Header style={{ flexDirection: "row" }}>
               <BackButton onPress={onClose}>
                 <Ionicons name="chevron-down" size={24} color={iconColor} />
               </BackButton>
@@ -1672,8 +1673,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 <LikeButton
                   onPress={handleLike}
                   style={{
-                    marginLeft: isRtl ? 0 : 0,
-                    marginRight: isRtl ? 0 : 0,
+                    marginLeft: 0,
+                    marginRight: 0,
                   }}
                 >
                   <Entypo
@@ -1871,7 +1872,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 }}
               >
                 <LyricsHeader
-                  style={{ flexDirection: isRtl ? "row-reverse" : "row" }}
+                  style={{ flexDirection: "row" }}
                 >
                   <LyricsTitle
                     style={{
@@ -2276,7 +2277,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 >
                   <View
                     style={{
-                      flexDirection: isRtl ? "row-reverse" : "row",
+                      flexDirection: "row",
                       alignItems: "center",
                       justifyContent: "space-between",
                       gap: 12,
@@ -2339,7 +2340,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                             void handleUpNextPress(index);
                           }}
                           style={{
-                            flexDirection: isRtl ? "row-reverse" : "row",
+                            flexDirection: "row",
                             alignItems: "center",
                             gap: 12,
                             borderRadius: 16,
@@ -2449,7 +2450,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                     backgroundColor: withOpacity(colors.surface1, 0.6),
                     borderWidth: 1,
                     borderColor: colors.borderSubtle,
-                    flexDirection: isRtl ? "row-reverse" : "row",
+                    flexDirection: "row",
                     alignItems: "center",
                     justifyContent: "space-between",
                     gap: 12,
@@ -2482,7 +2483,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   </View>
 
                   <Ionicons
-                    name={isRtl ? "chevron-back" : "chevron-forward"}
+                    name={"chevron-back"}
                     size={18}
                     color={iconColor}
                   />
@@ -2519,7 +2520,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
             <PlaylistSelectionHeader
               style={{
                 borderBottomColor: colors.borderSubtle,
-                flexDirection: isRtl ? "row-reverse" : "row",
+                flexDirection: "row",
               }}
             >
               <PlaylistSelectionTitle
@@ -2543,22 +2544,22 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 <PlaylistItem
                   key={playlist.id}
                   onPress={() => handlePlaylistSelect(playlist)}
-                  style={{ flexDirection: isRtl ? "row-reverse" : "row" }}
+                  style={{ flexDirection: "row" }}
                 >
                   {playlist.tracks.length > 0 &&
                   playlist.tracks[0].thumbnail ? (
                     <PlaylistCover
                       source={{ uri: playlist.tracks[0].thumbnail }}
                       style={{
-                        marginRight: isRtl ? 0 : 12,
-                        marginLeft: isRtl ? 12 : 0,
+                        marginRight: 12,
+                        marginLeft: 12,
                       }}
                     />
                   ) : (
                     <PlaylistPlaceholderCover
                       style={{
-                        marginRight: isRtl ? 0 : 12,
-                        marginLeft: isRtl ? 12 : 0,
+                        marginRight: 12,
+                        marginLeft: 12,
                       }}
                     >
                       <Ionicons

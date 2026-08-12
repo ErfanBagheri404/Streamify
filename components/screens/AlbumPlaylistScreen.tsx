@@ -916,7 +916,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
             />
             <View
               style={{
-                flexDirection: isRtl ? "row-reverse" : "row",
+                flexDirection: "row",
                 justifyContent: "flex-end",
               }}
             >
@@ -941,8 +941,8 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
                   paddingHorizontal: 16,
                   backgroundColor: colors.accent,
                   borderRadius: 999,
-                  marginLeft: isRtl ? 0 : 8,
-                  marginRight: isRtl ? 8 : 0,
+                  marginLeft: 8,
+                  marginRight: 8,
                 }}
               >
                 <Text
