@@ -1,6 +1,7 @@
 {
   "name": "mobile",
   "version": "1.24.00",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
