@@ -306,7 +306,12 @@ export default function OnboardingScreen({ navigation, route }: OnboardingScreen
         </View>
 
         {/* Buttons */}
-        <View style={[styles.buttonContainer, { bottom: insets.bottom + 40 }]}>
+        <View
+          style={[
+            styles.buttonContainer,
+            { paddingBottom: insets.bottom + 40 },
+          ]}
+        >
           <TouchableOpacity
             onPress={() => void openAuth("signup")}
             activeOpacity={0.92}
@@ -706,6 +711,7 @@ export default function OnboardingScreen({ navigation, route }: OnboardingScreen
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+    justifyContent: "space-between",
   },
   // --- Onboarding ---
   progressTrack: {
@@ -740,10 +746,8 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   buttonContainer: {
-    position: "absolute",
-    left: 0,
-    right: 0,
     paddingHorizontal: 24,
+    paddingTop: 24,
     gap: 14,
   },
   getStartedButton: {

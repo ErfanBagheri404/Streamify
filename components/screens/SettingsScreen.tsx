@@ -194,10 +194,7 @@ function Section({
         activeOpacity={0.82}
         disabled={!onToggle}
         onPress={onToggle}
-        style={[
-          styles.sectionHeader,
-          { flexDirection: "row" },
-        ]}
+        style={[styles.sectionHeader, { flexDirection: "row" }]}
       >
         <View style={styles.sectionHeaderCopy}>
           <MutedText style={styles.eyebrow}>{eyebrow}</MutedText>
@@ -732,12 +729,7 @@ export default function SettingsScreen({
             <MutedText style={styles.heroDescription}>
               {t("settings.description")}
             </MutedText>
-            <View
-              style={[
-                styles.heroPills,
-                { flexDirection: "row" },
-              ]}
-            >
+            <View style={[styles.heroPills, { flexDirection: "row" }]}>
               {[
                 `${t("settings.autoRetry")}: ${retrySummary}`,
                 `${t("settings.searchLabel")}: ${
@@ -782,12 +774,7 @@ export default function SettingsScreen({
             <MutedText style={styles.quickAccessDescription}>
               {t("settings.quickAccessDescription")}
             </MutedText>
-            <View
-              style={[
-                styles.quickAccessWrap,
-                { flexDirection: "row" },
-              ]}
-            >
+            <View style={[styles.quickAccessWrap, { flexDirection: "row" }]}>
               {quickAccessSections.map((section) => (
                 <TouchableOpacity
                   key={section.key}
@@ -865,12 +852,7 @@ export default function SettingsScreen({
               description={t("settings.cloudSyncDescription")}
               colors={colors}
               control={
-                <View
-                  style={[
-                    styles.accountActions,
-                    { flexDirection: "row" },
-                  ]}
-                >
+                <View style={[styles.accountActions, { flexDirection: "row" }]}>
                   {user ? (
                     <>
                       <AccentButton
@@ -908,7 +890,11 @@ export default function SettingsScreen({
                     <>
                       <TouchableOpacity
                         disabled={!isConfigured}
-                        onPress={() => navigation.navigate("Onboarding", { openAuth: "signin" })}
+                        onPress={() =>
+                          navigation.navigate("Onboarding", {
+                            openAuth: "signin",
+                          })
+                        }
                         style={[
                           styles.secondaryButton,
                           {
@@ -924,7 +910,11 @@ export default function SettingsScreen({
                       </TouchableOpacity>
                       <TouchableOpacity
                         disabled={!isConfigured}
-                        onPress={() => navigation.navigate("Onboarding", { openAuth: "signup" })}
+                        onPress={() =>
+                          navigation.navigate("Onboarding", {
+                            openAuth: "signup",
+                          })
+                        }
                         style={[
                           styles.secondaryButton,
                           {
@@ -981,6 +971,23 @@ export default function SettingsScreen({
               </View>
             ) : null}
           </Section>
+
+          <SettingRow
+            label={t("settings.autoSyncLibrary")}
+            description={t("settings.autoSyncLibraryDescription")}
+            colors={colors}
+            controlPlacement="inline"
+            control={
+              <Switch
+                value={settings.autoSyncLibrary}
+                onValueChange={(value) =>
+                  updateSettings({ autoSyncLibrary: value })
+                }
+                trackColor={switchTrackColor}
+                thumbColor={switchThumbColor}
+              />
+            }
+          />
 
           <Section
             eyebrow={t("settings.appearance")}
@@ -1335,12 +1342,7 @@ export default function SettingsScreen({
               description={updateDescription}
               colors={colors}
               control={
-                <View
-                  style={[
-                    styles.accountActions,
-                    { flexDirection: "row" },
-                  ]}
-                >
+                <View style={[styles.accountActions, { flexDirection: "row" }]}>
                   <AccentButton
                     title={
                       availableUpdateInfo

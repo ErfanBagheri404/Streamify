@@ -72,6 +72,9 @@ export interface AppSettings {
   preferredSearchSource: PreferredSearchSource;
   seekStepSeconds: number;
   autoCacheLikedSongs: boolean;
+  /** When true, local library changes auto-push to cloud and a full sync
+   * runs when the app returns to foreground. Disable to sync manually only. */
+  autoSyncLibrary: boolean;
   /** When true, playing a queued song auto-removes it from download queue.
    * When false, shows a confirmation popup first. */
   autoQueueConflictAutoRemove: boolean;
@@ -151,6 +154,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   preferredSearchSource: "mixed",
   seekStepSeconds: 10,
   autoCacheLikedSongs: false,
+  autoSyncLibrary: true,
   autoQueueConflictAutoRemove: false,
   collapsedSettingsSections: {},
 };
@@ -276,6 +280,10 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
       typeof record.autoCacheLikedSongs === "boolean"
         ? record.autoCacheLikedSongs
         : DEFAULT_APP_SETTINGS.autoCacheLikedSongs,
+    autoSyncLibrary:
+      typeof record.autoSyncLibrary === "boolean"
+        ? record.autoSyncLibrary
+        : DEFAULT_APP_SETTINGS.autoSyncLibrary,
     autoQueueConflictAutoRemove:
       typeof record.autoQueueConflictAutoRemove === "boolean"
         ? record.autoQueueConflictAutoRemove

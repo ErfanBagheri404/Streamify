@@ -1,19 +1,31 @@
 import { useEffect, useRef } from "react";
+import { AppState } from "react-native";
 import { useAuth } from "../hooks/useAuth";
+import { useSettings } from "../contexts/SettingsContext";
 import {
   buildCurrentLocalLibrarySyncSource,
   clearLastSyncedCloudLibrarySnapshot,
   mergeCloudLibrarySnapshots,
   pullCloudLibrarySnapshot,
+  pushFullCloudLibrarySnapshot,
   restoreCloudLibrary,
   saveLastSyncedCloudLibrarySnapshot,
+  syncCloudLibrarySnapshot,
 } from "../lib/cloud-library-sync";
+import { subscribeToLibraryUpdates } from "../utils/storage";
+import { debounce } from "../utils/formatters";
+
+const AUTO_PUSH_DEBOUNCE_MS = 4000;
 
 export function CloudLibraryBridge() {
   const { user, isConfigured, isLoading } = useAuth();
+  const { settings } = useSettings();
+  const autoSync = settings.autoSyncLibrary;
   const restoredUserIdsRef = useRef<Set<string>>(new Set());
   const latestRestoreRequestRef = useRef(0);
+  const autoPushInFlightRef = useRef(false);
 
+  // One-time restore on login.
   useEffect(() => {
     if (isLoading) {
       return;
@@ -99,6 +111,50 @@ export function CloudLibraryBridge() {
       isCancelled = true;
     };
   }, [isConfigured, isLoading, user?.id]);
+
+  // Background auto-push on local library changes (debounced).
+  useEffect(() => {
+    if (!autoSync || !isConfigured || !user?.id) {
+      return;
+    }
+
+    const debouncedPush = debounce(() => {
+      if (autoPushInFlightRef.current) {
+        return;
+      }
+      autoPushInFlightRef.current = true;
+      void pushFullCloudLibrarySnapshot()
+        .catch(() => {})
+        .finally(() => {
+          autoPushInFlightRef.current = false;
+        });
+    }, AUTO_PUSH_DEBOUNCE_MS);
+
+    const unsubscribe = subscribeToLibraryUpdates(() => {
+      debouncedPush();
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [autoSync, isConfigured, user?.id]);
+
+  // Full sync when the app returns to foreground.
+  useEffect(() => {
+    if (!autoSync || !isConfigured || !user?.id) {
+      return;
+    }
+
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        void syncCloudLibrarySnapshot().catch(() => {});
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [autoSync, isConfigured, user?.id]);
 
   return null;
 }

@@ -1196,7 +1196,8 @@ async function resolveYouTubeTrack(
         source: ref.source,
         title: pickTrackTitle([knownTrack?.title], ref.id),
         artist: knownTrack?.artist || "YouTube",
-        thumbnail: knownTrack?.thumbnail || sanitizeImageUrl(ref.id) || undefined,
+        thumbnail:
+          knownTrack?.thumbnail || sanitizeImageUrl(ref.id) || undefined,
       },
       knownTrack,
     );
@@ -1239,13 +1240,17 @@ async function resolveSoundCloudTrack(
 
   try {
     const url = `${apiV2Base}/tracks/${encodeURIComponent(ref.id)}?client_id=${SOUNDCLOUD_CLIENT_ID}`;
-    const data = await fetchWithRetry<any>(url, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    const data = await fetchWithRetry<any>(
+      url,
+      {
+        headers: {
+          Accept: "application/json",
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        },
       },
-    }, 1);
+      1,
+    );
 
     if (data && data.title) {
       const artwork = data.artwork_url
@@ -1260,7 +1265,10 @@ async function resolveSoundCloudTrack(
         title: data.title,
         artist: data.user?.username || "SoundCloud",
         thumbnail: artwork ? sanitizeImageUrl(artwork) : undefined,
-        duration: typeof data.duration === "number" ? Math.round(data.duration / 1000) : undefined,
+        duration:
+          typeof data.duration === "number"
+            ? Math.round(data.duration / 1000)
+            : undefined,
         audioUrl: undefined,
         url: data.permalink_url || undefined,
         artistId: undefined,
@@ -1269,8 +1277,10 @@ async function resolveSoundCloudTrack(
       };
       // Merge knownTrack fields that resolved track doesn't have
       if (knownTrack) {
-        if (!resolved.audioUrl && knownTrack.audioUrl) resolved.audioUrl = knownTrack.audioUrl;
-        if (!resolved.thumbnail && knownTrack.thumbnail) resolved.thumbnail = knownTrack.thumbnail;
+        if (!resolved.audioUrl && knownTrack.audioUrl)
+          resolved.audioUrl = knownTrack.audioUrl;
+        if (!resolved.thumbnail && knownTrack.thumbnail)
+          resolved.thumbnail = knownTrack.thumbnail;
       }
       return resolved;
     }
@@ -1627,7 +1637,10 @@ export async function restoreCloudLibrary(
     ]);
 
     void (async () => {
-      const result = await refreshStoredLibraryMetadata().catch(() => ({ refreshed: 0, soundcloudFailed: 0 }));
+      const result = await refreshStoredLibraryMetadata().catch(() => ({
+        refreshed: 0,
+        soundcloudFailed: 0,
+      }));
       if (result.soundcloudFailed > 0 && options.onSoundCloudRestricted) {
         options.onSoundCloudRestricted(result.soundcloudFailed);
       }
@@ -1684,9 +1697,9 @@ export async function restoreCloudLibrary(
   };
 }
 
-export async function syncCloudLibrarySnapshot(
-  options?: { onSoundCloudRestricted?: (count: number) => void },
-) {
+export async function syncCloudLibrarySnapshot(options?: {
+  onSoundCloudRestricted?: (count: number) => void;
+}) {
   const localSource = await buildCurrentLocalLibrarySyncSource();
   const remoteSnapshot = await pullCloudLibrarySnapshot();
   const lastSyncedSnapshot = await readLastSyncedCloudLibrarySnapshot();
@@ -1743,7 +1756,9 @@ export async function syncCloudLibrarySnapshot(
     };
   }
 
-  const uploadResult = await pushCloudLibrarySnapshot(localSource.snapshot);
+  const uploadResult = await pushCloudLibrarySnapshot(localSource.snapshot, {
+    mergeWithRemote: false,
+  });
   await saveLastSyncedCloudLibrarySnapshot(localSource.snapshot);
 
   return {
@@ -1751,4 +1766,23 @@ export async function syncCloudLibrarySnapshot(
     syncedLikes: uploadResult.syncedLikes,
     source: "local" as const,
   };
+}
+
+export function hasSnapshotDataExport(snapshot: CloudLibrarySnapshot): boolean {
+  return hasSnapshotData(snapshot);
+}
+
+/**
+ * Push the local library to the cloud without merging remote data.
+ * Used by background auto-sync after local changes.
+ */
+export async function pushFullCloudLibrarySnapshot(): Promise<void> {
+  const localSource = await buildCurrentLocalLibrarySyncSource();
+  if (!hasSnapshotData(localSource.snapshot)) {
+    return;
+  }
+  await pushCloudLibrarySnapshot(localSource.snapshot, {
+    mergeWithRemote: false,
+  });
+  await saveLastSyncedCloudLibrarySnapshot(localSource.snapshot);
 }
