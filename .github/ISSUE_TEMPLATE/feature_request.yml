@@ -1,0 +1,37 @@
+name: 💡 Feature Request
+description: Suggest a new feature or improvement
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Area
+      options:
+        - Frontend
+        - Backend / API
+        - Mobile (RN)
+        - Web player
+        - CI / tooling
+        - Other
+    validations:
+      required: false
