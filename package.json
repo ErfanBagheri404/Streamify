@@ -31,7 +31,7 @@
     "@types/styled-components-react-native": "^5.2.5",
     "babel-preset-expo": "~54.0.10",
     "base64-js": "^1.5.1",
-    "expo": "~54.0.35",
+    "expo": "~57.0.12",
     "expo-av": "~16.0.8",
     "expo-background-fetch": "^14.0.9",
     "expo-blur": "^15.0.8",
