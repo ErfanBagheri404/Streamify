@@ -186,3 +186,25 @@ export async function fetchBackendRoute(
     ? lastError
     : new Error(`No backend candidates succeeded for ${path}`);
 }
+
+/**
+ * DRM-fallback: when native Widevine provisioning fails, call the backend
+ * to resolve the same song from JioSaavn (non-DRM audio).
+ */
+export async function resolveJioSaavnFallback(
+  title: string,
+  artist?: string,
+): Promise<{
+  audioUrl: string;
+  title: string;
+  author: string;
+  thumbnailUrl: string;
+} | null> {
+  const searchParams: Record<string, string> = { title };
+  if (artist) searchParams.artist = artist;
+  const resp = await fetchBackendRoute("/resolve-jiosaavn", { searchParams });
+  if (!resp.ok) return null;
+  const data = await resp.json().catch(() => null);
+  if (!data?.audioUrl) return null;
+  return data;
+}

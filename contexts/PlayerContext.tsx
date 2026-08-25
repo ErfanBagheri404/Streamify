@@ -30,6 +30,10 @@ import { useAppSettings } from "../hooks/useAppSettings";
 import { CacheToast } from "../components/ui/CacheToast";
 import { QueueConflictModal } from "../components/ui/QueueConflictModal";
 import { hasPlaceholderTrackMetadata } from "../lib/cloud-library-sync";
+import DrmAudioPlayer, {
+  DrmAudioPlayerRef,
+} from "../components/DrmAudioPlayer";
+import { resolveJioSaavnFallback } from "../lib/backend-api";
 
 export interface Track {
   id: string;
@@ -46,6 +50,12 @@ export interface Track {
   providerHint?: string;
   _isSoundCloud?: boolean;
   _isJioSaavn?: boolean;
+  // DRM playback metadata (returned by backend for SoundCloud Widevine tracks)
+  audioType?: string;
+  drmLicenseUrl?: string;
+  drmScheme?: string;
+  drmProvider?: string;
+  drmHeaders?: Record<string, string>;
 }
 
 function resolveTrackSource(
@@ -99,7 +109,7 @@ function normalizeCachePercentage(
 // Process this many liked songs per batch before taking a cooldown break.
 const CACHE_BATCH_SIZE = 3;
 // Milliseconds to wait between individual songs in a batch (spreads API calls).
-const CACHE_SONG_DELAY_MS = 10_000;
+const CACHE_SONG_DELAY_MS = 5_000;
 // Milliseconds to wait after finishing a batch before starting the next one.
 const CACHE_BATCH_COOLDOWN_MS = 120_000;
 
@@ -194,6 +204,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [playlist, setPlaylist] = useState<Track[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isDrmPlayback, setIsDrmPlayback] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showFullPlayer, setShowFullPlayer] = useState(false);
@@ -240,6 +251,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [cacheQueueVersion, setCacheQueueVersion] = useState(0);
   const [cacheCooldownSeconds, setCacheCooldownSeconds] = useState(0);
   const queueConflictResolverRef = useRef<((choice: "cancel" | "play") => void) | null>(null);
+  const drmPlayerRef = useRef<DrmAudioPlayerRef>(null);
+  // DRM watchdog: native Widevine provisioning can hang forever when the
+  // device has no route to the SC license server (no VPN). Force an error
+  // after a timeout so step-3 (JioSaavn) fallback can run.
+  const drmWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tracks which track the active DRM session belongs to. A late onError from
+  // a previous DRM attempt must not bleed onto the now-playing track.
+  const activeDrmTrackIdRef = useRef<string | null>(null);
   const originalPlaylistRef = useRef<Track[]>([]);
   const currentPlaylistContextRef = useRef<Track[]>([]);
   const streamCheckRef = useRef<{ position: number; time: number } | null>(
@@ -473,15 +492,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           item.id != null
             ? String(item.id)
             : item.url || item.title || "unknown";
+        const existing = currentTrack && currentTrack.id === id
+          ? currentTrack
+          : playlist.find((p) => p.id === id);
+        const thumbnail =
+          existing?.thumbnail ||
+          item.thumbnail ||
+          item.thumbnailUrl ||
+          item.img ||
+          "";
         return {
           id,
-          title: item.title || "Unknown Title",
-          artist: item.artist || item.author || "Unknown Artist",
-          duration: item.duration || 0,
-          thumbnail: item.artwork || item.thumbnail || "",
+          title: item.title || existing?.title || "Unknown Title",
+          artist: item.artist || item.author || existing?.artist || "Unknown Artist",
+          duration: item.duration || existing?.duration || 0,
+          thumbnail,
           audioUrl: item.url,
           url: (item as any).url,
-          source: (item as any).source,
+          source: existing?.source || (item as any).source,
           providerHint: (item as any).providerHint,
           _isSoundCloud: (item as any)._isSoundCloud,
           _isJioSaavn: (item as any)._isJioSaavn,
@@ -638,7 +666,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               ? item.duration
               : existingTrack?.duration || 0,
           thumbnail:
-            item.artwork || item.thumbnail || existingTrack?.thumbnail || "",
+            item.artwork ||
+            item.thumbnail ||
+            item.thumbnailUrl ||
+            item.img ||
+            existingTrack?.thumbnail ||
+            "",
           audioUrl: item.url || existingTrack?.audioUrl,
           url: item.url || existingTrack?.url,
           source: item.source || existingTrack?.source,
@@ -795,7 +828,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       };
       refreshCacheInfo();
     }
-  }, [cacheProgress?.percentage, currentTrack?.id]);
+    // Only re-probe cache info when the ACTIVE TRACK CHANGES, not on every
+    // percentage tick. getCacheInfo has its own 10s memo, and probing it per
+    // tick (every second during a download) adds filesystem I/O on the JS
+    // thread for data the UI already has from cacheProgress directly.
+  }, [cacheProgress?.trackId, currentTrack?.id]);
 
   useEffect(() => {
     likedSongsRef.current = likedSongs;
@@ -1032,7 +1069,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           // Yield between scan batches so UI stays responsive
           if (i > 0) {
             await new Promise<void>((resolve) =>
-              setTimeout(() => resolve(), 50),
+              setTimeout(() => resolve(), 400),
             );
           }
 
@@ -1053,6 +1090,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               continue;
             }
             if (r.info.isFullyCached || r.info.isDownloading) {
+              // Already cached or in progress — don't re-probe it on every
+              // loop iteration. Without this, a 50-track library re-runs
+              // getAudioCacheInfo (7+ filesystem reads each) for every track
+              // on every pass, which starves the JS thread and makes the UI
+              // unresponsive while the cache queue runs.
+              attemptedTrackIds.add(r.track.id);
               continue;
             }
             nextTrackToCache = r.track;
@@ -1548,6 +1591,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       // Reset stream failed flag when starting a new track
       setHasStreamFailed(false);
       setPlaybackError(null);
+      // A new (non-DRM) selection must tear down any DRM session left over
+      // from the previous track, or DrmAudioPlayer keeps rendering.
+      setIsDrmPlayback(false);
 
       // Clear audio monitoring from previous track to prevent stale errors
       clearAudioMonitoring();
@@ -1632,6 +1678,19 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         // Stop current playback if any
+        // Clear stale DRM state so a previous DRM track's metadata doesn't
+        // leak into the next non-DRM track.
+        activeDrmTrackIdRef.current = null;
+        if (drmWatchdogRef.current) {
+          clearTimeout(drmWatchdogRef.current);
+          drmWatchdogRef.current = null;
+        }
+        try {
+          const { AudioStreamManager } = await import(
+            "../modules/audioStreaming"
+          );
+          AudioStreamManager.getInstance().lastBackendDrm = null as any;
+        } catch {}
         try {
           await trackPlayerService.stop();
           // Brief delay to ensure native player fully releases audio
@@ -1693,6 +1752,30 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             console.log(
               `[PlayerContext] Got ${resolvedSource} streaming URL: ${audioUrl}`,
             );
+            // For SoundCloud DRM tracks the backend also returns Widevine
+            // license metadata. Stash it on the in-flight track so the
+            // DRM-capable player (react-native-video) can consume it.
+            // Match on audioType (not URL) since the returned URL may be
+            // rewritten by caching/proxy layers downstream.
+            try {
+              const { AudioStreamManager } = await import(
+                "../modules/audioStreaming"
+              );
+              const drm = AudioStreamManager.getInstance().lastBackendDrm;
+              if (drm && drm.audioType === "soundcloud-drm") {
+                (track as any).audioType = drm.audioType;
+                (track as any).drmLicenseUrl = drm.drmLicenseUrl;
+                (track as any).drmScheme = drm.drmScheme;
+                (track as any).drmProvider = drm.drmProvider;
+                (track as any).drmHeaders = drm.drmHeaders;
+                console.log(
+                  "[PlayerContext] Captured DRM metadata for:",
+                  track.title,
+                  "license:",
+                  drm.drmLicenseUrl?.slice(0, 60),
+                );
+              }
+            } catch {}
           } catch (streamingError) {
             console.error(
               "[PlayerContext] Failed to get streaming URL:",
@@ -1730,21 +1813,29 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           const wasJustCanceled = canceledTrackIdsRef.current.has(track.id);
           if (isLiked && !wasJustCanceled) {
             try {
-              const cached = await prepareCachedStreamUrl(
-                finalAudioUrl,
-                track.id,
-              );
-              finalAudioUrl = cached.url;
-              if (cached.cacheInfo) {
-                isUsingCacheProxy = cached.url !== baseStreamUrl;
-                setCacheProgress(
-                  buildCacheProgressState(
-                    track.id,
-                    cached.cacheInfo.percentage,
-                    cached.cacheInfo.fileSize,
-                    cached.cacheInfo.isFullyCached,
-                  ),
+              // If FAST PATH already resolved to a local file, skip
+              // prepareCachedStreamUrl entirely — it would re-validate the
+              // same file via getBestCachedFilePath + loadAudioCacheIndex
+              // for no benefit.
+              if (finalAudioUrl.startsWith("file://")) {
+                isUsingCacheProxy = true;
+              } else {
+                const cached = await prepareCachedStreamUrl(
+                  finalAudioUrl,
+                  track.id,
                 );
+                finalAudioUrl = cached.url;
+                if (cached.cacheInfo) {
+                  isUsingCacheProxy = cached.url !== baseStreamUrl;
+                  setCacheProgress(
+                    buildCacheProgressState(
+                      track.id,
+                      cached.cacheInfo.percentage,
+                      cached.cacheInfo.fileSize,
+                      cached.cacheInfo.isFullyCached,
+                    ),
+                  );
+                }
               }
             } catch (error) {
               console.error(
@@ -1757,47 +1848,20 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
         try {
           if (finalAudioUrl) {
-            // Pre-resolve audio URLs for ALL tracks in the playlist so they can be added to queue
-            // Pre-resolve only the next 3 tracks for fast queue transitions.
-            // Resolving ALL tracks blocks playback start for no benefit.
+            // Start playback IMMEDIATELY with the current track. Previously the
+            // next 3 tracks were pre-resolved (each doing full network strategy
+            // resolution, up to 3-10s) BEFORE addTracks/play were called, so the
+            // UI froze on the current action until all resolves finished.
+            // Now the playlist is built with the current track's URL and queued
+            // immediately; the next tracks are resolved in the background after
+            // playback has started and their URLs hot-swapped into the queue.
             const PRE_RESOLVE_WINDOW = 3;
-            const updatedPlaylist = await Promise.all(
-              effectivePlaylist.map(async (playlistTrack, index) => {
-                if (index === effectiveIndex) {
-                  return { ...playlistTrack, audioUrl: finalAudioUrl };
-                }
-                // Only pre-resolve the next few tracks, not the entire playlist
-                const distanceFromCurrent = index - effectiveIndex;
-                if (distanceFromCurrent > 0 && distanceFromCurrent <= PRE_RESOLVE_WINDOW && playlistTrack.id) {
-                  try {
-                    const resolvedUrl = await getAudioStreamUrl(
-                      playlistTrack.id,
-                      (status) =>
-                        console.log(
-                          `[PlayerContext] Pre-resolving ${playlistTrack.title}: ${status}`,
-                        ),
-                      resolveTrackSource(playlistTrack),
-                      playlistTrack.title,
-                      playlistTrack.artist,
-                      {
-                        urlHint: playlistTrack.url,
-                        providerHint: playlistTrack.providerHint,
-                      },
-                    );
-                    if (resolvedUrl) {
-                      console.log(
-                        `[PlayerContext] Pre-resolved audio URL for ${playlistTrack.title}`,
-                      );
-                      return { ...playlistTrack, audioUrl: resolvedUrl };
-                    }
-                  } catch (e) {
-                    console.log(
-                      `[PlayerContext] Failed to pre-resolve ${playlistTrack.title}: ${e}`,
-                    );
-                  }
-                }
-                return playlistTrack;
-              }),
+
+            const basePlaylist = effectivePlaylist.map(
+              (playlistTrack, index) =>
+                index === effectiveIndex
+                  ? { ...playlistTrack, audioUrl: finalAudioUrl }
+                  : playlistTrack,
             );
 
             if (playRequestId !== playRequestIdRef.current) {
@@ -1820,9 +1884,50 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               });
             } catch {}
 
-            await trackPlayerService.addTracks(updatedPlaylist, effectiveIndex);
+            // For DRM SoundCloud tracks, bypass RNTP and play via
+            // react-native-video (Widevine) instead.
+            if (
+              track.audioType === "soundcloud-drm" &&
+              track.drmLicenseUrl &&
+              track.drmScheme
+            ) {
+              console.log(
+                "[PlayerContext] Routing DRM SoundCloud track to react-native-video:",
+                track.title,
+              );
+              setCurrentTrack({
+                ...track,
+                audioUrl: finalAudioUrl,
+              });
+              currentPlaylistContextRef.current = basePlaylist;
+              setIsDrmPlayback(true);
+              setIsPlaying(true);
+              setPlaybackError(null);
+              // Tag this DRM session and arm a watchdog: if native Widevine
+              // provisioning doesn't start within 20s (no VPN / blocked
+              // license server), force-fail so JioSaavn fallback kicks in.
+              activeDrmTrackIdRef.current = track.id;
+              if (drmWatchdogRef.current) {
+                clearTimeout(drmWatchdogRef.current);
+              }
+              drmWatchdogRef.current = setTimeout(() => {
+                // Ref-only checks: state vars are stale inside this closure.
+                if (activeDrmTrackIdRef.current !== track.id) {
+                  return;
+                }
+                console.error(
+                  "[PlayerContext] DRM provisioning timed out — falling back to JioSaavn",
+                );
+                drmPlayerRef.current?.stop();
+                handleDrmFailure(track);
+              }, 20000);
+              return;
+            }
+
+            await trackPlayerService.addTracks(basePlaylist, effectiveIndex);
             await trackPlayerService.play();
             if (playRequestId === playRequestIdRef.current) {
+              setIsDrmPlayback(false);
               syncResolvedTrackUrlInState(track.id, finalAudioUrl);
               setIsPlaying(true);
               setPlaybackError(null);
@@ -1830,6 +1935,69 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 `[PlayerContext] Playback started for track: ${track.title}`,
               );
             }
+
+            // Background pre-resolve of the next few tracks — never blocks the
+            // playback start above. Each resolved URL is written back into the
+            // TrackPlayer queue (skipping the now-playing track).
+            void (async () => {
+              const currentPlayRequestId = playRequestId;
+              for (let i = 1; i <= PRE_RESOLVE_WINDOW; i++) {
+                const targetIndex = effectiveIndex + i;
+                const targetTrack = effectivePlaylist[targetIndex];
+                if (
+                  !targetTrack?.id ||
+                  targetTrack.id === track.id ||
+                  playRequestIdRef.current !== currentPlayRequestId
+                ) {
+                  break;
+                }
+                try {
+                  const resolvedUrl = await getAudioStreamUrl(
+                    targetTrack.id,
+                    (status) =>
+                      console.log(
+                        `[PlayerContext] Pre-resolving ${targetTrack.title}: ${status}`,
+                      ),
+                    resolveTrackSource(targetTrack),
+                    targetTrack.title,
+                    targetTrack.artist,
+                    {
+                      urlHint: targetTrack.url,
+                      providerHint: targetTrack.providerHint,
+                    },
+                  );
+                  if (
+                    resolvedUrl &&
+                    playRequestIdRef.current === currentPlayRequestId
+                  ) {
+                    console.log(
+                      `[PlayerContext] Pre-resolved audio URL for ${targetTrack.title}`,
+                    );
+                    // Update the queued track in TrackPlayer. The queued track
+                    // index is shifted by the playable-start offset; resolve via
+                    // the service's current playlist when possible, otherwise
+                    // fall back to the track record we already know.
+                    const queuedIndex =
+                      targetIndex - effectiveIndex;
+                    try {
+                      await trackPlayerService.updateQueuedTrackUrl(
+                        queuedIndex,
+                        resolvedUrl,
+                      );
+                    } catch (queueUpdateError) {
+                      console.warn(
+                        `[PlayerContext] Queue URL update failed for ${targetTrack.title}:`,
+                        queueUpdateError,
+                      );
+                    }
+                  }
+                } catch (e) {
+                  console.log(
+                    `[PlayerContext] Failed to pre-resolve ${targetTrack.title}: ${e}`,
+                  );
+                }
+              }
+            })();
           } else {
             console.warn(
               `[PlayerContext] No audio URL available for track: ${track.title}`,
@@ -2062,11 +2230,19 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       if (isPlaying) {
-        await trackPlayerService.pause();
+        if (isDrmPlayback) {
+          drmPlayerRef.current?.pause();
+        } else {
+          await trackPlayerService.pause();
+        }
         setIsPlaying(false);
         console.log("[PlayerContext] Playback paused");
       } else {
-        await trackPlayerService.play();
+        if (isDrmPlayback) {
+          drmPlayerRef.current?.play();
+        } else {
+          await trackPlayerService.play();
+        }
         setIsPlaying(true);
         console.log("[PlayerContext] Playback resumed");
       }
@@ -2220,6 +2396,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         return;
       }
       try {
+        if (isDrmPlayback) {
+          drmPlayerRef.current?.seek(positionSeconds);
+          setPosition(positionSeconds);
+          if (isPlaying) {
+            drmPlayerRef.current?.play();
+            setIsPlaying(true);
+          }
+          return;
+        }
+
         // Store current playing state to restore later
         const wasPlaying = isPlaying;
 
@@ -2753,6 +2939,61 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [likedSongs],
   );
 
+  // Shared DRM failure handler: watchdog timeout and DrmAudioPlayer.onError
+  const handleDrmFailure = useCallback(
+    (failedTrack: Track, rawError?: unknown) => {
+      if (drmWatchdogRef.current) {
+        clearTimeout(drmWatchdogRef.current);
+        drmWatchdogRef.current = null;
+      }
+      console.error("[PlayerContext] DRM failed for:", failedTrack.title);
+      void (async () => {
+        try {
+          setIsLoading(true);
+          const fallback = await resolveJioSaavnFallback(
+            failedTrack.title,
+            failedTrack.artist,
+          );
+          if (fallback?.audioUrl) {
+            console.log("[PlayerContext] DRM → JioSaavn:", fallback.title);
+            // Pass just the single track — no playlist — so the UI shows
+            // the correct song instead of resolving to index 0 of the
+            // old playlist (which is a different track).
+            await playTrack(
+              {
+                ...failedTrack,
+                id: `${failedTrack.id}-jio`,
+                audioType: "jiosaavn" as any,
+                audioUrl: fallback.audioUrl,
+                drmLicenseUrl: undefined,
+                drmScheme: undefined,
+                drmHeaders: undefined,
+              },
+            );
+            return;
+          }
+        } catch (e) {
+          console.error("[PlayerContext] JioSaavn fallback error:", e);
+        }
+        setPlaybackError(
+          normalizePlaybackError(
+            String(
+              rawError instanceof Error
+                ? rawError.message
+                : typeof rawError === "object" && rawError && "message" in rawError
+                ? (rawError as any).message
+                : rawError || "DRM playback failed",
+            ),
+            failedTrack,
+          ),
+        );
+        setIsDrmPlayback(false);
+        setIsPlaying(false);
+      })();
+    },
+    [playTrack, normalizePlaybackError],
+  );
+
   // Handle notification responses for media controls
   useEffect(() => {
     // Skip notification handling since expo-notifications is removed
@@ -2856,6 +3097,51 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           queueConflictResolverRef.current?.("play");
         }}
       />
+      {isDrmPlayback && currentTrack?.drmLicenseUrl ? (
+        <DrmAudioPlayer
+          ref={drmPlayerRef}
+          track={currentTrack}
+          onPlaybackStarted={() => {
+            // Provisioning succeeded — cancel the watchdog.
+            if (drmWatchdogRef.current) {
+              clearTimeout(drmWatchdogRef.current);
+              drmWatchdogRef.current = null;
+            }
+            setIsPlaying(true);
+            setIsLoading(false);
+          }}
+          onPlaybackError={(error) => {
+            console.error("[PlayerContext] DRM playback error:", error);
+            const failedTrack = currentTrack;
+            // Stale guard: a late error from a previous track must not bleed
+            // onto the now-playing track.
+            if (
+              !failedTrack ||
+              activeDrmTrackIdRef.current !== failedTrack.id
+            ) {
+              console.log(
+                "[PlayerContext] Ignoring stale DRM error for:",
+                failedTrack?.title,
+              );
+              return;
+            }
+            handleDrmFailure(failedTrack, error);
+          }}
+          onPlaybackEnded={() => {
+            const currentIdx = currentPlaylistContextRef.current.findIndex(
+              (t) => t.id === currentTrack?.id,
+            );
+            const nextTrack =
+              currentPlaylistContextRef.current[currentIdx + 1];
+            if (nextTrack) {
+              void playTrack(nextTrack, currentPlaylistContextRef.current);
+            } else {
+              setIsPlaying(false);
+              setIsDrmPlayback(false);
+            }
+          }}
+        />
+      ) : null}
     </>
   );
 };

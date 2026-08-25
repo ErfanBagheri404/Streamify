@@ -1,5 +1,11 @@
 import * as React from "react";
-import { TouchableOpacity, ActivityIndicator, View } from "react-native";
+import {
+  TouchableOpacity,
+  ActivityIndicator,
+  View,
+  Animated,
+  Easing,
+} from "react-native";
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
@@ -10,10 +16,11 @@ import { useAppLanguage } from "../hooks/useAppLanguage";
 import { useAppSettings } from "../hooks/useAppSettings";
 import { getAppFontFamily } from "../utils/fonts";
 import SourceIcon from "./ui/SourceIcon";
+import { sanitizeImageUrl, normalizeYouTubeThumbnailUrl } from "./core/image";
 
-const MiniPlayerContainer = styled.View<{ bottomPosition: number }>`
+const MiniPlayerContainer = styled.View`
   position: absolute;
-  bottom: ${(props) => props.bottomPosition}px;
+  bottom: 0px;
   align-self: center; /* keeps it centered */
   left: 12px;
   right: 12px;
@@ -165,39 +172,25 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
   const targetBottomPosition =
     (compactPlayerScreens.includes(currentScreen) ? 15 : 65) +
     insets.bottom;
-  // Use state to create smooth animation
-  const [currentBottomPosition, setCurrentBottomPosition] =
-    React.useState(targetBottomPosition);
+  // Animate with a native-driver translateY instead of a JS-thread
+  // setInterval loop. The old approach did 20 setState re-renders in 200ms,
+  // which stuttered whenever the JS thread was busy (playback, caching).
+  const bottomAnim = React.useRef(new Animated.Value(targetBottomPosition)).current;
   const [progressBarWidth, setProgressBarWidth] = React.useState(0);
 
   React.useEffect(() => {
     if (settings.disableAnimations) {
-      setCurrentBottomPosition(targetBottomPosition);
+      bottomAnim.setValue(targetBottomPosition);
       return;
     }
 
-    // Create smooth animation by gradually changing the position
-    const startPosition = currentBottomPosition;
-    const endPosition = targetBottomPosition;
-    const duration = 200; // 200ms
-    const steps = 20; // 20 steps for smooth animation
-    const stepDuration = duration / steps;
-    const positionChange = (endPosition - startPosition) / steps;
-
-    let currentStep = 0;
-    const interval = setInterval(() => {
-      currentStep++;
-      const newPosition = startPosition + positionChange * currentStep;
-      setCurrentBottomPosition(newPosition);
-
-      if (currentStep >= steps) {
-        clearInterval(interval);
-        setCurrentBottomPosition(endPosition); // Ensure we end at exact position
-      }
-    }, stepDuration);
-
-    return () => clearInterval(interval);
-  }, [settings.disableAnimations, targetBottomPosition]);
+    Animated.timing(bottomAnim, {
+      toValue: targetBottomPosition,
+      duration: 250,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  }, [bottomAnim, settings.disableAnimations, targetBottomPosition]);
 
   const effectiveDuration = React.useMemo(
     () => (duration > 0 ? duration : currentTrack?.duration || 0),
@@ -262,6 +255,31 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
   const previousIconName = "play-back";
   const nextIconName = "play-forward";
 
+  const miniPlayerThumbnail = (() => {
+    const raw = currentTrack?.thumbnail;
+    if (!raw) return "https://placehold.co/400x400";
+
+    // YouTube: use the exact same proven-working URL the fullscreen player uses
+    // (normalizeYouTubeThumbnailUrl with maxresdefault + webp + quality 100 via
+    // the wsrv.nl proxy). The MiniPlayer must mirror fullscreen's artwork source
+    // so it doesn't render a gray square for YouTube tracks.
+    if (
+      currentTrack.source === "youtube" ||
+      currentTrack.source === "youtubemusic" ||
+      /i\.ytimg\.com|youtube\.com|youtu\.be|wsrv\.nl/.test(raw)
+    ) {
+      const youtubeUrl =
+        normalizeYouTubeThumbnailUrl({
+          url: raw,
+          videoId: currentTrack.id,
+          variant: "hqdefault.jpg",
+        }) || sanitizeImageUrl(raw);
+      if (youtubeUrl) return youtubeUrl;
+    }
+
+    return sanitizeImageUrl(raw);
+  })();
+
   if (!currentTrack) {
     return null;
   }
@@ -269,22 +287,29 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
   // Debug: Log the current color theme
 
   return (
-    <MiniPlayerContainer
-      bottomPosition={currentBottomPosition}
+    <Animated.View
+      pointerEvents="box-none"
       style={{
-        backgroundColor: "transparent",
-        flexDirection: isRtl ? "row-reverse" : "row",
-        shadowColor: displayTheme.shadow,
+        position: "absolute",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        transform: [{ translateY: Animated.multiply(bottomAnim, -1) }],
       }}
     >
-      <BackgroundContainer>
-        <BackgroundImage
-          source={{
-            uri: currentTrack.thumbnail || "https://placehold.co/400x400",
-          }}
-          resizeMode="cover"
-          blurRadius={34}
-        />
+      <MiniPlayerContainer
+        style={{
+          backgroundColor: "transparent",
+          flexDirection: isRtl ? "row-reverse" : "row",
+          shadowColor: displayTheme.shadow,
+        }}
+      >
+        <BackgroundContainer>
+          <BackgroundImage
+            source={{ uri: miniPlayerThumbnail }}
+            resizeMode="cover"
+            blurRadius={34}
+          />
         <BlurOverlay intensity={10} tint={isLight ? "light" : "dark"} />
         <DarkOverlay style={{ backgroundColor: displayTheme.overlay }} />
       </BackgroundContainer>
@@ -298,7 +323,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
         }}
       >
         {currentTrack.thumbnail ? (
-          <Thumbnail source={{ uri: currentTrack.thumbnail }} resizeMode="cover" />
+          <Thumbnail source={{ uri: miniPlayerThumbnail }} resizeMode="cover" />
         ) : (
           <PlaceholderThumbnail
             style={{ backgroundColor: displayTheme.placeholder }}
@@ -459,6 +484,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
           />
         </ProgressTrack>
       </TouchableOpacity>
-    </MiniPlayerContainer>
+      </MiniPlayerContainer>
+    </Animated.View>
   );
 };

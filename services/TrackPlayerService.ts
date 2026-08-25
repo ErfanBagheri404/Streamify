@@ -12,6 +12,8 @@ import TrackPlayer, {
 } from "react-native-track-player";
 import { Track } from "../contexts/PlayerContext";
 import { StorageService } from "../utils/storage";
+import { getCachedThumbnailPath } from "../utils/thumbnailCache";
+import { normalizeYouTubeThumbnailUrl } from "../components/core/image";
 import {
   getAudioStreamUrl,
   getFullyCachedAudioUrl,
@@ -21,7 +23,6 @@ import { t } from "../utils/localization";
 import {
   getProviderOrigin,
   getProviderReferer,
-  getSoundCloudWidgetBase,
 } from "../components/core/api";
 
 function resolveTrackSource(
@@ -186,6 +187,12 @@ export class TrackPlayerService {
   private setupPromise: Promise<void> | null = null;
   private currentTrackIndex = 0;
   private playlist: Track[] = [];
+  private _queuedUrlUpdateSeq = 0;
+  // Guards the stream-URL refresh recovery so a persistently-failing source
+  // (e.g. a dead CDN URL) cannot loop error -> refresh -> play -> error forever,
+  // which showed up as a pause/play flicker with no audio.
+  private _streamRecoveryTrackId: string | null = null;
+  private _streamRecoveryAttempts = 0;
   public onError?: (error: any) => void;
   public onRemoteNext?: () => Promise<void> | void;
   public onRemotePrevious?: () => Promise<void> | void;
@@ -673,7 +680,21 @@ export class TrackPlayerService {
           }
 
           if (isBadHttpStatus || isExpired || isNotFound) {
-            try {
+            // Cap stream-URL refresh attempts per track. Without this, a
+            // persistently-dead source loops error -> refresh -> play -> error,
+            // which surfaces as a pause/play flicker with no audio.
+            const trackId = currentTrack?.id ?? null;
+            if (trackId !== this._streamRecoveryTrackId) {
+              this._streamRecoveryTrackId = trackId;
+              this._streamRecoveryAttempts = 0;
+            }
+            if (this._streamRecoveryAttempts >= 2) {
+              console.warn(
+                `[TrackPlayerService] Stream recovery exhausted (${this._streamRecoveryAttempts} attempts) for track: ${trackId}`,
+              );
+            } else {
+              this._streamRecoveryAttempts++;
+              try {
               const cachedAudioUrl = currentTrack?.id
                 ? await getFullyCachedAudioUrl(currentTrack.id)
                 : null;
@@ -711,11 +732,12 @@ export class TrackPlayerService {
                 await TrackPlayer.play();
                 return;
               }
-            } catch (refreshError) {
-              console.error(
-                "🔴 [TrackPlayerService] YouTube URL refresh failed:",
-                refreshError,
-              );
+              } catch (refreshError) {
+                console.error(
+                  "🔴 [TrackPlayerService] YouTube URL refresh failed:",
+                  refreshError,
+                );
+              }
             }
           }
         }
@@ -765,6 +787,14 @@ export class TrackPlayerService {
     const headers: { [key: string]: string } = {};
     const url = track.audioUrl || "";
 
+    // The mobile backend (`/audio-proxy`) streams JioSaavn/soundcloud/etc.
+    // URLs and sets the correct per-source headers server-side. It is
+    // origin-gated: it returns 403 unless the request carries the web player's
+    // origin/referer (`DEFAULT_BACKEND_REQUEST_ORIGIN`). So any backend-proxied
+    // URL must be played with THAT origin, not the source-specific one.
+    const isBackendProxiedUrl =
+      /helloify-api\.hf\.space|streamify.*workers\.dev|api\.streamify/i.test(url);
+
     // Validate URL - throw error if empty to prevent TrackPlayer from failing
     if (!url) {
       throw new Error(`Track ${track.title} (${track.id}) has no audio URL`);
@@ -779,7 +809,15 @@ export class TrackPlayerService {
         url.includes("googlevideo.com") ||
         url.includes("youtube.com"));
 
-    if (isYouTubeStream) {
+    if (isBackendProxiedUrl) {
+      // Play the backend proxy with the web player origin it expects. The
+      // backend adds the right JioSaavn/SoundCloud headers to the upstream
+      // request itself, so no source-specific headers are needed here.
+      Object.assign(headers, {
+        Origin: "https://streamify-player.vercel.app",
+        Referer: "https://streamify-player.vercel.app/",
+      });
+    } else if (isYouTubeStream) {
       Object.assign(headers, {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -788,21 +826,21 @@ export class TrackPlayerService {
       });
     }
 
-    // Add JioSaavn-specific headers if needed
-    if (track._isJioSaavn) {
+    // Add JioSaavn-specific headers if the URL is a direct (non-proxied)
+    // JioSaavn CDN URL.
+    if (track._isJioSaavn && !isBackendProxiedUrl) {
       Object.assign(headers, {
         "User-Agent": "JioSaavn/1.0",
         Accept: "audio/*",
       });
     }
 
-    if (track._isSoundCloud) {
-      const soundCloudWidgetOrigin = getSoundCloudWidgetBase();
+    if (track._isSoundCloud && !isBackendProxiedUrl) {
       Object.assign(headers, {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        Referer: soundCloudWidgetOrigin ? `${soundCloudWidgetOrigin}/` : "",
-        Origin: soundCloudWidgetOrigin,
+        Referer: "https://soundcloud.com/",
+        Origin: "https://soundcloud.com",
       });
     }
 
@@ -858,12 +896,40 @@ export class TrackPlayerService {
       title: track.title,
       artist: track.artist || t("screens.artist.unknown_artist"),
       album: "Streamify", // Add album for better notification display
-      artwork: track.thumbnail || undefined,
+      // Use the local cached thumbnail file:// path if it exists on disk —
+      // Android's media notification fetches remote URLs lazily (and often
+      // fails/slow for some tracks), so a cached file renders instantly with
+      // no black placeholder.
+      // For YouTube sources, skip the low-res thumbnail and use the high-res
+      // (maxresdefault + webp) URL directly so the notification/media style
+      // shows HQ artwork immediately instead of low -> high flicker.
+      // Use the remote URL as artwork first — getCachedThumbnailPath always
+      // returns a path even when the file doesn't exist, which would show a
+      // gray placeholder in the MiniPlayer and notification.  The cached file
+      // is only used as a fallback when no thumbnail URL is available.
+      artwork:
+        (track.source === "youtube" || track.source === "youtubemusic"
+          ? normalizeYouTubeThumbnailUrl({
+              url: track.thumbnail,
+              videoId: track.id,
+              // hqdefault is guaranteed to exist for every video;
+              // maxresdefault 404s for many, rendering a gray cover.
+              variant: "hqdefault.jpg",
+            }) || track.thumbnail
+          : track.thumbnail) ||
+        (track.id ? getCachedThumbnailPath(track.id) : undefined) ||
+        undefined,
       duration: track.duration || 0,
       headers: headers,
-      userAgent: isYouTubeStream
-        ? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        : undefined,
+      // react-native-track-player's `userAgent` field OVERRIDES
+      // headers["User-Agent"], so it must not be set for saavncdn URLs —
+      // otherwise the JioSaavn User-Agent header (set above) is clobbered and
+      // the CDN rejects the request. Only apply the YouTube UA to real
+      // googlevideo streams.
+      userAgent:
+        isYouTubeStream && !isBackendProxiedUrl
+          ? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+          : undefined,
       contentType,
       pitchAlgorithm: PitchAlgorithm.Linear,
       ...(track.source && { source: track.source }),
@@ -939,6 +1005,7 @@ export class TrackPlayerService {
 
       this.playlist = [...playableTracks];
       this.currentTrackIndex = adjustedStartIndex;
+      this._queuedUrlUpdateSeq++;
 
       if (adjustedStartIndex > 0) {
         console.log(
@@ -1226,6 +1293,54 @@ export class TrackPlayerService {
         error,
       );
       throw error;
+    }
+  }
+
+  async updateQueuedTrackUrl(
+    offsetFromCurrent: number,
+    audioUrl: string,
+  ): Promise<void> {
+    try {
+      await this.ensureTrackPlayerReady();
+      // Monotonic sequence guard: if playback advanced (PlaybackQueueEnded)
+      // between the pre-resolve finishing and this remove/add pair, the queue
+      // indices shifted and writing at an old absolute index would corrupt the
+      // queue. Each playlist rebuild bumps the sequence; stale writers abort.
+      const seqBefore = this._queuedUrlUpdateSeq;
+      const currentTrackIndex = await TrackPlayer.getCurrentTrack();
+      if (currentTrackIndex === null) return;
+      const targetAbsoluteIndex = currentTrackIndex + offsetFromCurrent;
+      if (
+        targetAbsoluteIndex < 0 ||
+        targetAbsoluteIndex >= this.playlist.length
+      )
+        return;
+      const track = this.playlist[targetAbsoluteIndex];
+      if (!track) return;
+      const updatedTrack = { ...track, audioUrl };
+      this.playlist[targetAbsoluteIndex] = updatedTrack;
+      await TrackPlayer.remove(targetAbsoluteIndex);
+      if (seqBefore !== this._queuedUrlUpdateSeq) {
+        // Playlist was rebuilt mid-update — the remove shifted indices and the
+        // add would land at the wrong position. Skip the insert; the rebuild
+        // already re-added the queue (and the URL is now in this.playlist).
+        console.warn(
+          "[TrackPlayerService] Queue rebuilt during queued URL update, skipping insert",
+        );
+        return;
+      }
+      await TrackPlayer.add(
+        this.convertTrackToTrackPlayer(updatedTrack, targetAbsoluteIndex),
+        targetAbsoluteIndex,
+      );
+      console.log(
+        `[TrackPlayerService] Updated queued track ${targetAbsoluteIndex} URL (offset ${offsetFromCurrent})`,
+      );
+    } catch (error) {
+      console.error(
+        "[TrackPlayerService] Failed to update queued track URL:",
+        error,
+      );
     }
   }
 

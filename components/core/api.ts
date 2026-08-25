@@ -468,15 +468,13 @@ export async function fetchStreamFromPipedWithFallback(id: string) {
 
   for (const baseUrl of API.piped) {
     try {
-      console.log(`🟡 [API] Piped instance try: ${baseUrl}`);
       const data = await fetchStreamFromPiped(id, baseUrl);
-      console.log(`🟢 [API] Piped instance ok: ${baseUrl}`);
       return data;
     } catch (error) {
+      // Truncate: instance errors carry huge HTML/stack payloads that spam
+      // logcat and starve the JS thread while scrolling.
       console.log(
-        `🔴 [API] Piped instance failed: ${baseUrl} (${
-          (error as Error).message
-        })`,
+        `[API] Piped ${baseUrl} failed: ${((error as Error).message || "").slice(0, 120)}`,
       );
       errors.push(`${baseUrl}: ${(error as Error).message}`);
       continue;
@@ -507,15 +505,11 @@ export async function fetchStreamFromInvidiousWithFallback(id: string) {
 
   for (const baseUrl of instances) {
     try {
-      console.log(`🟡 [API] Invidious instance try: ${baseUrl}`);
       const data = await fetchStreamFromInvidious(id, baseUrl);
-      console.log(`🟢 [API] Invidious instance ok: ${baseUrl}`);
       return data;
     } catch (error) {
       console.log(
-        `🔴 [API] Invidious instance failed: ${baseUrl} (${
-          (error as Error).message
-        })`,
+        `[API] Invidious ${baseUrl} failed: ${((error as Error).message || "").slice(0, 120)}`,
       );
       errors.push(`${baseUrl}: ${(error as Error).message}`);
       continue;

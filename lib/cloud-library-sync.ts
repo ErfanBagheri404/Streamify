@@ -13,6 +13,29 @@ import { getSupabaseClient } from "./supabase/client";
 const LAST_SYNCED_CLOUD_LIBRARY_SNAPSHOT_STORAGE_KEY =
   "@last_synced_cloud_library_snapshot";
 
+// Simple async mutex to serialize sync/push/restore operations.
+// Without this, concurrent sync and push operations race over AsyncStorage
+// reads and Supabase writes, potentially pushing an empty local snapshot
+// and permanently deleting server-side song data.
+let _syncMutex: Promise<void> = Promise.resolve();
+function withSyncMutex<T>(fn: () => Promise<T>): Promise<T> {
+  // A hung previous operation (network stall, Supabase down) must not block
+  // syncs forever — detach the chain after a grace period.
+  const prev = _syncMutex;
+  const chained = (async () => {
+    await Promise.race([
+      prev,
+      new Promise((resolve) => setTimeout(resolve, 30_000)),
+    ]);
+    return fn();
+  })();
+  _syncMutex = chained.then(
+    () => {},
+    () => {},
+  );
+  return chained;
+}
+
 type TrackRef = {
   id: string;
   source: string;
@@ -1164,8 +1187,9 @@ async function resolveYouTubeTrack(
     const result = await searchAPI.getYouTubeVideoInfoWithFallback(ref.id);
     const data = (result?.data || null) as Record<string, unknown> | null;
 
-    return mergeTrack(
-      {
+    if (data?.title) {
+      return mergeTrack(
+        {
         id:
           normalizeString(data?.videoId) || normalizeString(data?.id) || ref.id,
         source: ref.source,
@@ -1188,20 +1212,50 @@ async function resolveYouTubeTrack(
           `https://www.youtube.com/watch?v=${encodeURIComponent(ref.id)}`,
       },
       knownTrack,
-    );
-  } catch {
-    return mergeTrack(
-      {
-        id: ref.id,
-        source: ref.source,
-        title: pickTrackTitle([knownTrack?.title], ref.id),
-        artist: knownTrack?.artist || "YouTube",
-        thumbnail:
-          knownTrack?.thumbnail || sanitizeImageUrl(ref.id) || undefined,
-      },
-      knownTrack,
-    );
-  }
+      );
+    }
+  } catch {}
+
+  try {
+    const { fetchBackendRoute } = await import("./backend-api");
+    const videoResp = await fetchBackendRoute("/video", {
+      searchParams: { id: ref.id, source: "youtube" },
+    });
+    const videoData: any = videoResp.ok
+      ? await videoResp.json().catch(() => null)
+      : null;
+    if (videoData?.title) {
+      return mergeTrack(
+        {
+          id: videoData.id || ref.id,
+          source: ref.source,
+          title: videoData.title,
+          artist: videoData.artist || videoData.author || "YouTube",
+          thumbnail: videoData.thumbnailUrl || videoData.thumbnail || undefined,
+          duration:
+            typeof videoData.lengthSeconds === "number"
+              ? videoData.lengthSeconds
+              : typeof videoData.duration === "number"
+                ? videoData.duration
+                : knownTrack?.duration,
+          url: videoData.url || `https://www.youtube.com/watch?v=${encodeURIComponent(ref.id)}`,
+        },
+        knownTrack,
+      );
+    }
+  } catch {}
+
+  return mergeTrack(
+    {
+      id: ref.id,
+      source: ref.source,
+      title: knownTrack?.title || ref.id,
+      artist: knownTrack?.artist || "YouTube",
+      thumbnail:
+        knownTrack?.thumbnail || sanitizeImageUrl(ref.id) || undefined,
+    },
+    knownTrack,
+  );
 }
 
 const SOUNDCLOUD_CLIENT_ID = "gqKBMSuBw5rbN9rDRYPqKNvF17ovlObu";
@@ -1293,12 +1347,65 @@ async function resolveSoundCloudTrack(
     }
   }
 
-  // Fallback — return what we have
+  // Fallback via app backend (no VPN needed) — HF worker is outside Iran
+  // and can reach api-v2.soundcloud.com even when the device cannot.
+  try {
+    const { fetchBackendRoute } = await import("./backend-api");
+    const searchParams: Record<string, string> = {
+      id: ref.id,
+      source: "soundcloud",
+    };
+    if (knownTrack?.title) searchParams.title = knownTrack.title;
+    if (knownTrack?.artist) searchParams.artist = knownTrack.artist;
+    const videoResp = await fetchBackendRoute("/video", { searchParams });
+    const videoData: any = videoResp.ok
+      ? await videoResp.json().catch(() => null)
+      : null;
+    if (videoData && !videoData.error && videoData.title) {
+      if (videoData.fallbackSource === "jiosaavn") {
+        console.warn("[CloudSync] SC backend returned JioSaavn fallback, rejecting:", videoData.title);
+      } else {
+        const resolved: Track = {
+          id: ref.id,
+          source: "soundcloud",
+          _isSoundCloud: true,
+          title: videoData.title || knownTrack?.title || ref.id,
+          artist: videoData.artist || videoData.author || knownTrack?.artist || "SoundCloud",
+          thumbnail: videoData.thumbnailUrl
+            ? sanitizeImageUrl(videoData.thumbnailUrl)
+            : knownTrack?.thumbnail || undefined,
+          duration:
+            typeof videoData.lengthSeconds === "number"
+              ? videoData.lengthSeconds
+              : typeof videoData.duration === "number"
+                ? videoData.duration
+                : knownTrack?.duration,
+          audioUrl: undefined,
+          url: videoData.permalinkUrl || videoData.url || knownTrack?.url || undefined,
+          artistId: undefined,
+          artistImage: undefined,
+          artistSource: undefined,
+        } as Track;
+        if (knownTrack) {
+          if (!resolved.thumbnail && knownTrack.thumbnail)
+            resolved.thumbnail = knownTrack.thumbnail;
+          if (!resolved.duration && knownTrack.duration)
+            resolved.duration = knownTrack.duration;
+        }
+        console.log("[CloudSync] SC backend fallback succeeded:", ref.id, resolved.title);
+        return resolved;
+      }
+    }
+  } catch (e: any) {
+    console.warn("[CloudSync] SC backend fallback failed:", ref.id, e?.message || String(e));
+  }
+
+  // Last resort — return what we have
   return mergeTrack(
     {
       id: ref.id,
       source: "soundcloud",
-      title: pickTrackTitle([knownTrack?.title], ref.id),
+      title: knownTrack?.title || ref.id,
       artist: knownTrack?.artist || "SoundCloud",
     },
     knownTrack,
@@ -1371,6 +1478,60 @@ export async function pushCloudLibrarySnapshot(
     } catch {}
   }
 
+  // Safety guard: never wipe remote playlist SONGS that exist when the merged
+  // snapshot contains empty playlists for the same IDs. This prevents a
+  // concurrent or stale empty local read (e.g. before restoreCloudLibrary
+  // finishes writing, or a cache round-trip that dropped songs) from
+  // permanently deleting server-side song data.
+  const mergedHasEmptyPlaylists = mergedSnapshot.playlists.some(
+    (playlist) => (playlist.songs || []).length === 0,
+  );
+  if (mergedHasEmptyPlaylists) {
+    let remotePlaylistsById: Map<string, { songCount: number }> | null = null;
+    try {
+      const remoteSnapshot = await pullCloudLibrarySnapshot();
+      remotePlaylistsById = new Map(
+        remoteSnapshot.playlists.map((playlist) => [
+          playlist.id,
+          { songCount: (playlist.songs || []).length },
+        ]),
+      );
+    } catch {}
+
+    if (remotePlaylistsById) {
+      const emptiedButRemoteHasSongs = mergedSnapshot.playlists.some(
+        (playlist) => {
+          const remote = remotePlaylistsById!.get(playlist.id);
+          return (
+            (playlist.songs || []).length === 0 &&
+            remote != null &&
+            remote.songCount > 0
+          );
+        },
+      );
+
+      if (emptiedButRemoteHasSongs) {
+        console.warn(
+          "[CloudSync] Refusing to push snapshot that drops songs for playlists that have songs remotely",
+        );
+        return {
+          syncedPlaylists: 0,
+          syncedLikes: 0,
+          refused: true,
+        };
+      }
+    }
+  }
+
+  // ── Delete + re-insert ────────────────────────────────────────
+  // Blanket delete of all playlists for this user, then re-insert from the
+  // merged snapshot.  The empty-playlist guard above blocks pushes where
+  // the snapshot has empty playlists that would drop remote songs (stale-read
+  // data-loss protection).  A scoped-delete approach was considered but
+  // abandoned: without a local mutation-tracking layer (deleted playlist IDs
+  // persisted across syncs), there is no way to distinguish a stale-read drop
+  // (must not delete server-side) from a true user deletion (must delete)
+  // using only snapshot comparisons.
   const { error: deletePlaylistsError } = await supabase
     .from("playlists")
     .delete()
@@ -1495,7 +1656,7 @@ async function mapWithConcurrencyLimit<T, R>(
   return results;
 }
 
-const METADATA_REFRESH_CONCURRENCY = 2;
+const METADATA_REFRESH_CONCURRENCY = 5;
 
 async function refreshStoredLibraryMetadata() {
   const [playlists, likedSongs, knownLocalTracks] = await Promise.all([
@@ -1700,6 +1861,7 @@ export async function restoreCloudLibrary(
 export async function syncCloudLibrarySnapshot(options?: {
   onSoundCloudRestricted?: (count: number) => void;
 }) {
+  return withSyncMutex(async () => {
   const localSource = await buildCurrentLocalLibrarySyncSource();
   const remoteSnapshot = await pullCloudLibrarySnapshot();
   const lastSyncedSnapshot = await readLastSyncedCloudLibrarySnapshot();
@@ -1724,6 +1886,21 @@ export async function syncCloudLibrarySnapshot(options?: {
     const uploadResult = await pushCloudLibrarySnapshot(mergedSnapshot, {
       mergeWithRemote: false,
     });
+
+    // If the push was refused (empty playlists that would drop server songs),
+    // revert local storage to the remote snapshot so the user sees real songs.
+    if (uploadResult.refused) {
+      await restoreCloudLibrary(remoteSnapshot, {
+        deferTrackMetadataRefresh: true,
+        onSoundCloudRestricted: options?.onSoundCloudRestricted,
+      });
+      return {
+        syncedPlaylists: 0,
+        syncedLikes: 0,
+        source: "cloud" as const,
+      };
+    }
+
     await saveLastSyncedCloudLibrarySnapshot(mergedSnapshot);
 
     return {
@@ -1756,9 +1933,9 @@ export async function syncCloudLibrarySnapshot(options?: {
     };
   }
 
-  const uploadResult = await pushCloudLibrarySnapshot(localSource.snapshot, {
-    mergeWithRemote: false,
-  });
+    const uploadResult = await pushCloudLibrarySnapshot(localSource.snapshot, {
+      mergeWithRemote: false,
+    });
   await saveLastSyncedCloudLibrarySnapshot(localSource.snapshot);
 
   return {
@@ -1766,7 +1943,8 @@ export async function syncCloudLibrarySnapshot(options?: {
     syncedLikes: uploadResult.syncedLikes,
     source: "local" as const,
   };
-}
+  });
+  }
 
 export function hasSnapshotDataExport(snapshot: CloudLibrarySnapshot): boolean {
   return hasSnapshotData(snapshot);
@@ -1777,12 +1955,14 @@ export function hasSnapshotDataExport(snapshot: CloudLibrarySnapshot): boolean {
  * Used by background auto-sync after local changes.
  */
 export async function pushFullCloudLibrarySnapshot(): Promise<void> {
-  const localSource = await buildCurrentLocalLibrarySyncSource();
-  if (!hasSnapshotData(localSource.snapshot)) {
-    return;
-  }
-  await pushCloudLibrarySnapshot(localSource.snapshot, {
-    mergeWithRemote: false,
+  return withSyncMutex(async () => {
+    const localSource = await buildCurrentLocalLibrarySyncSource();
+    if (!hasSnapshotData(localSource.snapshot)) {
+      return;
+    }
+    await pushCloudLibrarySnapshot(localSource.snapshot, {
+      mergeWithRemote: false,
+    });
+    await saveLastSyncedCloudLibrarySnapshot(localSource.snapshot);
   });
-  await saveLastSyncedCloudLibrarySnapshot(localSource.snapshot);
 }

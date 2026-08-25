@@ -4,6 +4,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import appConfig from "../app.json";
@@ -188,6 +189,14 @@ export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
   const [latestKnownUpdate, setLatestKnownUpdate] =
     useState<UpdateReleaseInfo | null>(null);
   const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
+  // Live ref mirror of dismissedVersion so async callbacks (checkForUpdates)
+  // always read the CURRENT dismissal state at resolve time, even when the
+  // callback closure captured a stale value.
+  const dismissedVersionRef = useRef<string | null>(null);
+  const setIsDismissedVersion = useCallback((value: string | null) => {
+    dismissedVersionRef.current = value;
+    setDismissedVersion(value);
+  }, []);
   const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(true);
   const [hasHydrated, setHasHydrated] = useState(false);
 
@@ -223,7 +232,7 @@ export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
         const normalizedDismissedVersion = normalizeVersion(
           storedDismissedVersion,
         );
-        setDismissedVersion(normalizedDismissedVersion || null);
+        setIsDismissedVersion(normalizedDismissedVersion || null);
 
         const cachedUpdateInfo = parseCachedUpdateInfo(storedCachedUpdate);
         if (
@@ -293,8 +302,13 @@ export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
         setLatestKnownUpdate(resolvedUpdate);
         await persistCachedUpdateInfo(resolvedUpdate);
 
+        // Read the LIVE dismissed version at resolve time. The check may have
+        // been started before the user pressed "Later" (e.g. a re-run triggered
+        // by the callback identity changing), so the value captured at request
+        // start can be stale/null and incorrectly re-show the modal.
         const isDismissed =
-          normalizeVersion(dismissedVersion) === resolvedUpdate.version;
+          normalizeVersion(dismissedVersionRef.current) ===
+          resolvedUpdate.version;
         const shouldShowModal =
           options.forceShowModal || options.ignoreDismissed || !isDismissed;
 
@@ -302,36 +316,39 @@ export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
           setUpdateInfo(resolvedUpdate);
         }
 
-        return {
-          status: "available",
-          info: resolvedUpdate,
-          usedCached: false,
-        };
-      } catch (error) {
-        console.log("[AppUpdate] Update check skipped:", error);
-
-        if (options.forceShowModal && cachedAvailableUpdate) {
-          setUpdateInfo(cachedAvailableUpdate);
           return {
             status: "available",
-            info: cachedAvailableUpdate,
-            usedCached: true,
+            info: resolvedUpdate,
+            usedCached: false,
           };
-        }
+        } catch (error) {
+          console.log("[AppUpdate] Update check skipped:", error);
 
-        return {
-          status: "error",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Unable to check for updates.",
-        };
-      } finally {
-        setIsCheckingForUpdates(false);
-      }
-    },
-    [dismissedVersion, latestKnownUpdate, persistCachedUpdateInfo],
-  );
+          if (options.forceShowModal && cachedAvailableUpdate) {
+            setUpdateInfo(cachedAvailableUpdate);
+            return {
+              status: "available",
+              info: cachedAvailableUpdate,
+              usedCached: true,
+            };
+          }
+
+          return {
+            status: "error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Unable to check for updates.",
+          };
+        } finally {
+          setIsCheckingForUpdates(false);
+        }
+      },
+      // latestKnownUpdate is intentionally NOT in the deps: it triggers an
+      // endless re-check cascade after every fetch resolves. dismissedVersion
+      // is also excluded — dismissal is read via the ref inside the callback.
+      [persistCachedUpdateInfo],
+    );
 
   useEffect(() => {
     if (!hasHydrated) {
@@ -370,7 +387,7 @@ export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
     }
 
     const normalizedVersion = normalizeVersion(updateInfo.version);
-    setDismissedVersion(normalizedVersion);
+    setIsDismissedVersion(normalizedVersion);
     setUpdateInfo(null);
     await StorageService.setItem(
       DISMISSED_UPDATE_VERSION_KEY,

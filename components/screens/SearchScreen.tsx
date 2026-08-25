@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   StyleSheet,
   Image,
+  LayoutAnimation,
 } from "react-native";
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -412,30 +413,119 @@ const DEFAULT_SEARCH_CATEGORY_CARDS: SearchCategoryPlaylist[] = [
   {
     category: "Alternative",
     imageFileName: "Alternative.jpg",
-    playlistTitle: "",
+    playlistTitle: "Greatest Alternative Rock Songs of All Time",
+    playlistUrl:
+      "https://soundcloud.com/storemusic-974485696/sets/top-alternative-rock-songs-the",
+    source: "soundcloud",
   },
   {
     category: "Electronic",
     imageFileName: "Electronic.jpg",
-    playlistTitle: "",
+    playlistTitle: "Lounge Music Mix - Electronic",
+    playlistUrl:
+      "https://soundcloud.com/profimedia/sets/lounge-music-mix-electronic",
+    source: "soundcloud",
   },
   {
     category: "Heavy Metal",
     imageFileName: "Heavy Metal.jpg",
-    playlistTitle: "",
+    playlistTitle: "Heavy Metal Workout",
+    playlistUrl:
+      "https://soundcloud.com/sc-playlists-eunon/sets/heavy-metal-workout",
+    source: "soundcloud",
   },
-  { category: "Hip-Hop", imageFileName: "Hip-Hop.jpg", playlistTitle: "" },
-  { category: "Jazz", imageFileName: "Jazz.jpg", playlistTitle: "" },
-  { category: "K-Pop", imageFileName: "K-Pop.jpg", playlistTitle: "" },
-  { category: "LO-FI", imageFileName: "LO-FI.jpg", playlistTitle: "" },
-  { category: "Metal", imageFileName: "Metal.jpg", playlistTitle: "" },
-  { category: "OST", imageFileName: "OST.jpg", playlistTitle: "" },
-  { category: "Persian", imageFileName: "Persian.jpg", playlistTitle: "" },
-  { category: "Phonk", imageFileName: "Phonk.jpg", playlistTitle: "" },
-  { category: "Pop", imageFileName: "Pop.jpg", playlistTitle: "" },
-  { category: "R&B", imageFileName: "RNB.jpg", playlistTitle: "" },
-  { category: "Rock", imageFileName: "Rock.jpg", playlistTitle: "" },
-  { category: "Synthwave", imageFileName: "Synthwave.jpg", playlistTitle: "" },
+  {
+    category: "Hip-Hop",
+    imageFileName: "Hip-Hop.jpg",
+    playlistTitle: "Top 100 Hip Hop Hits Of All Time",
+    playlistUrl:
+      "https://soundcloud.com/butterworthzak/sets/top-100-hip-hop-hits-of-all",
+    source: "soundcloud",
+  },
+  {
+    category: "Jazz",
+    imageFileName: "Jazz.jpg",
+    playlistTitle: "Coffee Jazz",
+    playlistUrl: "https://soundcloud.com/relaxcafemusic/sets/coffee-jazz",
+    source: "soundcloud",
+  },
+  {
+    category: "K-Pop",
+    imageFileName: "K-Pop.jpg",
+    playlistTitle: "Best KPop 2026 Playlist",
+    playlistUrl:
+      "https://soundcloud.com/storemusic-974485696/sets/best-kpop-2024-playlist-top",
+    source: "soundcloud",
+  },
+  {
+    category: "LO-FI",
+    imageFileName: "LO-FI.jpg",
+    playlistTitle: "Chill Beats - Lofi Jazz Hop",
+    playlistUrl:
+      "https://soundcloud.com/chill-bill-16/sets/chill-beats-lofi-jazz-hop-lo",
+    source: "soundcloud",
+  },
+  {
+    category: "Metal",
+    imageFileName: "Metal.jpg",
+    playlistTitle: "Rock & Metal Classics",
+    playlistUrl:
+      "https://soundcloud.com/user-423177428-224399444/sets/rock-metal-classics-ii",
+    source: "soundcloud",
+  },
+  {
+    category: "OST",
+    imageFileName: "OST.jpg",
+    playlistTitle: "Best Video Game Music",
+    playlistUrl: "https://soundcloud.com/rage-remix/sets/game-soundtracks",
+    source: "soundcloud",
+  },
+  {
+    category: "Persian",
+    imageFileName: "Persian.jpg",
+    playlistTitle: "Persian Pop - Top Iranian Hits",
+    playlistUrl:
+      "https://soundcloud.com/max-alaga/sets/persian-pop-2026-top-iranian",
+    source: "soundcloud",
+  },
+  {
+    category: "Phonk",
+    imageFileName: "Phonk.jpg",
+    playlistTitle: "Aggressive Phonk",
+    playlistUrl: "https://soundcloud.com/b3nde/sets/agressive-phonk",
+    source: "soundcloud",
+  },
+  {
+    category: "Pop",
+    imageFileName: "Pop.jpg",
+    playlistTitle: "Today's Top Music Hits 2025",
+    playlistUrl:
+      "https://soundcloud.com/21charts/sets/todays-top-music-hits-2025",
+    source: "soundcloud",
+  },
+  {
+    category: "R&B",
+    imageFileName: "RNB.jpg",
+    playlistTitle: "R&B Classics 90s & 2000s",
+    playlistUrl:
+      "https://soundcloud.com/sam-derbyshire-498361112/sets/r-b-classics-90s-2000s-best",
+    source: "soundcloud",
+  },
+  {
+    category: "Rock",
+    imageFileName: "Rock.jpg",
+    playlistTitle: "Classic Rock Greatest Hits",
+    playlistUrl:
+      "https://soundcloud.com/storemusic-974485696/sets/alternative-rock-playlist",
+    source: "soundcloud",
+  },
+  {
+    category: "Synthwave",
+    imageFileName: "Synthwave.jpg",
+    playlistTitle: "Synthwave & Retrowave",
+    playlistUrl: "https://soundcloud.com/theociderecords/sets/best-of-synthwave",
+    source: "soundcloud",
+  },
 ];
 
 const MIXED_FILTER_OPTIONS: SearchFilterOption[] = [
@@ -572,7 +662,6 @@ export default function SearchScreen({ navigation }: any) {
     [categoryPlaylists],
   );
   const orderedSourceOptions = SEARCH_SOURCE_OPTIONS;
-  const filtersAnimation = useRef(new Animated.Value(0)).current;
   const filterPanelHeight = activeFilterOptions.length > 0 ? 92 : 48;
 
   const copy = useMemo(
@@ -678,14 +767,6 @@ export default function SearchScreen({ navigation }: any) {
   }, []);
 
   useEffect(() => {
-    Animated.timing(filtersAnimation, {
-      toValue: showFilters ? 1 : 0,
-      duration: settings.disableAnimations ? 0 : 220,
-      useNativeDriver: false,
-    }).start();
-  }, [filtersAnimation, settings.disableAnimations, showFilters]);
-
-  useEffect(() => {
     if (!trimmedSearchQuery.length) {
       resultsAnimationSignatureRef.current = "";
       resultsEntranceOpacity.setValue(1);
@@ -748,72 +829,21 @@ export default function SearchScreen({ navigation }: any) {
     hasRestoredSearchRef.current = true;
     let cancelled = false;
 
-    const restoreSearchState = async () => {
+    const resetSearchState = async () => {
       const preferredSource = normalizePreferredSource(
         settings.preferredSearchSource,
       );
-
-      if (!settings.rememberLastSearch) {
-        await StorageService.clearLastSearchState();
-        if (!cancelled) {
-          setSelectedSource(preferredSource);
-          setSelectedFilter(
-            normalizeFilterForSource(preferredSource, undefined),
-          );
-        }
-        return;
-      }
-
-      const lastSearchState = await StorageService.loadLastSearchState();
-      if (cancelled) {
-        return;
-      }
-
-      if (!lastSearchState?.query?.trim()) {
+      // Always clear persisted search — start fresh on app reopen
+      await StorageService.clearLastSearchState();
+      if (!cancelled) {
         setSelectedSource(preferredSource);
-        setSelectedFilter(normalizeFilterForSource(preferredSource, undefined));
-        return;
-      }
-
-      const restoredSource = normalizeSearchSource(
-        lastSearchState.source,
-        preferredSource,
-      );
-      const restoredFilter = normalizeFilterForSource(
-        restoredSource,
-        lastSearchState.filter,
-      );
-      const restoredResults = Array.isArray(lastSearchState.results)
-        ? (lastSearchState.results as SearchResult[])
-        : [];
-
-      isRestoringSearchStateRef.current = true;
-      setSearchQuery(lastSearchState.query);
-      setSelectedSource(restoredSource);
-      setSelectedFilter(restoredFilter);
-      if (restoredResults.length > 0) {
-        setSearchResults(restoredResults);
-        setHasSearched(true);
-        setHasMoreResults(false);
-        setCurrentPage(1);
-        paginationRef.current = {
-          page: 1,
-          hasMore: false,
-          isLoadingMore: false,
-          nextpage: null,
-        };
-        lastSearchRef.current = {
-          query: lastSearchState.query.trim(),
-          source: restoredSource,
-          filter: restoredFilter,
-        };
-        pendingRestoreQueryRef.current = null;
-      } else {
-        pendingRestoreQueryRef.current = lastSearchState.query;
+        setSelectedFilter(
+          normalizeFilterForSource(preferredSource, undefined),
+        );
       }
     };
 
-    void restoreSearchState();
+    void resetSearchState();
 
     return () => {
       cancelled = true;
@@ -823,14 +853,6 @@ export default function SearchScreen({ navigation }: any) {
     settings.preferredSearchSource,
     settings.rememberLastSearch,
   ]);
-
-  useEffect(() => {
-    if (!hasHydratedSettings || settings.rememberLastSearch) {
-      return;
-    }
-
-    void StorageService.clearLastSearchState();
-  }, [hasHydratedSettings, settings.rememberLastSearch]);
 
   // --- Helper Functions ---
 
@@ -1860,7 +1882,14 @@ export default function SearchScreen({ navigation }: any) {
           activeOpacity={0.85}
           accessibilityRole="button"
           accessibilityLabel={t("search.toggleFilters")}
-          onPress={() => setShowFilters((current) => !current)}
+          onPress={() => {
+            if (!settings.disableAnimations) {
+              LayoutAnimation.configureNext(
+                LayoutAnimation.Presets.easeInEaseOut,
+              );
+            }
+            setShowFilters((current) => !current);
+          }}
           style={[
             styles.filterToggleButton,
             { marginLeft: isRtl ? 0 : 12, marginRight: isRtl ? 12 : 0 },
@@ -1879,20 +1908,14 @@ export default function SearchScreen({ navigation }: any) {
         </TouchableOpacity>
       </Header>
 
-      <Animated.View
+      <View
         pointerEvents={showFilters ? "auto" : "none"}
         style={[
           styles.filterPanel,
           {
-            opacity: filtersAnimation,
-            maxHeight: filtersAnimation.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0, filterPanelHeight],
-            }),
-            marginBottom: filtersAnimation.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0, 12],
-            }),
+            opacity: showFilters ? 1 : 0,
+            maxHeight: showFilters ? filterPanelHeight : 0,
+            marginBottom: showFilters ? 12 : 0,
           },
         ]}
       >
@@ -1985,7 +2008,7 @@ export default function SearchScreen({ navigation }: any) {
             </ScrollView>
           ) : null}
         </>
-      </Animated.View>
+      </View>
 
       {/* Suggestions Dropdown */}
       {showSuggestions && (suggestions.length > 0 || isLoadingSuggestions) && (

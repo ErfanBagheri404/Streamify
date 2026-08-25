@@ -611,7 +611,12 @@ function normalizeBackendSoundCloudItem(
   }
 
   const imageUrl = sanitizeImageUrl(
-    item.thumbnailUrl || item.img || item.artwork || item.artworkUrl || "",
+    item.thumbnailUrl ||
+      item.img ||
+      item.artwork ||
+      item.artworkUrl ||
+      item.artwork_url ||
+      "",
   );
 
   return {
@@ -2224,6 +2229,10 @@ export const searchAPI = {
           created_at: item.created_at,
           permalink_url: item.permalink_url,
           artwork_url: item.artwork_url,
+          thumbnailUrl: item.artwork_url,
+          img: item.artwork_url,
+          author: item.user?.username || "Unknown Artist",
+          source: "soundcloud",
           user: {
             username: item.user?.username,
             avatar_url: item.user?.avatar_url,

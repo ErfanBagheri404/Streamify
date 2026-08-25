@@ -12,6 +12,7 @@ import {
   ScrollView,
   View,
   AppState,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import styled from "styled-components/native";
@@ -336,6 +337,7 @@ const TrackRow = styled.View`
   align-items: center;
   margin-top: 32px;
   padding-horizontal: 28px;
+  gap: 12px;
 `;
 
 const LikeButton = styled(TouchableOpacity)`
@@ -1524,16 +1526,18 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   {fullscreenArtworkSources.highRes &&
                   fullscreenArtworkSources.highRes !==
                     fullscreenArtworkSources.lowRes ? (
-                    <AlbumArtWithOpacity
+                    <Image
                       source={{ uri: fullscreenArtworkSources.highRes }}
-                      showCache={showCacheSize}
+                      resizeMode="cover"
                       onLoad={() => setIsHighResArtworkReady(true)}
+                      onError={() => setIsHighResArtworkReady(false)}
                       style={{
                         position: "absolute",
                         top: 0,
                         right: 0,
                         bottom: 0,
                         left: 0,
+                        borderRadius: 12,
                         opacity: isHighResArtworkReady
                           ? showCacheSize
                             ? 0.2

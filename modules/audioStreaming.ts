@@ -25,7 +25,7 @@ import {
   getProviderEndpoints,
 } from "../lib/provider-endpoints";
 import { getRuntimeServiceConfig } from "../lib/runtime-services";
-import { fetchBackendRoute } from "../lib/backend-api";
+import { fetchBackendRoute, getBackendBaseUrls } from "../lib/backend-api";
 
 type GetAudioStreamOptions = {
   urlHint?: string;
@@ -277,6 +277,16 @@ export class AudioStreamManager {
   // SoundCloud stream cache (1MB pre-buffering)
   private soundCloudCache: Map<string, string> = new Map();
 
+  // Last DRM metadata returned by the backend (set by tryBackendPlaybackRoute)
+  public lastBackendDrm: {
+    audioUrl: string;
+    audioType?: string;
+    drmLicenseUrl?: string;
+    drmScheme?: string;
+    drmProvider?: string;
+    drmHeaders?: Record<string, string>;
+  } | null = null;
+
   // Generic track cache for all track types (YouTube, SoundCloud, etc.)
   private trackCache: Map<string, string> = new Map();
 
@@ -483,6 +493,13 @@ export class AudioStreamManager {
       this.initializeOfflineDirectory().finally(() => {
         this.offlineDirectoryInitPromise = null;
       });
+
+    // Hydrate the in-memory trackCache from the persistent cache index so
+    // that fully-cached songs play instantly after a cold start. Without
+    // this, getAudioUrl's FAST PATH (hasFullCachedFile) misses on-disk
+    // cached files because the in-memory map is empty, and the track falls
+    // through to full network resolution + progressive caching (3-10s delay).
+    this.hydrateTrackCacheFromIndex().catch(() => {});
   }
 
   public async warmupProviders(): Promise<void> {
@@ -799,11 +816,15 @@ export class AudioStreamManager {
       `[CacheProgress] Download completed for ${trackId}: ${Math.round(fileSize * 100) / 100}MB (took ${existingProgress ? Math.round((now - existingProgress.downloadStartTime) / 1000) : 0}s)`,
     );
 
-    // Promote finished files into persistent offline storage after the current
-    // synchronous cache bookkeeping completes.
+    // Promote finished files into persistent offline storage. Defer 1s so
+    // the heavy filesystem I/O (moveAsync/copyAsync + deleteAsync) doesn't
+    // block the JS thread at the exact moment the queue starts the next
+    // track's URL resolution. Without this deferral the move/copy of a
+    // multi-MB audio file freezes the UI for 500ms-2s right at the
+    // first→second song transition.
     setTimeout(() => {
       void this.promoteCompletedTrackToOfflineStorage(trackId);
-    }, 0);
+    }, 1000);
   }
 
   private registerValidatedFullTrackPath(
@@ -817,6 +838,89 @@ export class AudioStreamManager {
     this.trackCache.set(trackId, filePath);
     this.trackCache.set(trackId + "_full", filePath);
     this.trackCache.set(trackId + "_has_full", "true");
+  }
+
+  /**
+   * Populate the in-memory trackCache from the persistent cache index.
+   * This lets getAudioUrl's FAST PATH resolve cached-on-disk songs instantly
+   * after a cold start (the in-memory map is otherwise empty until a track is
+   * re-cached during the session). Only fully-cached entries are hydrated.
+   */
+  private async hydrateTrackCacheFromIndex(): Promise<void> {
+    try {
+      // Wait for the cache directory to be initialized so the paths are real.
+      if (this.cacheDirectoryInitPromise) {
+        await this.cacheDirectoryInitPromise;
+      }
+      const cacheDir = this.cacheDirectory;
+      if (!cacheDir) {
+        return;
+      }
+      const index = await loadAudioCacheIndex();
+      const entries = index?.entries || {};
+      const candidateExtensions = [".cache.full", ".mp3.full", ".webm.full"];
+
+      // Collect candidate paths first, then probe in parallel batches. Doing the
+      // getInfoAsync calls serially (one await per extension per track) caused up
+      // to 3x fs round-trips sequentially per track — for 200+ cached tracks that
+      // is 600+ sequential awaits at startup. Batching them in parallel keeps the
+      // hydrate fast while still verifying each file exists on disk.
+      const candidates: { trackId: string; candidate: string }[] = [];
+      for (const trackId of Object.keys(entries)) {
+        const entry = entries[trackId];
+        if (!entry?.isFullyCached) continue;
+        for (const ext of candidateExtensions) {
+          candidates.push({ trackId, candidate: `${cacheDir}${trackId}${ext}` });
+        }
+      }
+
+      if (candidates.length === 0) {
+        return;
+      }
+
+      let hydrated = 0;
+      const BATCH = 50;
+      for (let i = 0; i < candidates.length; i += BATCH) {
+        const batch = candidates.slice(i, i + BATCH);
+        const results = await Promise.all(
+          batch.map(async ({ trackId, candidate }) => {
+            try {
+              const info = await FileSystem.getInfoAsync(candidate);
+              if (
+                info.exists &&
+                typeof info.size === "number" &&
+                info.size >= 10240
+              ) {
+                const fullPath = candidate.startsWith("file://")
+                  ? candidate
+                  : `file://${candidate}`;
+                return { trackId, fullPath };
+              }
+            } catch {}
+            return null;
+          }),
+        );
+
+        for (const result of results) {
+          if (!result) continue;
+          // Only set if not already hydrated for this track (first match wins).
+          if (!this.trackCache.has(result.trackId)) {
+            this.trackCache.set(result.trackId, result.fullPath);
+            this.trackCache.set(result.trackId + "_full", result.fullPath);
+            this.trackCache.set(result.trackId + "_has_full", "true");
+            hydrated += 1;
+          }
+        }
+      }
+
+      if (hydrated > 0) {
+        console.log(
+          `[Audio] Hydrated ${hydrated} cached tracks into in-memory map`,
+        );
+      }
+    } catch (error) {
+      console.warn("[Audio] Failed to hydrate track cache from index:", error);
+    }
   }
 
   /**
@@ -1284,6 +1388,47 @@ export class AudioStreamManager {
     }
 
     return false;
+  }
+
+  /**
+   * Synchronous in-memory lookup of a fully-cached file path.
+   * Only checks the trackCache/soundCloudCache maps — no filesystem I/O.
+   * Used by the getAudioUrl FAST PATH so cached songs start instantly.
+   */
+  private getFullCachedFilePathSync(trackId: string): string | null {
+    const offlinePath = this.trackCache.get(trackId + "_offline");
+    if (offlinePath) {
+      return offlinePath;
+    }
+    const fullPath =
+      this.trackCache.get(trackId + "_full") ||
+      this.soundCloudCache.get(trackId + "_full");
+    if (fullPath) {
+      return fullPath;
+    }
+    if (this.hasFullCachedFile(trackId)) {
+      const direct =
+        this.trackCache.get(trackId) || this.soundCloudCache.get(trackId);
+      if (direct) {
+        return direct;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Remove all in-memory cache references for a track.
+   * Called when the FAST PATH finds the cached file missing on disk (stale
+   * entry after an OS/app-level cache purge), so the next resolution attempt
+   * goes through the full network path instead of reusing a dead file path.
+   */
+  private evictTrackFromCache(trackId: string): void {
+    this.trackCache.delete(trackId);
+    this.trackCache.delete(trackId + "_full");
+    this.trackCache.delete(trackId + "_offline");
+    this.trackCache.delete(trackId + "_has_full");
+    this.soundCloudCache.delete(trackId);
+    this.soundCloudCache.delete(trackId + "_full");
   }
 
   /**
@@ -1804,23 +1949,11 @@ export class AudioStreamManager {
         return false;
       }
 
-      // Check if file can be read (basic corruption check)
-      try {
-        const testRead = await FileSystem.readAsStringAsync(filePath, {
-          encoding: FileSystem.EncodingType.Base64,
-          length: 1024, // Read first 1KB to test file integrity
-        });
-
-        if (!testRead || testRead.length === 0) {
-          console.warn(
-            "[Audio] File validation failed: cannot read file content",
-          );
-          return false;
-        }
-      } catch (readError) {
-        console.warn("[Audio] File validation failed: read error", readError);
-        return false;
-      }
+      // NOTE: The previous implementation also read the first 1KB of the file
+      // via readAsStringAsync(Base64) to "test integrity". That read runs on the
+      // JS thread and is invoked for every candidate path (25+ probes per
+      // getFullCachedFilePath call), which starves the thread during playback.
+      // Exists + minimum size is sufficient validation for our purposes.
 
       console.log(`[Audio] File validation passed for: ${filePath}`);
       return true;
@@ -1926,6 +2059,8 @@ export class AudioStreamManager {
       }
 
       const sourceInfo = await FileSystem.getInfoAsync(fullCachedPath);
+      // Yield to event loop so UI can repaint between I/O-heavy operations
+      await new Promise<void>((res) => setTimeout(res, 0));
       if (!sourceInfo.exists || !sourceInfo.size || sourceInfo.size < 10240) {
         return;
       }
@@ -1957,6 +2092,8 @@ export class AudioStreamManager {
             from: normalizedSourcePath,
             to: destinationPath,
           });
+          // Yield after copy (multi-MB write) so UI can handle events
+          await new Promise<void>((res) => setTimeout(res, 0));
           await FileSystem.deleteAsync(normalizedSourcePath, {
             idempotent: true,
           });
@@ -4216,7 +4353,10 @@ export class AudioStreamManager {
         },
       );
 
-      // Poll file size every 800ms to update percentage during download
+      // Poll file size every 1500ms to update percentage during download.
+      // 800ms means ~1 native bridge call every 0.8s per download; with the
+      // queue processing multiple tracks this adds up. 1500ms is still
+      // smooth enough for the progress bar.
       const existingProgress = this.cacheProgress.get(trackId);
       const estimatedTotal = existingProgress?.estimatedTotalSize || 0;
       const pollTimer = setInterval(async () => {
@@ -4236,7 +4376,7 @@ export class AudioStreamManager {
             }
           }
         } catch {}
-      }, 800);
+      }, 1500);
 
       const result = await downloadPromise;
       clearInterval(pollTimer);
@@ -4315,7 +4455,14 @@ export class AudioStreamManager {
     videoId: string,
     source?: string,
     options?: GetAudioStreamOptions,
-  ): Promise<string | null> {
+  ): Promise<{
+    audioUrl: string;
+    audioType?: string;
+    drmLicenseUrl?: string;
+    drmScheme?: string;
+    drmProvider?: string;
+    drmHeaders?: Record<string, string>;
+  } | null> {
     const normalizedSource = String(source || "")
       .trim()
       .toLowerCase();
@@ -4357,25 +4504,57 @@ export class AudioStreamManager {
         ((await response.json()) as Record<string, unknown> | null) || {};
       const audioUrl =
         typeof payload.audioUrl === "string" ? payload.audioUrl.trim() : "";
+      const audioType =
+        typeof payload.audioType === "string"
+          ? payload.audioType.trim()
+          : "";
+      const drmLicenseUrl =
+        typeof payload.drmLicenseUrl === "string"
+          ? payload.drmLicenseUrl.trim()
+          : "";
+      const drmScheme =
+        typeof payload.drmScheme === "string"
+          ? payload.drmScheme.trim()
+          : "";
+      const drmProvider =
+        typeof payload.drmProvider === "string"
+          ? payload.drmProvider.trim()
+          : "";
+      const drmHeaders =
+        typeof payload.drmHeaders === "object" &&
+        payload.drmHeaders !== null
+          ? (payload.drmHeaders as Record<string, string>)
+          : undefined;
 
       if (!audioUrl) {
         return null;
       }
 
-      // The mobile player does not yet wire DRM fields into TrackPlayer, so
-      // keep the legacy extraction path available for encrypted SoundCloud.
-      if (
-        payload.audioType === "soundcloud-drm" ||
-        typeof payload.drmLicenseUrl === "string" ||
-        typeof payload.drmScheme === "string"
-      ) {
-        console.warn(
-          "[AudioStreamManager] Backend playback returned DRM metadata; falling back to legacy resolver",
-        );
-        return null;
+      // SoundCloud tracks may be Widevine-DRM protected. The backend returns the
+      // license URL + scheme; the mobile uses react-native-video (Widevine) to
+      // play them. Return the DRM metadata so the caller can route to the
+      // DRM-capable player instead of the legacy progressive extractor.
+      if (audioType === "soundcloud-drm") {
+        if (!drmLicenseUrl || !drmScheme) {
+          console.warn(
+            "[AudioStreamManager] Backend returned DRM SoundCloud stream without license metadata; falling back",
+          );
+          this.lastBackendDrm = null;
+          return null;
+        }
+        this.lastBackendDrm = {
+          audioUrl,
+          audioType,
+          drmLicenseUrl,
+          drmScheme,
+          drmProvider,
+          drmHeaders,
+        };
+        return this.lastBackendDrm;
       }
 
-      return audioUrl;
+      this.lastBackendDrm = { audioUrl, audioType };
+      return this.lastBackendDrm;
     } catch (error) {
       console.warn(
         `[AudioStreamManager] Backend playback route failed for ${backendSource}:`,
@@ -4421,6 +4600,45 @@ export class AudioStreamManager {
       return prefetched;
     }
 
+    // FAST PATH: if this track is already fully cached in memory (completed
+    // download or offline promotion), return the local file immediately.
+    // Previously this check happened only AFTER running the full network
+    // strategy resolution (backend /video + 3 concurrent providers), which
+    // made cached songs take 3-10+ seconds to start. hasFullCachedFile() is
+    // a cheap in-memory lookup (no filesystem reads).
+    if (this.hasFullCachedFile(videoId)) {
+      const cachedPath = this.getFullCachedFilePathSync(videoId);
+      if (cachedPath) {
+        // Stale-path guard: if the file was deleted externally (OS cache
+        // purge, app cache clear) the in-memory trackCache still holds it.
+        // One getInfoAsync per cache hit is negligible compared to the old
+        // 7+ synchronous probes that ran on every resolution.
+        const fullPath = cachedPath.startsWith("file://")
+          ? cachedPath
+          : `file://${cachedPath}`;
+        try {
+          const info = await FileSystem.getInfoAsync(fullPath);
+          if (info.exists && info.size && info.size >= 10240) {
+            console.log(
+              `[AudioStreamManager] Using fully cached file for ${videoId}`,
+            );
+            onStatusUpdate?.("Using cached audio");
+            return fullPath;
+          }
+          // Stale — evict from memory so the full resolution path runs.
+          this.evictTrackFromCache(videoId);
+          console.warn(
+            `[AudioStreamManager] Cached file missing/too small for ${videoId}, falling through`,
+          );
+        } catch (err) {
+          console.warn(
+            `[AudioStreamManager] Cache existence check failed for ${videoId}: ${err}`,
+          );
+          this.evictTrackFromCache(videoId);
+        }
+      }
+    }
+
     // Always ensure caching before playing
     onStatusUpdate?.("Ensuring audio is cached before playback...");
 
@@ -4441,7 +4659,11 @@ export class AudioStreamManager {
           console.log(
             `[AudioStreamManager] Using backend SoundCloud stream for: ${videoId}`,
           );
-          return backendAudioUrl;
+          // tryBackendPlaybackRoute now returns a DRM-enriched object; the
+          // underlying URL is still a plain string that the caller plays.
+          // DRM metadata lives on this.lastBackendDrm for the PlayerContext
+          // to consume when it builds the track.
+          return backendAudioUrl.audioUrl;
         }
 
         console.log(
@@ -4454,6 +4676,11 @@ export class AudioStreamManager {
         );
 
         if (soundCloudUrl) {
+          // SoundCloud stream URLs from the legacy extractor (api-v2.soundcloud.com)
+          // are NOT routable through the backend audio-proxy (disallowed host).
+          // Play them directly with SoundCloud headers. Only backend-proxied
+          // URLs (cf-media.sndcdn.com via /video route) go through the proxy.
+          // For non-file URLs, cache the stream to reduce repeated extractions.
           if (!soundCloudUrl.startsWith("file://")) {
             onStatusUpdate?.("Caching SoundCloud audio...");
             const controller = new AbortController();
@@ -4508,7 +4735,7 @@ export class AudioStreamManager {
             isYouTubeMusicSource ? "YouTube Music" : "YouTube"
           } stream for: ${videoId}`,
         );
-        return backendAudioUrl;
+        return backendAudioUrl.audioUrl;
       }
 
       const strategies = isYouTubeMusicSource
@@ -7257,6 +7484,16 @@ type AudioCacheIndex = {
 };
 
 const AUDIO_CACHE_INDEX_KEY = "@audio_cache_index_v2";
+
+// Short-lived in-memory memo for the cache-index blob. loadAudioCacheIndex is
+// called many times in a tight loop (the liked-songs cache queue scans 10
+// tracks per batch, each calling getAudioCacheInfo -> loadAudioCacheIndex).
+// Re-reading + JSON-parsing the whole AsyncStorage blob on every call saturates
+// the JS thread during playback. A 400ms memo collapses those into a single
+// read. saveAudioCacheIndex refreshes the memo so writers never read stale data.
+const CACHE_INDEX_MEMO_TTL_MS = 400;
+let cacheIndexMemo: { data: AudioCacheIndex; ts: number } | null = null;
+
 const CACHE_SIZE_FALLBACK_BYTES = 512 * 1024 * 1024;
 const CACHE_MIN_BYTES = 50 * 1024 * 1024;
 const CACHE_HEAD_TIMEOUT_MS = 8000;
@@ -7269,19 +7506,27 @@ const CACHE_RESUME_REQUEST_TIMEOUT_MS = 25000;
 const toMB = (bytes: number) => Math.max(0, bytes / (1024 * 1024));
 
 export const loadAudioCacheIndex = async (): Promise<AudioCacheIndex> => {
+  const now = Date.now();
+  if (cacheIndexMemo && now - cacheIndexMemo.ts < CACHE_INDEX_MEMO_TTL_MS) {
+    return cacheIndexMemo.data;
+  }
   try {
     const raw = await AsyncStorage.getItem(AUDIO_CACHE_INDEX_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as AudioCacheIndex;
       if (parsed && parsed.entries) {
-        return {
+        const data = {
           totalBytes: parsed.totalBytes || 0,
           entries: parsed.entries || {},
         };
+        cacheIndexMemo = { data, ts: now };
+        return data;
       }
     }
   } catch {}
-  return { totalBytes: 0, entries: {} };
+  const fallback = { totalBytes: 0, entries: {} } as AudioCacheIndex;
+  cacheIndexMemo = { data: fallback, ts: now };
+  return fallback;
 };
 
 /**
@@ -7367,6 +7612,9 @@ export async function getAllTrackCacheStatus(): Promise<
 const saveAudioCacheIndex = async (index: AudioCacheIndex): Promise<void> => {
   try {
     await AsyncStorage.setItem(AUDIO_CACHE_INDEX_KEY, JSON.stringify(index));
+    // Refresh the memo so subsequent loadAudioCacheIndex calls within the TTL
+    // window see the just-written data instead of re-reading the stale blob.
+    cacheIndexMemo = { data: index, ts: Date.now() };
   } catch {}
 };
 

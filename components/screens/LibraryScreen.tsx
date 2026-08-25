@@ -656,7 +656,13 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     loadDownloadingTracks();
     loadDownloadedTracks();
   }, [
-    cacheProgress?.percentage,
+    // Only rescan the whole library when a DIFFERENT track starts/stops
+    // caching. Previously this was keyed on cacheProgress?.percentage, which
+    // changes every second during a download — re-running getCacheInfo over
+    // the entire 50-track library on every tick (~350 native bridge calls/sec)
+    // and freezing the UI. The live percentage already comes from
+    // cacheProgress directly; this effect only needs to rebuild the
+    // downloading/downloaded lists when the active track changes.
     cacheProgress?.trackId,
     loadDownloadingTracks,
     loadDownloadedTracks,
