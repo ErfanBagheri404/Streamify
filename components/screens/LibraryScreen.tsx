@@ -1,6 +1,6 @@
 import React, { useRef, useState } from "react";
 const { Animated, PanResponder, Dimensions } = require("react-native");
-import { Image, View, TouchableOpacity, Text, TextInput } from "react-native";
+import { Image, View, TouchableOpacity, Text, TextInput, Share } from "react-native";
 import styled from "styled-components/native";
 import { LinearGradient } from "expo-linear-gradient";
 import AntDesign from "@expo/vector-icons/AntDesign";
@@ -494,7 +494,13 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   ).current;
 
   const closeSongActionSheet = () => {
-    animateSheet("closed");
+    // SliderSheet is a <Modal> with its own internal close animation —
+    // flip the visibility flag right away, no 250ms dead wait.
+    // Delay nulling the selected track so the cover/title stay visible
+    // while the sheet slides down.
+    setShowSongActionSheet(false);
+    setTimeout(() => setSelectedTrack(null), 350);
+    sheetStateRef.current = "closed";
   };
 
   const openSongActionSheet = (track: Track) => {
@@ -1932,9 +1938,19 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             },
           ]}
           onOptionPress={(option) => {
-            console.log("Song action:", option);
-            closeSongActionSheet();
-          }}
+             if (option === "Share" && selectedTrack?.title) {
+               const artistSuffix = selectedTrack.artist
+                 ? ` — ${selectedTrack.artist}`
+                 : "";
+               Share.share({
+                 message: `${selectedTrack.title}${artistSuffix}`,
+                 url: selectedTrack.url || selectedTrack.thumbnail || "",
+               }).catch((error) => {
+                 console.log("[LibraryScreen] Share failed:", error);
+               });
+             }
+             closeSongActionSheet();
+           }}
         />
       </LibraryShell>
     </UiScreen>

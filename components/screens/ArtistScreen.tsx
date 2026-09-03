@@ -960,7 +960,13 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
         artistSource: artistData?.source || resolvedSource,
         thumbnail: item.thumbnail,
         duration: item.duration,
-        audioUrl: item.url,
+        // Do NOT pass item.url as audioUrl — for JioSaavn it's the song
+        // page URL (e.g. https://www.jiosaavn.com/song/...) and for YouTube
+        // it's a watch URL, neither playable by the native player. Leaving
+        // audioUrl undefined lets PlayerContext resolve the real streaming
+        // URL via getAudioStreamUrl (with urlHint below).
+        audioUrl: undefined,
+        url: item.url,
         source: item.source || resolvedSource,
         _isJioSaavn: item._isJioSaavn || item.source === "jiosaavn",
       }));

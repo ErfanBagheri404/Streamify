@@ -32,6 +32,14 @@ declare module "react-native" {
   export class Alert {
     static alert(title: string, message?: string, buttons?: AlertButton[]): void;
   }
+  export class Share {
+    static share(content: {
+      message?: string;
+      url?: string;
+      title?: string;
+    }): Promise<{ action: string; activityType?: string | null }>;
+    static getSharedText?(): Promise<string>;
+  }
   export class Dimensions {
     static get(dim: string): { width: number; height: number };
   }

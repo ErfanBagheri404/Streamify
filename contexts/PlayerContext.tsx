@@ -21,7 +21,10 @@ import {
   AudioStreamManager,
   subscribeToAudioCacheProgress,
 } from "../modules/audioStreaming";
-import { cacheTrackThumbnail } from "../utils/thumbnailCache";
+import {
+  cacheTrackThumbnail,
+  getCachedThumbnailPath,
+} from "../utils/thumbnailCache";
 
 import { StorageService, subscribeToLibraryUpdates } from "../utils/storage";
 import { trackPlayerService } from "../services/TrackPlayerService";
@@ -30,6 +33,7 @@ import { useAppSettings } from "../hooks/useAppSettings";
 import { CacheToast } from "../components/ui/CacheToast";
 import { QueueConflictModal } from "../components/ui/QueueConflictModal";
 import { hasPlaceholderTrackMetadata } from "../lib/cloud-library-sync";
+import { normalizeYouTubeThumbnailUrl } from "../components/core/image";
 import DrmAudioPlayer, {
   DrmAudioPlayerRef,
 } from "../components/DrmAudioPlayer";
@@ -500,6 +504,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           item.thumbnail ||
           item.thumbnailUrl ||
           item.img ||
+          item.artwork ||
+          item.artworkUrl ||
           "";
         return {
           id,
@@ -1903,6 +1909,42 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               setIsDrmPlayback(true);
               setIsPlaying(true);
               setPlaybackError(null);
+               // Register a placeholder track in RNTP so the system media
+               // notification appears (with artwork, title, artist). The
+               // track is kept paused — ExoPlayer can't decode Widevine HLS
+               // so we never actually play it through RNTP.
+               // First, stop any existing RNTP queue.
+               try {
+                 await TrackPlayer.stop();
+                 await TrackPlayer.reset();
+               } catch {}
+               // Add a silent placeholder so the media notification shows
+               // artwork + title + artist without triggering ExoPlayer error.
+               const placeholderTrack = {
+                 id: track.id,
+                 // eslint-disable-next-line @typescript-eslint/no-var-requires
+                 url: require("../assets/silent.wav") as any,
+                 title: track.title,
+                 artist: track.artist || t("screens.artist.unknown_artist"),
+                 album: "Streamify",
+                 artwork:
+                   (track.source === "youtube" || track.source === "youtubemusic"
+                     ? normalizeYouTubeThumbnailUrl({
+                         url: track.thumbnail,
+                         videoId: track.id,
+                         variant: "hqdefault.jpg",
+                       }) || track.thumbnail
+                     : track.thumbnail) ||
+                   (track.id ? getCachedThumbnailPath(track.id) : undefined) ||
+                   undefined,
+                 duration: track.duration || 0,
+               } as any;
+               try {
+                 await TrackPlayer.add([placeholderTrack]);
+                 await TrackPlayer.skip(0);
+                 // Keep paused — only the metadata matters for the notification.
+                 await TrackPlayer.pause();
+               } catch {}
               // Tag this DRM session and arm a watchdog: if native Widevine
               // provisioning doesn't start within 20s (no VPN / blocked
               // license server), force-fail so JioSaavn fallback kicks in.
@@ -2764,7 +2806,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     audioMonitoringListenersRef.current = [];
 
     try {
-      await trackPlayerService.stop();
+      // reset() is a single native call that atomically stops playback
+      // and clears the queue — much faster than stop() + reset() separately.
       await trackPlayerService.reset();
     } catch (error) {
       console.log("[PlayerContext] Error stopping playback:", error);
@@ -2848,6 +2891,62 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     clearPlayerRef.current = clearPlayer;
   }, [clearPlayer]);
+   // ── DRM media notification remote handlers ──────────────────────
+   // When DRM is active, route notification play/pause to react-native-video
+   // instead of RNTP's ExoPlayer (which can't decode Widevine).
+   useEffect(() => {
+     if (isDrmPlayback) {
+       trackPlayerService.onRemotePlay = () => {
+         drmPlayerRef.current?.play();
+         setIsPlaying(true);
+       };
+       trackPlayerService.onRemotePause = () => {
+         drmPlayerRef.current?.pause();
+         setIsPlaying(false);
+       };
+     } else {
+       trackPlayerService.onRemotePlay = undefined;
+       trackPlayerService.onRemotePause = undefined;
+     }
+     return () => {
+       trackPlayerService.onRemotePlay = undefined;
+       trackPlayerService.onRemotePause = undefined;
+     };
+   }, [isDrmPlayback]);
+
+   // ── Foreground resume: refresh expired stream URLs ───────────────
+   // YouTube/SoundCloud/JioSaavn signed URLs expire while backgrounded.
+   // When the user returns and presses play, the stale URL silently fails.
+   // Proactively refresh on foreground resume.
+   useEffect(() => {
+     const wasBackgrounded = { current: false };
+     const subscription = AppState.addEventListener("change", (next) => {
+       if (next === "background" || next === "inactive") {
+         wasBackgrounded.current = true;
+       }
+       if (next === "active" && wasBackgrounded.current) {
+         wasBackgrounded.current = false;
+         const track = currentTrack;
+         if (!track?.id || !track.audioUrl) return;
+         const isLocal = track.audioUrl.startsWith("file://");
+         if (isLocal) return;
+         // Only refresh remote (non-cached) URLs
+         if (lastAppliedCachedUrlRef.current) return;
+         void (async () => {
+           try {
+             const freshUrl = await getFullyCachedAudioUrl(track.id);
+             if (freshUrl && freshUrl !== track.audioUrl) {
+               await trackPlayerService.updateCurrentTrack(freshUrl);
+               syncResolvedTrackUrlInState(track.id, freshUrl);
+             }
+           } catch {}
+         })();
+       }
+     });
+     return () => {
+       subscription.remove();
+     };
+   }, [currentTrack?.id, currentTrack?.audioUrl, syncResolvedTrackUrlInState]);
 
   const toggleShuffle = useCallback(() => {
     if (playlist.length <= 1) {
@@ -3110,6 +3209,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             setIsPlaying(true);
             setIsLoading(false);
           }}
+           onProgress={(data) => {
+             const currentTime = Number(data?.currentTime) || 0;
+             const playableDuration = Number(data?.playableDuration) || 0;
+             setPosition(currentTime);
+             if (playableDuration > 0) {
+               setDuration(playableDuration);
+             }
+             // Sync progress into the RNTP placeholder so the media
+             // notification timer advances (not stuck at 00:00).
+             TrackPlayer.seekTo(currentTime).catch(() => {});
+           }}
           onPlaybackError={(error) => {
             console.error("[PlayerContext] DRM playback error:", error);
             const failedTrack = currentTrack;
@@ -3128,6 +3238,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             handleDrmFailure(failedTrack, error);
           }}
           onPlaybackEnded={() => {
+             // Clear the RNTP placeholder track so the notification goes away.
+             try { TrackPlayer.reset(); } catch {}
             const currentIdx = currentPlaylistContextRef.current.findIndex(
               (t) => t.id === currentTrack?.id,
             );

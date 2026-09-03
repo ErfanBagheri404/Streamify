@@ -1,6 +1,12 @@
-import React from "react";
-import { TouchableOpacity, ScrollView, Dimensions } from "react-native";
-const { Animated } = require("react-native");
+import React, { useEffect, useRef, useState } from "react";
+import {
+  Modal,
+  TouchableOpacity,
+  ScrollView,
+  Dimensions,
+  PanResponder,
+} from "react-native";
+const { Animated, Easing } = require("react-native");
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAppLanguage } from "../hooks/useAppLanguage";
@@ -8,6 +14,8 @@ import { useTheme, withOpacity } from "../hooks/useTheme";
 import { getAppFontFamily, getTextDirectionStyle } from "../utils/fonts";
 
 const FULL_HEIGHT = Dimensions.get("window").height;
+const DRAG_CLOSE_THRESHOLD = 90;
+const DRAG_CLOSE_VELOCITY = 0.8;
 
 interface SheetOption {
   key: string;
@@ -18,9 +26,9 @@ interface SheetOption {
 interface SliderSheetProps {
   visible: boolean;
   onClose: () => void;
-  sheetTop: any; // Animated.AnimatedValue
-  sheetHeight: number;
-  panHandlers: any;
+  sheetTop?: any; // kept for API compat — ignored, animation is internal now
+  sheetHeight?: number; // kept for API compat — ignored
+  panHandlers?: any; // kept for API compat — ignored
   currentTrack: {
     title: string;
     artist?: string;
@@ -30,7 +38,7 @@ interface SliderSheetProps {
   onOptionPress: (option: string) => void;
 }
 
-const BottomSheetOverlay = styled.TouchableOpacity`
+const SheetOverlay = styled(Animated.View)`
   position: absolute;
   top: 0;
   left: 0;
@@ -39,18 +47,27 @@ const BottomSheetOverlay = styled.TouchableOpacity`
   background-color: rgba(0, 0, 0, 0.6);
 `;
 
-const BottomSheetContainer = styled(Animated.View)`
+const SheetTouchableOverlay = styled(TouchableOpacity)`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+`;
+
+const SheetContainer = styled(Animated.View)`
   position: absolute;
   left: 0;
   right: 0;
+  bottom: 0;
 `;
 
-const BottomSheetInner = styled.View`
+const SheetInner = styled.View`
   background-color: #000000;
   border-top-left-radius: 24px;
   border-top-right-radius: 24px;
   padding-bottom: 32px;
-  height: 100%;
+  overflow: hidden;
 `;
 
 const SheetHandle = styled.View`
@@ -61,6 +78,11 @@ const SheetHandle = styled.View`
   align-self: center;
   margin-top: 8px;
   margin-bottom: 8px;
+`;
+
+const SheetGrabArea = styled.View`
+  padding-top: 12px;
+  padding-bottom: 12px;
 `;
 
 const SheetContent = styled.View`
@@ -144,16 +166,96 @@ const SheetItemText = styled.Text`
 export const SliderSheet: React.FC<SliderSheetProps> = ({
   visible,
   onClose,
-  sheetTop,
-  panHandlers,
   currentTrack,
   options,
   onOptionPress,
 }) => {
   const { colors } = useTheme();
   const { isRtl } = useAppLanguage();
+  const translateY = useRef(new Animated.Value(FULL_HEIGHT)).current;
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const [renderModal, setRenderModal] = useState(false);
 
-  if (!visible) {
+  // Draggable: follow the finger while dragging down, snap to open/close on release.
+  // Uses onStartShouldSetPanResponder (not onMoveShouldSet...) so the grab
+  // area claims the touch immediately on press — preventing the ScrollView
+  // from stealing the gesture during the first 4px of movement.
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderMove: (_: any, gesture: any) => {
+        const next = Math.max(0, gesture.dy);
+        translateY.setValue(next);
+      },
+      onPanResponderRelease: (_: any, gesture: any) => {
+        const shouldClose =
+          gesture.dy > DRAG_CLOSE_THRESHOLD || gesture.vy > DRAG_CLOSE_VELOCITY;
+        if (shouldClose) {
+          Animated.timing(translateY, {
+            toValue: FULL_HEIGHT,
+            duration: 180,
+            easing: Easing.in(Easing.cubic),
+            useNativeDriver: false,
+          }).start(() => {
+            onClose();
+          });
+        } else {
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: false,
+            friction: 8,
+            tension: 40,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(translateY, {
+          toValue: 0,
+          useNativeDriver: false,
+          friction: 8,
+          tension: 40,
+        }).start();
+      },
+    }),
+  ).current;
+
+  useEffect(() => {
+    if (visible) {
+      setRenderModal(true);
+      translateY.setValue(FULL_HEIGHT);
+      overlayOpacity.setValue(0);
+      Animated.parallel([
+        Animated.timing(translateY, {
+          toValue: 0,
+          duration: 320,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: false,
+        }),
+        Animated.timing(overlayOpacity, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else if (renderModal) {
+      Animated.parallel([
+        Animated.timing(translateY, {
+          toValue: FULL_HEIGHT,
+          duration: 260,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: false,
+        }),
+        Animated.timing(overlayOpacity, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start(() => setRenderModal(false));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  if (!renderModal) {
     return null;
   }
 
@@ -163,109 +265,130 @@ export const SliderSheet: React.FC<SliderSheetProps> = ({
   };
 
   return (
-    <>
-      <BottomSheetOverlay activeOpacity={1} onPress={onClose} />
-      <BottomSheetContainer
-        {...panHandlers}
-        style={{ top: sheetTop, bottom: 0 }}
-      >
-        <BottomSheetInner
+    <Modal
+      visible
+      transparent
+      animationType="none"
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={onClose}
+    >
+      <>
+        <SheetOverlay style={{ opacity: overlayOpacity }}>
+          <SheetTouchableOverlay activeOpacity={1} onPress={onClose} />
+        </SheetOverlay>
+        <SheetContainer
           style={{
-            backgroundColor: colors.background,
-            borderTopLeftRadius: 24,
-            borderTopRightRadius: 24,
+            transform: [{ translateY }],
           }}
         >
-          <SheetHandle
-            {...panHandlers}
-            style={{ backgroundColor: withOpacity(colors.foreground, 0.22) }}
-          />
-          <SheetHeaderRow
-            {...panHandlers}
-            style={{ flexDirection: "row" }}
+          <SheetInner
+            style={{
+              backgroundColor: colors.background,
+            }}
           >
-            {currentTrack.thumbnail ? (
-              <SheetHeaderCoverImage
-                source={{ uri: currentTrack.thumbnail }}
+            <SheetGrabArea {...panResponder.panHandlers}>
+              <SheetHandle
                 style={{
-                  marginRight: 12,
-                  marginLeft: 12,
+                  backgroundColor: withOpacity(colors.foreground, 0.22),
                 }}
               />
-            ) : (
-              <SheetHeaderCoverPlaceholder
-                style={{
-                  backgroundColor: colors.surface2,
-                  marginRight: 12,
-                  marginLeft: 12,
-                }}
-              >
-                <Ionicons
-                  name="musical-notes"
-                  size={24}
-                  color={colors.foreground}
+            </SheetGrabArea>
+            <SheetHeaderRow
+              style={{ flexDirection: isRtl ? "row-reverse" : "row" }}
+              {...panResponder.panHandlers}
+            >
+              {currentTrack.thumbnail ? (
+                <SheetHeaderCoverImage
+                  source={{ uri: currentTrack.thumbnail }}
+                  style={
+                    isRtl
+                      ? { marginLeft: 12, marginRight: 0 }
+                      : { marginRight: 12, marginLeft: 0 }
+                  }
                 />
-              </SheetHeaderCoverPlaceholder>
-            )}
-            <SheetHeaderTextContainer>
-              <SheetHeaderTitle
-                numberOfLines={1}
-                style={{
-                  color: colors.foreground,
-                  fontFamily: getAppFontFamily(isRtl, "medium"),
-                  ...getTextDirectionStyle(isRtl),
-                }}
-              >
-                {currentTrack.title}
-              </SheetHeaderTitle>
-              {currentTrack.artist && (
-                <SheetHeaderArtist
-                  numberOfLines={1}
-                  style={{
-                    color: colors.muted,
-                    fontFamily: getAppFontFamily(isRtl, "regular"),
-                    ...getTextDirectionStyle(isRtl),
-                  }}
-                >
-                  {currentTrack.artist}
-                </SheetHeaderArtist>
-              )}
-            </SheetHeaderTextContainer>
-          </SheetHeaderRow>
-          <SheetSeparator style={{ backgroundColor: colors.borderSubtle }} />
-          <SheetContent>
-            {options.map((option) => (
-              <SheetItem
-                key={option.key}
-                onPress={() => handleOptionPress(option.key)}
-                style={{ flexDirection: "row" }}
-              >
-                <SheetItemIconWrapper
-                  style={{
-                    marginRight: 16,
-                    marginLeft: 16,
-                  }}
+              ) : (
+                <SheetHeaderCoverPlaceholder
+                  style={
+                    isRtl
+                      ? { backgroundColor: colors.surface2, marginLeft: 12, marginRight: 0 }
+                      : { backgroundColor: colors.surface2, marginRight: 12, marginLeft: 0 }
+                  }
                 >
                   <Ionicons
-                    name={option.icon as any}
-                    size={22}
+                    name="musical-notes"
+                    size={24}
                     color={colors.foreground}
                   />
-                </SheetItemIconWrapper>
-                <SheetItemText
+                </SheetHeaderCoverPlaceholder>
+              )}
+              <SheetHeaderTextContainer>
+                <SheetHeaderTitle
+                  numberOfLines={1}
                   style={{
                     color: colors.foreground,
-                    fontFamily: getAppFontFamily(isRtl, "regular"),
+                    fontFamily: getAppFontFamily(isRtl, "medium"),
                     ...getTextDirectionStyle(isRtl),
                   }}
                 >
-                  {option.label}
-                </SheetItemText>
-              </SheetItem>
-            ))}
-          </SheetContent>
-        </BottomSheetInner>
-      </BottomSheetContainer>
-    </>
+                  {currentTrack.title}
+                </SheetHeaderTitle>
+                {currentTrack.artist && (
+                  <SheetHeaderArtist
+                    numberOfLines={1}
+                    style={{
+                      color: colors.muted,
+                      fontFamily: getAppFontFamily(isRtl, "regular"),
+                      ...getTextDirectionStyle(isRtl),
+                    }}
+                  >
+                    {currentTrack.artist}
+                  </SheetHeaderArtist>
+                )}
+              </SheetHeaderTextContainer>
+            </SheetHeaderRow>
+            <SheetSeparator style={{ backgroundColor: colors.borderSubtle }} />
+            <ScrollView
+              bounces={false}
+              showsVerticalScrollIndicator={false}
+              style={{ maxHeight: FULL_HEIGHT * 0.68 }}
+            >
+              <SheetContent>
+                {options.map((option) => (
+                  <SheetItem
+                    key={option.key}
+                    onPress={() => handleOptionPress(option.key)}
+                    style={{ flexDirection: isRtl ? "row-reverse" : "row" }}
+                  >
+                    <SheetItemIconWrapper
+                      style={
+                        isRtl
+                          ? { marginLeft: 16, marginRight: 0, alignItems: "flex-end" }
+                          : { marginRight: 16, marginLeft: 0, alignItems: "flex-start" }
+                      }
+                    >
+                      <Ionicons
+                        name={option.icon as any}
+                        size={22}
+                        color={colors.foreground}
+                      />
+                    </SheetItemIconWrapper>
+                    <SheetItemText
+                      style={{
+                        color: colors.foreground,
+                        fontFamily: getAppFontFamily(isRtl, "regular"),
+                        ...getTextDirectionStyle(isRtl),
+                      }}
+                    >
+                      {option.label}
+                    </SheetItemText>
+                  </SheetItem>
+                ))}
+              </SheetContent>
+            </ScrollView>
+          </SheetInner>
+        </SheetContainer>
+      </>
+    </Modal>
   );
 };

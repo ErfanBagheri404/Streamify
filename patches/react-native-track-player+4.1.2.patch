@@ -315,7 +315,6 @@ index b2409a0..3c9e179 100644
 -        delay(300) // Allow playback to stop
 -        musicService.clear()
 +            musicService.stop()
-+            delay(300)
 +            musicService.clear()
  
 -        callback.resolve(null)

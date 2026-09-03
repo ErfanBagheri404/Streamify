@@ -193,11 +193,14 @@ export class TrackPlayerService {
   // which showed up as a pause/play flicker with no audio.
   private _streamRecoveryTrackId: string | null = null;
   private _streamRecoveryAttempts = 0;
+  private _resetInFlight: Promise<void> | null = null;
   public onError?: (error: any) => void;
   public onRemoteNext?: () => Promise<void> | void;
   public onRemotePrevious?: () => Promise<void> | void;
   public onRemoteStop?: () => Promise<void> | void;
   public onPlaybackEnd?: () => Promise<void> | void;
+  public onRemotePlay?: () => Promise<void> | void;
+  public onRemotePause?: () => Promise<void> | void;
 
   static getInstance(): TrackPlayerService {
     if (!TrackPlayerService.instance) {
@@ -472,6 +475,11 @@ export class TrackPlayerService {
         android: {
           appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
           alwaysPauseOnInterruption: true,
+          // Native reads this ONLY from updateOptions({android:...}) — NOT from
+          // setupPlayer. It controls how long the service stays foreground after
+          // playback stops (square/stop button). 0 = dismiss the notification
+          // instantly instead of waiting out the default 5s grace period.
+          stopForegroundGracePeriod: 0,
         },
         // This is the key for proper media session integration
         // The service will automatically handle media session creation
@@ -495,6 +503,16 @@ export class TrackPlayerService {
     TrackPlayer.addEventListener(
       getSafeEvent("RemotePlay" as keyof typeof Event),
       () => {
+        if (this.onRemotePlay) {
+          Promise.resolve(this.onRemotePlay()).catch((error) => {
+            console.error(
+              "[TrackPlayerService] Remote play handler failed:",
+              error,
+            );
+            TrackPlayer.play();
+          });
+          return;
+        }
         TrackPlayer.play();
       },
     );
@@ -502,6 +520,16 @@ export class TrackPlayerService {
     TrackPlayer.addEventListener(
       getSafeEvent("RemotePause" as keyof typeof Event),
       () => {
+        if (this.onRemotePause) {
+          Promise.resolve(this.onRemotePause()).catch((error) => {
+            console.error(
+              "[TrackPlayerService] Remote pause handler failed:",
+              error,
+            );
+            TrackPlayer.pause();
+          });
+          return;
+        }
         TrackPlayer.pause();
       },
     );
@@ -1207,24 +1235,29 @@ export class TrackPlayerService {
   }
 
   async reset(): Promise<void> {
+    // RemoteStop is handled by BOTH playbackService and setupEventListeners,
+    // so this can be invoked twice concurrently. A native reset that's still
+    // in flight would double the stop latency — coalesce to a single call.
+    if (this._resetInFlight) {
+      return this._resetInFlight;
+    }
+    this._resetInFlight = (async () => {
     try {
-      // Stop playback
-      await this.stop();
-
-      // Clear the playlist
       this.playlist = [];
       this.currentTrackIndex = 0;
-
-      // Remove all tracks from the queue
-      const queue = await TrackPlayer.getQueue();
-      if (queue.length > 0) {
-        await TrackPlayer.remove([...Array(queue.length).keys()]);
-      }
-
+      // Single native call — atomically stops playback and clears the queue.
+      // Much faster than sequential stop + getQueue + remove(indices).
+      await TrackPlayer.reset();
       console.log("[TrackPlayerService] Reset completed");
     } catch (error) {
       console.error("[TrackPlayerService] Failed to reset:", error);
       throw error;
+    }
+    })();
+    try {
+      return await this._resetInFlight;
+    } finally {
+      this._resetInFlight = null;
     }
   }
 

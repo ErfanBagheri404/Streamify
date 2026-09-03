@@ -9,10 +9,24 @@ import { trackPlayerService } from "./TrackPlayerService";
 module.exports = async function () {
   // Remote control event handlers
   TrackPlayer.addEventListener(Event.RemotePlay, () => {
+    if (trackPlayerService.onRemotePlay) {
+      Promise.resolve(trackPlayerService.onRemotePlay()).catch((error) => {
+        console.error("[PlaybackService] Remote play handler failed:", error);
+        TrackPlayer.play();
+      });
+      return;
+    }
     TrackPlayer.play();
   });
 
   TrackPlayer.addEventListener(Event.RemotePause, () => {
+    if (trackPlayerService.onRemotePause) {
+      Promise.resolve(trackPlayerService.onRemotePause()).catch((error) => {
+        console.error("[PlaybackService] Remote pause handler failed:", error);
+        TrackPlayer.pause();
+      });
+      return;
+    }
     TrackPlayer.pause();
   });
 
@@ -66,13 +80,9 @@ module.exports = async function () {
 
   TrackPlayer.addEventListener(Event.RemoteDuck, (event) => {
     if (event.permanent === true) {
-      trackPlayerService.reset().catch((error) => {
-        console.error(
-          "[PlaybackService] Failed to reset after permanent duck:",
-          error,
-        );
-        TrackPlayer.stop().catch(() => {});
-      });
+      // Only pause on permanent duck — keep the queue alive so the
+      // media notification persists and the user can resume later.
+      TrackPlayer.pause().catch(() => {});
     } else {
       if (event.paused === true) {
         TrackPlayer.pause();

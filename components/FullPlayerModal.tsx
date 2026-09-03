@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   Modal,
+  Alert,
   TouchableOpacity,
   Dimensions,
   ActivityIndicator,
@@ -27,6 +28,7 @@ import {
   buildTimedLyrics,
   findActiveLyricIndex,
 } from "../modules/lyricsShared";
+import { Share } from "react-native";
 import { normalizeYouTubeThumbnailUrl, sanitizeImageUrl } from "./core/image";
 import { SliderSheet } from "./SliderSheet";
 import { StorageService, Playlist } from "../utils/storage";
@@ -1058,7 +1060,11 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   };
 
   const closeOptions = () => {
-    animateSheet("closed");
+    // SliderSheet is now a <Modal> with its own internal open/close animation,
+    // so we skip the old animateSheet() call — just hide the flag immediately
+    // and let SliderSheet handle the slide-down dismiss.
+    setIsOptionsVisible(false);
+    sheetStateRef.current = "closed";
   };
 
   const loadUserPlaylists = async () => {
@@ -1112,11 +1118,38 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
   const handleOptionPress = (option: string) => {
     console.log("[FullPlayerModal] Option selected:", option);
-    animateSheet("closed");
 
     if (option === "Add to other playlist") {
       loadUserPlaylists();
       setShowPlaylistSelection(true);
+      return;
+    }
+
+    if (option === "Share") {
+      if (currentTrack?.title) {
+        const artistSuffix = currentTrack.artist ? ` — ${currentTrack.artist}` : "";
+        Share.share({
+          message: `${currentTrack.title}${artistSuffix}`,
+          url: currentTrack.url || currentTrack.thumbnail || "",
+        }).catch((error) => {
+          console.log("[FullPlayerModal] Share failed:", error);
+        });
+      }
+      return;
+    }
+
+    if (option === "View song credits") {
+      const artistLine = currentTrack?.artist || "";
+      const sourceLine = currentTrack?.source
+        ? currentTrack.source.charAt(0).toUpperCase() + currentTrack.source.slice(1)
+        : "";
+      const lines = [
+        currentTrack?.title || "",
+        artistLine ? `Artist: ${artistLine}` : "",
+        sourceLine ? `Source: ${sourceLine}` : "",
+      ].filter(Boolean);
+      Alert.alert(t("player.songCredits") || "Song credits", lines.join("\n"));
+      return;
     }
   };
 
