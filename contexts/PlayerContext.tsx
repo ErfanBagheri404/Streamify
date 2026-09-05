@@ -37,6 +37,7 @@ import { normalizeYouTubeThumbnailUrl } from "../components/core/image";
 import DrmAudioPlayer, {
   DrmAudioPlayerRef,
 } from "../components/DrmAudioPlayer";
+import { DrmPlayerBoundary } from "../components/DrmPlayerBoundary";
 import { resolveJioSaavnFallback } from "../lib/backend-api";
 
 export interface Track {
@@ -111,11 +112,11 @@ function normalizeCachePercentage(
 
 // ── Cache queue rate limiting ──────────────────────────────────────────
 // Process this many liked songs per batch before taking a cooldown break.
-const CACHE_BATCH_SIZE = 3;
+const CACHE_BATCH_SIZE = 2;
 // Milliseconds to wait between individual songs in a batch (spreads API calls).
-const CACHE_SONG_DELAY_MS = 5_000;
+const CACHE_SONG_DELAY_MS = 8_000;
 // Milliseconds to wait after finishing a batch before starting the next one.
-const CACHE_BATCH_COOLDOWN_MS = 120_000;
+const CACHE_BATCH_COOLDOWN_MS = 180_000;
 
 interface PlayerContextType {
   currentTrack: Track | null;
@@ -1138,6 +1139,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           continue;
         }
 
+        // Abort raced with playback start mid-resolution — drop this
+        // track instead of starting a download that the player needs
+        // the bandwidth for.
+        if (controller.signal.aborted) {
+          cacheQueueAbortControllerRef.current = null;
+          activeCacheTrackIdRef.current = null;
+          continue;
+        }
+
         setCacheProgress(
           buildCacheProgressState(
             nextTrackToCache.id,
@@ -1310,6 +1320,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     if (
       !currentTrack?.id ||
       !currentTrack.audioUrl ||
+      typeof currentTrack.audioUrl !== "string" ||
       currentTrack.audioUrl.startsWith("file://") ||
       cacheProgress?.trackId !== currentTrack.id ||
       cacheProgress.percentage < 100
@@ -1394,9 +1405,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       activeCacheTrackIdRef.current = null;
       isCacheQueueProcessingRef.current = false;
     }
-    // Mark as manual download so the queue skips the play-state wait
-    // and processes tracks immediately even while music is playing.
-    manualDownloadRef.current = true;
+    // Do NOT set manualDownloadRef here — the queue must respect the
+    // isPlaying guard so it yields the JS thread and bandwidth to the
+    // player during playback.  The queue will resume automatically when
+    // playback stops.
     // Clear canceled set so manual download can re-queue previously canceled tracks.
     canceledTrackIdsRef.current.clear();
     void processLikedSongsCacheQueue();
@@ -1723,7 +1735,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           }
         }
 
-        if (audioUrl && !audioUrl.startsWith("file://")) {
+        if (audioUrl && typeof audioUrl === "string" && !audioUrl.startsWith("file://")) {
           console.log(
             `[PlayerContext] Using provided streaming URL as original: ${audioUrl}`,
           );
@@ -2540,7 +2552,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // Check if this is a YouTube stream and if it's very early in playback
     const isYouTubeStream =
-      currentTrack.audioUrl &&
+      typeof currentTrack.audioUrl === "string" &&
       (currentTrack.audioUrl.includes("googlevideo.com") ||
         currentTrack.audioUrl.includes("youtube.com") ||
         currentTrack.audioUrl.includes("invidious") ||
@@ -2927,7 +2939,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
        if (next === "active" && wasBackgrounded.current) {
          wasBackgrounded.current = false;
          const track = currentTrack;
-         if (!track?.id || !track.audioUrl) return;
+         if (!track?.id || typeof track.audioUrl !== "string") return;
          const isLocal = track.audioUrl.startsWith("file://");
          if (isLocal) return;
          // Only refresh remote (non-cached) URLs
@@ -3197,6 +3209,19 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }}
       />
       {isDrmPlayback && currentTrack?.drmLicenseUrl ? (
+        <DrmPlayerBoundary
+          key={currentTrack.id}
+          onError={(error) => {
+            const failedTrack = currentTrack;
+            if (
+              !failedTrack ||
+              activeDrmTrackIdRef.current !== failedTrack.id
+            ) {
+              return;
+            }
+            handleDrmFailure(failedTrack, error);
+          }}
+        >
         <DrmAudioPlayer
           ref={drmPlayerRef}
           track={currentTrack}
@@ -3253,6 +3278,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             }
           }}
         />
+        </DrmPlayerBoundary>
       ) : null}
     </>
   );
