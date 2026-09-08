@@ -3,6 +3,7 @@ import React, {
   useContext,
   useState,
   useCallback,
+  useMemo,
   useRef,
   useEffect,
 } from "react";
@@ -159,8 +160,6 @@ interface PlayerContextType {
   isTransitioning: boolean;
   streamRetryCount: number;
   hasStreamFailed: boolean;
-  position: number;
-  duration: number;
   playbackError: string | null;
 
   // Actions
@@ -202,6 +201,17 @@ interface PlayerContextType {
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 
+interface PlaybackProgressContextType {
+  position: number;
+  duration: number;
+}
+
+const PlaybackProgressContext = createContext<PlaybackProgressContextType>({
+  position: 0,
+  duration: 0,
+});
+
+
 export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -241,11 +251,34 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [hasStreamFailed, setHasStreamFailed] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
+  // Live mirrors of position/duration for callbacks that only need to READ the
+  // current value. Callbacks read these refs instead of the state so their
+  // dependency arrays (and therefore the memoized context value) stay stable
+  // between playback-progress ticks — the per-second re-render of every
+  // usePlayer() consumer was the main source of home-screen jank.
+  const positionRef = useRef(0);
+  const durationRef = useRef(0);
+  const setPositionStable = useCallback((next: number | ((prev: number) => number)) => {
+    positionRef.current =
+      typeof next === "function"
+        ? next(positionRef.current)
+        : Math.max(0, next);
+    setPosition(positionRef.current);
+  }, []);
+  const setDurationStable = useCallback((next: number | ((prev: number) => number)) => {
+    durationRef.current =
+      typeof next === "function"
+        ? next(durationRef.current)
+        : Math.max(0, next);
+    setDuration(durationRef.current);
+  }, []);
   const resetProgressState = useCallback(
     (nextPosition = 0, nextDuration?: number) => {
-      setPosition(Math.max(0, nextPosition));
+      positionRef.current = Math.max(0, nextPosition);
+      setPositionStable(positionRef.current);
       if (typeof nextDuration === "number" && Number.isFinite(nextDuration)) {
-        setDuration(Math.max(0, nextDuration));
+        durationRef.current = Math.max(0, nextDuration);
+        setDurationStable(durationRef.current);
       }
     },
     [],
@@ -292,7 +325,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     activeQueueLength > 1 &&
     (currentIndex < activeQueueLength - 1 || repeatMode === "all");
   const canSkipPrevious =
-    position > 3 ||
+    positionRef.current > 3 ||
     (activeQueueLength > 1 &&
       (currentIndex > 0 || (repeatMode === "all" && activeQueueLength > 1)));
 
@@ -533,8 +566,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       setCurrentIndex(safeIndex);
       setCurrentTrack(nextCurrentTrack);
       setIsPlaying(nextIsPlaying);
-      setPosition(positionSeconds);
-      setDuration(durationSeconds || nextCurrentTrack?.duration || 0);
+      setPositionStable(positionSeconds);
+      setDurationStable(durationSeconds || nextCurrentTrack?.duration || 0);
       currentPlaylistContextRef.current = mappedPlaylist;
       setIsInPlaylistContext(mappedPlaylist.length > 1);
 
@@ -542,8 +575,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         const progressListener = TrackPlayer.addEventListener(
           Event.PlaybackProgressUpdated,
           (event: any) => {
-            setPosition(event.position);
-            setDuration(event.duration);
+            setPositionStable(event.position);
+            setDurationStable(event.duration);
           },
         );
         audioMonitoringListenersRef.current.push(progressListener);
@@ -652,6 +685,67 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           ? currentPlaylistContextRef.current
           : playlist;
 
+      // When tracks are skipped from the native queue (no audioUrl yet),
+      // the queue is shorter than the full playlist.  Use the unfiltered
+      // playlist stored by addTracks to preserve all tracks so next/prev
+      // navigation still works.  Only rebuild from queue when it matches.
+      const fullPlaylist = trackPlayerService.getFullPlaylist();
+      const shortQueue =
+        fullPlaylist.length > 0 && queue.length < fullPlaylist.length;
+
+      if (shortQueue) {
+        // Queue was truncated by addTracks — do NOT clobber the playlist.
+        // Queue indices don't match original playlist indices when tracks
+        // were skipped, so locate the active track by ID and map back to
+        // its ORIGINAL playlist position for next/prev navigation.
+        const queueItem = queue[activeTrackIndex];
+        const currentTrackId =
+          queueItem?.id != null ? String(queueItem.id) : undefined;
+        const originalIndex = currentTrackId
+          ? fullPlaylist.findIndex((t) => t.id === currentTrackId)
+          : -1;
+        const baseTrack =
+          (originalIndex >= 0 ? fullPlaylist[originalIndex] : null) ??
+          existingTracks.find((t) => t.id === currentTrackId);
+        const [positionSeconds, durationSeconds] = await Promise.all([
+          TrackPlayer.getPosition(),
+          TrackPlayer.getDuration(),
+        ]);
+        const nextCurrentTrack = queueItem
+          ? {
+              ...baseTrack,
+              id: currentTrackId ?? baseTrack?.id,
+              title: queueItem.title || baseTrack?.title || "Unknown Title",
+              artist:
+                queueItem.artist ||
+                queueItem.author ||
+                baseTrack?.artist ||
+                "Unknown Artist",
+              duration:
+                typeof queueItem.duration === "number"
+                  ? queueItem.duration
+                  : baseTrack?.duration || 0,
+              thumbnail:
+                queueItem.artwork ||
+                queueItem.thumbnail ||
+                baseTrack?.thumbnail ||
+                "",
+              audioUrl: queueItem.url || baseTrack?.audioUrl,
+            }
+          : baseTrack;
+        if (originalIndex >= 0) {
+          setCurrentIndex(originalIndex);
+        }
+        setCurrentTrack(nextCurrentTrack);
+        setPositionStable(positionSeconds);
+        setDurationStable(
+          durationSeconds || nextCurrentTrack?.duration || 0,
+        );
+        setIsLoading(false);
+        setIsTransitioning(false);
+        return;
+      }
+
       const mappedPlaylist: Track[] = queue.map((item: any) => {
         const id =
           item.id != null
@@ -698,8 +792,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       setPlaylist(mappedPlaylist);
       setCurrentIndex(activeTrackIndex);
       setCurrentTrack(nextCurrentTrack);
-      setPosition(positionSeconds);
-      setDuration(durationSeconds || nextCurrentTrack?.duration || 0);
+      setPositionStable(positionSeconds);
+      setDurationStable(durationSeconds || nextCurrentTrack?.duration || 0);
       setIsLoading(false);
       setIsTransitioning(false);
     } catch (error) {
@@ -1564,7 +1658,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     // Reset position and cache progress
-    setPosition(0);
+    setPositionStable(0);
     setCacheProgress(null);
     setIsPlaying(false);
   }, [clearPlayStateSuppression]);
@@ -1659,8 +1753,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
         // Reset position and cache tracking for the new track
         setCacheProgress(null);
-        setPosition(0);
-        setDuration(track.duration || 0);
+        setPositionStable(0);
+        setDurationStable(track.duration || 0);
 
         // Set the track immediately so MiniPlayer can appear
         console.log(
@@ -2027,23 +2121,49 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                     console.log(
                       `[PlayerContext] Pre-resolved audio URL for ${targetTrack.title}`,
                     );
-                    // Update the queued track in TrackPlayer. The queued track
-                    // index is shifted by the playable-start offset; resolve via
-                    // the service's current playlist when possible, otherwise
-                    // fall back to the track record we already know.
-                    const queuedIndex =
-                      targetIndex - effectiveIndex;
-                    try {
-                      await trackPlayerService.updateQueuedTrackUrl(
-                        queuedIndex,
-                        resolvedUrl,
-                      );
-                    } catch (queueUpdateError) {
-                      console.warn(
-                        `[PlayerContext] Queue URL update failed for ${targetTrack.title}:`,
-                        queueUpdateError,
-                      );
+                    // Map the original playlist index to the correct queue
+                    // position via the index map stored by addTracks.  When
+                    // skipped tracks shift queue indices the old
+                    // `targetIndex - effectiveIndex` formula targets the
+                    // wrong slot.  updateQueuedTrackUrl takes an OFFSET
+                    // from the current track, so translate via both mapped
+                    // positions.
+                    const targetQueueIndex =
+                      trackPlayerService.getOriginalIndexToQueueIndex(targetIndex);
+                    const currentQueueIndex =
+                      trackPlayerService.getOriginalIndexToQueueIndex(effectiveIndex);
+                    if (targetQueueIndex >= 0 && currentQueueIndex >= 0) {
+                      try {
+                        await trackPlayerService.updateQueuedTrackUrl(
+                          targetQueueIndex - currentQueueIndex,
+                          resolvedUrl,
+                        );
+                      } catch (queueUpdateError) {
+                        console.warn(
+                          `[PlayerContext] Queue URL update failed for ${targetTrack.title}:`,
+                          queueUpdateError,
+                        );
+                      }
+                    } else if (targetQueueIndex === -1) {
+                      // Track was skipped from the queue at addTracks time
+                      // (no audioUrl yet).  Now that its URL resolved,
+                      // insert it into the native queue so auto-advance and
+                      // manual next/prev can reach it.
+                      try {
+                        await trackPlayerService.insertQueuedTrack(
+                          targetIndex,
+                          resolvedUrl,
+                        );
+                      } catch (insertError) {
+                        console.warn(
+                          `[PlayerContext] Queue insert failed for ${targetTrack.title}:`,
+                          insertError,
+                        );
+                      }
                     }
+                    // Reflect the resolved URL in playlist state so
+                    // playTrack works when the user navigates to it.
+                    syncResolvedTrackUrlInState(targetTrack.id, resolvedUrl);
                   }
                 } catch (e) {
                   console.log(
@@ -2136,8 +2256,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               return;
             }
 
-            setPosition(position);
-            setDuration(duration);
+            setPositionStable(position);
+            setDurationStable(duration);
 
             // Check if we've been in this position for too long (indicating silent playback)
             // Be more lenient for YouTube streams during initial buffering
@@ -2335,15 +2455,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     try {
-      if (position > 3 && currentTrack) {
+      if (positionRef.current > 3 && currentTrack) {
         console.log(
           "[PlayerContext] previousTrack() - Restarting current track from current position",
         );
-        setPosition(0);
-        resetProgressState(0, duration || currentTrack.duration || 0);
+        setPositionStable(0);
+        resetProgressState(0, durationRef.current || currentTrack.duration || 0);
         await seekToRef.current(0);
-        setPosition(0);
-        resetProgressState(0, duration || currentTrack.duration || 0);
+        setPositionStable(0);
+        resetProgressState(0, durationRef.current || currentTrack.duration || 0);
         return;
       }
 
@@ -2370,10 +2490,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           );
           await playTrack(currentTrack!, currentPlaylist, 0);
         } else {
-          resetProgressState(0, duration || currentTrack?.duration || 0);
+          resetProgressState(0, durationRef.current || currentTrack?.duration || 0);
           await seekToRef.current(0);
-          setPosition(0);
-          resetProgressState(0, duration || currentTrack?.duration || 0);
+          setPositionStable(0);
+          resetProgressState(0, durationRef.current || currentTrack?.duration || 0);
         }
         return;
       }
@@ -2391,10 +2511,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log(
           "[PlayerContext] previousTrack() - At start of queue with no repeat-all",
         );
-        resetProgressState(0, duration || currentTrack?.duration || 0);
+        resetProgressState(0, durationRef.current || currentTrack?.duration || 0);
         await seekToRef.current(0);
-        setPosition(0);
-        resetProgressState(0, duration || currentTrack?.duration || 0);
+        setPositionStable(0);
+        resetProgressState(0, durationRef.current || currentTrack?.duration || 0);
         return;
       }
 
@@ -2431,11 +2551,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     currentIndex,
     playTrack,
     currentTrack,
-    position,
-    duration,
     repeatMode,
     clearAudioMonitoring,
-    setPosition,
+    setPositionStable,
   ]);
 
   const seekTo = useCallback(
@@ -2452,7 +2570,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         if (isDrmPlayback) {
           drmPlayerRef.current?.seek(positionSeconds);
-          setPosition(positionSeconds);
+          setPositionStable(positionSeconds);
           if (isPlaying) {
             drmPlayerRef.current?.play();
             setIsPlaying(true);
@@ -2480,8 +2598,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         const safePositionSeconds =
-          duration > 0
-            ? Math.max(0, Math.min(positionSeconds, duration))
+          durationRef.current > 0
+            ? Math.max(0, Math.min(positionSeconds, durationRef.current))
             : Math.max(0, positionSeconds);
 
         console.log(
@@ -2489,12 +2607,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         );
         seekGuardRef.current++;
         const guardId = seekGuardRef.current;
-        setPosition(safePositionSeconds);
+        setPositionStable(safePositionSeconds);
         await trackPlayerService.seekTo(safePositionSeconds);
         if (seekGuardRef.current === guardId) {
-          setPosition(safePositionSeconds);
+          setPositionStable(safePositionSeconds);
         }
-        setDuration((prevDuration) =>
+        setDurationStable((prevDuration) =>
           prevDuration > 0 ? prevDuration : currentTrack.duration || 0,
         );
         console.log("[PlayerContext] Seek completed successfully");
@@ -2523,7 +2641,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       currentTrack?._isSoundCloud,
       currentTrack?.source,
       currentTrack?.duration,
-      duration,
       isPlaying,
     ],
   );
@@ -2833,8 +2950,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsPlaying(false);
     setIsLoading(false);
     setIsTransitioning(false);
-    setPosition(0);
-    setDuration(0);
+    setPositionStable(0);
+    setDurationStable(0);
     setPlaybackError(null);
   }, []);
 
@@ -3114,7 +3231,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => {};
   }, [playPause, nextTrack, previousTrack, clearPlayer]);
 
-  const applyPredefinedTheme = (themeName: string) => {
+  const applyPredefinedTheme = useCallback((themeName: string) => {
     // Simple theme mapping without imageColors dependency
     const simpleThemes: Record<string, any> = {
       default: {
@@ -3139,7 +3256,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     if (theme) {
       setColorTheme(theme);
     }
-  };
+  }, []);
+
+  const resetStreamRetryCount = useCallback(() => setStreamRetryCount(0), []);
+  const clearPlaybackError = useCallback(() => setPlaybackError(null), []);
+
+  const progressValue = useMemo<PlaybackProgressContextType>(
+    () => ({ position, duration }),
+    [position, duration],
+  );
 
   const value: PlayerContextType = {
     currentTrack,
@@ -3163,8 +3288,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     isTransitioning,
     streamRetryCount,
     hasStreamFailed,
-    position,
-    duration,
     playbackError,
     playTrack,
     playPause,
@@ -3185,14 +3308,67 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     getCacheInfo,
     cancelCaching,
     startCacheQueue,
-    resetStreamRetryCount: () => setStreamRetryCount(0),
+    resetStreamRetryCount,
     applyPredefinedTheme,
-    clearPlaybackError: () => setPlaybackError(null),
+    clearPlaybackError,
   };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const memoValue = useMemo<PlayerContextType>(() => value, [
+    // exhaustive list of value members
+    currentTrack,
+    playlist,
+    currentIndex,
+    isPlaying,
+    isLoading,
+    showFullPlayer,
+    repeatMode,
+    isShuffled,
+    isInPlaylistContext,
+    canSkipNext,
+    canSkipPrevious,
+    canToggleShuffle,
+    colorTheme,
+    likedSongs,
+    previouslyPlayedSongs,
+    cacheProgress,
+    cacheQueueVersion,
+    cacheCooldownSeconds,
+    isTransitioning,
+    streamRetryCount,
+    hasStreamFailed,
+    playbackError,
+    playTrack,
+    playPause,
+    nextTrack,
+    previousTrack,
+    seekTo,
+    setShowFullPlayer,
+    setRepeatMode,
+    cycleRepeatMode,
+    toggleShuffle,
+    clearPlayer,
+    handleStreamFailure,
+    clearAudioMonitoring,
+    cancelLoadingState,
+    toggleLikeSong,
+    stopCachingAndUnlike,
+    isSongLiked,
+    getCacheInfo,
+    cancelCaching,
+    startCacheQueue,
+    resetStreamRetryCount,
+    applyPredefinedTheme,
+    clearPlaybackError,
+  ]);
 
   return (
     <>
-      <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>
+      <PlayerContext.Provider value={memoValue}>
+        <PlaybackProgressContext.Provider value={progressValue}>
+          {children}
+        </PlaybackProgressContext.Provider>
+      </PlayerContext.Provider>
       <CacheToast
         visible={cacheToast.visible}
         message={cacheToast.message}
@@ -3237,9 +3413,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
            onProgress={(data) => {
              const currentTime = Number(data?.currentTime) || 0;
              const playableDuration = Number(data?.playableDuration) || 0;
-             setPosition(currentTime);
+             setPositionStable(currentTime);
              if (playableDuration > 0) {
-               setDuration(playableDuration);
+               setDurationStable(playableDuration);
              }
              // Sync progress into the RNTP placeholder so the media
              // notification timer advances (not stuck at 00:00).
@@ -3291,5 +3467,7 @@ export const usePlayer = () => {
   }
   return context;
 };
+
+export const usePlaybackProgress = () => useContext(PlaybackProgressContext);
 
 export default PlayerProvider;

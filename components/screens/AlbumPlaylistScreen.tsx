@@ -292,6 +292,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
     albumName,
     albumArtist: routeArtist,
     source,
+    href: routeHref,
   } = route.params || {};
   const translateWithFallback = (key: string, fallback: string) => {
     const value = t(key);
@@ -513,8 +514,15 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           if (!beatseekApiBase) {
             throw new Error("Beatseek API base is not configured");
           }
+          // Beatseek /playlist requires a full SoundCloud permalink URL.
+          // Search results carry the numeric ID as albumId but the permalink
+          // as href — prefer the permalink whenever we have one.
           const playlistUrlParam =
-            typeof albumId === "string" ? albumId : String(albumId);
+            typeof routeHref === "string" && routeHref.startsWith("http")
+              ? routeHref
+              : typeof albumId === "string"
+                ? albumId
+                : String(albumId);
           const endpoint = `${beatseekApiBase}/playlist?url=${encodeURIComponent(
             playlistUrlParam,
           )}`;

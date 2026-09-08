@@ -1,11 +1,6 @@
 import React from "react";
-import {
-  Image,
-  StyleSheet,
-  View,
-  type StyleProp,
-  type ViewStyle,
-} from "react-native";
+import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { Image } from "expo-image";
 import { SkeletonLoader } from "../SkeletonLoader";
 import { useTheme } from "../../hooks/useTheme";
 
@@ -42,11 +37,15 @@ function getSourceKey(source?: NativeImageSource | null): string {
     return source.map((item) => getSourceKey(item)).join("|");
   }
 
-  const uri = typeof source.uri === "string" ? source.uri : "";
-  const cache = typeof source.cache === "string" ? source.cache : "";
+  const objSource =
+    typeof source === "object" && !Array.isArray(source)
+      ? (source as { uri?: string; cache?: string; headers?: unknown })
+      : undefined;
+  const uri = typeof objSource?.uri === "string" ? objSource.uri : "";
+  const cache = typeof objSource?.cache === "string" ? objSource.cache : "";
   const headers =
-    source.headers && typeof source.headers === "object"
-      ? JSON.stringify(source.headers)
+    objSource?.headers && typeof objSource.headers === "object"
+      ? JSON.stringify(objSource.headers)
       : "";
 
   return uri || cache || headers ? `${uri}|${cache}|headers` : "static";
@@ -110,17 +109,18 @@ export function ImageWithSkeleton({
   const activeSource = React.useMemo(() => {
     if (fallbackSource && attempt === 2) return fallbackSource;
 
-    const uri =
+    const srcObj =
       source && typeof source === "object" && !Array.isArray(source)
-        ? (source as { uri?: string }).uri
-        : undefined;
+        ? (source as { uri?: string; cache?: string; headers?: unknown })
+        : null;
+    const uri = srcObj?.uri;
     if (!uri) return source;
 
     if (attempt === 1 && isYouTubeHqUrl(uri)) {
-      return { ...source, uri: upgradeToMaxres(uri) };
+      return { ...srcObj, uri: upgradeToMaxres(uri) };
     }
     if (attempt === 2 && uri.includes("maxresdefault")) {
-      return { ...source, uri: downgradeToHqdefault(uri) };
+      return { ...srcObj, uri: downgradeToHqdefault(uri) };
     }
     return source;
   }, [attempt, fallbackSource, source]);
@@ -133,13 +133,10 @@ export function ImageWithSkeleton({
     [onLoad],
   );
 
-  const handleLoadEnd = React.useCallback(
-    (event: any) => {
-      setHasLoaded(true);
-      onLoadEnd?.(event);
-    },
-    [onLoadEnd],
-  );
+  const handleLoadEnd = React.useCallback(() => {
+    setHasLoaded(true);
+    onLoadEnd?.();
+  }, [onLoadEnd]);
 
   const handleError = React.useCallback(
     (event: any) => {

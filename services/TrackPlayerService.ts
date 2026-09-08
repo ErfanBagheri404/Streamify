@@ -199,6 +199,10 @@ export class TrackPlayerService {
   public onRemotePrevious?: () => Promise<void> | void;
   public onRemoteStop?: () => Promise<void> | void;
   public onPlaybackEnd?: () => Promise<void> | void;
+  /** Full original playlist from the last addTracks call (unfiltered). */
+  private _fullPlaylist: Track[] = [];
+  /** Maps original playlist index → queue index for tracks that were added. */
+  private _originalIndexToQueueIndex: Map<number, number> = new Map();
   public onRemotePlay?: () => Promise<void> | void;
   public onRemotePause?: () => Promise<void> | void;
 
@@ -1032,6 +1036,14 @@ export class TrackPlayerService {
       console.log("[TrackPlayerService] Tracks added successfully");
 
       this.playlist = [...playableTracks];
+      // Preserve the full unfiltered playlist and the original→queue index
+      // mapping so later callers (pre-resolve URL hot-swap, playlist sync)
+      // can address tracks by their ORIGINAL playlist index even when some
+      // tracks were skipped from the native queue for lacking audioUrl.
+      this._fullPlaylist = [...validatedTracks];
+      this._originalIndexToQueueIndex = new Map(
+        validatedTracks.map((_, index) => [index, playableIndexMap.indexOf(index)]),
+      );
       this.currentTrackIndex = adjustedStartIndex;
       this._queuedUrlUpdateSeq++;
 
@@ -1381,6 +1393,8 @@ export class TrackPlayerService {
     try {
       await TrackPlayer.reset();
       this.isSetup = false;
+      this._fullPlaylist = [];
+      this._originalIndexToQueueIndex = new Map();
       console.log("[TrackPlayerService] TrackPlayer destroyed");
     } catch (error) {
       console.error(
@@ -1388,6 +1402,103 @@ export class TrackPlayerService {
         error,
       );
       throw error;
+    }
+  }
+
+  /**
+   * The full unfiltered playlist from the last addTracks call.  Unlike
+   * `this.playlist` which only contains tracks that had a resolved audioUrl,
+   * this array includes ALL tracks that were submitted — including those
+   * still awaiting lazy URL resolution (e.g. SoundCloud).  Used by callers
+   * to preserve the user-visible playlist when the native queue is shorter
+   * than the intended playlist.
+   */
+  getFullPlaylist(): Track[] {
+    return this._fullPlaylist;
+  }
+
+  /**
+   * Returns the queue index for a given original-playlist index.  Returns
+   * -1 when that track was skipped from the native queue (no audioUrl at
+   * addTracks time).  Translates original-playlist offsets into queue
+   * offsets for `updateQueuedTrackUrl`.
+   */
+  getOriginalIndexToQueueIndex(originalIndex: number): number {
+    return this._originalIndexToQueueIndex.get(originalIndex) ?? -1;
+  }
+
+  /**
+   * Inserts a lazily-resolved track into the native queue at the position
+   * that corresponds to its ORIGINAL playlist index.  Used by the
+   * background pre-resolve loop: tracks skipped from the queue at
+   * addTracks time (no audioUrl) are added back once their URLs resolve,
+   * so auto-advance and manual next/prev reach them in order.
+   * No-op when the track is already in the queue or its original slot
+   * cannot be determined.
+   */
+  async insertQueuedTrack(
+    originalIndex: number,
+    audioUrl: string,
+  ): Promise<void> {
+    try {
+      const original = this._fullPlaylist[originalIndex];
+      if (!original) return;
+      // Only proceed when this track is confirmed to be missing from the
+      // queue (mapped to -1).  undefined means the map is stale/mismatched.
+      if (this._originalIndexToQueueIndex.get(originalIndex) !== -1) {
+        return;
+      }
+      await this.ensureTrackPlayerReady();
+      const seqBefore = this._queuedUrlUpdateSeq;
+
+      // Find the first queued successor: the queue index where this track
+      // belongs is the smallest queue index of a later original that IS
+      // queued.  When no later original is queued, append at the end.
+      let insertAt = this.playlist.length;
+      for (let i = originalIndex + 1; i < this._fullPlaylist.length; i++) {
+        const queuedIndex = this._originalIndexToQueueIndex.get(i);
+        if (queuedIndex !== undefined && queuedIndex !== -1) {
+          insertAt = queuedIndex;
+          break;
+        }
+      }
+
+      const updatedTrack = { ...original, audioUrl };
+      await TrackPlayer.add(
+        this.convertTrackToTrackPlayer(updatedTrack, insertAt),
+        insertAt,
+      );
+      if (seqBefore !== this._queuedUrlUpdateSeq) {
+        // Playlist was rebuilt mid-insert — the queue no longer matches
+        // our assumptions.  The rebuild already re-added the full
+        // playable queue; just drop our optimistic bookkeeping.
+        console.warn(
+          "[TrackPlayerService] Queue rebuilt during queued track insert, skipping bookkeeping",
+        );
+        return;
+      }
+      // Rebuild bookkeeping: shift queued indices at/after the insertion
+      // point by one, then record this track's queue position.
+      for (const [key, value] of this._originalIndexToQueueIndex) {
+        if (value >= insertAt) {
+          this._originalIndexToQueueIndex.set(key, value + 1);
+        }
+      }
+      // Keep the service-level current index in step with the native queue
+      // when the insertion landed at or before the playing track.
+      if (this.currentTrackIndex >= insertAt) {
+        this.currentTrackIndex += 1;
+      }
+      this.playlist.splice(insertAt, 0, updatedTrack);
+      this._originalIndexToQueueIndex.set(originalIndex, insertAt);
+      console.log(
+        `[TrackPlayerService] Inserted queued track ${insertAt} (original index ${originalIndex})`,
+      );
+    } catch (error) {
+      console.error(
+        "[TrackPlayerService] Failed to insert queued track:",
+        error,
+      );
     }
   }
 }

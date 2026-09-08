@@ -21,7 +21,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Entypo } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
-import { usePlayer } from "../contexts/PlayerContext";
+import { usePlayer, usePlaybackProgress } from "../contexts/PlayerContext";
 import { formatTime } from "../utils/formatters";
 import { CachedLyrics, lyricsService } from "../modules/lyricsService";
 import {
@@ -575,11 +575,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     canSkipNext,
     canSkipPrevious,
     canToggleShuffle,
-    position,
-    duration,
     cancelLoadingState,
     playbackError,
   } = usePlayer();
+  // position/duration tick every second; reading them from the dedicated
+  // progress context keeps this modal as the only other progress subscriber.
+  const { position, duration } = usePlaybackProgress();
   const { settings } = useAppSettings();
   const { colors, isLight } = useTheme();
   const { t, isRtl, language } = useAppLanguage();

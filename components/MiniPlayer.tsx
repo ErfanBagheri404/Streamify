@@ -10,7 +10,7 @@ import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { usePlayer } from "../contexts/PlayerContext";
+import { usePlayer, usePlaybackProgress } from "../contexts/PlayerContext";
 import { useTheme, withOpacity } from "../hooks/useTheme";
 import { useAppLanguage } from "../hooks/useAppLanguage";
 import { useAppSettings } from "../hooks/useAppSettings";
@@ -147,8 +147,6 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
     isTransitioning,
     canSkipNext,
     canSkipPrevious,
-    position,
-    duration,
     playPause,
     nextTrack,
     previousTrack,
@@ -156,6 +154,10 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
     cancelLoadingState,
     playbackError,
   } = usePlayer();
+  // position/duration live in their own context: they tick every second, and
+  // subscribing here (instead of via usePlayer) keeps the rest of the app from
+  // re-rendering on every progress update.
+  const { position, duration } = usePlaybackProgress();
   const { colors, isLight } = useTheme();
   const { language, isRtl, t } = useAppLanguage();
   const { settings } = useAppSettings();

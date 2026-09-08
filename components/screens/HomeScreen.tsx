@@ -1,12 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AppState,
-  Image,
+  FlatList,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
   View,
 } from "react-native";
+import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Screen } from "../ui/Screen";
@@ -271,7 +272,7 @@ function rankMadeForYouCandidates(tracks: Track[]): Track[] {
     .slice(0, 6);
 }
 
-function HeroCard({
+const HeroCard = memo(function HeroCard({
   title,
   image,
   colors,
@@ -346,7 +347,7 @@ function HeroCard({
     >
       {image ? (
         <Image
-          source={{ uri: image, cache: "force-cache" }}
+          source={{ uri: image }}
           resizeMode="cover"
           style={[absoluteFill, styles.heroImage]}
         />
@@ -389,9 +390,9 @@ function HeroCard({
       </View>
     </View>
   );
-}
+});
 
-function SongCard({
+const SongCard = memo(function SongCard({
   title,
   subtitle,
   durationLabel,
@@ -479,9 +480,9 @@ function SongCard({
       </MutedText>
     </TouchableOpacity>
   );
-}
+});
 
-function ArtistCard({
+const ArtistCard = memo(function ArtistCard({
   artist,
   colors,
   onPress,
@@ -533,9 +534,9 @@ function ArtistCard({
       </MutedText>
     </TouchableOpacity>
   );
-}
+});
 
-function EmptyStateCard({
+const EmptyStateCard = memo(function EmptyStateCard({
   label,
   colors,
 }: {
@@ -555,7 +556,7 @@ function EmptyStateCard({
       <MutedText style={styles.emptyStateText}>{label}</MutedText>
     </View>
   );
-}
+});
 
 function HorizontalSongSkeletonList({ count = 3 }: { count?: number }) {
   const { isRtl, dir } = useAppLanguage();
@@ -1440,8 +1441,10 @@ export default function HomeScreen({ navigation }: any) {
             style={styles.sectionHeader}
           />
           {uniqueRecentSongs.length > 0 ? (
-            <ScrollView
+            <FlatList
               horizontal
+              data={uniqueRecentSongs}
+              keyExtractor={(item) => item.id}
               showsHorizontalScrollIndicator={false}
               style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}
               contentContainerStyle={[
@@ -1449,26 +1452,27 @@ export default function HomeScreen({ navigation }: any) {
                 isRtl && { paddingLeft: 0 },
                 null,
               ]}
-            >
-              {uniqueRecentSongs.map((track) => (
-                <View key={track.id} style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
-                <SongCard
-                  key={track.id}
-                  title={track.title}
-                  subtitle={track.artist || t("home.unknownArtist")}
-                  durationLabel={formatDuration(
-                    track.duration,
-                    t("home.recentlyPlayedFallback"),
-                  )}
-                  image={track.thumbnail}
-                  colors={colors}
-                  onPress={() => {
-                    void playQueue(uniqueRecentSongs, track);
-                  }}
-                />
+              initialNumToRender={4}
+              maxToRenderPerBatch={4}
+              windowSize={7}
+              renderItem={({ item }) => (
+                <View style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
+                  <SongCard
+                    title={item.title}
+                    subtitle={item.artist || t("home.unknownArtist")}
+                    durationLabel={formatDuration(
+                      item.duration,
+                      t("home.recentlyPlayedFallback"),
+                    )}
+                    image={item.thumbnail}
+                    colors={colors}
+                    onPress={() => {
+                      void playQueue(uniqueRecentSongs, item);
+                    }}
+                  />
                 </View>
-              ))}
-            </ScrollView>
+              )}
+            />
           ) : isLoadingHistory ? (
             <HorizontalSongSkeletonList />
           ) : (
@@ -1490,34 +1494,37 @@ export default function HomeScreen({ navigation }: any) {
             style={styles.sectionHeader}
           />
           {madeForYouTracks.length > 0 ? (
-            <ScrollView
+            <FlatList
               horizontal
+              data={madeForYouTracks}
+              keyExtractor={(item) => item.id}
               showsHorizontalScrollIndicator={false}
               style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}
               contentContainerStyle={[
                 styles.horizontalListContent,
-              isRtl && { paddingLeft: 0 },
+                isRtl && { paddingLeft: 0 },
               ]}
-            >
-              {madeForYouTracks.map((track) => (
-                <View key={track.id} style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
-                <SongCard
-                  key={track.id}
-                  title={track.title}
-                  subtitle={track.artist}
-                  durationLabel={formatDuration(
-                    track.duration,
-                    t("home.recentlyPlayedFallback"),
-                  )}
-                  image={track.thumbnail}
-                  colors={colors}
-                  onPress={() => {
-                    void playSuggestedQueue(madeForYouTracks, track);
-                  }}
-                />
+              initialNumToRender={4}
+              maxToRenderPerBatch={4}
+              windowSize={7}
+              renderItem={({ item }) => (
+                <View style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
+                  <SongCard
+                    title={item.title}
+                    subtitle={item.artist}
+                    durationLabel={formatDuration(
+                      item.duration,
+                      t("home.recentlyPlayedFallback"),
+                    )}
+                    image={item.thumbnail}
+                    colors={colors}
+                    onPress={() => {
+                      void playSuggestedQueue(madeForYouTracks, item);
+                    }}
+                  />
                 </View>
-              ))}
-            </ScrollView>
+              )}
+            />
           ) : isLoadingMadeForYou ? (
             <HorizontalSongSkeletonList />
           ) : (
@@ -1534,34 +1541,37 @@ export default function HomeScreen({ navigation }: any) {
             style={styles.sectionHeader}
           />
           {navigablePlayedArtists.length > 0 ? (
-            <ScrollView
+            <FlatList
               horizontal
+              data={navigablePlayedArtists}
+              keyExtractor={(item) => item.key}
               showsHorizontalScrollIndicator={false}
               style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}
               contentContainerStyle={[
                 styles.horizontalListContent,
-              isRtl && { paddingLeft: 0 },
+                isRtl && { paddingLeft: 0 },
               ]}
-            >
-              {navigablePlayedArtists.map((artist) => (
-                <View key={artist.key} style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
-                <ArtistCard
-                  key={artist.key}
-                  artist={artist}
-                  colors={colors}
-                  playLabel={t("home.playSongsBy", { name: artist.name })}
-                  onPress={() => {
-                    navigation.navigate("Artist", {
-                      artistId: artist.artistId,
-                      artistName: artist.name,
-                      artistImage: artist.image || "",
-                      source: normalizeArtistSource(artist.source),
-                    });
-                  }}
-                />
+              initialNumToRender={4}
+              maxToRenderPerBatch={4}
+              windowSize={7}
+              renderItem={({ item }) => (
+                <View style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
+                  <ArtistCard
+                    artist={item}
+                    colors={colors}
+                    playLabel={t("home.playSongsBy", { name: item.name })}
+                    onPress={() => {
+                      navigation.navigate("Artist", {
+                        artistId: item.artistId,
+                        artistName: item.name,
+                        artistImage: item.image || "",
+                        source: normalizeArtistSource(item.source),
+                      });
+                    }}
+                  />
                 </View>
-              ))}
-            </ScrollView>
+              )}
+            />
           ) : isLoadingArtists ? (
             <HorizontalArtistSkeletonList />
           ) : (
@@ -1577,34 +1587,37 @@ export default function HomeScreen({ navigation }: any) {
               })}
               style={styles.sectionHeader}
             />
-            <ScrollView
+            <FlatList
               horizontal
+              data={heroTracks}
+              keyExtractor={(item) => item.id}
               showsHorizontalScrollIndicator={false}
               style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}
               contentContainerStyle={[
                 styles.horizontalListContent,
-              isRtl && { paddingLeft: 0 },
+                isRtl && { paddingLeft: 0 },
               ]}
-            >
-              {heroTracks.map((track) => (
-                <View key={track.id} style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
-                <SongCard
-                  key={track.id}
-                  title={track.title}
-                  subtitle={track.artist}
-                  durationLabel={formatDuration(
-                    track.duration,
-                    t("home.recentlyPlayedFallback"),
-                  )}
-                  image={track.thumbnail}
-                  colors={colors}
-                  onPress={() => {
-                    void playSuggestedQueue(heroTracks, track);
-                  }}
-                />
+              initialNumToRender={4}
+              maxToRenderPerBatch={4}
+              windowSize={7}
+              renderItem={({ item }) => (
+                <View style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
+                  <SongCard
+                    title={item.title}
+                    subtitle={item.artist}
+                    durationLabel={formatDuration(
+                      item.duration,
+                      t("home.recentlyPlayedFallback"),
+                    )}
+                    image={item.thumbnail}
+                    colors={colors}
+                    onPress={() => {
+                      void playSuggestedQueue(heroTracks, item);
+                    }}
+                  />
                 </View>
-              ))}
-            </ScrollView>
+              )}
+            />
           </View>
         ) : isLoadingHeroTracks ? (
           <View style={styles.section}>
