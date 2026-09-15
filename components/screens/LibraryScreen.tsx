@@ -1033,7 +1033,11 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           "storage",
         ].join(" "),
         artworkKind: "local",
-        onPress: () => navigation.navigate("LocalFiles" as never),
+        onPress: () => {
+          if (isLocalMediaSupported) {
+            navigation.navigate("LocalFiles" as never);
+          }
+        },
       },
       ...playlists.map((playlist) => {
         const artworkUri = getPlaylistArtworkUri(playlist);

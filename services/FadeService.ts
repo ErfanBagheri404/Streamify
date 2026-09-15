@@ -114,7 +114,9 @@ export const fadeService = {
     if (position < window) {
       // Fade in over the first `window` seconds.
       target = refLevel() * Math.max(FADE_FLOOR, position / window);
-    } else if (remaining <= window && remaining > 0) {
+    } else if (remaining <= window) {
+      // remaining can hit exactly 0 at the final progress tick — stay on the
+      // fade-out branch so the else never restores full volume for one frame.
       // Fade out over the last `window` seconds, stopping above silence so
       // the hand-off to the next track never bottoms out into dead air.
       target = refLevel() * Math.max(FADE_FLOOR, remaining / window);

@@ -122,7 +122,8 @@ export const LocalFilesScreen: React.FC<LocalFilesScreenProps> = ({
   const handleSongPress = async (_song: any, index: number) => {
     const picked = songs[index];
     if (picked) {
-      await playTrack(picked);
+      // Pass the whole list so next/previous navigate the local queue.
+      await playTrack(picked, songs, index);
     }
   };
 

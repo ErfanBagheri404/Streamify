@@ -70,6 +70,7 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({ visible, onClose }
   const { colors } = useTheme();
   const { isRtl } = useAppLanguage();
   const [lbzToken, setLbzToken] = useState("");
+  const [lfmSk, setLfmSk] = useState("");
   const [lfmKey, setLfmKey] = useState("");
   const [lfmSecret, setLfmSecret] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -87,6 +88,8 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({ visible, onClose }
         ]);
         if (lfmCreds.apiKey) setLfmKey(lfmCreds.apiKey);
         if (lfmCreds.secret) setLfmSecret(lfmCreds.secret);
+        const sk = await scrobblerService.getLastfmSessionKey();
+        if (sk) setLfmSk(sk);
         // Read back the stored raw token so the field shows what's saved.
         setStatusText(
           providers.lastfm || providers.listenbrainz
@@ -124,10 +127,33 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({ visible, onClose }
     setIsSaving(true);
     try {
       await scrobblerService.setLastfmCreds(ak || null, sec || null);
+      // Derive the status from actual provider readiness: an API key alone
+      // is NOT scrobbling until a session key exists too.
+      const { lastfm } = await scrobblerService.getEnabledProviders();
       setStatusText(
-        ak
-          ? t("scrobble.savedConnected") || "Saved — scrobbling enabled"
-          : t("scrobble.cleared") || "Last.fm keys cleared",
+        !ak
+          ? t("scrobble.cleared") || "Last.fm keys cleared"
+          : lastfm
+            ? t("scrobble.savedConnected") || "Saved — scrobbling enabled"
+            : "API key saved — paste your session key below to finish",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const saveLfmSk = async () => {
+    const sk = lfmSk.trim();
+    setIsSaving(true);
+    try {
+      await scrobblerService.setLastFmSessionKey(sk || null);
+      const { lastfm } = await scrobblerService.getEnabledProviders();
+      setStatusText(
+        !sk
+          ? t("scrobble.cleared") || "Last.fm session cleared"
+          : lastfm
+            ? t("scrobble.savedConnected") || "Saved — scrobbling enabled"
+            : "Session saved",
       );
     } finally {
       setIsSaving(false);
@@ -265,10 +291,25 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({ visible, onClose }
             ...getTextDirectionStyle(isRtl),
           }}
         />
+        <TokenInput
+          value={lfmSk}
+          onChangeText={setLfmSk}
+          placeholder="Session key (auth.getSession)"
+          placeholderTextColor={withOpacity(muted, 0.7)}
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={{
+            borderColor: colors.borderSubtle,
+            backgroundColor: withOpacity(colors.surface2, 0.8),
+            color: colors.foreground,
+            fontFamily: getAppFontFamily(isRtl, "regular"),
+            ...getTextDirectionStyle(isRtl),
+          }}
+        />
         <SaveButton
           activeOpacity={0.88}
           disabled={isSaving}
-          onPress={() => void saveLfm()}
+          onPress={() => void saveLfmSk()}
           style={{
             backgroundColor: colors.foreground,
             opacity: isSaving ? 0.6 : 1,

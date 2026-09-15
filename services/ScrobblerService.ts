@@ -14,6 +14,8 @@
  *    interrupt listening.
  *******************************************************************/
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
+import { md5 } from "../utils/md5";
 
 const LASTFM_API = "https://ws.audioscrobbler.com/2.0/";
 const LISTENBRAINZ_API = "https://api.listenbrainz.org";
@@ -24,6 +26,9 @@ const LASTFM_API_KEY = "";
 const LASTFM_SHARED_SECRET = "";
 const SETTINGS_KEY_LASTFM_USER_KEY = "scrobble_lastfm_user_api_key";
 const SETTINGS_KEY_LASTFM_USER_SECRET = "scrobble_lastfm_user_secret";
+/** SecureStore key for the Last.fm shared secret (signing material). */
+const SECURE_KEY_LASTFM_SECRET = "streamify.lastfm.sharedSecret";
+const SECURE_KEY_LASTFM_SK = "streamify.lastfm.sessionKey";
 
 const SETTINGS_KEY_LASTFM_SK = "scrobble_lastfm_session_key";
 const SETTINGS_KEY_LBZ = "scrobble_listenbrainz_token";
@@ -81,16 +86,25 @@ async function lastfmSignedCall(method: string, params: Record<string, string>):
   if (!lastfmEnabled()) {
     return false;
   }
-  // MD5 signature: sorted params + shared secret. Without a shared secret we
-  // can only call methods that need no signature; scrobbling needs one.
+  // Last.fm write methods require api_sig: concat "key<value>" pairs sorted
+  // by key (excluding format and empty values), append the shared secret,
+  // MD5 it. Without it the server rejects scrobble/updateNowPlaying.
   try {
-    const body = new URLSearchParams({
+    const unsigned: Record<string, string> = {
       method,
       format: "json",
-
       api_key: lastfmApiKey(),
       sk: internal.lastfmSessionKey || "",
       ...params,
+    };
+    const sigBase = Object.keys(unsigned)
+      .filter((k) => k !== "format" && unsigned[k])
+      .sort()
+      .map((k) => `${k}${unsigned[k]}`)
+      .join("") + lastfmSecret();
+    const body = new URLSearchParams({
+      ...unsigned,
+      api_sig: md5(sigBase),
     });
     const res = await fetch(LASTFM_API, {
       method: "POST",
@@ -214,10 +228,10 @@ export const scrobblerService = {
     try {
   
     const [sk, lbz, lfmKey, lfmSecret] = await Promise.all([
-        AsyncStorage.getItem(SETTINGS_KEY_LASTFM_SK),
+        SecureStore.getItemAsync(SECURE_KEY_LASTFM_SK).catch(() => null),
         AsyncStorage.getItem(SETTINGS_KEY_LBZ),
         AsyncStorage.getItem(SETTINGS_KEY_LASTFM_USER_KEY),
-        AsyncStorage.getItem(SETTINGS_KEY_LASTFM_USER_SECRET),
+        SecureStore.getItemAsync(SECURE_KEY_LASTFM_SECRET).catch(() => null),
       ]);
       internal.lastfmSessionKey = sk || null;
       internal.listenbrainzToken = lbz || null;
@@ -261,10 +275,12 @@ export const scrobblerService = {
 
   async setLastFmSessionKey(sk: string | null): Promise<void> {
     internal.lastfmSessionKey = sk || null;
+    // The session key is a delegated auth token -> SecureStore, not plain
+    // AsyncStorage.
     if (sk) {
-      await AsyncStorage.setItem(SETTINGS_KEY_LASTFM_SK, sk);
+      await SecureStore.setItemAsync(SECURE_KEY_LASTFM_SK, sk);
     } else {
-      await AsyncStorage.removeItem(SETTINGS_KEY_LASTFM_SK);
+      await SecureStore.deleteItemAsync(SECURE_KEY_LASTFM_SK);
     }
     this.startFlushTimer();
     debug("Last.fm session key", sk ? "set" : "cleared");
@@ -392,18 +408,24 @@ export const scrobblerService = {
     return { apiKey: internal.lastfmUserKey, secret: internal.lastfmUserSecret };
   },
 
+  async getLastfmSessionKey(): Promise<string | null> {
+    return internal.lastfmSessionKey;
+  },
+
   async setLastfmCreds(apiKey: string | null, secret: string | null): Promise<void> {
     internal.lastfmUserKey = apiKey || null;
     internal.lastfmUserSecret = secret || null;
+    // API key is public-ish (identifies the app), so AsyncStorage is fine;
+    // the shared secret is signing material -> hardware-backed SecureStore.
     if (apiKey) {
       await AsyncStorage.setItem(SETTINGS_KEY_LASTFM_USER_KEY, apiKey);
     } else {
       await AsyncStorage.removeItem(SETTINGS_KEY_LASTFM_USER_KEY);
     }
     if (secret) {
-      await AsyncStorage.setItem(SETTINGS_KEY_LASTFM_USER_SECRET, secret);
+      await SecureStore.setItemAsync(SECURE_KEY_LASTFM_SECRET, secret);
     } else {
-      await AsyncStorage.removeItem(SETTINGS_KEY_LASTFM_USER_SECRET);
+      await SecureStore.deleteItemAsync(SECURE_KEY_LASTFM_SECRET);
     }
     this.startFlushTimer();
     debug("Last.fm user creds", apiKey ? "set" : "cleared");

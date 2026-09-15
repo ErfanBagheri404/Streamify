@@ -105,6 +105,7 @@ export const LyricsSearchSheet: React.FC<LyricsSearchSheetProps> = ({
   // Pre-fill with the playing track each time the sheet opens; cleared on close.
   useEffect(() => {
     searchGenRef.current += 1; // invalidate any in-flight search
+    setIsSearching(false); // stale finally blocks won't clear it anymore
     if (!visible) {
       return;
     }

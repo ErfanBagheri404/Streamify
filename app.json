@@ -29,7 +29,8 @@
           }
         }
       ],
-      "react-native-video"
+      "react-native-video",
+      "expo-secure-store"
     ],
     "android": {
       "package": "com.erfanbagheri.streamifymobile",

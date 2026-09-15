@@ -157,8 +157,22 @@ async function downloadInnertubeToFile(
           continue;
         }
         if (status === 200 && offset === 0) {
-          // Full-body response for the first chunk is valid — the server
-          // just didn't support Range requests. Accept the complete body.
+          // Full-body response for the first chunk is valid only when the
+          // server simply doesn't support Range.  Check Content-Length before
+          // buffering: the node/readable-stream polyfill in React Native reads
+          // the whole body into memory first, so an unchecked 200 is a heap
+          // risk.  Cap at 20 MB — beyond that the file is almost certainly
+          // malformed or not a bounded googlevideo response.
+          const MAX_SINGLE_FETCH = 20 * 1024 * 1024;
+          const cl = parseInt(dl!.headers.get("content-length") ?? "0", 10);
+          if (!cl || cl > MAX_SINGLE_FETCH) {
+            console.warn(
+              `[InnertubeDownload] 200 body too large or missing content-length (${cl}) for ${stream.videoId}, retrying as ranged`,
+            );
+            // Instead of loading the full body, switch to the ranged
+            // fallback path below (which will try a bounded chunk next).
+            break;
+          }
           const buf = new Uint8Array(await dl!.arrayBuffer());
           if (!buf.length) break;
           parts.push(buf);
