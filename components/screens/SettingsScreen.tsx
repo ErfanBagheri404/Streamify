@@ -357,6 +357,7 @@ export default function SettingsScreen({
     message: string;
   } | null>(null);
   const [showScrobbleSheet, setShowScrobbleSheet] = useState(false);
+  const [scrobbleProvider, setScrobbleProvider] = useState<"listenbrainz" | "lastfm">("listenbrainz");
 
   const { autoVisible: communityAutoVisible, closeAuto: closeCommunityAuto } =
     useCommunityModalAutoShow();
@@ -582,7 +583,7 @@ export default function SettingsScreen({
               styles.tabBar,
               {
                 backgroundColor: colors.surface1,
-                borderColor: colors.borderSubtle,
+                borderBottomColor: colors.borderSubtle,
               },
             ]}
           >
@@ -599,12 +600,7 @@ export default function SettingsScreen({
                   style={[
                     styles.tabItem,
                     {
-                      backgroundColor: active
-                        ? withOpacity(colors.accent, 0.16)
-                        : "transparent",
-                      borderColor: active
-                        ? withOpacity(colors.accent, 0.4)
-                        : "transparent",
+                      borderBottomColor: active ? colors.accent : "transparent",
                     },
                   ]}
                 >
@@ -816,14 +812,31 @@ export default function SettingsScreen({
             }
           />
           <SettingRow
-            label={t("settings.scrobbling")}
-            description={t("settings.scrobblingDescription")}
+            label="ListenBrainz scrobbling"
+            description="Send your plays to ListenBrainz — free account, just paste a token."
             colors={colors}
             controlPlacement="inline"
             control={
               <TouchableOpacity
                 activeOpacity={0.85}
-                onPress={() => setShowScrobbleSheet(true)}
+                onPress={() => { setScrobbleProvider("listenbrainz"); setShowScrobbleSheet(true); }}
+                style={[styles.secondaryButton, { borderColor: colors.borderSubtle }]}
+              >
+                <BodyText style={{ color: colors.foreground, fontSize: 13 }}>
+                  {t("settings.connect")}
+                </BodyText>
+              </TouchableOpacity>
+            }
+          />
+          <SettingRow
+            label="Last.fm scrobbling"
+            description="Send your plays to Last.fm — connect with your last.fm account."
+            colors={colors}
+            controlPlacement="inline"
+            control={
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => { setScrobbleProvider("lastfm"); setShowScrobbleSheet(true); }}
                 style={[styles.secondaryButton, { borderColor: colors.borderSubtle }]}
               >
                 <BodyText style={{ color: colors.foreground, fontSize: 13 }}>
@@ -1297,6 +1310,7 @@ export default function SettingsScreen({
 
           <ScrobbleSheet
             visible={showScrobbleSheet}
+            provider={scrobbleProvider}
             onClose={() => setShowScrobbleSheet(false)}
           />
         </ScrollView>
@@ -1346,27 +1360,25 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   tabBar: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 6,
     flexDirection: "row",
-    gap: 4,
+    borderBottomWidth: 1,
   },
   tabItem: {
     flex: 1,
-    minHeight: 56,
-    borderRadius: 14,
-    borderWidth: 1,
+    minHeight: 48,
     alignItems: "center",
     justifyContent: "center",
     gap: 4,
     paddingHorizontal: 4,
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
   },
   tabLabel: {
     fontSize: 11,
     fontWeight: "600",
     textAlign: "center",
   },
+
   section: {
     gap: 10,
   },
@@ -1481,9 +1493,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   accountCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 14,
+    borderBottomWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,

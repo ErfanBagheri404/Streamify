@@ -1160,9 +1160,9 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   const activeItems = React.useMemo<LibraryDisplayItem[]>(() => {
     if (activeSection === null) {
       return [
-        ...playlistItems.slice(0, 3),
-        ...mixedLibraryItems,
-        ...playlistItems.slice(3),
+        ...playlistItems.slice(0, 4),
+                ...mixedLibraryItems,
+                ...playlistItems.slice(4),
       ];
     }
     if (activeSection === "Artists") return topArtistItems;

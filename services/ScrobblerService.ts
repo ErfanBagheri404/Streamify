@@ -86,15 +86,31 @@ async function lastfmSignedCall(method: string, params: Record<string, string>):
   if (!lastfmEnabled()) {
     return false;
   }
-  // Last.fm write methods require api_sig: concat "key<value>" pairs sorted
-  // by key (excluding format and empty values), append the shared secret,
-  // MD5 it. Without it the server rejects scrobble/updateNowPlaying.
+  const { ok } = await lastfmApiCall(method, params, true);
+  return ok;
+}
+
+/**
+ * Low-level signed Last.fm call. `needsSession` adds the stored session key
+ * (required for scrobble/nowplaying); auth-flow methods sign with just
+ * api_key (+ token) which Last.fm also accepts via api_sig.
+ */
+async function lastfmApiCall(
+  method: string,
+  params: Record<string, string>,
+  needsSession: boolean,
+): Promise<{ ok: boolean; data: any }> {
+  if (!lastfmApiKey() || !lastfmSecret()) {
+    return { ok: false, data: null };
+  }
+  // Last.fm requires api_sig: concat "key<value>" pairs sorted by key
+  // (excluding format and empty values), append the shared secret, MD5 it.
   try {
     const unsigned: Record<string, string> = {
       method,
       format: "json",
       api_key: lastfmApiKey(),
-      sk: internal.lastfmSessionKey || "",
+      ...(needsSession ? { sk: internal.lastfmSessionKey || "" } : {}),
       ...params,
     };
     const sigBase = Object.keys(unsigned)
@@ -111,12 +127,21 @@ async function lastfmSignedCall(method: string, params: Record<string, string>):
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: body.toString(),
     });
-    return res.ok;
+    const data = await res.json().catch(() => null);
+    // Last.fm returns errors as HTTP 200 with an "error" field.
+    if (!res.ok || (data && data.error)) {
+      debug("Last.fm", method, "rejected:", data?.error, data?.message);
+      return { ok: false, data };
+    }
+    return { ok: true, data };
   } catch {
     debug("Last.fm", method, "network error");
-    return false;
+    return { ok: false, data: null };
   }
 }
+
+/** Username captured at session creation, for the settings row subtitle. */
+const SETTINGS_KEY_LASTFM_USER = "scrobble_lastfm_username";
 
 // --- ListenBrainz (token auth only — works with zero app registration) -------
 
@@ -410,6 +435,56 @@ export const scrobblerService = {
 
   async getLastfmSessionKey(): Promise<string | null> {
     return internal.lastfmSessionKey;
+  },
+
+  async getLastfmUsername(): Promise<string | null> {
+    return AsyncStorage.getItem(SETTINGS_KEY_LASTFM_USER);
+  },
+
+  /**
+   * Step 1 of the browser auth dance: ask Last.fm for a temporary token
+   * tied to the app's API key. The user then opens
+   * buildLastfmAuthUrl(token) in a browser and grants access.
+   */
+  async requestLastfmAuthToken(): Promise<string | null> {
+    const { ok, data } = await lastfmApiCall("auth.getToken", {}, false);
+    if (!ok) {
+      return null;
+    }
+    const token = data?.token;
+    return typeof token === "string" && token ? token : null;
+  },
+
+  /** URL the user must open (and approve) to authorize the token. */
+  buildLastfmAuthUrl(token: string): string {
+    return `https://www.last.fm/api/auth/?api_key=${encodeURIComponent(
+      lastfmApiKey(),
+    )}&token=${encodeURIComponent(token)}`;
+  },
+
+  /**
+   * Step 2: after the user approved in the browser, exchange the token for
+   * a session key. Call a few times — the grant may lag the tap.
+   */
+  async completeLastfmAuth(token: string): Promise<{ ok: boolean; username?: string }> {
+    const { ok, data } = await lastfmApiCall("auth.getSession", { token }, false);
+    const session = data?.session;
+    if (ok && session?.key) {
+      await this.setLastFmSessionKey(session.key);
+      const username = typeof session.name === "string" ? session.name : null;
+      if (username) {
+        await AsyncStorage.setItem(SETTINGS_KEY_LASTFM_USER, username);
+      }
+      debug("Last.fm session established for", username ?? "user");
+      return { ok: true, username: username ?? undefined };
+    }
+    // 14 = "Insufficient account connect" — user hasn't approved yet.
+    return { ok: false, username: undefined };
+  },
+
+  async clearLastfmAuth(): Promise<void> {
+    await this.setLastFmSessionKey(null);
+    await AsyncStorage.removeItem(SETTINGS_KEY_LASTFM_USER);
   },
 
   async setLastfmCreds(apiKey: string | null, secret: string | null): Promise<void> {

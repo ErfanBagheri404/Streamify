@@ -634,14 +634,23 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [isSeekPending, setIsSeekPending] = useState(false);
   // Waveform seek bar (feature: local + fully-cached tracks, Android only).
 
-  const [waveformPeaks, setWaveformPeaks] = useState<number[]>(() => {
-    // Start with flat fallback bars so the waveform is always visible when
-    // the feature is enabled — real peaks load asynchronously and replace
-    // these. Without this the user sees the default seek bar until peaks
-    // arrive (or forever, for tracks without a local cache).
-    const flatBuckets = 56;
-    return new Array(flatBuckets).fill(0.35);
-  });
+  // Deterministic pseudo-random envelope for the fallback bars — seeded
+  // by the track ID so it stays stable across re-renders but differs
+  // between songs.
+  const fallbackPeaks = React.useMemo(() => {
+    // ~120 bars at 3pt step fills a 360dp-wide row edge to edge.
+    const n = 120;
+    const seed = (currentTrack?.id ?? "").split("").reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0);
+    const mulberry = (i: number) => {
+      let t = ((seed + i * 0x6D2B79F5) >>> 0) & 0xFFFFFFFF;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 0xFFFFFFFF;
+    };
+    return Array.from({ length: n }, (_, i) => 0.18 + 0.55 * mulberry(i));
+  }, [currentTrack?.id]);
+
+  const [waveformPeaks, setWaveformPeaks] = useState<number[]>(() => fallbackPeaks);
   const [isHighResArtworkReady, setIsHighResArtworkReady] = useState(false);
 
   const appState = useRef(AppState.currentState);
@@ -1070,7 +1079,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   useEffect(() => {
 
     if (!settings.waveformSeekBar || !waveformSupported || !currentTrack) {
-      setWaveformPeaks([]);
+      setWaveformPeaks(fallbackPeaks);
       return;
     }
     // Reset to flat bars while async peak decode runs, so the waveform
@@ -1082,12 +1091,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       try {
         const peaks = await getWaveformPeaks(currentTrack.id);
         if (!cancelled) {
-          setWaveformPeaks(peaks ?? []);
+          setWaveformPeaks(peaks && peaks.length > 0 ? peaks : fallbackPeaks);
         }
       } catch {
         if (!cancelled) {
-          setWaveformPeaks([]);
-        }
+          setWaveformPeaks(fallbackPeaks);
+                  }
       }
     })();
     return () => { cancelled = true; };
@@ -1931,6 +1940,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   {settings.waveformSeekBar ? (
                   <Waveform
                     peaks={waveformPeaks}
+                    barMaxHeight={30}
                     seekRatio={seekRatio}
                     progressRatio={seekRatio}
                     isSeeking={isSeeking}

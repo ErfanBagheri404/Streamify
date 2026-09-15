@@ -41,8 +41,12 @@ function refLevel(): number {
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
 
-/** Never ramp fully to silence — a dead-air gap feels worse than a cut. */
-const FADE_FLOOR = 0.25;
+/** Ramp almost — but not fully — to silence. At 0.02 the tail of the
+ * fade-out is inaudible, so the decoder hand-off between tracks never
+ * produces a volume jump; the incoming track's fade-in carries the ear
+ * from near-silence back to full level. (A single decoder cannot truly
+ * overlap two tracks; this is the closest legal smooth transition.) */
+const FADE_FLOOR = 0.02;
 
 async function applyVolume(target: number): Promise<void> {
   const rounded = round2(target);

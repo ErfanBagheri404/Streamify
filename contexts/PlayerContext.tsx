@@ -268,6 +268,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   // usePlayer() consumer was the main source of home-screen jank.
   const positionRef = useRef(0);
   const durationRef = useRef(0);
+  // The progress event's duration (not the track metadata) — this is the
+  // accurate source for crossfade window calculation.
+  const progressDurationRef = useRef(0);
   const setPositionStable = useCallback((next: number | ((prev: number) => number)) => {
     positionRef.current =
       typeof next === "function"
@@ -2378,6 +2381,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             // ── Fade / crossfade-lite ──
             // Derived purely from this already-delivered tick; adds no
             // subscription or timer. Cheap integer/float math per 250ms.
+            progressDurationRef.current = duration;
             fadeService.onProgress(position, duration);
             // ── end fade ──
 
