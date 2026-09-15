@@ -26,6 +26,171 @@ import {
 } from "../lib/provider-endpoints";
 import { getRuntimeServiceConfig } from "../lib/runtime-services";
 import { fetchBackendRoute, getBackendBaseUrls } from "../lib/backend-api";
+import { resolveInnertubeStream, type InnertubeStream } from "./innertube";
+
+/**
+ * Download an Innertube-resolved googlevideo stream to a local file. Three
+ * hard-won on-device facts drive this shape:
+ * 1) Only JS `fetch` passes googlevideo — expo's downloadAsync builds a
+ *    separate OkHttp client and 403s even on a fresh URL with proper headers.
+ * 2) Bounded ranges (`bytes=a-b`) are accepted; open-ended (`bytes=0-`) 403s.
+ * 3) Each URL serves exactly ONE successful fetch — any second fetch of the
+ *    same URL 403s (confirmed on device), so one URL can never be chunked.
+ * Therefore: probe URL A with a 1-byte bounded fetch to learn the total
+ * length, remint a fresh URL B, and pull the whole file in one bounded
+ * request. Every URL is fetched exactly once, every range is bounded.
+ */
+async function innertubeFetch(
+  url: string,
+  headers: Record<string, string>,
+  timeoutMs: number,
+): Promise<Response | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { headers, signal: controller.signal });
+  } catch (e) {
+    console.warn(
+      "[InnertubeDownload] fetch failed:",
+      e instanceof Error ? e.message : e,
+    );
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function downloadInnertubeToFile(
+  stream: InnertubeStream,
+): Promise<string | null> {
+  try {
+    // Prefer the app's own cache directory so the existing cleanup /
+    // eviction passes apply to these files too.
+    const dir =
+      (await AudioStreamManager.getInstance().getCacheDirectory()) ?? null;
+    const base =
+      dir ??
+      (FileSystem.cacheDirectory ?? FileSystem.documentDirectory);
+    if (!base) {
+      console.warn("[InnertubeDownload] no writable base directory");
+      return null;
+    }
+    const cacheDir = `${base}Streamify/cache/`;
+    try {
+      await FileSystem.makeDirectoryAsync(cacheDir, {
+        intermediates: true,
+      });
+    } catch {
+      /* may already exist */
+    }
+
+    // Step 1: probe the minted URL for the total size with a 1-byte bounded
+    // fetch. This consumes the URL (one fetch per URL) — that is expected.
+    const probe = await innertubeFetch(
+      stream.url,
+      { ...stream.mediaHeaders, Range: "bytes=0-0" },
+      20000,
+    );
+    if (!probe || probe.status !== 206) {
+      console.warn(
+        `[InnertubeDownload] probe ${probe?.status ?? "error"} for ${stream.videoId}`,
+      );
+      return null;
+    }
+    const m = /\/(\d+)\s*$/.exec(probe.headers.get("content-range") ?? "");
+    const total = m ? parseInt(m[1]!, 10) : 0;
+    if (!total) {
+      console.warn(
+        `[InnertubeDownload] no total in content-range for ${stream.videoId}`,
+      );
+      return null;
+    }
+
+    // Step 2: remint a fresh URL and pull the whole file in one bounded
+    // fetch. Both URLs are now fetched exactly once.
+    const fresh = await resolveInnertubeStream(stream.videoId);
+    if (!fresh?.url) {
+      console.warn(`[InnertubeDownload] remint failed for ${stream.videoId}`);
+      return null;
+    }
+    const ext = fresh.mimeType?.includes("webm") ? "weba" : "m4a";
+      const safeName = stream.videoId.replace(/[^a-zA-Z0-9_-]/g, "");
+      const localPath = `${cacheDir}yt_${safeName}_${fresh.itag}.${ext}`;
+      // Pull the file in bounded chunks, REMINTING A FRESH URL PER CHUNK —
+      // proven on device: each request is capped (first 1MB of a range passes,
+      // a full-size bounded range 403s instantly) and open-ended ranges 403.
+      // Every chunk: fresh resolve + one bounded fetch of <= cap bytes.
+      const capes = [1048576, 524288]; // shrink once if a chunk size 403s
+      const parts: Uint8Array[] = [];
+      let offset = 0;
+      let capIdx = 0;
+      let failsAtOffset = 0;
+      for (let guard = 0; guard < 40 && offset < total; guard++) {
+        const cap = capes[capIdx] ?? 131072;
+        const end = Math.min(offset + cap - 1, total - 1);
+        const chunkStream =
+          offset === 0 ? fresh : await resolveInnertubeStream(stream.videoId);
+        if (!chunkStream?.url) {
+          console.warn(
+            `[InnertubeDownload] remint failed at ${offset} for ${stream.videoId}`,
+          );
+          return null;
+        }
+        const dl = await innertubeFetch(
+          chunkStream.url,
+          { ...chunkStream.mediaHeaders, Range: `bytes=${offset}-${end}` },
+          90000,
+        );
+        const status = dl?.status ?? 0;
+        console.log(
+          `[InnertubeDownload] chunk ${offset}-${end} -> ${status} for ${stream.videoId}`,
+        );
+        if (status === 206 || status === 200) {
+          const buf = new Uint8Array(await dl!.arrayBuffer());
+          if (!buf.length) break;
+          parts.push(buf);
+          offset += buf.length;
+          failsAtOffset = 0;
+          if (status === 200) break; // server ignored Range; full body in hand
+          continue;
+        }
+        // Same size again is pointless; shrink the cap once, then bail.
+        failsAtOffset++;
+        if (failsAtOffset > capes.length) {
+          console.warn(
+            `[InnertubeDownload] stuck at ${offset} for ${stream.videoId}`,
+          );
+          return null;
+        }
+        capIdx++;
+      }
+      if (!offset || offset < total) {
+        console.warn(
+          `[InnertubeDownload] incomplete ${offset}/${total} for ${stream.videoId}`,
+        );
+        return null;
+      }
+      const merged = new Uint8Array(offset);
+      let head = 0;
+      for (const part of parts) {
+        merged.set(part, head);
+        head += part.length;
+      }
+      await FileSystem.writeAsStringAsync(localPath, fromByteArray(merged), {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      console.log(
+        `[InnertubeDownload] saved ${merged.length}/${total} bytes for ${stream.videoId} -> ${localPath}`,
+      );
+      return localPath;
+  } catch (e) {
+    console.warn(
+      "[InnertubeDownload] failed:",
+      e instanceof Error ? e.message : e,
+    );
+    return null;
+  }
+}
 
 type GetAudioStreamOptions = {
   urlHint?: string;
@@ -4425,6 +4590,26 @@ export class AudioStreamManager {
     return AudioStreamManager.instance;
   }
 
+  /**
+   * Device-side Innertube resolution: mint a plain-URL stream via the
+   * on-device client walk, then download to the cache so the player reads a
+   * local file (sidesteps googlevideo ip= re-binding). The download is the
+   * first and only fetch of the minted URL — URLs are one-shot, so a failed
+   * download means reminting a fresh URL, never re-fetching the old one.
+   */
+  private async tryDeviceInnertube(videoId: string): Promise<string | null> {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const innertube = await resolveInnertubeStream(videoId);
+      if (!innertube?.url) return null;
+      const localPath = await downloadInnertubeToFile(innertube);
+      if (localPath) return localPath;
+      console.warn(
+        `[AudioStreamManager] Innertube download failed for ${videoId} (attempt ${attempt}/2), reminting fresh URL`,
+      );
+    }
+    return null;
+  }
+
   private setupFallbackStrategies() {
     // Strategy 1: Invidious API (with dynamic instances - highest priority for YouTube)
     this.fallbackStrategies.push(this.tryInvidious.bind(this));
@@ -4748,6 +4933,8 @@ export class AudioStreamManager {
                   this.currentTrackArtist,
                 ),
             ],
+            // Last resort: on-device Innertube when JioSaavn can't find it
+            ["Device Innertube", this.tryDeviceInnertube.bind(this)],
           ]
         : [
             ["Invidious", this.tryInvidious.bind(this)],
@@ -4756,6 +4943,9 @@ export class AudioStreamManager {
             ["Local Extraction", this.tryLocalExtraction.bind(this)],
             ["YouTube Music", this.tryYouTubeMusic.bind(this)],
             ["YouTube Embed", this.tryYouTubeEmbed.bind(this)],
+            // Last resort: on-device Innertube walk (mint + client walk +
+            // download to local file). Fires only when everything above fails.
+            ["Device Innertube", this.tryDeviceInnertube.bind(this)],
           ];
 
       for (let i = 0; i < strategies.length; i++) {

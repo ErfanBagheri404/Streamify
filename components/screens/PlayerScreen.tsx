@@ -165,7 +165,7 @@ async function getAudioUrlWithFallback(
    3.  COMPONENT
 ================================================================= */
 export default function PlayerScreen({ route, navigation }: any) {
-  const { isRtl } = useAppLanguage();
+  const { t, isRtl } = useAppLanguage();
   const previousIconName = "play-skip-back";
   const nextIconName = "play-skip-forward";
   const item = route.params?.item;
@@ -609,7 +609,7 @@ export default function PlayerScreen({ route, navigation }: any) {
           </TouchableOpacity>
 
           <HeaderTextContainer>
-            <HeaderText>NOW PLAYING</HeaderText>
+            <HeaderText>{t("player.now_playing")}</HeaderText>
             <HeaderTitle numberOfLines={1}>{placeholderItem.title}</HeaderTitle>
           </HeaderTextContainer>
 
@@ -701,8 +701,8 @@ export default function PlayerScreen({ route, navigation }: any) {
             </TouchableOpacity>
 
             <HeaderTextContainer>
-              <HeaderText>NOW PLAYING</HeaderText>
-              <HeaderTitle numberOfLines={1}>No track loaded</HeaderTitle>
+              <HeaderText>{t("player.now_playing")}</HeaderText>
+              <HeaderTitle numberOfLines={1}>{t("player.noTrackLoaded")}</HeaderTitle>
             </HeaderTextContainer>
 
             <Ionicons name="ellipsis-horizontal" size={24} color="#fff" />
@@ -716,8 +716,8 @@ export default function PlayerScreen({ route, navigation }: any) {
 
           <SongDetailsContainer>
             <SongInfo>
-              <SongTitle numberOfLines={2}>No track selected</SongTitle>
-              <ArtistName>Select a track to start playing</ArtistName>
+              <SongTitle numberOfLines={2}>{t("player.noTrackSelected")}</SongTitle>
+              <ArtistName>{t("player.selectToStart")}</ArtistName>
             </SongInfo>
             <Ionicons name="heart-outline" size={24} color="#fff" />
           </SongDetailsContainer>
@@ -765,7 +765,7 @@ export default function PlayerScreen({ route, navigation }: any) {
         </TouchableOpacity>
 
         <HeaderTextContainer>
-          <HeaderText>NOW PLAYING</HeaderText>
+          <HeaderText>{t("player.now_playing")}</HeaderText>
           <HeaderTitle numberOfLines={1}>{item.author || "…"}</HeaderTitle>
           {playlist.length > 1 && (
             <PlaylistPositionText>

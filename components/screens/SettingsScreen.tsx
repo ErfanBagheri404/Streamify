@@ -22,10 +22,10 @@ import {
   type AppTheme,
   type PlaybackRetryMode,
   type PreferredSearchSource,
-  type SettingsSectionKey,
   isLightAppTheme,
 } from "../../lib/app-settings";
 import { Screen } from "../ui/Screen";
+import { ScrobbleSheet } from "../ScrobbleSheet";
 import { BodyText, MutedText, TitleText } from "../ui/Text";
 import { AccentButton } from "../ui/Button";
 import { useAppLanguage } from "../../hooks/useAppLanguage";
@@ -36,6 +36,10 @@ import {
 import { useAppSettings } from "../../hooks/useAppSettings";
 import { useAuth } from "../../hooks/useAuth";
 import { useTheme, withOpacity } from "../../hooks/useTheme";
+import {
+  CommunityModal,
+  useCommunityModalAutoShow,
+} from "../ui/CommunityModal";
 import {
   buildCurrentLocalLibrarySyncSource,
   pushCloudLibrarySnapshot,
@@ -151,78 +155,44 @@ function getUserAccountLabel(
   return t("settings.accountGuest");
 }
 
+/** Static section card. Categories are switched via the tab bar, so sections
+ *  never collapse — removing collapse state, y-offset measurement, and
+ *  scroll-chasing entirely. */
 function Section({
-  eyebrow,
   title,
   description,
   colors,
   children,
-  collapsed = false,
-  onToggle,
-  isRtl,
-  sectionKey,
-  onMeasure,
 }: {
-  eyebrow: string;
   title: string;
   description: string;
   colors: ReturnType<typeof useTheme>["colors"];
   children: ReactNode;
-  collapsed?: boolean;
-  onToggle?: () => void;
-  isRtl: boolean;
-  sectionKey?: SettingsSectionKey;
-  onMeasure?: (section: SettingsSectionKey, y: number) => void;
 }) {
   return (
-    <View
-      onLayout={(event) => {
-        if (!sectionKey || !onMeasure) {
-          return;
-        }
-        onMeasure(sectionKey, event.nativeEvent.layout.y);
-      }}
-      style={[
-        styles.section,
-        {
-          backgroundColor: colors.surface1,
-          borderColor: colors.borderSubtle,
-        },
-      ]}
-    >
-      <TouchableOpacity
-        activeOpacity={0.82}
-        disabled={!onToggle}
-        onPress={onToggle}
-        style={[styles.sectionHeader, { flexDirection: "row" }]}
-      >
-        <View style={styles.sectionHeaderCopy}>
-          <MutedText style={styles.eyebrow}>{eyebrow}</MutedText>
-          <TitleText style={styles.sectionTitle}>{title}</TitleText>
-          <MutedText style={styles.sectionDescription}>{description}</MutedText>
-        </View>
-        <View
-          style={[
-            styles.sectionToggle,
-            {
-              backgroundColor: colors.surface3,
-              borderColor: colors.borderSubtle,
-            },
-          ]}
-        >
-          <Ionicons
-            name={collapsed ? "chevron-down" : "chevron-up"}
-            size={18}
-            color={colors.foreground}
-          />
-        </View>
-      </TouchableOpacity>
-      {!collapsed ? (
-        <View style={styles.sectionContent}>{children}</View>
-      ) : null}
+    <View style={styles.section}>
+      <View style={styles.sectionHeaderStatic}>
+        <TitleText style={styles.sectionTitle}>{title}</TitleText>
+        <MutedText style={styles.sectionDescription}>{description}</MutedText>
+      </View>
+      <View style={styles.sectionContent}>{children}</View>
     </View>
   );
 }
+
+type SettingsTabKey = "account" | "playback" | "appearance" | "library" | "about";
+
+const SETTINGS_TABS: Array<{
+  key: SettingsTabKey;
+  icon: keyof typeof Ionicons.glyphMap;
+  labelKey: string;
+}> = [
+  { key: "account", icon: "person-circle-outline", labelKey: "settings.tabAccount" },
+  { key: "playback", icon: "play-circle-outline", labelKey: "settings.tabPlayback" },
+  { key: "appearance", icon: "color-palette-outline", labelKey: "settings.tabAppearance" },
+  { key: "library", icon: "library-outline", labelKey: "settings.tabLibrary" },
+  { key: "about", icon: "information-circle-outline", labelKey: "settings.tabAbout" },
+];
 
 function SettingRow({
   label,
@@ -245,8 +215,8 @@ function SettingRow({
         styles.settingRow,
         isInline && styles.settingRowInline,
         {
-          backgroundColor: colors.surface3,
-          borderColor: colors.borderSubtle,
+          backgroundColor: colors.surface1,
+          borderBottomColor: colors.borderSubtle,
         },
       ]}
     >
@@ -294,34 +264,6 @@ function ChoiceChip({
         {label}
       </BodyText>
     </TouchableOpacity>
-  );
-}
-
-function SummaryCard({
-  label,
-  value,
-  description,
-  colors,
-}: {
-  label: string;
-  value: string;
-  description: string;
-  colors: ReturnType<typeof useTheme>["colors"];
-}) {
-  return (
-    <View
-      style={[
-        styles.summaryCard,
-        {
-          backgroundColor: colors.surface3,
-          borderColor: colors.borderSubtle,
-        },
-      ]}
-    >
-      <MutedText style={styles.summaryLabel}>{label}</MutedText>
-      <BodyText style={styles.summaryValue}>{value}</BodyText>
-      <MutedText style={styles.summaryDescription}>{description}</MutedText>
-    </View>
   );
 }
 
@@ -414,11 +356,17 @@ export default function SettingsScreen({
     tone: "error" | "success" | "info";
     message: string;
   } | null>(null);
-  const collapsedSections = settings.collapsedSettingsSections;
-  const scrollViewRef = useRef<ScrollView>(null);
-  const sectionOffsetsRef = useRef<Partial<Record<SettingsSectionKey, number>>>(
-    {},
-  );
+  const [showScrobbleSheet, setShowScrobbleSheet] = useState(false);
+
+  const { autoVisible: communityAutoVisible, closeAuto: closeCommunityAuto } =
+    useCommunityModalAutoShow();
+  const [isCommunityOpenedManually, setIsCommunityOpenedManually] =
+    useState(false);
+  const isCommunityVisible = communityAutoVisible || isCommunityOpenedManually;
+  const closeCommunity = () => {
+    closeCommunityAuto();
+    setIsCommunityOpenedManually(false);
+  };
 
   const accountName = getUserDisplayName(user) || t("settings.accountGuest");
   const accountAvatarUrl = getUserAvatarUrl(user);
@@ -582,73 +530,8 @@ export default function SettingsScreen({
     }
   };
 
-  const toggleSection = (section: SettingsSectionKey) => {
-    updateSettings({
-      collapsedSettingsSections: {
-        ...collapsedSections,
-        [section]: !collapsedSections?.[section],
-      },
-    });
-  };
-  const handleSectionMeasure = useCallback(
-    (section: SettingsSectionKey, y: number) => {
-      sectionOffsetsRef.current[section] = y;
-    },
-    [],
-  );
-  const jumpToSection = useCallback(
-    (section: SettingsSectionKey) => {
-      const isCollapsed = Boolean(collapsedSections?.[section]);
-      if (isCollapsed) {
-        updateSettings({
-          collapsedSettingsSections: {
-            ...collapsedSections,
-            [section]: false,
-          },
-        });
-      }
-
-      const scrollToSection = () => {
-        const offsetY = Math.max(
-          0,
-          (sectionOffsetsRef.current[section] ?? 0) - 96,
-        );
-        (
-          scrollViewRef.current as unknown as {
-            scrollTo: (options: {
-              y?: number;
-              x?: number;
-              animated?: boolean;
-            }) => void;
-          }
-        )?.scrollTo({
-          y: offsetY,
-          animated: !settings.disableAnimations,
-        });
-      };
-
-      if (isCollapsed) {
-        setTimeout(scrollToSection, settings.disableAnimations ? 0 : 180);
-        return;
-      }
-
-      requestAnimationFrame(scrollToSection);
-    },
-    [collapsedSections, settings.disableAnimations, updateSettings],
-  );
-
-  const quickAccessSections = useMemo(
-    () =>
-      [
-        { key: "account", label: t("settings.account") },
-        { key: "appearance", label: t("settings.themeAndMotion") },
-        { key: "playback", label: t("settings.musicBehaves") },
-        { key: "discovery", label: t("settings.searchPreferences") },
-        { key: "lyrics", label: t("settings.readingAndInput") },
-        { key: "updates", label: t("settings.appUpdates") },
-      ] as Array<{ key: SettingsSectionKey; label: string }>,
-    [t],
-  );
+  // ---- Category tabs (settings rework) ----
+  const [activeTab, setActiveTab] = useState<SettingsTabKey>("playback");
 
   if (!hasHydratedSettings) {
     return (
@@ -691,120 +574,64 @@ export default function SettingsScreen({
         </View>
 
         <ScrollView
-          ref={scrollViewRef}
-          showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
           <View
             style={[
-              styles.hero,
+              styles.tabBar,
               {
                 backgroundColor: colors.surface1,
                 borderColor: colors.borderSubtle,
               },
             ]}
           >
-            <View
-              style={[
-                styles.heroBadge,
-                {
-                  backgroundColor: withOpacity(colors.foreground, 0.06),
-                  alignSelf: "flex-start",
-                  flexDirection: "row",
-                },
-              ]}
-            >
-              <Ionicons
-                name="sparkles-outline"
-                size={14}
-                color={colors.accent}
-              />
-              <BodyText style={styles.heroBadgeText}>
-                {t("settings.personalize")}
-              </BodyText>
-            </View>
-            <TitleText style={styles.heroTitle}>
-              {t("settings.title")}
-            </TitleText>
-            <MutedText style={styles.heroDescription}>
-              {t("settings.description")}
-            </MutedText>
-            <View style={[styles.heroPills, { flexDirection: "row" }]}>
-              {[
-                `${t("settings.autoRetry")}: ${retrySummary}`,
-                `${t("settings.searchLabel")}: ${
-                  sourceLabels[settings.preferredSearchSource]
-                }`,
-                `${t("settings.seekJump")}: ${settings.seekStepSeconds}s`,
-                `${t("settings.theme")}: ${themeLabels[settings.theme]}`,
-                `${t("settings.motion")}: ${motionLabel}`,
-                `${t("settings.searchMemory")}: ${searchMemoryLabel}`,
-              ].map((pill) => (
-                <View
-                  key={pill}
-                  style={[
-                    styles.heroPill,
-                    {
-                      backgroundColor: withOpacity(colors.foreground, 0.05),
-                      borderColor: withOpacity(colors.foreground, 0.08),
-                    },
-                  ]}
-                >
-                  <MutedText style={styles.heroPillText}>{pill}</MutedText>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          <View
-            style={[
-              styles.quickAccessCard,
-              {
-                backgroundColor: colors.surface1,
-                borderColor: colors.borderSubtle,
-              },
-            ]}
-          >
-            <MutedText style={styles.quickAccessEyebrow}>
-              {t("settings.quickAccess")}
-            </MutedText>
-            <TitleText style={styles.quickAccessTitle}>
-              {t("settings.quickAccess")}
-            </TitleText>
-            <MutedText style={styles.quickAccessDescription}>
-              {t("settings.quickAccessDescription")}
-            </MutedText>
-            <View style={[styles.quickAccessWrap, { flexDirection: "row" }]}>
-              {quickAccessSections.map((section) => (
+            {SETTINGS_TABS.map((tab) => {
+              const active = activeTab === tab.key;
+              return (
                 <TouchableOpacity
-                  key={section.key}
-                  onPress={() => jumpToSection(section.key)}
+                  key={tab.key}
+                  onPress={() => setActiveTab(tab.key)}
+                  activeOpacity={0.75}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={t(tab.labelKey)}
                   style={[
-                    styles.quickAccessChip,
+                    styles.tabItem,
                     {
-                      backgroundColor: colors.surface3,
-                      borderColor: colors.borderSubtle,
+                      backgroundColor: active
+                        ? withOpacity(colors.accent, 0.16)
+                        : "transparent",
+                      borderColor: active
+                        ? withOpacity(colors.accent, 0.4)
+                        : "transparent",
                     },
                   ]}
                 >
-                  <BodyText style={styles.quickAccessChipText}>
-                    {section.label}
+                  <Ionicons
+                    name={tab.icon}
+                    size={20}
+                    color={active ? colors.accent : colors.foreground}
+                  />
+                  <BodyText
+                    style={[
+                      styles.tabLabel,
+                      { color: active ? colors.accent : colors.foreground },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {t(tab.labelKey)}
                   </BodyText>
                 </TouchableOpacity>
-              ))}
-            </View>
+              );
+            })}
           </View>
 
+          {activeTab === "account" ? (
           <Section
-            eyebrow={t("settings.account")}
             title={t("settings.account")}
             description={t("settings.accountDescription")}
             colors={colors}
-            collapsed={Boolean(collapsedSections.account)}
-            onToggle={() => toggleSection("account")}
-            isRtl={isRtl}
-            sectionKey="account"
-            onMeasure={handleSectionMeasure}
           >
             <View
               style={[
@@ -970,7 +797,6 @@ export default function SettingsScreen({
                 </BodyText>
               </View>
             ) : null}
-          </Section>
 
           <SettingRow
             label={t("settings.autoSyncLibrary")}
@@ -988,22 +814,19 @@ export default function SettingsScreen({
               />
             }
           />
+          </Section>
+          ) : null}
 
+          {activeTab === "appearance" ? (
           <Section
-            eyebrow={t("settings.appearance")}
             title={t("settings.themeAndMotion")}
-            description={t("settings.themeAndMotionDescription")}
-            colors={colors}
-            collapsed={Boolean(collapsedSections.appearance)}
-            onToggle={() => toggleSection("appearance")}
-            isRtl={isRtl}
-            sectionKey="appearance"
-            onMeasure={handleSectionMeasure}
+          description={t("settings.themeAndMotionDescription")}
+          colors={colors}
           >
-            <SettingRow
-              label={t("settings.theme")}
-              description={t("settings.themeDescription")}
-              colors={colors}
+          <SettingRow
+            label={t("settings.theme")}
+            description={t("settings.themeDescription")}
+            colors={colors}
               control={
                 <View style={styles.themeGrid}>
                   {APP_THEME_OPTIONS.map((theme) => (
@@ -1058,17 +881,13 @@ export default function SettingsScreen({
               }
             />
           </Section>
+          ) : null}
 
+          {activeTab === "playback" ? (
           <Section
-            eyebrow={t("settings.playback")}
             title={t("settings.musicBehaves")}
             description={t("settings.musicBehavesDescription")}
             colors={colors}
-            collapsed={Boolean(collapsedSections.playback)}
-            onToggle={() => toggleSection("playback")}
-            isRtl={isRtl}
-            sectionKey="playback"
-            onMeasure={handleSectionMeasure}
           >
             <SettingRow
               label={t("settings.autoRetryPlayback")}
@@ -1123,6 +942,22 @@ export default function SettingsScreen({
               }
             />
             <SettingRow
+              label={t("settings.haptics")}
+              description={t("settings.hapticsDescription")}
+              colors={colors}
+              controlPlacement="inline"
+              control={
+                <Switch
+                  value={settings.hapticsEnabled}
+                  onValueChange={(value) =>
+                    updateSettings({ hapticsEnabled: value })
+                  }
+                  trackColor={switchTrackColor}
+                  thumbColor={switchThumbColor}
+                />
+              }
+            />
+            <SettingRow
               label={t("settings.autoCacheLikedSongs")}
               description={t("settings.autoCacheLikedSongsDescription")}
               colors={colors}
@@ -1138,18 +973,99 @@ export default function SettingsScreen({
                 />
               }
             />
+            <SettingRow
+              label={t("settings.crossfade")}
+              description={t("settings.crossfadeDescription")}
+              colors={colors}
+              controlPlacement="inline"
+              control={
+                <Switch
+                  value={settings.crossfadeEnabled}
+                  onValueChange={(value) =>
+                    updateSettings({ crossfadeEnabled: value })
+                  }
+                  trackColor={switchTrackColor}
+                  thumbColor={switchThumbColor}
+                />
+              }
+            />
+            <SettingRow
+              label={t("settings.crossfadeSeconds")}
+              description={t("settings.crossfadeSecondsDescription")}
+              colors={colors}
+              control={
+                <View style={styles.choiceWrap}>
+                  {[2, 4, 6, 8].map((seconds) => (
+                    <ChoiceChip
+                      key={seconds}
+                      label={`${seconds}s`}
+                      selected={settings.crossfadeSeconds === seconds}
+                      onPress={() =>
+                        updateSettings({ crossfadeSeconds: seconds })
+                      }
+                      colors={colors}
+                    />
+                  ))}
+                </View>
+              }
+            />
+            <SettingRow
+              label={t("settings.waveformSeek")}
+              description={t("settings.waveformSeekDescription")}
+              colors={colors}
+              controlPlacement="inline"
+              control={
+                <Switch
+                  value={settings.waveformSeekBar}
+                  onValueChange={(value) =>
+                    updateSettings({ waveformSeekBar: value })
+                  }
+                  trackColor={switchTrackColor}
+                  thumbColor={switchThumbColor}
+                />
+              }
+            />
+            <SettingRow
+              label={t("settings.replayGain")}
+              description={t("settings.replayGainDescription")}
+              colors={colors}
+              controlPlacement="inline"
+              control={
+                <Switch
+                  value={settings.replayGainEnabled}
+                  onValueChange={(value) =>
+                    updateSettings({ replayGainEnabled: value })
+                  }
+                  trackColor={switchTrackColor}
+                  thumbColor={switchThumbColor}
+                />
+              }
+            />
+            <SettingRow
+              label={t("settings.scrobbling")}
+              description={t("settings.scrobblingDescription")}
+              colors={colors}
+              controlPlacement="inline"
+              control={
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => setShowScrobbleSheet(true)}
+                  style={[styles.secondaryButton, { borderColor: colors.borderSubtle }]}
+                >
+                  <BodyText style={{ color: colors.foreground, fontSize: 13 }}>
+                    {t("settings.connect")}
+                  </BodyText>
+                </TouchableOpacity>
+              }
+            />
           </Section>
+          ) : null}
 
+          {activeTab === "library" ? (
           <Section
-            eyebrow={t("settings.discovery")}
             title={t("settings.searchPreferences")}
             description={t("settings.searchPreferencesDescription")}
             colors={colors}
-            collapsed={Boolean(collapsedSections.discovery)}
-            onToggle={() => toggleSection("discovery")}
-            isRtl={isRtl}
-            sectionKey="discovery"
-            onMeasure={handleSectionMeasure}
           >
             <SettingRow
               label={t("settings.defaultSearchSource")}
@@ -1188,17 +1104,13 @@ export default function SettingsScreen({
               }
             />
           </Section>
+          ) : null}
 
+          {activeTab === "library" ? (
           <Section
-            eyebrow={t("settings.lyricsAndControls")}
             title={t("settings.readingAndInput")}
             description={t("settings.readingAndInputDescription")}
             colors={colors}
-            collapsed={Boolean(collapsedSections.lyrics)}
-            onToggle={() => toggleSection("lyrics")}
-            isRtl={isRtl}
-            sectionKey="lyrics"
-            onMeasure={handleSectionMeasure}
           >
             <SettingRow
               label={t("settings.lyrics")}
@@ -1270,72 +1182,13 @@ export default function SettingsScreen({
               }
             />
           </Section>
+          ) : null}
 
+          {activeTab === "about" ? (
           <Section
-            eyebrow={t("settings.activeSetup")}
-            title={t("settings.activeSetup")}
-            description={t("settings.quickHelp")}
-            colors={colors}
-            collapsed={Boolean(collapsedSections.summary)}
-            onToggle={() => toggleSection("summary")}
-            isRtl={isRtl}
-            sectionKey="summary"
-            onMeasure={handleSectionMeasure}
-          >
-            <SummaryCard
-              label={t("settings.playbackSummary")}
-              value={retrySummary}
-              description={
-                settings.autoplayRecommendations
-                  ? t("settings.recommendationsContinue")
-                  : t("settings.playbackStops")
-              }
-              colors={colors}
-            />
-            <SummaryCard
-              label={t("settings.searchSummary")}
-              value={sourceLabels[settings.preferredSearchSource]}
-              description={
-                settings.rememberLastSearch
-                  ? t("settings.searchRestores")
-                  : t("settings.searchOpensFresh")
-              }
-              colors={colors}
-            />
-            <SummaryCard
-              label={t("settings.lyricsControlsSummary")}
-              value={
-                settings.lyricsEnabled
-                  ? t("settings.lyricsOn")
-                  : t("settings.lyricsOff")
-              }
-              description={
-                settings.keyboardShortcuts
-                  ? t("settings.shortcutsEnabled", {
-                      seconds: settings.seekStepSeconds,
-                    })
-                  : t("settings.shortcutsDisabled")
-              }
-              colors={colors}
-            />
-            <SummaryCard
-              label={t("settings.appearancePerformance")}
-              value={themeLabels[settings.theme]}
-              description={motionLabel}
-              colors={colors}
-            />
-          </Section>
-
-          <Section
-            eyebrow={t("settings.appUpdates")}
             title={t("settings.appUpdates")}
             description={t("settings.appUpdatesDescription")}
             colors={colors}
-            collapsed={Boolean(collapsedSections.updates)}
-            onToggle={() => toggleSection("updates")}
-            isRtl={isRtl}
-            sectionKey="updates"
-            onMeasure={handleSectionMeasure}
           >
             <SettingRow
               label={t("settings.checkForUpdates")}
@@ -1420,7 +1273,30 @@ export default function SettingsScreen({
                 </BodyText>
               </View>
             ) : null}
+
+            <SettingRow
+              label={t("settings.communityTitle")}
+              description={t("settings.communityDescription")}
+              colors={colors}
+              control={
+                <AccentButton
+                  title={t("settings.communityOpen")}
+                  onPress={() => setIsCommunityOpenedManually(true)}
+                />
+              }
+            />
           </Section>
+          ) : null}
+
+          <CommunityModal
+            visible={isCommunityVisible}
+            onClose={closeCommunity}
+          />
+
+          <ScrobbleSheet
+            visible={showScrobbleSheet}
+            onClose={() => setShowScrobbleSheet(false)}
+          />
         </ScrollView>
       </View>
     </Screen>
@@ -1462,142 +1338,56 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   scrollContent: {
-    padding: 16,
+    paddingHorizontal: 12,
+    paddingTop: 4,
     paddingBottom: 120,
-    gap: 16,
+    gap: 10,
   },
-  hero: {
-    borderRadius: 24,
+  tabBar: {
+    borderRadius: 20,
     borderWidth: 1,
-    padding: 18,
-  },
-  heroBadge: {
-    alignSelf: "flex-start",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    padding: 6,
     flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
+    gap: 4,
   },
-  heroBadgeText: {
-    fontSize: 11,
-    lineHeight: 14,
-    fontWeight: "600",
-  },
-  heroTitle: {
-    marginTop: 14,
-    fontSize: 32,
-    lineHeight: 36,
-    fontWeight: "900",
-  },
-  heroDescription: {
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  heroPills: {
-    marginTop: 16,
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  heroPill: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  heroPillText: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: "500",
-  },
-  quickAccessCard: {
-    borderRadius: 22,
-    borderWidth: 1,
-    padding: 16,
-  },
-  quickAccessEyebrow: {
-    fontSize: 11,
-    lineHeight: 16,
-    textTransform: "uppercase",
-    letterSpacing: 1.1,
-    fontWeight: "600",
-  },
-  quickAccessTitle: {
-    marginTop: 10,
-    fontSize: 22,
-    lineHeight: 26,
-    fontWeight: "700",
-  },
-  quickAccessDescription: {
-    marginTop: 6,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  quickAccessWrap: {
-    marginTop: 14,
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  quickAccessChip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  quickAccessChipText: {
-    fontSize: 13,
-    lineHeight: 16,
-    fontWeight: "600",
-  },
-  section: {
-    borderRadius: 22,
-    borderWidth: 1,
-    padding: 16,
-  },
-  sectionHeader: {
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  sectionHeaderCopy: {
+  tabItem: {
     flex: 1,
-  },
-  eyebrow: {
-    fontSize: 11,
-    lineHeight: 16,
-    textTransform: "uppercase",
-    letterSpacing: 1.1,
-    fontWeight: "600",
-  },
-  sectionTitle: {
-    marginTop: 10,
-    fontSize: 24,
-    lineHeight: 28,
-    fontWeight: "700",
-  },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  sectionToggle: {
-    width: 34,
-    height: 34,
-    borderRadius: 999,
+    minHeight: 56,
+    borderRadius: 14,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
+    gap: 4,
+    paddingHorizontal: 4,
+  },
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  section: {
+    gap: 10,
+  },
+  sectionHeaderStatic: {
+    paddingHorizontal: 4,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: "700",
+  },
+  sectionDescription: {
+    marginTop: 2,
+    fontSize: 12.5,
+    lineHeight: 17,
   },
   sectionContent: {
-    marginTop: 16,
-    gap: 12,
+    gap: 2,
   },
   settingRow: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 14,
+    borderBottomWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     gap: 12,
   },
   settingRowInline: {

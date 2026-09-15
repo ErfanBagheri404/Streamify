@@ -1,5 +1,6 @@
 import React from "react";
 import { View, type ViewStyle, type StyleProp } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import DeezerSvg from "../../assets/sources/Deezer.svg";
 import ITunesSvg from "../../assets/sources/ITunes.svg";
 import JioSaavnSvg from "../../assets/sources/JioSaavn.svg";
@@ -38,6 +39,21 @@ export const SourceIcon: React.FC<SourceIconProps> = ({
   style,
 }) => {
   const key = normalizeSource(source);
+
+  // Local (on-device) library has no brand mark; a phone glyph reads clearly
+  // next to the vector brand icons without inventing a fake logo.
+  if (key === "local") {
+    return (
+      <View style={[{ width: size, height: size, alignItems: "center", justifyContent: "center" }, style]}>
+        <Ionicons
+          name="phone-portrait-outline"
+          size={Math.round(size * 0.95)}
+          color={color || "#5e9eff"}
+        />
+      </View>
+    );
+  }
+
   const SvgComponent = SOURCE_ICON_MAP[key];
   if (!SvgComponent) return null;
 

@@ -16,6 +16,10 @@ declare module "react-native" {
   export class Keyboard {
     static dismiss(): void;
   }
+  export class LayoutAnimation {
+    static configureNext(config: any, onAnimationDidEnd?: () => void, onError?: () => void): void;
+    static Presets: { easeInEaseOut: any; linear: any; spring: any };
+  }
   export class StatusBar extends React.Component<any> {
     static currentHeight?: number;
   }
@@ -48,7 +52,22 @@ declare module "react-native" {
   }
   export class Platform {
     static OS: string;
+    static Version: number | string;
     static select<T>(obj: { ios?: T; android?: T; web?: T; default?: T }): T;
+  }
+  export class PermissionsAndroid {
+    static request(
+      permission: string,
+      rationale?: {
+        title?: string;
+        message?: string;
+        buttonPositive?: string;
+        buttonNegative?: string;
+        buttonNeutral?: string;
+      },
+    ): Promise<string>;
+    static check(permission: string): Promise<boolean>;
+    static RESULTS: { GRANTED: string; DENIED: string; NEVER_ASK_AGAIN: string };
   }
   export class PixelRatio {
     static get(): number;
@@ -97,6 +116,20 @@ declare module "react-native" {
     export function parallel(animations: any[]): any;
     export function createAnimatedComponent(Component: any): any;
     export const View: any;
+    export function multiply(a: any, b: any): any;
+    export function add(a: any, b: any): any;
+  }
+
+  // Easing curves used by Animated.timing
+  export class Easing {
+    static linear(n: number): number;
+    static ease(n: number): number;
+    static quad(n: number): number;
+    static cubic(n: number): number;
+    static in(fn: (n: number) => number): (n: number) => number;
+    static out(fn: (n: number) => number): (n: number) => number;
+    static inOut(fn: (n: number) => number): (n: number) => number;
+    static bezier(x1: number, y1: number, x2: number, y2: number): (n: number) => number;
   }
 
   // PanResponder

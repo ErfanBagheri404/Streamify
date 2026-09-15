@@ -9,6 +9,14 @@ import React, {
 } from "react";
 import { AppState } from "react-native";
 import TrackPlayer, { State, Event } from "../utils/safeTrackPlayer";
+import {
+  recordListening,
+  flushNow as flushListeningStats,
+  PLAY_COUNT_THRESHOLD_MS,
+} from "../utils/listeningStats";
+import { scrobblerService } from "../services/ScrobblerService";
+import { fadeService } from "../services/FadeService";
+import { computeTrackGainFactor, resolveGainSourcePath } from "../modules/replayGain";
 import * as FileSystem from "expo-file-system";
 import {
   getAudioStreamUrl,
@@ -56,6 +64,8 @@ export interface Track {
   providerHint?: string;
   _isSoundCloud?: boolean;
   _isJioSaavn?: boolean;
+  /** Device file played straight from MediaStore; skip stream resolution. */
+  _isLocal?: boolean;
   // DRM playback metadata (returned by backend for SoundCloud Widevine tracks)
   audioType?: string;
   drmLicenseUrl?: string;
@@ -303,6 +313,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     null,
   );
   const seekGuardRef = useRef(0);
+  // Listening-stats sampler: position at the last sample, ms credited to the
+  // current track so far, and whether this listen has already been counted
+  // as a play.
+  const statsLastPositionRef = useRef(0);
+  const statsAccumulatedMsRef = useRef(0);
+  const statsPlayCountedRef = useRef<string | null>(null);
   const playRequestIdRef = useRef(0);
   const suppressNonPlayingStateRef = useRef(false);
   const playStateSuppressionTimeoutRef = useRef<ReturnType<
@@ -824,6 +840,23 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             0,
             typeof nextTrack?.duration === "number" ? nextTrack.duration : 0,
           );
+          // Scrobbler: finalize the outgoing track, start the incoming one.
+          // Fire-and-forget on purpose — never blocks the player sync below.
+          if (nextTrack?.title) {
+            void scrobblerService
+              .onTrackChange({
+                id: String(nextTrack.id ?? ""),
+                title: nextTrack.title,
+                artist: nextTrack.artist,
+                album:
+                  (nextTrack as any).albumName ?? (nextTrack as any).album,
+                duration: nextTrack.duration,
+              })
+              .catch(() => {});
+          }
+          // Hand volume back to the base level; the new track's fade-in
+          // starts from the next progress tick.
+          fadeService.reset();
           sync();
         }),
       );
@@ -869,6 +902,42 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       void syncLocalLibraryState();
     });
   }, []);
+
+  // Load scrobbler credentials (ListenBrainz / Last.fm) once at startup.
+  useEffect(() => {
+    void scrobblerService.initialize().catch(() => {});
+  }, []);
+
+  // Configure fade/crossfade from saved settings at startup.
+  useEffect(() => {
+    fadeService.configure(
+      settings.crossfadeEnabled,
+      settings.crossfadeSeconds,
+      1,
+    );
+  }, [settings.crossfadeEnabled, settings.crossfadeSeconds]);
+
+  // ReplayGain: resolve file path and apply gain factor on track change.
+  useEffect(() => {
+    if (!settings.replayGainEnabled || !currentTrack) {
+      fadeService.setTrackGain(1, false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const path = await resolveGainSourcePath(currentTrack.id);
+        if (cancelled || !path) return;
+        const factor = await computeTrackGainFactor(path, false);
+        if (!cancelled) {
+          fadeService.setTrackGain(factor, settings.replayGainEnabled);
+        }
+      } catch {
+        if (!cancelled) fadeService.setTrackGain(1, false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentTrack?.id, settings.replayGainEnabled]);
 
   useEffect(() => {
     return subscribeToAudioCacheProgress((update) => {
@@ -1025,6 +1094,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
     if (track.audioUrl?.startsWith("file://")) {
       return track.audioUrl;
+    }
+
+    // Local MediaStore tracks play straight from their content:// URI — no
+    // streaming stack, no cache, no per-source resolution.
+    if (track._isLocal || track.audioUrl?.startsWith("content://")) {
+      return track.audioUrl as string;
     }
 
     const resolvedSource = resolveTrackSource(track);
@@ -2256,6 +2331,56 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               return;
             }
 
+            // ── Listening-stats sampler ──
+            // Credit the elapsed wall time since the last sample, but only
+            // when playback is actually moving forward (a stuck position
+            // means buffering/silence, not listening).
+            const statsTrack = track as Track | null;
+            if (statsTrack?.id) {
+              const deltaMs = Math.round((position - statsLastPositionRef.current) * 1000);
+              if (
+                deltaMs > 0 &&
+                deltaMs < 4000 &&
+                isPlayingRef.current &&
+                !isTransitioning
+              ) {
+                statsAccumulatedMsRef.current += deltaMs;
+                const accumulated = statsAccumulatedMsRef.current;
+                const shouldCountPlay =
+                  statsPlayCountedRef.current !== statsTrack.id &&
+                  accumulated >= PLAY_COUNT_THRESHOLD_MS;
+                void recordListening(
+                  {
+                    id: statsTrack.id,
+                    title: statsTrack.title,
+                    artist: statsTrack.artist,
+                    albumName: (statsTrack as any).albumName ?? (statsTrack as any).album,
+                    thumbnail: statsTrack.thumbnail,
+                    artistId: statsTrack.artistId,
+                    albumId: (statsTrack as any).albumId,
+                  },
+                  deltaMs,
+                  shouldCountPlay,
+                );
+                // Feed the same verified-played delta to the scrobbler so
+                // paused/buffering time can never inflate a scrobble.
+                scrobblerService.recordProgress(deltaMs);
+                if (shouldCountPlay) statsPlayCountedRef.current = statsTrack.id;
+              } else if (deltaMs <= 0) {
+                // Track restarted / seeked backwards: reset accumulation.
+                statsAccumulatedMsRef.current = 0;
+                statsPlayCountedRef.current = null;
+              }
+            }
+            statsLastPositionRef.current = position;
+            // ── end sampler ──
+
+            // ── Fade / crossfade-lite ──
+            // Derived purely from this already-delivered tick; adds no
+            // subscription or timer. Cheap integer/float math per 250ms.
+            fadeService.onProgress(position, duration);
+            // ── end fade ──
+
             setPositionStable(position);
             setDurationStable(duration);
 
@@ -3052,6 +3177,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
      const subscription = AppState.addEventListener("change", (next) => {
        if (next === "background" || next === "inactive") {
          wasBackgrounded.current = true;
+         // Persist listening stats promptly when leaving the foreground.
+         void flushListeningStats();
+         // Drain queued scrobbles, but do NOT finalize the in-progress track:
+         // playback continues in the background, so the track-change event
+         // still owns that scrobble.
+         void scrobblerService.flushPendingOnly().catch(() => {});
        }
        if (next === "active" && wasBackgrounded.current) {
          wasBackgrounded.current = false;

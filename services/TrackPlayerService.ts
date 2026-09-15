@@ -24,6 +24,7 @@ import {
   getProviderOrigin,
   getProviderReferer,
 } from "../components/core/api";
+import { getInnertubeMediaHeaders } from "../modules/innertube";
 
 function resolveTrackSource(
   track: Pick<Track, "source" | "_isSoundCloud" | "_isJioSaavn">,
@@ -850,12 +851,24 @@ export class TrackPlayerService {
         Referer: "https://streamify-player.vercel.app/",
       });
     } else if (isYouTubeStream) {
-      Object.assign(headers, {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        Referer: getProviderReferer("youtube"),
-        Origin: getProviderOrigin("youtube"),
-      });
+      // Device-Innertube googlevideo URLs carry the client that minted them
+      // inside the URL itself — the media fetch must repeat THAT client's
+      // own headers, or googlevideo answers 403 / throttles to a crawl.
+      // The resolver exports them keyed by videoId; fall back to the old
+      // browser-UA shape for legacy API-resolved URLs.
+      const innertubeHeaders = track.id
+        ? getInnertubeMediaHeaders(track.id)
+        : null;
+      if (innertubeHeaders) {
+        Object.assign(headers, innertubeHeaders);
+      } else {
+        Object.assign(headers, {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          Referer: getProviderReferer("youtube"),
+          Origin: getProviderOrigin("youtube"),
+        });
+      }
     }
 
     // Add JioSaavn-specific headers if the URL is a direct (non-proxied)
@@ -960,7 +973,10 @@ export class TrackPlayerService {
       // googlevideo streams.
       userAgent:
         isYouTubeStream && !isBackendProxiedUrl
-          ? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+          ? (track.id
+              ? getInnertubeMediaHeaders(track.id)?.["User-Agent"]
+              : undefined) ??
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
           : undefined,
       contentType,
       pitchAlgorithm: PitchAlgorithm.Linear,

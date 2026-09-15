@@ -25,6 +25,7 @@
   <img src="https://img.shields.io/badge/Background-Built--in-2563EB?style=flat-square" alt="Background playback" />
   <img src="https://img.shields.io/badge/Locales-English%20%7C%20Persian-0F766E?style=flat-square" alt="Bilingual UI" />
   <img src="https://img.shields.io/badge/Audio-HLS%20%7C%20Track%20Player%20%7C%20Video%20Cache-0EA5E9?style=flat-square" alt="Audio stack" />
+  <a href="https://t.me/StreamifyPlayer" target="_blank"><img src="https://img.shields.io/badge/Telegram-Community-2AABEE?style=flat-square&logo=telegram&logoColor=white" alt="Streamify Telegram community" /></a>
 </p>
 
 <div align="center">

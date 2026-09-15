@@ -249,6 +249,7 @@ type LibraryViewMode = "grid" | "list";
 type LibraryArtworkKind =
   | "liked"
   | "history"
+  | "replay"
   | "music"
   | "playlist"
   | "image"
@@ -964,13 +965,25 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   const playlistItems = React.useMemo<LibraryDisplayItem[]>(
     () => [
       {
+        id: "replay",
+        title: "Replay",
+        subtitle: copy.playlist,
+        meta: copy.previouslyPlayed,
+        itemType: "collection",
+        imageShape: "rounded",
+        pinOrder: 0,
+        searchText: ["Replay", "stats", "listening"].join(" "),
+        artworkKind: "replay",
+        onPress: () => navigation.navigate("Replay" as never),
+      },
+      {
         id: "liked",
         title: copy.likedSongs,
         subtitle: copy.playlist,
         meta: formatSongCount(likedSongs.length),
         itemType: "collection",
         imageShape: "rounded",
-        pinOrder: 0,
+        pinOrder: 1,
         searchText: [
           copy.likedSongs,
           likedSongs.map((track) => track.title).join(" "),
@@ -987,7 +1000,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         meta: formatSongCount(previouslyPlayedSongs.length),
         itemType: "collection",
         imageShape: "rounded",
-        pinOrder: 1,
+        pinOrder: 2,
         searchText: [
           copy.previouslyPlayed,
           previouslyPlayedSongs.map((track) => track.title).join(" "),
@@ -1118,9 +1131,9 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   const activeItems = React.useMemo<LibraryDisplayItem[]>(() => {
     if (activeSection === null) {
       return [
-        ...playlistItems.slice(0, 2),
+        ...playlistItems.slice(0, 3),
         ...mixedLibraryItems,
-        ...playlistItems.slice(2),
+        ...playlistItems.slice(3),
       ];
     }
     if (activeSection === "Artists") return topArtistItems;
@@ -1259,11 +1272,13 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           colors={
             item.artworkKind === "liked"
               ? [colors.accent, colors.heroMid, colors.heroEnd]
-              : item.artworkKind === "artist"
-                ? [colors.surface1, colors.surface2, colors.surface3]
-                : item.artworkKind === "playlist"
-                  ? [colors.accent, colors.heroMid, colors.heroEnd]
-                  : ["#1a1a1a", "#404040", "#525252"]
+              : item.artworkKind === "replay"
+                ? ["#f43f5e", "#a21caf", "#4f46e5"]
+                : item.artworkKind === "artist"
+                  ? [colors.surface1, colors.surface2, colors.surface3]
+                  : item.artworkKind === "playlist"
+                    ? [colors.accent, colors.heroMid, colors.heroEnd]
+                    : ["#1a1a1a", "#404040", "#525252"]
           }
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -1294,7 +1309,9 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                   ? "heart"
                   : item.artworkKind === "history"
                     ? "back-in-time"
-                    : "music"
+                    : item.artworkKind === "replay"
+                      ? "infinity"
+                      : "music"
               }
               size={iconSize}
               color="white"
@@ -1775,23 +1792,17 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                   rowIndex * 2,
                   (rowIndex + 1) * 2,
                 );
-                const rowCards: Array<LibraryDisplayItem | null> = isRtl
-                  ? rowItems.length === 1
-                    ? [null, rowItems[0]]
-                    : [rowItems[1], rowItems[0]]
-                  : rowItems;
-
                 return (
                   <GridRow
                     key={`row-${rowIndex}`}
                     style={{
-                      flexDirection: "row",
+                      flexDirection: isRtl ? "row-reverse" : "row",
                       justifyContent: "space-between",
                       marginHorizontal: 0,
                       paddingHorizontal: 0,
                     }}
                   >
-                    {rowCards.map((item, columnIndex) => {
+                    {rowItems.map((item, columnIndex) => {
                       if (!item) return null;
                       return (
                         <CollectionCard

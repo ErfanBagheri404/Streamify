@@ -24,7 +24,14 @@
     "audiostreams_null": "No Audio Streams Found",
     "lyrics": "LYRICS",
     "caching": "Caching...",
-    "select_playlist": "Select Playlist"
+    "select_playlist": "Select Playlist",
+    "errors": {
+      "couldnt_load_lyrics": "Couldn't load lyrics"
+    },
+    "songCredits": "Song credits",
+    "noTrackLoaded": "No track loaded",
+    "noTrackSelected": "No track selected",
+    "selectToStart": "Select a track to start playing"
   },
   "upcoming": {
     "clear": "Clear Queue",
@@ -190,7 +197,23 @@
     "restore": "Restore Settings",
     "export": "Export Settings",
     "import": "Import Settings",
-    "reload": "Reload Page to apply changes"
+    "reload": "Reload Page to apply changes",
+    "scrobbling": "Scrobbling",
+    "scrobblingDescription": "Scrobble plays to Last.fm or ListenBrainz",
+    "connect": "Connect",
+    "crossfade": "Crossfade (fade in/out)",
+    "crossfadeDescription": "Smoothly fade volume at track boundaries",
+    "crossfadeSeconds": "Fade duration",
+    "crossfadeSecondsDescription": "Seconds of fade at each track boundary",
+    "tabAccount": "Account",
+    "tabPlayback": "Playback",
+    "tabAppearance": "Look",
+    "tabLibrary": "Library",
+    "tabAbout": "About",
+    "waveformSeek": "Waveform seek bar",
+    "waveformSeekDescription": "Show audio waveform on the seek bar (local/cached tracks, Android)",
+    "replayGain": "ReplayGain normalization",
+    "replayGainDescription": "Equalize loudness across tracks using embedded ReplayGain tags"
   },
   "piped": {
     "enter_auth": "Enter the Piped Authentication Instance API URL :",
@@ -826,6 +849,8 @@
   "settings.autoScrollSyncedLyricsDescription": "Keep the active lyric centered as the song plays.",
   "settings.keyboardShortcuts": "Keyboard Shortcuts",
   "settings.keyboardShortcutsDescription": "Use Space to play or pause, Left and Right arrows to seek, Up and Down to change volume, and F to toggle Now Playing.",
+  "settings.haptics": "Haptic Feedback",
+  "settings.hapticsDescription": "Vibrate slightly on player controls like play, pause, and skip.",
   "settings.seekJumpLength": "Seek Jump Length",
   "settings.seekJumpLengthDescription": "Choose how far forward or backward shortcut-based seeking should move.",
   "settings.activeSetup": "Active Setup",
@@ -929,6 +954,11 @@
   "settings.accountSignedOut": "Signed out successfully.",
   "settings.appUpdates": "App Updates",
   "settings.appUpdatesDescription": "Check for a newer Streamify APK and reopen a dismissed update whenever you want.",
+  "settings.communityTitle": "Join our community",
+  "settings.communityDescription": "Release news, support, and feedback on Telegram — plus the Streamify GitHub repository.",
+  "settings.communityOpen": "Open",
+  "settings.communityTelegram": "Telegram",
+  "settings.communityGithub": "GitHub",
   "settings.checkForUpdates": "Check For Updates",
   "settings.checkForUpdatesDescription": "You are on {currentVersion}. If a newer build exists, Streamify reopens the download modal here.",
   "settings.updateReadyDescription": "You are on {currentVersion}. Streamify {version} is ready to download again.",
@@ -953,6 +983,7 @@
   "source.youtubemusic": "YouTube Music",
   "source.soundcloud": "SoundCloud",
   "source.jiosaavn": "JioSaavn",
+  "source.local": "On device",
   "source.itunes": "iTunes",
   "source.deezer": "Deezer",
   "source.spotify": "Spotify",
@@ -991,5 +1022,51 @@
   "theme.blush": "Blush",
   "onboarding.headline": "ONE ACCOUNT\nFOR ALL THE\nMUSIC IN THE\nWORLD",
   "onboarding.getStarted": "Get Started",
-  "onboarding.skip": "Skip"
+  "onboarding.skip": "Skip",
+  "playerActions": {
+    "sleepTimer": "Sleep timer",
+    "playbackSpeed": "Playback speed"
+  },
+  "sleepTimer": {
+    "off": "Off",
+    "active": "Pausing in",
+    "endOfTrack": "End of current track",
+    "endOfTrackActive": "Pausing after this track",
+    "cancel": "Cancel"
+  },
+  "lyricsSearch": {
+    "title": "Search lyrics",
+    "placeholder": "Artist and song name",
+    "search": "Search",
+    "empty": "No lyrics found for that search.",
+    "synced": "Synced",
+    "plain": "Plain"
+  },
+  "scrobble": {
+    "title": "Scrobbling",
+    "listenbrainzToken": "ListenBrainz user token",
+    "listenbrainzHelp": "Paste your user token from listenbrainz.org settings (Profile, User Token).",
+    "save": "Save",
+    "savedConnected": "Saved, scrobbling enabled",
+    "cleared": "Token cleared",
+    "connected": "Connected"
+  },
+  "actions.cancel": "Cancel",
+  "actions.save": "Save",
+  "replay.title": "Replay",
+  "replay.period_month": "This month",
+  "replay.period_year": "This year",
+  "replay.period_alltime": "All time",
+  "replay.listened": "listened",
+  "replay.plays": "plays",
+  "replay.biggestDay": "biggest day",
+  "replay.empty": "Nothing yet — play something!",
+  "replay.listeningClock": "Listening clock",
+  "replay.topArtists": "Top artists",
+  "replay.topTracks": "Top tracks",
+  "replay.shareHeader": "🎧 Streamify Replay — {period}",
+  "replay.shareSummary": "{time} listened · {plays} plays",
+  "replay.shareTopArtist": "Top artist: {artist}",
+  "replay.shareTopTracks": "Top tracks:",
+  "replay.sharePeak": "Peak listening time: {hour}"
 }

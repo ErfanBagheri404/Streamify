@@ -21,7 +21,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Entypo } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
-import { usePlayer, usePlaybackProgress } from "../contexts/PlayerContext";
+import { usePlayer, usePlaybackProgress, type Track } from "../contexts/PlayerContext";
 import { formatTime } from "../utils/formatters";
 import { CachedLyrics, lyricsService } from "../modules/lyricsService";
 import {
@@ -31,11 +31,20 @@ import {
 import { Share } from "react-native";
 import { normalizeYouTubeThumbnailUrl, sanitizeImageUrl } from "./core/image";
 import { SliderSheet } from "./SliderSheet";
+import { Waveform } from "./Waveform";
+import { getWaveformPeaks, waveformSupported } from "../modules/waveformService";
+import { SleepTimerSheet } from "./SleepTimerSheet";
+import { PlaybackSpeedSheet } from "./PlaybackSpeedSheet";
+import { LyricsSearchSheet } from "./LyricsSearchSheet";
+import { buildRadioQueue } from "../modules/radioService";
+import { buildSmartQueue, loadPlayCounts } from "../modules/aiPlaylistService";
 import { StorageService, Playlist } from "../utils/storage";
 import { useAppSettings } from "../hooks/useAppSettings";
 import { useAppLanguage } from "../hooks/useAppLanguage";
 import { useTheme, withOpacity } from "../hooks/useTheme";
 import { getAppFontFamily, getTextDirectionStyle } from "../utils/fonts";
+import { Haptic, playHaptic } from "../utils/haptics";
+import { usePlaybackSpeedStore } from "../services/PlaybackSpeedService";
 
 const { Animated, PanResponder } = require("react-native");
 const LYRICS_MANUAL_SCROLL_HOLD_MS = 1500;
@@ -426,6 +435,31 @@ const TimeText = styled.Text`
   font-weight: 500;
 `;
 
+/**
+ * Tiny "1.25×" chip between the time labels. Renders nothing at 1x so the
+ * seek bar layout is byte-for-byte identical to before during normal playback.
+ */
+const SpeedBadge: React.FC<{ rate: number; onPress: () => void }> = ({ rate, onPress }) => {
+  if (Math.abs(rate - 1) < 0.001) {
+    return null;
+  }
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      style={{
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: "rgba(255,255,255,0.35)",
+      }}
+    >
+      <Text style={{ color: "#ffffff", fontSize: 12, fontWeight: "600" }}>{`${rate}×`}</Text>
+    </TouchableOpacity>
+  );
+};
+
 const Controls = styled.View`
   flex-direction: row;
   align-items: center;
@@ -577,6 +611,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     canToggleShuffle,
     cancelLoadingState,
     playbackError,
+    likedSongs,
   } = usePlayer();
   // position/duration tick every second; reading them from the dedicated
   // progress context keeps this modal as the only other progress subscriber.
@@ -590,6 +625,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [seekBarWidth, setSeekBarWidth] = useState(0);
   const [pendingSeekValue, setPendingSeekValue] = useState<number | null>(null);
   const [isSeekPending, setIsSeekPending] = useState(false);
+  // Waveform seek bar (feature: local + fully-cached tracks, Android only).
+  const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
   const [isHighResArtworkReady, setIsHighResArtworkReady] = useState(false);
 
   const appState = useRef(AppState.currentState);
@@ -612,6 +649,11 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [lyricsManualModeUntil, setLyricsManualModeUntil] = useState(0);
   const [lyricsViewportHeight, setLyricsViewportHeight] = useState(0);
   const [isOptionsVisible, setIsOptionsVisible] = useState(false);
+  const [showSleepTimerSheet, setShowSleepTimerSheet] = useState(false);
+  const [showSpeedSheet, setShowSpeedSheet] = useState(false);
+  const [showLyricsSearchSheet, setShowLyricsSearchSheet] = useState(false);
+  const speedRate = usePlaybackSpeedStore((state) => state.rate);
+  const speedBadgeRate = Math.abs(speedRate - 1) < 0.001 ? 1 : speedRate;
   const [showPlaylistSelection, setShowPlaylistSelection] = useState(false);
   const [isSuggestionPanelVisible, setIsSuggestionPanelVisible] =
     useState(true);
@@ -803,6 +845,21 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
         icon: "time-outline",
       },
       {
+        key: "Playback speed",
+        label: language === "fa" ? "سرعت پخش" : "Playback speed",
+        icon: "speedometer-outline",
+      },
+      {
+        key: "Search lyrics",
+        label: language === "fa" ? "جستجوی متن آهنگ" : "Search lyrics",
+        icon: "search-outline",
+      },
+      {
+        key: "Smart queue from library",
+        label: language === "fa" ? "صف پخش هوشمند از کتابخانه" : "Smart queue from library",
+        icon: "sparkles-outline",
+      },
+      {
         key: "Go to song radio",
         label: language === "fa" ? "رفتن به رادیوی آهنگ" : "Go to song radio",
         icon: "radio-outline",
@@ -984,6 +1041,28 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     }
   }, [pendingSeekValue, position]);
 
+  // Waveform: load peaks when track changes (Android only, feature toggle).
+  useEffect(() => {
+    if (!settings.waveformSeekBar || !waveformSupported || !currentTrack) {
+      setWaveformPeaks([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const peaks = await getWaveformPeaks(currentTrack.id);
+        if (!cancelled) {
+          setWaveformPeaks(peaks ?? []);
+        }
+      } catch {
+        if (!cancelled) {
+          setWaveformPeaks([]);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentTrack?.id, settings.waveformSeekBar, waveformSupported]);
+
   const animateSheet = (state: "closed" | "half" | "full") => {
     let toValue = SHEET_CLOSED_TOP;
     if (state === "closed") {
@@ -1117,7 +1196,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     }
   };
 
-  const handleOptionPress = (option: string) => {
+  const handleOptionPress = async (option: string) => {
     console.log("[FullPlayerModal] Option selected:", option);
 
     if (option === "Add to other playlist") {
@@ -1135,6 +1214,65 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
         }).catch((error) => {
           console.log("[FullPlayerModal] Share failed:", error);
         });
+      }
+      return;
+    }
+
+    if (option === "Sleep timer") {
+      setShowSleepTimerSheet(true);
+      return;
+    }
+
+    if (option === "Playback speed") {
+      setShowSpeedSheet(true);
+      return;
+    }
+
+    if (option === "Search lyrics") {
+      setShowLyricsSearchSheet(true);
+      return;
+    }
+
+    if (option === "Smart queue from library") {
+      const seedTrack = currentTrack;
+      if (!seedTrack) {
+        return;
+      }
+      try {
+        console.log("[FullPlayerModal] Smart queue for:", seedTrack.title);
+        const playCounts = await loadPlayCounts();
+        const smartQueue = buildSmartQueue({
+          seed: seedTrack,
+          library: likedSongs,
+          size: 20,
+          playCounts,
+        });
+        // Empty result = library too small to say anything — fall through to
+        // the remote radio path so the user still gets a queue.
+        if (smartQueue.length > 0) {
+          await playTrack(seedTrack, [seedTrack, ...smartQueue], 0);
+          return;
+        }
+        const radioQueue = await buildRadioQueue(seedTrack);
+        await playTrack(seedTrack, radioQueue, 0);
+      } catch (error) {
+        console.log("[FullPlayerModal] Smart queue failed:", error);
+      }
+      return;
+    }
+    if (option === "Go to song radio") {
+      const seedTrack = currentTrack;
+      if (!seedTrack) {
+        return;
+      }
+      console.log("[FullPlayerModal] Starting radio for:", seedTrack.title);
+      try {
+        const radioQueue = await buildRadioQueue(seedTrack);
+        // Hand the whole queue to the proven playTrack path — the seed keeps
+        // playing (same track, same position) while the queue gains new tracks.
+        await playTrack(seedTrack, radioQueue, 0);
+      } catch (radioError) {
+        console.log("[FullPlayerModal] Radio build failed:", radioError);
       }
       return;
     }
@@ -1416,21 +1554,25 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   );
 
   const handlePlayPause = async () => {
+    playHaptic(isPlaying ? Haptic.Pause : Haptic.Resume);
     await playPause();
   };
 
   const handleNext = async () => {
     console.log("[FullPlayerModal] Next button pressed");
+    playHaptic(Haptic.SkipNext);
     await nextTrack();
   };
 
   const handlePrevious = async () => {
     console.log("[FullPlayerModal] Previous button pressed");
+    playHaptic(Haptic.SkipPrevious);
     await previousTrack();
   };
 
   const handleLike = () => {
     if (currentTrack) {
+      playHaptic(isSongLiked(currentTrack.id) ? Haptic.ToggleOff : Haptic.ToggleOn);
       toggleLikeSong(currentTrack);
     }
   };
@@ -1755,6 +1897,23 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
               <ProgressContainer>
                 <ProgressBarContainer>
+                  {settings.waveformSeekBar && waveformPeaks.length > 0 ? (
+                  <Waveform
+                    peaks={waveformPeaks}
+                    seekRatio={seekRatio}
+                    progressRatio={seekRatio}
+                    isSeeking={isSeeking}
+                    onSeek={(ratio) => commitSeekValue(ratio * effectiveDurationSeconds)}
+                    onDrag={(ratio) => previewSeekValue(ratio * effectiveDurationSeconds)}
+                    onDragStart={(ratio) => previewSeekValue(ratio * effectiveDurationSeconds)}
+                    onDragEnd={() => {
+                      setIsSeeking(false);
+                      setSeekValue(position >= 0 ? position : 0);
+                    }}
+                    canSeek={canSeek}
+                    accessibilityLabel={language === "fa" ? "تغییر موقعیت پخش" : "Seek playback"}
+                  />
+                  ) : (
                   <View
                     onLayout={handleSeekBarLayout}
                     accessible
@@ -1810,6 +1969,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                       }}
                     />
                   </View>
+                  )}
                 </ProgressBarContainer>
                 <TimeContainer>
                   <TimeText
@@ -1817,6 +1977,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   >
                     {formatTime((displayPositionSeconds || 0) * 1000)}
                   </TimeText>
+                  <SpeedBadge rate={speedBadgeRate} onPress={() => setShowSpeedSheet(true)} />
                   <TimeText
                     style={{ fontFamily: getAppFontFamily(isRtl, "medium") }}
                   >
@@ -2658,6 +2819,37 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
             </ScrollView>
           </PlaylistSelectionContainer>
         </PlaylistSelectionModal>
+
+        <SleepTimerSheet
+          visible={showSleepTimerSheet}
+          onClose={() => setShowSleepTimerSheet(false)}
+        />
+
+        <PlaybackSpeedSheet
+          visible={showSpeedSheet}
+          onClose={() => setShowSpeedSheet(false)}
+        />
+
+        <LyricsSearchSheet
+          visible={showLyricsSearchSheet}
+          track={currentTrack}
+          onClose={() => setShowLyricsSearchSheet(false)}
+          onApply={(result) => {
+            if (!currentTrack) {
+              return;
+            }
+            void lyricsService
+              .applyLyricsSearchResult(currentTrack, result)
+              .then((payload) => {
+                setLyricsText(payload.lyrics);
+                setIsSyncedLyrics(Boolean(payload.isSynced));
+                setLyricsError(null);
+              })
+              .catch(() => {
+                setLyricsError(copy.manualSearchFailed);
+              });
+          }}
+        />
       </ModalContainer>
     </Modal>
   );

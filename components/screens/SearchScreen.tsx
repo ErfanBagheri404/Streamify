@@ -20,6 +20,11 @@ import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
 import StreamItem, { StreamItemSkeleton } from "../StreamItem";
 import { searchAPI } from "../../modules/searchAPI";
+import {
+  isLocalMediaSupported,
+  requestStoragePermission,
+  scanLocalTracks,
+} from "../../modules/localMedia";
 import { Screen } from "../ui/Screen";
 import { Chip } from "../ui/Chip";
 import SourceIcon from "../ui/SourceIcon";
@@ -95,12 +100,13 @@ const toPlayableSearchTrack = (item: any) => ({
     item.artistSource || item.playbackSource || item.source || "youtube",
   duration: parseInt(item.duration) || 0,
   thumbnail: item.thumbnailUrl || item.img,
-  audioUrl: undefined,
+  audioUrl: item.source === "local" ? item.href : undefined,
   url: item.href,
   source: item.playbackSource || item.source || "youtube",
   providerHint: item.providerHint,
   _isSoundCloud: item.source === "soundcloud",
   _isJioSaavn: item.playbackSource === "jiosaavn" || item.source === "jiosaavn",
+  _isLocal: item.source === "local",
 });
 
 const getDefaultFilterForSource = (source: SourceType): string => {
@@ -350,7 +356,8 @@ type SourceType =
   | "youtube"
   | "youtubemusic"
   | "soundcloud"
-  | "jiosaavn";
+  | "jiosaavn"
+  | "local";
 
 // --- Interfaces ---
 
@@ -372,7 +379,8 @@ interface SearchResult {
     | "soundcloud"
     | "jiosaavn"
     | "youtube_channel"
-    | "youtubemusic";
+    | "youtubemusic"
+    | "local";
   playbackSource?: "youtube" | "youtubemusic" | "soundcloud" | "jiosaavn";
   providerHint?: "itunes" | "deezer";
   type?: "song" | "album" | "artist" | "playlist" | "unknown";
@@ -389,6 +397,7 @@ const SEARCH_SOURCE_OPTIONS: SearchSourceOption[] = [
   { id: "youtubemusic", labelKey: "source.youtubemusic", color: "#ff0000" },
   { id: "soundcloud", labelKey: "source.soundcloud", color: "#ff7700" },
   { id: "jiosaavn", labelKey: "source.jiosaavn", color: "#1fa18a" },
+  { id: "local", labelKey: "source.local", color: "#5e9eff" },
 ];
 
 const SEARCH_CATEGORY_IMAGES = {
@@ -606,6 +615,7 @@ export default function SearchScreen({ navigation }: any) {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [localPermissionDenied, setLocalPermissionDenied] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMoreResults, setHasMoreResults] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -981,6 +991,45 @@ export default function SearchScreen({ navigation }: any) {
             20,
           );
           paginationRef.current.nextpage = null;
+        } else if (requestSource === "local") {
+          // Device library. No pagination — MediaStore scans are cheap enough
+          // to filter fully on-device.
+          if (!isLocalMediaSupported) {
+            results = [];
+          } else {
+            const granted = await requestStoragePermission();
+            if (!granted) {
+              setLocalPermissionDenied(true);
+              results = [];
+            } else {
+              setLocalPermissionDenied(false);
+              const needle = trimmedQuery.toLowerCase();
+              const all = await scanLocalTracks(400);
+              results = all
+                .filter(
+                  (t) =>
+                    t.title.toLowerCase().includes(needle) ||
+                    t.artist.toLowerCase().includes(needle) ||
+                    (t.album && t.album.toLowerCase().includes(needle)),
+                )
+                .slice(0, 40)
+                .map((t) => ({
+                  id: `local-${t.id}`,
+                  title: t.title,
+                  author: t.artist,
+                  albumName: t.album,
+                  duration: String(Math.floor(t.durationMs / 1000)),
+                  thumbnailUrl: t.artworkUri,
+                  img: t.artworkUri,
+                  href: t.contentUri,
+                  source: "local" as const,
+                  type: "song" as const,
+                }));
+            }
+            paginationRef.current.nextpage = null;
+            paginationRef.current.hasMore = false;
+            setHasMoreResults(false);
+          }
         } else if (requestSource === "soundcloud") {
           // SoundCloud Search
           results = await searchAPI.searchWithSoundCloud(
@@ -1744,6 +1793,13 @@ export default function SearchScreen({ navigation }: any) {
 
       // Debounce suggestions (200ms - faster suggestions)
       typingTimeoutRef.current = setTimeout(async () => {
+        // Local (on-device) source has no suggestion backend — skip the
+        // network call entirely instead of showing junk suggestions.
+        if (selectedSource === "local") {
+          setSuggestions([]);
+          setShowSuggestions(false);
+          return;
+        }
         try {
           setIsLoadingSuggestions(true);
           setShowSuggestions(true);
@@ -2161,7 +2217,9 @@ export default function SearchScreen({ navigation }: any) {
               <NoResultsText
                 style={[{ color: colors.muted }, centeredLocalizedTextStyle]}
               >
-                {copy.noResults}
+                {localPermissionDenied && selectedSource === "local"
+                  ? "Streamify needs permission to read audio files on this device."
+                  : copy.noResults}
               </NoResultsText>
             </Animated.View>
           )}

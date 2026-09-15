@@ -1,0 +1,127 @@
+/********************************************************************
+ *  FadeService.ts - Volume ramping without a second player
+ *
+ *  True crossfade needs two simultaneous decoders, which doubles buffering
+ *  and battery cost for every listener. Instead we ramp the single player's
+ *  volume: a short fade-in at the start of a track and a fade-out over the
+ *  last seconds, so track changes stop being hard cuts.
+ *
+ *  Perf contract:
+ *  - Zero subscriptions. It is driven by the progress event PlayerContext
+ *    already receives (4 ticks/second).
+ *  - setVolume() is called ONLY when the rounded target changes. Outside the
+ *    fade windows the target is exactly 1, and after the one call that resets
+ *    it we do nothing at all — steady-state playback issues zero native
+ *    volume calls.
+ *  - No timers, no state stored on the JS heap beyond three primitives.
+ *******************************************************************/
+import TrackPlayer from "../utils/safeTrackPlayer";
+
+const internal = {
+  enabled: false,
+  seconds: 4,
+  /** Last volume we told the native player, rounded to 2 decimals. */
+  lastApplied: null as number | null,
+  /** Volume the user/UI requested; fades are applied relative to this. */
+  baseVolume: 1,
+  /** ReplayGain linear factor (1 = none). Multiplies baseVolume. */
+  trackGain: 1,
+  /** ReplayGain master toggle. */
+  gainEnabled: false,
+};
+
+/** Effective reference level: user volume × track gain (when enabled). */
+function refLevel(): number {
+  return internal.gainEnabled
+    ? Math.max(0, Math.min(1, internal.baseVolume * internal.trackGain))
+    : internal.baseVolume;
+}
+
+const round2 = (v: number): number => Math.round(v * 100) / 100;
+
+async function applyVolume(target: number): Promise<void> {
+  const rounded = round2(target);
+  if (internal.lastApplied === rounded) {
+    return; // unchanged — skip the native round-trip entirely
+  }
+  internal.lastApplied = rounded;
+  try {
+    await TrackPlayer.setVolume(rounded);
+  } catch {
+    // Volume is cosmetic; a failed call must never surface as a playback error.
+  }
+}
+
+export const fadeService = {
+  /** Sync the enabled state / window from settings. Cheap, call on change. */
+  configure(enabled: boolean, seconds: number, baseVolume = internal.baseVolume): void {
+    internal.enabled = enabled;
+    internal.seconds = Math.max(1, Math.min(12, seconds || 4));
+    internal.baseVolume = baseVolume;
+    // When turning off, hand control back to the player's own volume once.
+    if (!enabled && internal.lastApplied !== round2(refLevel())) {
+      void applyVolume(refLevel());
+    }
+  },
+
+  setBaseVolume(volume: number): void {
+    internal.baseVolume = Math.max(0, Math.min(1, volume));
+    // Outside a fade the base volume is what should be audible right now.
+    if (!internal.enabled) {
+      void applyVolume(refLevel());
+    }
+  },
+
+  /** ReplayGain support (feature f12). gain = linear factor, 1 = none. */
+  setTrackGain(gain: number, enabled: boolean): void {
+    internal.trackGain = Math.max(0.1, Math.min(3.16, gain || 1));
+    internal.gainEnabled = enabled;
+    // Re-assert immediately so the change is audible without waiting for a tick.
+    if (!internal.enabled) {
+      void applyVolume(refLevel());
+    }
+  },
+
+  /**
+   * Called from the existing PlaybackProgressUpdated handler.
+   * position/duration in seconds.
+   */
+  onProgress(position: number, duration: number): void {
+    if (!internal.enabled) {
+      if (internal.lastApplied !== round2(refLevel())) {
+        void applyVolume(refLevel());
+      }
+      return;
+    }
+
+    // Track length unknown (live streams) — hold at base volume.
+    if (!duration || duration <= 0) {
+      if (internal.lastApplied !== round2(refLevel())) {
+        void applyVolume(refLevel());
+      }
+      return;
+    }
+
+    const window = Math.min(internal.seconds, duration / 3);
+    const remaining = duration - position;
+
+    let target: number;
+    if (position < window) {
+      // Fade in over the first `window` seconds.
+      target = refLevel() * Math.max(0.25, position / window);
+    } else if (remaining <= window && remaining > 0) {
+      // Fade out over the last `window` seconds, stopping above silence so
+      // the hand-off to the next track never bottoms out into dead air.
+      target = refLevel() * Math.max(0.25, remaining / window);
+    } else {
+      target = refLevel();
+    }
+
+    void applyVolume(target);
+  },
+
+  /** Reset to the base volume at track change / pause. */
+  reset(): void {
+    void applyVolume(refLevel());
+  },
+};
