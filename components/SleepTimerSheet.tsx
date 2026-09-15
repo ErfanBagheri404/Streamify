@@ -127,14 +127,15 @@ export const SleepTimerSheet: React.FC<SleepTimerSheetProps> = ({ visible, onClo
   const accent = colors.accent;
 
   return (
+
     <SheetModal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType="none"
       onRequestClose={onClose}
     >
       <SheetBackdrop activeOpacity={1} onPress={onClose} />
-      <SheetBody style={{ backgroundColor: colors.background }}>
+      <SheetBody style={{ backgroundColor: colors.background, paddingBottom: 48 }}>
         <SheetHeader>
           <SheetTitle
             style={{
@@ -166,7 +167,6 @@ export const SleepTimerSheet: React.FC<SleepTimerSheetProps> = ({ visible, onClo
             <TouchableOpacity
               onPress={() => {
                 sleepTimerService.clear();
-                onClose();
               }}
             >
               <Text
@@ -191,7 +191,6 @@ export const SleepTimerSheet: React.FC<SleepTimerSheetProps> = ({ visible, onClo
                 activeColor={accent}
                 onPress={() => {
                   sleepTimerService.startMinutes(minutes);
-                  onClose();
                 }}
               >
                 <PresetLabel
@@ -213,7 +212,6 @@ export const SleepTimerSheet: React.FC<SleepTimerSheetProps> = ({ visible, onClo
           activeColor={accent}
           onPress={() => {
             sleepTimerService.startEndOfTrack();
-            onClose();
           }}
         >
           <Text

@@ -25,6 +25,7 @@ import { SectionHeader as UiSectionHeader } from "../ui/SectionHeader";
 import { MutedText } from "../ui/Text";
 import { AccentButton } from "../ui/Button";
 import { useAppLanguage } from "../../hooks/useAppLanguage";
+import { isLocalMediaSupported } from "../../modules/localMedia";
 import { useTheme, withOpacity } from "../../hooks/useTheme";
 import { PlaylistCreateModal } from "../PlaylistCreateModal";
 import { sanitizeImageUrl } from "../core/image";
@@ -253,7 +254,8 @@ type LibraryArtworkKind =
   | "music"
   | "playlist"
   | "image"
-  | "artist";
+  | "artist"
+  | "local";
 
 type LibraryDisplayItem = {
   id: string;
@@ -1010,6 +1012,29 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         artworkKind: "history",
         onPress: handlePreviouslyPlayedPress,
       },
+      {
+        id: "local-files",
+        title: language === "fa" ? "فایل‌های محلی" : "Local files",
+        subtitle: copy.playlist,
+        meta: isLocalMediaSupported
+          ? language === "fa"
+            ? "موسیقی روی این دستگاه"
+            : "Music on this device"
+          : language === "fa"
+            ? "پشتیبانی نمی‌شود"
+            : "Not supported",
+        itemType: "collection",
+        imageShape: "rounded",
+        pinOrder: 3,
+        searchText: [
+          language === "fa" ? "فایل‌های محلی" : "Local files",
+          "local",
+          "device",
+          "storage",
+        ].join(" "),
+        artworkKind: "local",
+        onPress: () => navigation.navigate("LocalFiles" as never),
+      },
       ...playlists.map((playlist) => {
         const artworkUri = getPlaylistArtworkUri(playlist);
         return {
@@ -1272,8 +1297,11 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           colors={
             item.artworkKind === "liked"
               ? [colors.accent, colors.heroMid, colors.heroEnd]
+
               : item.artworkKind === "replay"
-                ? ["#f43f5e", "#a21caf", "#4f46e5"]
+              ? ["#f43f5e", "#a21caf", "#4f46e5"]
+              : item.artworkKind === "local"
+                ? ["#059669", "#10b981", "#34d399"]
                 : item.artworkKind === "artist"
                   ? [colors.surface1, colors.surface2, colors.surface3]
                   : item.artworkKind === "playlist"
@@ -1295,6 +1323,14 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
               name="folder-open-outline"
               size={iconSize}
               color={colors.accentContrast}
+            />
+
+
+          ) : item.artworkKind === "local" ? (
+            <Ionicons
+              name="albums-outline"
+              size={iconSize}
+              color={colors.foreground}
             />
           ) : item.artworkKind === "artist" ? (
             <Ionicons

@@ -2438,7 +2438,9 @@ const styles = StyleSheet.create({
   },
   filterRowContent: {
     paddingHorizontal: 0,
+    paddingEnd: 16,
     alignItems: "center",
+    gap: 8,
   },
   filterRowSpacing: {
     paddingHorizontal: 16,
@@ -2449,6 +2451,7 @@ const styles = StyleSheet.create({
     height: 32,
     minHeight: 32,
     marginEnd: 0,
+    marginStart: 8,
     paddingHorizontal: 10,
     alignSelf: "center",
   },

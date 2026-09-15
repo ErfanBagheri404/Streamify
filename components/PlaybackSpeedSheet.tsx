@@ -79,9 +79,10 @@ export const PlaybackSpeedSheet: React.FC<PlaybackSpeedSheetProps> = ({ visible,
   const accent = colors.accent;
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+
+    <Modal visible transparent animationType="none" onRequestClose={onClose}>
       <SheetBackdrop activeOpacity={1} onPress={onClose} />
-      <SheetBody style={{ backgroundColor: colors.background }}>
+      <SheetBody style={{ backgroundColor: colors.background, paddingBottom: 48 }}>
         <SheetHeader>
           <SheetTitle
             style={{
@@ -108,7 +109,6 @@ export const PlaybackSpeedSheet: React.FC<PlaybackSpeedSheetProps> = ({ visible,
                 activeColor={accent}
                 onPress={() => {
                   void playbackSpeedService.setRate(preset);
-                  onClose();
                 }}
               >
                 <PresetLabel

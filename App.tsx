@@ -67,6 +67,7 @@ import LibraryScreen from "./components/screens/LibraryScreen";
 import { LikedSongsScreen } from "./components/screens/LikedSongsScreen";
 import { PreviouslyPlayedScreen } from "./components/screens/PreviouslyPlayedScreen";
 import { ReplayScreen } from "./components/screens/ReplayScreen";
+import { LocalFilesScreen } from "./components/screens/LocalFilesScreen";
 import { AlbumPlaylistScreen } from "./components/screens/AlbumPlaylistScreen";
 import PlayerScreen from "./components/screens/PlayerScreen";
 import ArtistScreen from "./components/screens/ArtistScreen";
@@ -522,6 +523,18 @@ function AppShell() {
           <Stack.Screen
             name="PreviouslyPlayed"
             component={PreviouslyPlayedScreen}
+            options={{
+              animation: "slide_from_right",
+              animationDuration: 200,
+              gestureEnabled: true,
+              gestureDirection: "horizontal",
+              contentStyle: { backgroundColor: colors.background },
+            }}
+          />
+
+          <Stack.Screen
+            name="LocalFiles"
+            component={LocalFilesScreen}
             options={{
               animation: "slide_from_right",
               animationDuration: 200,

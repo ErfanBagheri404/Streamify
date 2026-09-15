@@ -18,9 +18,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const LASTFM_API = "https://ws.audioscrobbler.com/2.0/";
 const LISTENBRAINZ_API = "https://api.listenbrainz.org";
 
-// Injected per build. An empty string disables the Last.fm provider.
+// Injected per build. An empty string disables the Last.fm provider unless
+// the user pastes their own key in the ScrobbleSheet (persisted below).
 const LASTFM_API_KEY = "";
 const LASTFM_SHARED_SECRET = "";
+const SETTINGS_KEY_LASTFM_USER_KEY = "scrobble_lastfm_user_api_key";
+const SETTINGS_KEY_LASTFM_USER_SECRET = "scrobble_lastfm_user_secret";
 
 const SETTINGS_KEY_LASTFM_SK = "scrobble_lastfm_session_key";
 const SETTINGS_KEY_LBZ = "scrobble_listenbrainz_token";
@@ -41,9 +44,12 @@ interface ScrobbleEntry {
 
 type ScrobbleProvider = "lastfm" | "listenbrainz";
 
+
 const internal = {
   lastfmSessionKey: null as string | null,
   listenbrainzToken: null as string | null,
+  lastfmUserKey: null as string | null,
+  lastfmUserSecret: null as string | null,
   flushTimer: null as ReturnType<typeof setInterval> | null,
   pending: [] as ScrobbleEntry[],
   active: null as ScrobbleEntry | null,
@@ -59,8 +65,17 @@ function debug(...args: unknown[]) {
 
 // --- Last.fm (needs api_key + session key + signature) -----------------------
 
+
+/** User-pasted key wins; build-time constant is the fallback. */
+function lastfmApiKey(): string {
+  return internal.lastfmUserKey || LASTFM_API_KEY;
+}
+function lastfmSecret(): string {
+  return internal.lastfmUserSecret || LASTFM_SHARED_SECRET;
+}
+
 const lastfmEnabled = (): boolean =>
-  Boolean(LASTFM_API_KEY && internal.lastfmSessionKey);
+  Boolean(lastfmApiKey() && lastfmSecret() && internal.lastfmSessionKey);
 
 async function lastfmSignedCall(method: string, params: Record<string, string>): Promise<boolean> {
   if (!lastfmEnabled()) {
@@ -72,7 +87,8 @@ async function lastfmSignedCall(method: string, params: Record<string, string>):
     const body = new URLSearchParams({
       method,
       format: "json",
-      api_key: LASTFM_API_KEY,
+
+      api_key: lastfmApiKey(),
       sk: internal.lastfmSessionKey || "",
       ...params,
     });
@@ -196,12 +212,17 @@ export const scrobblerService = {
     }
     internal.initialized = true;
     try {
-      const [sk, lbz] = await Promise.all([
+  
+    const [sk, lbz, lfmKey, lfmSecret] = await Promise.all([
         AsyncStorage.getItem(SETTINGS_KEY_LASTFM_SK),
         AsyncStorage.getItem(SETTINGS_KEY_LBZ),
+        AsyncStorage.getItem(SETTINGS_KEY_LASTFM_USER_KEY),
+        AsyncStorage.getItem(SETTINGS_KEY_LASTFM_USER_SECRET),
       ]);
       internal.lastfmSessionKey = sk || null;
       internal.listenbrainzToken = lbz || null;
+      internal.lastfmUserKey = lfmKey || null;
+      internal.lastfmUserSecret = lfmSecret || null;
       debug("Credentials loaded:", {
         lastfm: lastfmEnabled(),
         listenbrainz: lbzEnabled(),
@@ -362,7 +383,29 @@ export const scrobblerService = {
     await flushPending();
   },
 
+
   async getEnabledProviders(): Promise<{ lastfm: boolean; listenbrainz: boolean }> {
     return { lastfm: lastfmEnabled(), listenbrainz: lbzEnabled() };
+  },
+
+  async getLastfmCreds(): Promise<{ apiKey: string | null; secret: string | null }> {
+    return { apiKey: internal.lastfmUserKey, secret: internal.lastfmUserSecret };
+  },
+
+  async setLastfmCreds(apiKey: string | null, secret: string | null): Promise<void> {
+    internal.lastfmUserKey = apiKey || null;
+    internal.lastfmUserSecret = secret || null;
+    if (apiKey) {
+      await AsyncStorage.setItem(SETTINGS_KEY_LASTFM_USER_KEY, apiKey);
+    } else {
+      await AsyncStorage.removeItem(SETTINGS_KEY_LASTFM_USER_KEY);
+    }
+    if (secret) {
+      await AsyncStorage.setItem(SETTINGS_KEY_LASTFM_USER_SECRET, secret);
+    } else {
+      await AsyncStorage.removeItem(SETTINGS_KEY_LASTFM_USER_SECRET);
+    }
+    this.startFlushTimer();
+    debug("Last.fm user creds", apiKey ? "set" : "cleared");
   },
 };

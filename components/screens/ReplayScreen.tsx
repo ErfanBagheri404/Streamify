@@ -6,14 +6,17 @@
  * computed on-device from monthly buckets — nothing leaves the phone.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   Share,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { getAppFontFamily, getTextDirectionStyle } from "../../utils/fonts";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -33,19 +36,21 @@ const Container = styled.View`
   background-color: ${(props: any) => props.theme.background};
 `;
 
+
 const Header = styled.View`
-  flex-direction: row;
   align-items: center;
   padding-horizontal: 16px;
   padding-top: 8px;
   padding-bottom: 12px;
 `;
 
+
 const HeaderTitle = styled.Text`
   flex: 1;
   font-size: 22px;
   font-weight: 700;
   color: ${(props: any) => props.theme.foreground};
+  align-self: stretch;
 `;
 
 const BackButton = styled.TouchableOpacity`
@@ -92,17 +97,21 @@ const StatBig = styled.Text`
   color: ${(props: any) => props.theme.foreground};
 `;
 
+
 const StatSub = styled.Text`
   font-size: 13px;
   color: ${(props: any) => props.theme.mutedForeground};
   margin-top: 2px;
+  align-self: stretch;
 `;
+
 
 const SectionTitle = styled.Text`
   font-size: 17px;
   font-weight: 700;
   color: ${(props: any) => props.theme.foreground};
   margin: 16px 16px 8px;
+  align-self: stretch;
 `;
 
 const ClockRow = styled.View`
@@ -167,7 +176,7 @@ const PERIODS: Array<{ key: ReplayPeriod; labelKey: string }> = [
 export const ReplayScreen: React.FC = () => {
   const navigation = useNavigation();
   const { colors } = useTheme();
-  const { t } = useAppLanguage();
+  const { t, isRtl } = useAppLanguage();
   const insets = useSafeAreaInsets();
   const [period, setPeriod] = useState<ReplayPeriod>("month");
   const [summary, setSummary] = useState<ReplaySummary | null>(null);
@@ -329,10 +338,43 @@ export const ReplayScreen: React.FC = () => {
 
               <SectionTitle theme={colors}>{t("replay.topArtists")}</SectionTitle>
               {(summary?.topArtists ?? []).slice(0, 10).map((a, i) => (
-                <ArtistRow key={`artist-${a.name}`} theme={colors}>
+  
+
+              <ArtistRow key={`artist-${a.name}`} theme={colors}
+                style={{ flexDirection: isRtl ? "row-reverse" : "row" }}>
                   <RankText theme={colors}>{i + 1}</RankText>
+                  {a.art ? (
+                    <Image
+                      source={{ uri: a.art }}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        marginRight: 12,
+                        backgroundColor: colors.surface2,
+                      }}
+                    />
+                  ) : (
+                    <View style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 20,
+                      marginRight: 12,
+                      backgroundColor: colors.surface2,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}>
+                      <Ionicons name="person" size={20} color={colors.muted} />
+                    </View>
+                  )}
                   <View style={{ flex: 1 }}>
-                    <Text numberOfLines={1} style={{ color: colors.foreground, fontWeight: "600" }}>
+
+                    <Text numberOfLines={1} style={{
+                      color: colors.foreground,
+                      fontWeight: "600",
+                      fontFamily: getAppFontFamily(isRtl, "semibold"),
+                      ...getTextDirectionStyle(isRtl),
+                    }}>
                       {a.name}
                     </Text>
                     <StatSub theme={colors}>
@@ -354,29 +396,65 @@ export const ReplayScreen: React.FC = () => {
             <TouchableOpacity
               onPress={() => void handleTrackPlay(item, index, summary?.topTracks ?? [])}
               style={{
-                flexDirection: "row",
+                flexDirection: isRtl ? "row-reverse" : "row",
                 alignItems: "center",
                 paddingHorizontal: 16,
                 paddingVertical: 8,
               }}
             >
               <RankText theme={colors}>{index + 1}</RankText>
+              {item.thumbnail ? (
+                <Image
+                  source={{ uri: item.thumbnail }}
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 8,
+                    marginRight: isRtl ? 0 : 12,
+                    marginLeft: isRtl ? 12 : 0,
+                    backgroundColor: colors.surface2,
+                  }}
+                />
+              ) : (
+                <View style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 8,
+                  marginRight: isRtl ? 0 : 12,
+                  marginLeft: isRtl ? 12 : 0,
+                  backgroundColor: colors.surface2,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}>
+                  <Ionicons name="musical-notes" size={20} color={colors.muted} />
+                </View>
+              )}
               <View style={{ flex: 1 }}>
-                <Text numberOfLines={1} style={{ color: colors.foreground, fontWeight: "600" }}>
+                <Text numberOfLines={1} style={{
+                  color: colors.foreground,
+                  fontWeight: "600",
+                  fontFamily: getAppFontFamily(isRtl, "semibold"),
+                  ...getTextDirectionStyle(isRtl),
+                }}>
                   {item.title}
                 </Text>
                 <StatSub theme={colors}>
-                  {item.artist ?? ""} · {item.plays} plays
+                  {item.artist ?? ""} · {item.plays} {t("replay.plays")}
                 </StatSub>
               </View>
-              <Text style={{ color: colors.muted, fontSize: 12 }}>
+              <Text style={{
+                color: colors.muted,
+                fontSize: 12,
+                fontFamily: getAppFontFamily(isRtl, "regular"),
+              }}>
                 {formatMs(item.ms)}
               </Text>
             </TouchableOpacity>
           )}
           ListEmptyComponent={
+
             <StatSub theme={colors} style={{ margin: 16, textAlign: "center" }}>
-              No listening data yet.
+              {t("replay.empty")}
             </StatSub>
           }
           contentContainerStyle={{ paddingBottom: 24 + insets.bottom }}

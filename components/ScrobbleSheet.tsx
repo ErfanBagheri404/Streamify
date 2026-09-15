@@ -9,7 +9,7 @@
  *  Perf contract: no timers, no listeners. One AsyncStorage write per change.
  *******************************************************************/
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Modal, Text, TextInput, TouchableOpacity } from "react-native";
+import { ActivityIndicator, Modal, Text, TextInput, TouchableOpacity, View } from "react-native";
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAppLanguage } from "../hooks/useAppLanguage";
@@ -70,6 +70,8 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({ visible, onClose }
   const { colors } = useTheme();
   const { isRtl } = useAppLanguage();
   const [lbzToken, setLbzToken] = useState("");
+  const [lfmKey, setLfmKey] = useState("");
+  const [lfmSecret, setLfmSecret] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [statusText, setStatusText] = useState("");
 
@@ -77,17 +79,22 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({ visible, onClose }
     if (!visible) {
       return;
     }
-    void scrobblerService
-      .getEnabledProviders()
-      .then(({ lastfm, listenbrainz }) => {
+    void (async () => {
+      try {
+        const [providers, lfmCreds] = await Promise.all([
+          scrobblerService.getEnabledProviders(),
+          scrobblerService.getLastfmCreds(),
+        ]);
+        if (lfmCreds.apiKey) setLfmKey(lfmCreds.apiKey);
+        if (lfmCreds.secret) setLfmSecret(lfmCreds.secret);
         // Read back the stored raw token so the field shows what's saved.
         setStatusText(
-          lastfm || listenbrainz
+          providers.lastfm || providers.listenbrainz
             ? t("scrobble.connected") || "Connected"
             : "",
         );
-      })
-      .catch(() => {});
+      } catch {}
+    })();
   }, [visible]);
 
   if (!visible) {
@@ -96,7 +103,7 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({ visible, onClose }
 
   const muted = withOpacity(colors.foreground, 0.6);
 
-  const save = async () => {
+  const saveLbz = async () => {
     const token = lbzToken.trim();
     setIsSaving(true);
     try {
@@ -111,8 +118,24 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({ visible, onClose }
     }
   };
 
+  const saveLfm = async () => {
+    const ak = lfmKey.trim();
+    const sec = lfmSecret.trim();
+    setIsSaving(true);
+    try {
+      await scrobblerService.setLastfmCreds(ak || null, sec || null);
+      setStatusText(
+        ak
+          ? t("scrobble.savedConnected") || "Saved — scrobbling enabled"
+          : t("scrobble.cleared") || "Last.fm keys cleared",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible transparent animationType="none" onRequestClose={onClose}>
       <SheetBackdrop activeOpacity={1} onPress={onClose} />
       <SheetBody style={{ backgroundColor: colors.background }}>
         <SheetHeader>
@@ -169,7 +192,83 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({ visible, onClose }
         <SaveButton
           activeOpacity={0.88}
           disabled={isSaving}
-          onPress={() => void save()}
+          onPress={() => void saveLbz()}
+          style={{
+            backgroundColor: colors.foreground,
+            opacity: isSaving ? 0.6 : 1,
+          }}
+        >
+          {isSaving ? (
+            <ActivityIndicator size="small" color={colors.background} />
+          ) : (
+            <Text
+              style={{
+                color: colors.background,
+                fontSize: 14,
+                fontFamily: getAppFontFamily(isRtl, "semibold"),
+              }}
+            >
+              {t("scrobble.save") || "Save"}
+            </Text>
+          )}
+        </SaveButton>
+
+        <View style={{ height: 1, backgroundColor: colors.borderSubtle, marginVertical: 20 }} />
+
+        <Label
+          style={{
+            color: colors.foreground,
+            fontFamily: getAppFontFamily(isRtl, "semibold"),
+            ...getTextDirectionStyle(isRtl),
+          }}
+        >
+          {"Last.fm"}
+        </Label>
+        <Text
+          style={{
+            color: muted,
+            fontSize: 12,
+            marginBottom: 10,
+            fontFamily: getAppFontFamily(isRtl, "regular"),
+            ...getTextDirectionStyle(isRtl),
+          }}
+        >
+          {"Get your API key and shared secret from last.fm/api/account/create, then create a session key at last.fm/api/account/auth."}
+        </Text>
+        <TokenInput
+          value={lfmKey}
+          onChangeText={setLfmKey}
+          placeholder="API key"
+          placeholderTextColor={withOpacity(muted, 0.7)}
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={{
+            borderColor: colors.borderSubtle,
+            backgroundColor: withOpacity(colors.surface2, 0.8),
+            color: colors.foreground,
+            fontFamily: getAppFontFamily(isRtl, "regular"),
+            ...getTextDirectionStyle(isRtl),
+          }}
+        />
+        <TokenInput
+          value={lfmSecret}
+          onChangeText={setLfmSecret}
+          placeholder="Shared secret"
+          placeholderTextColor={withOpacity(muted, 0.7)}
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={{
+            borderColor: colors.borderSubtle,
+            backgroundColor: withOpacity(colors.surface2, 0.8),
+            color: colors.foreground,
+            fontFamily: getAppFontFamily(isRtl, "regular"),
+            ...getTextDirectionStyle(isRtl),
+          }}
+        />
+        <SaveButton
+          activeOpacity={0.88}
+          disabled={isSaving}
+          onPress={() => void saveLfm()}
           style={{
             backgroundColor: colors.foreground,
             opacity: isSaving ? 0.6 : 1,

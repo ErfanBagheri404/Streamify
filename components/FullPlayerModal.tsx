@@ -126,6 +126,13 @@ const Header = styled.View`
   padding-horizontal: 28px;
 `;
 
+
+// Up Next / queue-suggestion panel is hidden from the fullscreen player by
+// design — all its logic (upNextTracks, handleUpNextPress, the panel JSX)
+// stays wired so it can be re-surfaced elsewhere. Flip this to true to
+// bring the section back.
+const SHOW_UP_NEXT_SECTION = false;
+
 const BackButton = styled.TouchableOpacity`
   flex-direction: row;
   align-items: center;
@@ -626,7 +633,15 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [pendingSeekValue, setPendingSeekValue] = useState<number | null>(null);
   const [isSeekPending, setIsSeekPending] = useState(false);
   // Waveform seek bar (feature: local + fully-cached tracks, Android only).
-  const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
+
+  const [waveformPeaks, setWaveformPeaks] = useState<number[]>(() => {
+    // Start with flat fallback bars so the waveform is always visible when
+    // the feature is enabled — real peaks load asynchronously and replace
+    // these. Without this the user sees the default seek bar until peaks
+    // arrive (or forever, for tracks without a local cache).
+    const flatBuckets = 56;
+    return new Array(flatBuckets).fill(0.35);
+  });
   const [isHighResArtworkReady, setIsHighResArtworkReady] = useState(false);
 
   const appState = useRef(AppState.currentState);
@@ -703,6 +718,16 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
         }) || baseArtworkUrl,
     };
   }, [currentTrack?.id, currentTrack?.source, currentTrack?.thumbnail]);
+
+  // Reset the HQ flag whenever the track changes: the overlay <Image> is
+  // absolute-positioned over the good LQ art, and on Android a *loading*
+  // network image paints as an empty box — leaving the previous track's
+  // "ready = true" made fullscreen flash black/default until the new HQ
+  // URL either loaded or errored.
+  useEffect(() => {
+    setIsHighResArtworkReady(false);
+  }, [currentTrack?.id]);
+
   const fullscreenArtworkUrl =
     isHighResArtworkReady && fullscreenArtworkSources.highRes
       ? fullscreenArtworkSources.highRes
@@ -1043,10 +1068,15 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
   // Waveform: load peaks when track changes (Android only, feature toggle).
   useEffect(() => {
+
     if (!settings.waveformSeekBar || !waveformSupported || !currentTrack) {
       setWaveformPeaks([]);
       return;
     }
+    // Reset to flat bars while async peak decode runs, so the waveform
+    // UI is visible immediately even before real peaks arrive.
+    const flatBuckets = 56;
+    setWaveformPeaks(new Array(flatBuckets).fill(0.35));
     let cancelled = false;
     (async () => {
       try {
@@ -1897,7 +1927,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
               <ProgressContainer>
                 <ProgressBarContainer>
-                  {settings.waveformSeekBar && waveformPeaks.length > 0 ? (
+
+                  {settings.waveformSeekBar ? (
                   <Waveform
                     peaks={waveformPeaks}
                     seekRatio={seekRatio}
@@ -2462,7 +2493,9 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 )}
               </LyricsCard>
 
-              {isSuggestionPanelVisible ? (
+
+              {SHOW_UP_NEXT_SECTION &&
+              (isSuggestionPanelVisible ? (
                 <View
                   style={{
                     marginTop: 20,
@@ -2682,12 +2715,13 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   </View>
 
                   <Ionicons
+
                     name={"chevron-back"}
                     size={18}
                     color={iconColor}
                   />
                 </TouchableOpacity>
-              )}
+              ))}
 
               <Spacer size={40} />
             </ScrollView>

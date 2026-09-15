@@ -798,6 +798,7 @@ export default function SettingsScreen({
               </View>
             ) : null}
 
+
           <SettingRow
             label={t("settings.autoSyncLibrary")}
             description={t("settings.autoSyncLibraryDescription")}
@@ -812,6 +813,23 @@ export default function SettingsScreen({
                 trackColor={switchTrackColor}
                 thumbColor={switchThumbColor}
               />
+            }
+          />
+          <SettingRow
+            label={t("settings.scrobbling")}
+            description={t("settings.scrobblingDescription")}
+            colors={colors}
+            controlPlacement="inline"
+            control={
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setShowScrobbleSheet(true)}
+                style={[styles.secondaryButton, { borderColor: colors.borderSubtle }]}
+              >
+                <BodyText style={{ color: colors.foreground, fontSize: 13 }}>
+                  {t("settings.connect")}
+                </BodyText>
+              </TouchableOpacity>
             }
           />
           </Section>
@@ -1041,23 +1059,7 @@ export default function SettingsScreen({
                 />
               }
             />
-            <SettingRow
-              label={t("settings.scrobbling")}
-              description={t("settings.scrobblingDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() => setShowScrobbleSheet(true)}
-                  style={[styles.secondaryButton, { borderColor: colors.borderSubtle }]}
-                >
-                  <BodyText style={{ color: colors.foreground, fontSize: 13 }}>
-                    {t("settings.connect")}
-                  </BodyText>
-                </TouchableOpacity>
-              }
-            />
+
           </Section>
           ) : null}
 

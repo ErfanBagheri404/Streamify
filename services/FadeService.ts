@@ -41,6 +41,9 @@ function refLevel(): number {
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
 
+/** Never ramp fully to silence — a dead-air gap feels worse than a cut. */
+const FADE_FLOOR = 0.25;
+
 async function applyVolume(target: number): Promise<void> {
   const rounded = round2(target);
   if (internal.lastApplied === rounded) {
@@ -110,11 +113,11 @@ export const fadeService = {
     let target: number;
     if (position < window) {
       // Fade in over the first `window` seconds.
-      target = refLevel() * Math.max(0.25, position / window);
+      target = refLevel() * Math.max(FADE_FLOOR, position / window);
     } else if (remaining <= window && remaining > 0) {
       // Fade out over the last `window` seconds, stopping above silence so
       // the hand-off to the next track never bottoms out into dead air.
-      target = refLevel() * Math.max(0.25, remaining / window);
+      target = refLevel() * Math.max(FADE_FLOOR, remaining / window);
     } else {
       target = refLevel();
     }
@@ -122,8 +125,20 @@ export const fadeService = {
     void applyVolume(target);
   },
 
-  /** Reset to the base volume at track change / pause. */
+  /**
+   * Hand volume back at track change / pause.
+   *
+   * When fading is enabled the next track's fade-in owns the ramp, so we
+   * must NOT jump to full base volume here — the old track ended at the
+   * 0.25 floor and a 0.25 -> 1.0 -> 0.25 spike reads as a hard cut. Drop
+   * to the floor instead and let the fade-in ramp up smoothly. Disabled
+   * fades still reset to base immediately.
+   */
   reset(): void {
+    if (internal.enabled) {
+      void applyVolume(refLevel() * FADE_FLOOR);
+      return;
+    }
     void applyVolume(refLevel());
   },
 };
