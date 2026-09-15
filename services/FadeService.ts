@@ -1,10 +1,12 @@
 /********************************************************************
- *  FadeService.ts - Volume ramping without a second player
+ *  FadeService.ts - Fade in / Fade out (single-decoder volume ramp)
  *
- *  True crossfade needs two simultaneous decoders, which doubles buffering
- *  and battery cost for every listener. Instead we ramp the single player's
- *  volume: a short fade-in at the start of a track and a fade-out over the
- *  last seconds, so track changes stop being hard cuts.
+ *  True crossfade (overlap two decoders) is not implemented — that doubles
+ *  buffering and battery cost for every listener. This service provides a
+ *  single-decoder alternative: a volume ramp-in at the start of a track and
+ *  a volume ramp-out over the last seconds, so transitions are no longer
+ *  hard cuts. Settings label "Crossfade" reflects the UX intent; the
+ *  implementation is best described as fade in/out.
  *
  *  Perf contract:
  *  - Zero subscriptions. It is driven by the progress event PlayerContext

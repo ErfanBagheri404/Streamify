@@ -9,7 +9,7 @@
  *  a plain map over <= 10 items, so no FlatList virtualization is needed.
  *  Nothing renders unless `visible` is true.
  *******************************************************************/
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Modal, ScrollView, TouchableOpacity, Text, TextInput } from "react-native";
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -98,8 +98,13 @@ export const LyricsSearchSheet: React.FC<LyricsSearchSheetProps> = ({
   const [isSearching, setIsSearching] = useState(false);
   const [searched, setSearched] = useState(false);
 
+  // Generation token: a response is only applied if no newer search / track
+  // change / close happened while it was in flight.
+  const searchGenRef = React.useRef(0);
+
   // Pre-fill with the playing track each time the sheet opens; cleared on close.
   useEffect(() => {
+    searchGenRef.current += 1; // invalidate any in-flight search
     if (!visible) {
       return;
     }
@@ -116,16 +121,25 @@ export const LyricsSearchSheet: React.FC<LyricsSearchSheetProps> = ({
     if (!trimmed) {
       return;
     }
+    const gen = ++searchGenRef.current;
     setIsSearching(true);
     try {
       const found = await lyricsService.searchLyrics(trimmed, 10);
+      if (gen !== searchGenRef.current) {
+        return; // stale — a newer search or a track change superseded this
+      }
       setResults(found);
       setSearched(true);
     } catch {
+      if (gen !== searchGenRef.current) {
+        return;
+      }
       setResults([]);
       setSearched(true);
     } finally {
-      setIsSearching(false);
+      if (gen === searchGenRef.current) {
+        setIsSearching(false);
+      }
     }
   }, [query]);
 

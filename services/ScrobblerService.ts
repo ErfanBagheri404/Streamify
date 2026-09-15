@@ -264,7 +264,13 @@ export const scrobblerService = {
     }
     internal.activeElapsedMs += deltaMs;
     // Once eligible, no need to keep accumulating.
-    if (internal.activeElapsedMs > internal.activeDurationMs + 5000) {
+    // Skip the clamp when duration is unknown (0): a track without metadata
+    // should not be capped at 5s, which would prevent scrobbling when
+    // PlayerContext later discovers the real duration.
+    if (
+      internal.activeDurationMs > 0 &&
+      internal.activeElapsedMs > internal.activeDurationMs + 5000
+    ) {
       internal.activeElapsedMs = internal.activeDurationMs + 5000;
     }
   },

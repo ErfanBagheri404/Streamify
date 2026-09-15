@@ -60,13 +60,12 @@ function randomSalt(): string {
 function authParams(config: SubsonicConfig): Record<string, string> {
   const salt = randomSalt();
   return {
-    username: config.username,
-    t: String(Date.now()),
+    u: config.username,
+    t: md5(config.password + salt),
+    s: salt,
     v: API_VERSION,
     c: CLIENT_NAME,
     f: "json",
-    salt,
-    token: md5(config.password + salt),
   };
 }
 
@@ -152,12 +151,19 @@ export const subsonicService = {
     if (!/^https?:\/\//.test(trimmed.baseUrl)) {
       throw new Error("Server URL must start with http:// or https://");
     }
-    cachedConfig = trimmed;
+    // Plain http:// sends the auth token in cleartext — warn but allow
+    // (self-hosted LAN servers commonly run on http). Surface a hint to the
+    // user instead of silently rejecting.
+    if (!trimmed.baseUrl.startsWith("https://")) {
+      debug("WARNING: credentials sent over plain http —", trimmed.baseUrl);
+    }
+    // Validate the candidate BEFORE touching the cached config, so a failed
+    // reconfiguration never clobbers a previously working one.
     const ok = await request(trimmed, "ping");
     if (!ok) {
-      cachedConfig = null;
       throw new Error("Could not connect. Check the URL, username, and password.");
     }
+    cachedConfig = trimmed;
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
     debug("Configured for", trimmed.baseUrl);
   },

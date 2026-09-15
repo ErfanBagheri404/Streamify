@@ -174,7 +174,12 @@ export class LyricsService {
       if (!result.reachable) {
         continue;
       }
-      reachContext.reachedUpstream = true;
+      if (result.response.ok || result.response.status === 404) {
+        // Only a successful answer or a definitive "not found" counts as the
+        // upstream having spoken. 429/5xx are retryable — keep trying and
+        // never let them mark the upstream as reached.
+        reachContext.reachedUpstream = true;
+      }
       if (result.response.ok) {
         return { response: result.response, url };
       }
@@ -502,6 +507,9 @@ export class LyricsService {
     track: Track,
     result: LyricsSearchResult,
   ): Promise<CachedLyrics> {
+    // Merge into the persisted cache first — saving on a fresh instance
+    // without this would overwrite every previously cached lyric.
+    await this.loadCache();
     const cacheKey = getTrackCacheKey(track);
     const payload = normalizeCacheEntry({
       lyrics: result.lyrics,

@@ -8,7 +8,7 @@
  *  - ExoPlayer resets playback parameters when a new media item loads, so the
  *    cached rate is re-applied on PlaybackActiveTrackChanged.
  *******************************************************************/
-import TrackPlayer from "../utils/safeTrackPlayer";
+import TrackPlayer, { Event } from "../utils/safeTrackPlayer";
 import { create } from "zustand";
 
 export const PLAYBACK_SPEED_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] as const;
@@ -49,7 +49,7 @@ export const playbackSpeedService = {
     }
     internal.listenersAttached = true;
 
-    const activeTrackChanged = (Event as any).PlaybackActiveTrackChanged;
+    const activeTrackChanged = Event.PlaybackActiveTrackChanged;
     if (!activeTrackChanged) {
       return;
     }

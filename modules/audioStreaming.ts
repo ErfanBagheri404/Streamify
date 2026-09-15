@@ -75,7 +75,10 @@ async function downloadInnertubeToFile(
       console.warn("[InnertubeDownload] no writable base directory");
       return null;
     }
-    const cacheDir = `${base}Streamify/cache/`;
+    // getCacheDirectory() already returns the app's Streamify/cache path
+    // with a trailing slash. Only fall back to creating a subdirectory when
+    // the legacy cacheDirectory path is used (no Streamify/cache prefix).
+    const cacheDir = dir ? base : `${base}Streamify/cache/`;
     try {
       await FileSystem.makeDirectoryAsync(cacheDir, {
         intermediates: true,
@@ -145,14 +148,31 @@ async function downloadInnertubeToFile(
         console.log(
           `[InnertubeDownload] chunk ${offset}-${end} -> ${status} for ${stream.videoId}`,
         );
-        if (status === 206 || status === 200) {
+        if (status === 206) {
           const buf = new Uint8Array(await dl!.arrayBuffer());
           if (!buf.length) break;
           parts.push(buf);
           offset += buf.length;
           failsAtOffset = 0;
-          if (status === 200) break; // server ignored Range; full body in hand
           continue;
+        }
+        if (status === 200 && offset === 0) {
+          // Full-body response for the first chunk is valid — the server
+          // just didn't support Range requests. Accept the complete body.
+          const buf = new Uint8Array(await dl!.arrayBuffer());
+          if (!buf.length) break;
+          parts.push(buf);
+          offset += buf.length;
+          break; // entire file is already in this one chunk
+        }
+        // status 200 at a nonzero offset means the server ignored Range and
+        // returned the full file while we already have earlier chunks — that
+        // data is unusable and must not be appended.
+        if (status === 200) {
+          console.warn(
+            `[InnertubeDownload] server ignored Range at ${offset}, got full body for ${stream.videoId}`,
+          );
+          return null;
         }
         // Same size again is pointless; shrink the cap once, then bail.
         failsAtOffset++;

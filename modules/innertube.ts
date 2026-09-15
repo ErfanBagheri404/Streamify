@@ -243,7 +243,10 @@ async function tryClient(
       mediaHeaders["Origin"] = c.origin;
       mediaHeaders["Referer"] = `${c.origin}/`;
     }
-    resolvedMediaHeaders.set(videoId, mediaHeaders);
+    // Key by the resolved URL, not videoId. A refreshed mint for the same
+    // videoId produces a different googlevideo URL that may need different
+    // client headers; associating them prevents stale 403s on reminted URLs.
+    resolvedMediaHeaders.set(best.url, mediaHeaders);
     return {
       videoId,
       url: best.url,
