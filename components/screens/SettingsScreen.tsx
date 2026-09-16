@@ -180,18 +180,39 @@ function Section({
   );
 }
 
-type SettingsTabKey = "account" | "playback" | "appearance" | "library" | "about";
+type SettingsTabKey =
+  | "account"
+  | "playback"
+  | "appearance"
+  | "library"
+  | "about";
 
 const SETTINGS_TABS: Array<{
   key: SettingsTabKey;
   icon: keyof typeof Ionicons.glyphMap;
   labelKey: string;
 }> = [
-  { key: "account", icon: "person-circle-outline", labelKey: "settings.tabAccount" },
-  { key: "playback", icon: "play-circle-outline", labelKey: "settings.tabPlayback" },
-  { key: "appearance", icon: "color-palette-outline", labelKey: "settings.tabAppearance" },
+  {
+    key: "account",
+    icon: "person-circle-outline",
+    labelKey: "settings.tabAccount",
+  },
+  {
+    key: "playback",
+    icon: "play-circle-outline",
+    labelKey: "settings.tabPlayback",
+  },
+  {
+    key: "appearance",
+    icon: "color-palette-outline",
+    labelKey: "settings.tabAppearance",
+  },
   { key: "library", icon: "library-outline", labelKey: "settings.tabLibrary" },
-  { key: "about", icon: "information-circle-outline", labelKey: "settings.tabAbout" },
+  {
+    key: "about",
+    icon: "information-circle-outline",
+    labelKey: "settings.tabAbout",
+  },
 ];
 
 function SettingRow({
@@ -357,7 +378,9 @@ export default function SettingsScreen({
     message: string;
   } | null>(null);
   const [showScrobbleSheet, setShowScrobbleSheet] = useState(false);
-  const [scrobbleProvider, setScrobbleProvider] = useState<"listenbrainz" | "lastfm">("listenbrainz");
+  const [scrobbleProvider, setScrobbleProvider] = useState<
+    "listenbrainz" | "lastfm"
+  >("listenbrainz");
 
   const { autoVisible: communityAutoVisible, closeAuto: closeCommunityAuto } =
     useCommunityModalAutoShow();
@@ -575,7 +598,7 @@ export default function SettingsScreen({
         </View>
 
         <ScrollView
-        showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
           <View
@@ -624,683 +647,703 @@ export default function SettingsScreen({
           </View>
 
           {activeTab === "account" ? (
-          <Section
-            title={t("settings.account")}
-            description={t("settings.accountDescription")}
-            colors={colors}
-          >
-            <View
-              style={[
-                styles.accountCard,
-                {
-                  backgroundColor: colors.surface3,
-                  borderColor: colors.borderSubtle,
-                  flexDirection: "row",
-                },
-              ]}
-            >
-              {accountAvatarUrl ? (
-                <Image
-                  source={{ uri: accountAvatarUrl }}
-                  style={styles.accountAvatarImage}
-                />
-              ) : (
-                <View
-                  style={[
-                    styles.accountAvatar,
-                    {
-                      backgroundColor: colors.surface2,
-                      borderColor: colors.borderSubtle,
-                    },
-                  ]}
-                >
-                  <BodyText style={styles.accountAvatarText}>
-                    {accountName.charAt(0).toUpperCase() || "G"}
-                  </BodyText>
-                </View>
-              )}
-              <View style={styles.accountCopy}>
-                <BodyText style={styles.accountName}>
-                  {isAuthLoading ? t("settings.accountLoading") : accountName}
-                </BodyText>
-                <MutedText>
-                  {user
-                    ? accountProviderLabel
-                    : t("settings.cloudSyncDescription")}
-                </MutedText>
-              </View>
-            </View>
-            <SettingRow
-              label={t("settings.cloudSync")}
-              description={t("settings.cloudSyncDescription")}
+            <Section
+              title={t("settings.account")}
+              description={t("settings.accountDescription")}
               colors={colors}
-              control={
-                <View style={[styles.accountActions, { flexDirection: "row" }]}>
-                  {user ? (
-                    <>
-                      <AccentButton
-                        title={
-                          isSyncing
-                            ? t("settings.syncInProgress")
-                            : t("settings.syncLibrary")
-                        }
-                        disabled={isSyncing || !isConfigured}
-                        onPress={() => {
-                          void handleSyncLibrary();
-                        }}
-                        style={{
-                          opacity: isSyncing || !isConfigured ? 0.55 : 1,
-                        }}
-                      />
-                      <TouchableOpacity
-                        onPress={() => {
-                          void signOut();
-                        }}
-                        style={[
-                          styles.secondaryButton,
-                          {
-                            backgroundColor: colors.surface2,
-                            borderColor: colors.borderSubtle,
-                          },
-                        ]}
-                      >
-                        <BodyText style={styles.secondaryButtonText}>
-                          {t("settings.signOut")}
-                        </BodyText>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <>
-                      <TouchableOpacity
-                        disabled={!isConfigured}
-                        onPress={() =>
-                          navigation.navigate("Onboarding", {
-                            openAuth: "signin",
-                          })
-                        }
-                        style={[
-                          styles.secondaryButton,
-                          {
-                            backgroundColor: colors.surface2,
-                            borderColor: colors.borderSubtle,
-                            opacity: isConfigured ? 1 : 0.45,
-                          },
-                        ]}
-                      >
-                        <BodyText style={styles.secondaryButtonText}>
-                          {t("settings.continueToSignIn")}
-                        </BodyText>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        disabled={!isConfigured}
-                        onPress={() =>
-                          navigation.navigate("Onboarding", {
-                            openAuth: "signup",
-                          })
-                        }
-                        style={[
-                          styles.secondaryButton,
-                          {
-                            backgroundColor: colors.surface2,
-                            borderColor: colors.borderSubtle,
-                            opacity: isConfigured ? 1 : 0.45,
-                          },
-                        ]}
-                      >
-                        <BodyText style={styles.secondaryButtonText}>
-                          {t("settings.continueToSignUp")}
-                        </BodyText>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              }
-            />
-            {syncFeedback ? (
+            >
               <View
                 style={[
-                  styles.syncFeedbackBox,
+                  styles.accountCard,
                   {
-                    backgroundColor:
-                      syncFeedback.tone === "error"
-                        ? "rgba(220, 38, 38, 0.12)"
-                        : syncFeedback.tone === "success"
-                          ? withOpacity(colors.accent, 0.12)
-                          : withOpacity(colors.foreground, 0.05),
-                    borderColor:
-                      syncFeedback.tone === "error"
-                        ? "rgba(248, 113, 113, 0.22)"
-                        : syncFeedback.tone === "success"
-                          ? withOpacity(colors.accent, 0.28)
-                          : withOpacity(colors.foreground, 0.08),
+                    backgroundColor: colors.surface3,
+                    borderColor: colors.borderSubtle,
+                    flexDirection: "row",
                   },
                 ]}
               >
-                <BodyText
-                  style={[
-                    styles.syncFeedbackText,
-                    {
-                      color:
-                        syncFeedback.tone === "error"
-                          ? isLight
-                            ? "#991b1b"
-                            : "#fecaca"
-                          : colors.foreground,
-                    },
-                  ]}
-                >
-                  {syncFeedback.message}
-                </BodyText>
-              </View>
-            ) : null}
-
-
-          <SettingRow
-            label={t("settings.autoSyncLibrary")}
-            description={t("settings.autoSyncLibraryDescription")}
-            colors={colors}
-            controlPlacement="inline"
-            control={
-              <Switch
-                value={settings.autoSyncLibrary}
-                onValueChange={(value) =>
-                  updateSettings({ autoSyncLibrary: value })
-                }
-                trackColor={switchTrackColor}
-                thumbColor={switchThumbColor}
-              />
-            }
-          />
-          <SettingRow
-            label={t("settings.listenbrainz_scrobbling")}
-            description={t("settings.listenbrainz_scrobbling_desc")}
-            colors={colors}
-            controlPlacement="inline"
-            control={
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => { setScrobbleProvider("listenbrainz"); setShowScrobbleSheet(true); }}
-                style={[styles.secondaryButton, { borderColor: colors.borderSubtle }]}
-              >
-                <BodyText style={{ color: colors.foreground, fontSize: 13 }}>
-                  {t("settings.connect")}
-                </BodyText>
-              </TouchableOpacity>
-            }
-          />
-          <SettingRow
-            label={t("settings.lastfm_scrobbling")}
-            description={t("settings.lastfm_scrobbling_desc")}
-            colors={colors}
-            controlPlacement="inline"
-            control={
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => { setScrobbleProvider("lastfm"); setShowScrobbleSheet(true); }}
-                style={[styles.secondaryButton, { borderColor: colors.borderSubtle }]}
-              >
-                <BodyText style={{ color: colors.foreground, fontSize: 13 }}>
-                  {t("settings.connect")}
-                </BodyText>
-              </TouchableOpacity>
-            }
-          />
-          </Section>
-          ) : null}
-
-          {activeTab === "appearance" ? (
-          <Section
-            title={t("settings.themeAndMotion")}
-          description={t("settings.themeAndMotionDescription")}
-          colors={colors}
-          >
-          <SettingRow
-            label={t("settings.theme")}
-            description={t("settings.themeDescription")}
-            colors={colors}
-              control={
-                <View style={styles.themeGrid}>
-                  {APP_THEME_OPTIONS.map((theme) => (
-                    <ThemeChoiceCard
-                      key={theme}
-                      theme={theme}
-                      label={themeLabels[theme]}
-                      selected={settings.theme === theme}
-                      colors={colors}
-                      onPress={() => updateSettings({ theme })}
-                    />
-                  ))}
-                </View>
-              }
-            />
-            <SettingRow
-              label={t("settings.disableAnimations")}
-              description={t("settings.disableAnimationsDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.disableAnimations}
-                  onValueChange={(value) =>
-                    updateSettings({ disableAnimations: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.language")}
-              description={t("settings.languageDescription")}
-              colors={colors}
-              control={
-                <View style={styles.choiceWrap}>
-                  {(["en", "fa"] as AppLanguage[]).map((language) => (
-                    <ChoiceChip
-                      key={language}
-                      label={
-                        language === "en"
-                          ? t("language.english")
-                          : t("language.persian")
-                      }
-                      selected={settings.language === language}
-                      onPress={() => updateSettings({ language })}
-                      colors={colors}
-                    />
-                  ))}
-                </View>
-              }
-            />
-          </Section>
-          ) : null}
-
-          {activeTab === "playback" ? (
-          <Section
-            title={t("settings.musicBehaves")}
-            description={t("settings.musicBehavesDescription")}
-            colors={colors}
-          >
-            <SettingRow
-              label={t("settings.autoRetryPlayback")}
-              description={t("settings.autoRetryPlaybackDescription")}
-              colors={colors}
-              control={
-                <View style={styles.choiceWrap}>
-                  {RETRY_MODES.map((mode) => (
-                    <ChoiceChip
-                      key={mode}
-                      label={retryLabels[mode]}
-                      selected={settings.playbackRetryMode === mode}
-                      onPress={() =>
-                        updateSettings({ playbackRetryMode: mode })
-                      }
-                      colors={colors}
-                    />
-                  ))}
-                </View>
-              }
-            />
-            <SettingRow
-              label={t("settings.autoplayRecommendedTracks")}
-              description={t("settings.autoplayRecommendedTracksDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.autoplayRecommendations}
-                  onValueChange={(value) =>
-                    updateSettings({ autoplayRecommendations: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.openNowPlayingAutomatically")}
-              description={t("settings.openNowPlayingAutomaticallyDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.openFullscreenOnPlay}
-                  onValueChange={(value) =>
-                    updateSettings({ openFullscreenOnPlay: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.haptics")}
-              description={t("settings.hapticsDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.hapticsEnabled}
-                  onValueChange={(value) =>
-                    updateSettings({ hapticsEnabled: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.autoCacheLikedSongs")}
-              description={t("settings.autoCacheLikedSongsDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.autoCacheLikedSongs}
-                  onValueChange={(value) =>
-                    updateSettings({ autoCacheLikedSongs: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.crossfade")}
-              description={t("settings.crossfadeDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.crossfadeEnabled}
-                  onValueChange={(value) =>
-                    updateSettings({ crossfadeEnabled: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.crossfadeSeconds")}
-              description={t("settings.crossfadeSecondsDescription")}
-              colors={colors}
-              control={
-                <View style={styles.choiceWrap}>
-                  {[2, 4, 6, 8].map((seconds) => (
-                    <ChoiceChip
-                      key={seconds}
-                      label={`${seconds}s`}
-                      selected={settings.crossfadeSeconds === seconds}
-                      onPress={() =>
-                        updateSettings({ crossfadeSeconds: seconds })
-                      }
-                      colors={colors}
-                    />
-                  ))}
-                </View>
-              }
-            />
-            <SettingRow
-              label={t("settings.waveformSeek")}
-              description={t("settings.waveformSeekDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.waveformSeekBar}
-                  onValueChange={(value) =>
-                    updateSettings({ waveformSeekBar: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.replayGain")}
-              description={t("settings.replayGainDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.replayGainEnabled}
-                  onValueChange={(value) =>
-                    updateSettings({ replayGainEnabled: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-
-          </Section>
-          ) : null}
-
-          {activeTab === "library" ? (
-          <Section
-            title={t("settings.searchPreferences")}
-            description={t("settings.searchPreferencesDescription")}
-            colors={colors}
-          >
-            <SettingRow
-              label={t("settings.defaultSearchSource")}
-              description={t("settings.defaultSearchSourceDescription")}
-              colors={colors}
-              control={
-                <View style={styles.choiceWrap}>
-                  {SEARCH_SOURCES.map((source) => (
-                    <ChoiceChip
-                      key={source}
-                      label={sourceLabels[source]}
-                      selected={settings.preferredSearchSource === source}
-                      onPress={() =>
-                        updateSettings({ preferredSearchSource: source })
-                      }
-                      colors={colors}
-                    />
-                  ))}
-                </View>
-              }
-            />
-            <SettingRow
-              label={t("settings.rememberLastSearch")}
-              description={t("settings.rememberLastSearchDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.rememberLastSearch}
-                  onValueChange={(value) =>
-                    updateSettings({ rememberLastSearch: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-          </Section>
-          ) : null}
-
-          {activeTab === "library" ? (
-          <Section
-            title={t("settings.readingAndInput")}
-            description={t("settings.readingAndInputDescription")}
-            colors={colors}
-          >
-            <SettingRow
-              label={t("settings.lyrics")}
-              description={t("settings.lyricsDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.lyricsEnabled}
-                  onValueChange={(value) =>
-                    updateSettings({ lyricsEnabled: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.autoScrollSyncedLyrics")}
-              description={t("settings.autoScrollSyncedLyricsDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.autoScrollLyrics}
-                  disabled={!settings.lyricsEnabled}
-                  onValueChange={(value) =>
-                    updateSettings({ autoScrollLyrics: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.keyboardShortcuts")}
-              description={t("settings.keyboardShortcutsDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.keyboardShortcuts}
-                  onValueChange={(value) =>
-                    updateSettings({ keyboardShortcuts: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.seekJumpLength")}
-              description={t("settings.seekJumpLengthDescription")}
-              colors={colors}
-              control={
-                <View style={styles.choiceWrap}>
-                  {SEEK_STEP_OPTIONS.map((seconds) => (
-                    <ChoiceChip
-                      key={seconds}
-                      label={`${seconds}s`}
-                      selected={settings.seekStepSeconds === seconds}
-                      onPress={() =>
-                        updateSettings({ seekStepSeconds: seconds })
-                      }
-                      colors={colors}
-                    />
-                  ))}
-                </View>
-              }
-            />
-          </Section>
-          ) : null}
-
-          {activeTab === "about" ? (
-          <Section
-            title={t("settings.appUpdates")}
-            description={t("settings.appUpdatesDescription")}
-            colors={colors}
-          >
-            <SettingRow
-              label={t("settings.checkForUpdates")}
-              description={updateDescription}
-              colors={colors}
-              control={
-                <View style={[styles.accountActions, { flexDirection: "row" }]}>
-                  <AccentButton
-                    title={
-                      availableUpdateInfo
-                        ? t("settings.openUpdate")
-                        : t("settings.checkForUpdates")
-                    }
-                    disabled={isCheckingForUpdates}
-                    onPress={() => {
-                      void handleCheckForUpdates();
-                    }}
-                    style={{
-                      opacity: isCheckingForUpdates ? 0.6 : 1,
-                    }}
+                {accountAvatarUrl ? (
+                  <Image
+                    source={{ uri: accountAvatarUrl }}
+                    style={styles.accountAvatarImage}
                   />
+                ) : (
                   <View
                     style={[
-                      styles.secondaryButton,
+                      styles.accountAvatar,
                       {
                         backgroundColor: colors.surface2,
                         borderColor: colors.borderSubtle,
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 8,
-                        opacity: 1,
                       },
                     ]}
                   >
-                    {isCheckingForUpdates ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={colors.foreground}
-                      />
-                    ) : null}
-                    <BodyText style={styles.secondaryButtonText}>
-                      {availableUpdateInfo?.version || CURRENT_APP_VERSION}
+                    <BodyText style={styles.accountAvatarText}>
+                      {accountName.charAt(0).toUpperCase() || "G"}
                     </BodyText>
                   </View>
+                )}
+                <View style={styles.accountCopy}>
+                  <BodyText style={styles.accountName}>
+                    {isAuthLoading ? t("settings.accountLoading") : accountName}
+                  </BodyText>
+                  <MutedText>
+                    {user
+                      ? accountProviderLabel
+                      : t("settings.cloudSyncDescription")}
+                  </MutedText>
                 </View>
-              }
-            />
-            {updateFeedback ? (
-              <View
-                style={[
-                  styles.syncFeedbackBox,
-                  {
-                    backgroundColor:
-                      updateFeedback.tone === "error"
-                        ? "rgba(220, 38, 38, 0.12)"
-                        : updateFeedback.tone === "success"
-                          ? withOpacity(colors.accent, 0.12)
-                          : withOpacity(colors.foreground, 0.05),
-                    borderColor:
-                      updateFeedback.tone === "error"
-                        ? "rgba(248, 113, 113, 0.22)"
-                        : updateFeedback.tone === "success"
-                          ? withOpacity(colors.accent, 0.28)
-                          : withOpacity(colors.foreground, 0.08),
-                  },
-                ]}
-              >
-                <BodyText
+              </View>
+              <SettingRow
+                label={t("settings.cloudSync")}
+                description={t("settings.cloudSyncDescription")}
+                colors={colors}
+                control={
+                  <View
+                    style={[styles.accountActions, { flexDirection: "row" }]}
+                  >
+                    {user ? (
+                      <>
+                        <AccentButton
+                          title={
+                            isSyncing
+                              ? t("settings.syncInProgress")
+                              : t("settings.syncLibrary")
+                          }
+                          disabled={isSyncing || !isConfigured}
+                          onPress={() => {
+                            void handleSyncLibrary();
+                          }}
+                          style={{
+                            opacity: isSyncing || !isConfigured ? 0.55 : 1,
+                          }}
+                        />
+                        <TouchableOpacity
+                          onPress={() => {
+                            void signOut();
+                          }}
+                          style={[
+                            styles.secondaryButton,
+                            {
+                              backgroundColor: colors.surface2,
+                              borderColor: colors.borderSubtle,
+                            },
+                          ]}
+                        >
+                          <BodyText style={styles.secondaryButtonText}>
+                            {t("settings.signOut")}
+                          </BodyText>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          disabled={!isConfigured}
+                          onPress={() =>
+                            navigation.navigate("Onboarding", {
+                              openAuth: "signin",
+                            })
+                          }
+                          style={[
+                            styles.secondaryButton,
+                            {
+                              backgroundColor: colors.surface2,
+                              borderColor: colors.borderSubtle,
+                              opacity: isConfigured ? 1 : 0.45,
+                            },
+                          ]}
+                        >
+                          <BodyText style={styles.secondaryButtonText}>
+                            {t("settings.continueToSignIn")}
+                          </BodyText>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          disabled={!isConfigured}
+                          onPress={() =>
+                            navigation.navigate("Onboarding", {
+                              openAuth: "signup",
+                            })
+                          }
+                          style={[
+                            styles.secondaryButton,
+                            {
+                              backgroundColor: colors.surface2,
+                              borderColor: colors.borderSubtle,
+                              opacity: isConfigured ? 1 : 0.45,
+                            },
+                          ]}
+                        >
+                          <BodyText style={styles.secondaryButtonText}>
+                            {t("settings.continueToSignUp")}
+                          </BodyText>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
+                }
+              />
+              {syncFeedback ? (
+                <View
                   style={[
-                    styles.syncFeedbackText,
+                    styles.syncFeedbackBox,
                     {
-                      color:
-                        updateFeedback.tone === "error"
-                          ? isLight
-                            ? "#991b1b"
-                            : "#fecaca"
-                          : colors.foreground,
+                      backgroundColor:
+                        syncFeedback.tone === "error"
+                          ? "rgba(220, 38, 38, 0.12)"
+                          : syncFeedback.tone === "success"
+                            ? withOpacity(colors.accent, 0.12)
+                            : withOpacity(colors.foreground, 0.05),
+                      borderColor:
+                        syncFeedback.tone === "error"
+                          ? "rgba(248, 113, 113, 0.22)"
+                          : syncFeedback.tone === "success"
+                            ? withOpacity(colors.accent, 0.28)
+                            : withOpacity(colors.foreground, 0.08),
                     },
                   ]}
                 >
-                  {updateFeedback.message}
-                </BodyText>
-              </View>
-            ) : null}
+                  <BodyText
+                    style={[
+                      styles.syncFeedbackText,
+                      {
+                        color:
+                          syncFeedback.tone === "error"
+                            ? isLight
+                              ? "#991b1b"
+                              : "#fecaca"
+                            : colors.foreground,
+                      },
+                    ]}
+                  >
+                    {syncFeedback.message}
+                  </BodyText>
+                </View>
+              ) : null}
 
-            <SettingRow
-              label={t("settings.communityTitle")}
-              description={t("settings.communityDescription")}
+              <SettingRow
+                label={t("settings.autoSyncLibrary")}
+                description={t("settings.autoSyncLibraryDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <Switch
+                    value={settings.autoSyncLibrary}
+                    onValueChange={(value) =>
+                      updateSettings({ autoSyncLibrary: value })
+                    }
+                    trackColor={switchTrackColor}
+                    thumbColor={switchThumbColor}
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.listenbrainz_scrobbling")}
+                description={t("settings.listenbrainz_scrobbling_desc")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setScrobbleProvider("listenbrainz");
+                      setShowScrobbleSheet(true);
+                    }}
+                    style={[
+                      styles.secondaryButton,
+                      { borderColor: colors.borderSubtle },
+                    ]}
+                  >
+                    <BodyText
+                      style={{ color: colors.foreground, fontSize: 13 }}
+                    >
+                      {t("settings.connect")}
+                    </BodyText>
+                  </TouchableOpacity>
+                }
+              />
+              <SettingRow
+                label={t("settings.lastfm_scrobbling")}
+                description={t("settings.lastfm_scrobbling_desc")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setScrobbleProvider("lastfm");
+                      setShowScrobbleSheet(true);
+                    }}
+                    style={[
+                      styles.secondaryButton,
+                      { borderColor: colors.borderSubtle },
+                    ]}
+                  >
+                    <BodyText
+                      style={{ color: colors.foreground, fontSize: 13 }}
+                    >
+                      {t("settings.connect")}
+                    </BodyText>
+                  </TouchableOpacity>
+                }
+              />
+            </Section>
+          ) : null}
+
+          {activeTab === "appearance" ? (
+            <Section
+              title={t("settings.themeAndMotion")}
+              description={t("settings.themeAndMotionDescription")}
               colors={colors}
-              control={
-                <AccentButton
-                  title={t("settings.communityOpen")}
-                  onPress={() => setIsCommunityOpenedManually(true)}
-                />
-              }
-            />
-          </Section>
+            >
+              <SettingRow
+                label={t("settings.theme")}
+                description={t("settings.themeDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.themeGrid}>
+                    {APP_THEME_OPTIONS.map((theme) => (
+                      <ThemeChoiceCard
+                        key={theme}
+                        theme={theme}
+                        label={themeLabels[theme]}
+                        selected={settings.theme === theme}
+                        colors={colors}
+                        onPress={() => updateSettings({ theme })}
+                      />
+                    ))}
+                  </View>
+                }
+              />
+              <SettingRow
+                label={t("settings.disableAnimations")}
+                description={t("settings.disableAnimationsDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <Switch
+                    value={settings.disableAnimations}
+                    onValueChange={(value) =>
+                      updateSettings({ disableAnimations: value })
+                    }
+                    trackColor={switchTrackColor}
+                    thumbColor={switchThumbColor}
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.language")}
+                description={t("settings.languageDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.choiceWrap}>
+                    {(["en", "fa"] as AppLanguage[]).map((language) => (
+                      <ChoiceChip
+                        key={language}
+                        label={
+                          language === "en"
+                            ? t("language.english")
+                            : t("language.persian")
+                        }
+                        selected={settings.language === language}
+                        onPress={() => updateSettings({ language })}
+                        colors={colors}
+                      />
+                    ))}
+                  </View>
+                }
+              />
+            </Section>
+          ) : null}
+
+          {activeTab === "playback" ? (
+            <Section
+              title={t("settings.musicBehaves")}
+              description={t("settings.musicBehavesDescription")}
+              colors={colors}
+            >
+              <SettingRow
+                label={t("settings.autoRetryPlayback")}
+                description={t("settings.autoRetryPlaybackDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.choiceWrap}>
+                    {RETRY_MODES.map((mode) => (
+                      <ChoiceChip
+                        key={mode}
+                        label={retryLabels[mode]}
+                        selected={settings.playbackRetryMode === mode}
+                        onPress={() =>
+                          updateSettings({ playbackRetryMode: mode })
+                        }
+                        colors={colors}
+                      />
+                    ))}
+                  </View>
+                }
+              />
+              <SettingRow
+                label={t("settings.autoplayRecommendedTracks")}
+                description={t("settings.autoplayRecommendedTracksDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <Switch
+                    value={settings.autoplayRecommendations}
+                    onValueChange={(value) =>
+                      updateSettings({ autoplayRecommendations: value })
+                    }
+                    trackColor={switchTrackColor}
+                    thumbColor={switchThumbColor}
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.openNowPlayingAutomatically")}
+                description={t(
+                  "settings.openNowPlayingAutomaticallyDescription",
+                )}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <Switch
+                    value={settings.openFullscreenOnPlay}
+                    onValueChange={(value) =>
+                      updateSettings({ openFullscreenOnPlay: value })
+                    }
+                    trackColor={switchTrackColor}
+                    thumbColor={switchThumbColor}
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.haptics")}
+                description={t("settings.hapticsDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <Switch
+                    value={settings.hapticsEnabled}
+                    onValueChange={(value) =>
+                      updateSettings({ hapticsEnabled: value })
+                    }
+                    trackColor={switchTrackColor}
+                    thumbColor={switchThumbColor}
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.autoCacheLikedSongs")}
+                description={t("settings.autoCacheLikedSongsDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <Switch
+                    value={settings.autoCacheLikedSongs}
+                    onValueChange={(value) =>
+                      updateSettings({ autoCacheLikedSongs: value })
+                    }
+                    trackColor={switchTrackColor}
+                    thumbColor={switchThumbColor}
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.crossfade")}
+                description={t("settings.crossfadeDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <Switch
+                    value={settings.crossfadeEnabled}
+                    onValueChange={(value) =>
+                      updateSettings({ crossfadeEnabled: value })
+                    }
+                    trackColor={switchTrackColor}
+                    thumbColor={switchThumbColor}
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.crossfadeSeconds")}
+                description={t("settings.crossfadeSecondsDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.choiceWrap}>
+                    {[2, 4, 6, 8].map((seconds) => (
+                      <ChoiceChip
+                        key={seconds}
+                        label={`${seconds}s`}
+                        selected={settings.crossfadeSeconds === seconds}
+                        onPress={() =>
+                          updateSettings({ crossfadeSeconds: seconds })
+                        }
+                        colors={colors}
+                      />
+                    ))}
+                  </View>
+                }
+              />
+              <SettingRow
+                label={t("settings.waveformSeek")}
+                description={t("settings.waveformSeekDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <Switch
+                    value={settings.waveformSeekBar}
+                    onValueChange={(value) =>
+                      updateSettings({ waveformSeekBar: value })
+                    }
+                    trackColor={switchTrackColor}
+                    thumbColor={switchThumbColor}
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.replayGain")}
+                description={t("settings.replayGainDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <Switch
+                    value={settings.replayGainEnabled}
+                    onValueChange={(value) =>
+                      updateSettings({ replayGainEnabled: value })
+                    }
+                    trackColor={switchTrackColor}
+                    thumbColor={switchThumbColor}
+                  />
+                }
+              />
+            </Section>
+          ) : null}
+
+          {activeTab === "library" ? (
+            <Section
+              title={t("settings.searchPreferences")}
+              description={t("settings.searchPreferencesDescription")}
+              colors={colors}
+            >
+              <SettingRow
+                label={t("settings.defaultSearchSource")}
+                description={t("settings.defaultSearchSourceDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.choiceWrap}>
+                    {SEARCH_SOURCES.map((source) => (
+                      <ChoiceChip
+                        key={source}
+                        label={sourceLabels[source]}
+                        selected={settings.preferredSearchSource === source}
+                        onPress={() =>
+                          updateSettings({ preferredSearchSource: source })
+                        }
+                        colors={colors}
+                      />
+                    ))}
+                  </View>
+                }
+              />
+              <SettingRow
+                label={t("settings.rememberLastSearch")}
+                description={t("settings.rememberLastSearchDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <Switch
+                    value={settings.rememberLastSearch}
+                    onValueChange={(value) =>
+                      updateSettings({ rememberLastSearch: value })
+                    }
+                    trackColor={switchTrackColor}
+                    thumbColor={switchThumbColor}
+                  />
+                }
+              />
+            </Section>
+          ) : null}
+
+          {activeTab === "library" ? (
+            <Section
+              title={t("settings.readingAndInput")}
+              description={t("settings.readingAndInputDescription")}
+              colors={colors}
+            >
+              <SettingRow
+                label={t("settings.lyrics")}
+                description={t("settings.lyricsDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <Switch
+                    value={settings.lyricsEnabled}
+                    onValueChange={(value) =>
+                      updateSettings({ lyricsEnabled: value })
+                    }
+                    trackColor={switchTrackColor}
+                    thumbColor={switchThumbColor}
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.autoScrollSyncedLyrics")}
+                description={t("settings.autoScrollSyncedLyricsDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <Switch
+                    value={settings.autoScrollLyrics}
+                    disabled={!settings.lyricsEnabled}
+                    onValueChange={(value) =>
+                      updateSettings({ autoScrollLyrics: value })
+                    }
+                    trackColor={switchTrackColor}
+                    thumbColor={switchThumbColor}
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.keyboardShortcuts")}
+                description={t("settings.keyboardShortcutsDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <Switch
+                    value={settings.keyboardShortcuts}
+                    onValueChange={(value) =>
+                      updateSettings({ keyboardShortcuts: value })
+                    }
+                    trackColor={switchTrackColor}
+                    thumbColor={switchThumbColor}
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.seekJumpLength")}
+                description={t("settings.seekJumpLengthDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.choiceWrap}>
+                    {SEEK_STEP_OPTIONS.map((seconds) => (
+                      <ChoiceChip
+                        key={seconds}
+                        label={`${seconds}s`}
+                        selected={settings.seekStepSeconds === seconds}
+                        onPress={() =>
+                          updateSettings({ seekStepSeconds: seconds })
+                        }
+                        colors={colors}
+                      />
+                    ))}
+                  </View>
+                }
+              />
+            </Section>
+          ) : null}
+
+          {activeTab === "about" ? (
+            <Section
+              title={t("settings.appUpdates")}
+              description={t("settings.appUpdatesDescription")}
+              colors={colors}
+            >
+              <SettingRow
+                label={t("settings.checkForUpdates")}
+                description={updateDescription}
+                colors={colors}
+                control={
+                  <View
+                    style={[styles.accountActions, { flexDirection: "row" }]}
+                  >
+                    <AccentButton
+                      title={
+                        availableUpdateInfo
+                          ? t("settings.openUpdate")
+                          : t("settings.checkForUpdates")
+                      }
+                      disabled={isCheckingForUpdates}
+                      onPress={() => {
+                        void handleCheckForUpdates();
+                      }}
+                      style={{
+                        opacity: isCheckingForUpdates ? 0.6 : 1,
+                      }}
+                    />
+                    <View
+                      style={[
+                        styles.secondaryButton,
+                        {
+                          backgroundColor: colors.surface2,
+                          borderColor: colors.borderSubtle,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 8,
+                          opacity: 1,
+                        },
+                      ]}
+                    >
+                      {isCheckingForUpdates ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={colors.foreground}
+                        />
+                      ) : null}
+                      <BodyText style={styles.secondaryButtonText}>
+                        {availableUpdateInfo?.version || CURRENT_APP_VERSION}
+                      </BodyText>
+                    </View>
+                  </View>
+                }
+              />
+              {updateFeedback ? (
+                <View
+                  style={[
+                    styles.syncFeedbackBox,
+                    {
+                      backgroundColor:
+                        updateFeedback.tone === "error"
+                          ? "rgba(220, 38, 38, 0.12)"
+                          : updateFeedback.tone === "success"
+                            ? withOpacity(colors.accent, 0.12)
+                            : withOpacity(colors.foreground, 0.05),
+                      borderColor:
+                        updateFeedback.tone === "error"
+                          ? "rgba(248, 113, 113, 0.22)"
+                          : updateFeedback.tone === "success"
+                            ? withOpacity(colors.accent, 0.28)
+                            : withOpacity(colors.foreground, 0.08),
+                    },
+                  ]}
+                >
+                  <BodyText
+                    style={[
+                      styles.syncFeedbackText,
+                      {
+                        color:
+                          updateFeedback.tone === "error"
+                            ? isLight
+                              ? "#991b1b"
+                              : "#fecaca"
+                            : colors.foreground,
+                      },
+                    ]}
+                  >
+                    {updateFeedback.message}
+                  </BodyText>
+                </View>
+              ) : null}
+
+              <SettingRow
+                label={t("settings.communityTitle")}
+                description={t("settings.communityDescription")}
+                colors={colors}
+                control={
+                  <AccentButton
+                    title={t("settings.communityOpen")}
+                    onPress={() => setIsCommunityOpenedManually(true)}
+                  />
+                }
+              />
+            </Section>
           ) : null}
 
           <CommunityModal

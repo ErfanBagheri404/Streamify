@@ -1,6 +1,13 @@
 import React, { useRef, useState } from "react";
 const { Animated, PanResponder, Dimensions } = require("react-native");
-import { Image, View, TouchableOpacity, Text, TextInput, Share } from "react-native";
+import {
+  Image,
+  View,
+  TouchableOpacity,
+  Text,
+  TextInput,
+  Share,
+} from "react-native";
 import styled from "styled-components/native";
 import { LinearGradient } from "expo-linear-gradient";
 import AntDesign from "@expo/vector-icons/AntDesign";
@@ -69,7 +76,7 @@ const HeaderActions = styled.View`
 
 const HeaderIconButton = styled.TouchableOpacity`
   padding: 8px;
-  marginStart: 8px;
+  marginstart: 8px;
 `;
 
 const HeaderIconText = styled.Text`
@@ -87,7 +94,7 @@ const SortRow = styled.View`
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  paddingStart: 16px;
+  paddingstart: 16px;
   margin-bottom: 12px;
 `;
 
@@ -99,7 +106,7 @@ const SortLeft = styled.TouchableOpacity`
 const SortIcon = styled.Text`
   color: #a3a3a3;
   font-size: 16px;
-  marginEnd: 8px;
+  marginend: 8px;
   font-family: GoogleSansRegular;
   line-height: 20px;
 `;
@@ -694,7 +701,12 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [likedSongs.length, downloadingTracks.length, loadDownloadingTracks, loadDownloadedTracks]);
+  }, [
+    likedSongs.length,
+    downloadingTracks.length,
+    loadDownloadingTracks,
+    loadDownloadedTracks,
+  ]);
 
   React.useEffect(() => {
     contentOpacity.setValue(0.58);
@@ -765,10 +777,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       goToArtists: language === "fa" ? "رفتن به هنرمندان" : "Go to artists",
       downloadMoreQueued:
         language === "fa"
-          ? (count: number) =>
-              `و ${count} آهنگ دیگر در صف هستند`
-          : (count: number) =>
-              `and ${count} more songs queued`,
+          ? (count: number) => `و ${count} آهنگ دیگر در صف هستند`
+          : (count: number) => `and ${count} more songs queued`,
       sleepTimer: language === "fa" ? "تایمر خواب" : "Sleep timer",
       songRadio: language === "fa" ? "رفتن به رادیوی آهنگ" : "Go to song radio",
     }),
@@ -1161,8 +1171,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     if (activeSection === null) {
       return [
         ...playlistItems.slice(0, 4),
-                ...mixedLibraryItems,
-                ...playlistItems.slice(4),
+        ...mixedLibraryItems,
+        ...playlistItems.slice(4),
       ];
     }
     if (activeSection === "Artists") return topArtistItems;
@@ -1301,16 +1311,15 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           colors={
             item.artworkKind === "liked"
               ? [colors.accent, colors.heroMid, colors.heroEnd]
-
               : item.artworkKind === "replay"
-              ? ["#f43f5e", "#a21caf", "#4f46e5"]
-              : item.artworkKind === "local"
-                ? ["#059669", "#10b981", "#34d399"]
-                : item.artworkKind === "artist"
-                  ? [colors.surface1, colors.surface2, colors.surface3]
-                  : item.artworkKind === "playlist"
-                    ? [colors.accent, colors.heroMid, colors.heroEnd]
-                    : ["#1a1a1a", "#404040", "#525252"]
+                ? ["#f43f5e", "#a21caf", "#4f46e5"]
+                : item.artworkKind === "local"
+                  ? ["#059669", "#10b981", "#34d399"]
+                  : item.artworkKind === "artist"
+                    ? [colors.surface1, colors.surface2, colors.surface3]
+                    : item.artworkKind === "playlist"
+                      ? [colors.accent, colors.heroMid, colors.heroEnd]
+                      : ["#1a1a1a", "#404040", "#525252"]
           }
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -1328,8 +1337,6 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
               size={iconSize}
               color={colors.accentContrast}
             />
-
-
           ) : item.artworkKind === "local" ? (
             <Ionicons
               name="albums-outline"
@@ -1859,7 +1866,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                               overflow: "hidden",
                             }}
                           >
-                             {renderArtwork(item, "full")}
+                            {renderArtwork(item, "full")}
                             {item.onSecondaryAction ? (
                               <TouchableOpacity
                                 onPress={item.onSecondaryAction}
@@ -1989,19 +1996,19 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             },
           ]}
           onOptionPress={(option) => {
-             if (option === "Share" && selectedTrack?.title) {
-               const artistSuffix = selectedTrack.artist
-                 ? ` — ${selectedTrack.artist}`
-                 : "";
-               Share.share({
-                 message: `${selectedTrack.title}${artistSuffix}`,
-                 url: selectedTrack.url || selectedTrack.thumbnail || "",
-               }).catch((error) => {
-                 console.log("[LibraryScreen] Share failed:", error);
-               });
-             }
-             closeSongActionSheet();
-           }}
+            if (option === "Share" && selectedTrack?.title) {
+              const artistSuffix = selectedTrack.artist
+                ? ` — ${selectedTrack.artist}`
+                : "";
+              Share.share({
+                message: `${selectedTrack.title}${artistSuffix}`,
+                url: selectedTrack.url || selectedTrack.thumbnail || "",
+              }).catch((error) => {
+                console.log("[LibraryScreen] Share failed:", error);
+              });
+            }
+            closeSongActionSheet();
+          }}
         />
       </LibraryShell>
     </UiScreen>

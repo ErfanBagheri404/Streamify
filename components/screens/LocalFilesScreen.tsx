@@ -147,23 +147,22 @@ export const LocalFilesScreen: React.FC<LocalFilesScreenProps> = ({
       onBack={handleGoBack}
       onPlayAll={() => void handlePlayAll()}
       onSongPress={handleSongPress}
-
       emptyMessage={
         isLoading
           ? t("common.loading")
           : permissionNotice
-            ? (isRtl
+            ? isRtl
               ? "دسترسی فایل‌ها فعال نیست"
-              : "File access permission required")
+              : "File access permission required"
             : isRtl
               ? "آهنگی روی این دستگاه پیدا نشد"
               : "No songs found on this device"
       }
       emptySubMessage={
         permissionNotice
-          ? (isRtl
+          ? isRtl
             ? "برای اسکن موزیک دستگاه، فعال کردن فایل‌ها لازم است"
-            : "Allow file access to scan music on this device. Tap Enable in Settings.")
+            : "Allow file access to scan music on this device. Tap Enable in Settings."
           : isRtl
             ? "موسیقی را روی حافظه دستگاه بریزید"
             : "Put some music on the device storage first"

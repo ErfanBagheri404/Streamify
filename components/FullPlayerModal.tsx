@@ -21,7 +21,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { Entypo } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
-import { usePlayer, usePlaybackProgress, type Track } from "../contexts/PlayerContext";
+import {
+  usePlayer,
+  usePlaybackProgress,
+  type Track,
+} from "../contexts/PlayerContext";
 import { formatTime } from "../utils/formatters";
 import { CachedLyrics, lyricsService } from "../modules/lyricsService";
 import {
@@ -32,7 +36,10 @@ import { Share } from "react-native";
 import { normalizeYouTubeThumbnailUrl, sanitizeImageUrl } from "./core/image";
 import { SliderSheet } from "./SliderSheet";
 import { Waveform } from "./Waveform";
-import { getWaveformPeaks, waveformSupported } from "../modules/waveformService";
+import {
+  getWaveformPeaks,
+  waveformSupported,
+} from "../modules/waveformService";
 import { SleepTimerSheet } from "./SleepTimerSheet";
 import { PlaybackSpeedSheet } from "./PlaybackSpeedSheet";
 import { LyricsSearchSheet } from "./LyricsSearchSheet";
@@ -125,7 +132,6 @@ const Header = styled.View`
   margin: 16px 0px;
   padding-horizontal: 28px;
 `;
-
 
 // Up Next / queue-suggestion panel is hidden from the fullscreen player by
 // design — all its logic (upNextTracks, handleUpNextPress, the panel JSX)
@@ -446,7 +452,10 @@ const TimeText = styled.Text`
  * Tiny "1.25×" chip between the time labels. Renders nothing at 1x so the
  * seek bar layout is byte-for-byte identical to before during normal playback.
  */
-const SpeedBadge: React.FC<{ rate: number; onPress: () => void }> = ({ rate, onPress }) => {
+const SpeedBadge: React.FC<{ rate: number; onPress: () => void }> = ({
+  rate,
+  onPress,
+}) => {
   if (Math.abs(rate - 1) < 0.001) {
     return null;
   }
@@ -462,7 +471,9 @@ const SpeedBadge: React.FC<{ rate: number; onPress: () => void }> = ({ rate, onP
         borderColor: "rgba(255,255,255,0.35)",
       }}
     >
-      <Text style={{ color: "#ffffff", fontSize: 12, fontWeight: "600" }}>{`${rate}×`}</Text>
+      <Text
+        style={{ color: "#ffffff", fontSize: 12, fontWeight: "600" }}
+      >{`${rate}×`}</Text>
     </TouchableOpacity>
   );
 };
@@ -640,17 +651,21 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const fallbackPeaks = React.useMemo(() => {
     // ~120 bars at 3pt step fills a 360dp-wide row edge to edge.
     const n = 120;
-    const seed = (currentTrack?.id ?? "").split("").reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0);
+    const seed = (currentTrack?.id ?? "")
+      .split("")
+      .reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0);
     const mulberry = (i: number) => {
-      let t = ((seed + i * 0x6D2B79F5) >>> 0) & 0xFFFFFFFF;
+      let t = ((seed + i * 0x6d2b79f5) >>> 0) & 0xffffffff;
       t = Math.imul(t ^ (t >>> 15), t | 1);
       t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 0xFFFFFFFF;
+      return ((t ^ (t >>> 14)) >>> 0) / 0xffffffff;
     };
     return Array.from({ length: n }, (_, i) => 0.18 + 0.55 * mulberry(i));
   }, [currentTrack?.id]);
 
-  const [waveformPeaks, setWaveformPeaks] = useState<number[]>(() => fallbackPeaks);
+  const [waveformPeaks, setWaveformPeaks] = useState<number[]>(
+    () => fallbackPeaks,
+  );
   const [isHighResArtworkReady, setIsHighResArtworkReady] = useState(false);
 
   const appState = useRef(AppState.currentState);
@@ -890,7 +905,10 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       },
       {
         key: "Smart queue from library",
-        label: language === "fa" ? "صف پخش هوشمند از کتابخانه" : "Smart queue from library",
+        label:
+          language === "fa"
+            ? "صف پخش هوشمند از کتابخانه"
+            : "Smart queue from library",
         icon: "sparkles-outline",
       },
       {
@@ -1077,7 +1095,6 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
   // Waveform: load peaks when track changes (Android only, feature toggle).
   useEffect(() => {
-
     if (!settings.waveformSeekBar || !waveformSupported || !currentTrack) {
       setWaveformPeaks(fallbackPeaks);
       return;
@@ -1096,10 +1113,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       } catch {
         if (!cancelled) {
           setWaveformPeaks(fallbackPeaks);
-                  }
+        }
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [currentTrack?.id, settings.waveformSeekBar, waveformSupported]);
 
   const animateSheet = (state: "closed" | "half" | "full") => {
@@ -1246,7 +1265,9 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
     if (option === "Share") {
       if (currentTrack?.title) {
-        const artistSuffix = currentTrack.artist ? ` — ${currentTrack.artist}` : "";
+        const artistSuffix = currentTrack.artist
+          ? ` — ${currentTrack.artist}`
+          : "";
         Share.share({
           message: `${currentTrack.title}${artistSuffix}`,
           url: currentTrack.url || currentTrack.thumbnail || "",
@@ -1319,7 +1340,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     if (option === "View song credits") {
       const artistLine = currentTrack?.artist || "";
       const sourceLine = currentTrack?.source
-        ? currentTrack.source.charAt(0).toUpperCase() + currentTrack.source.slice(1)
+        ? currentTrack.source.charAt(0).toUpperCase() +
+          currentTrack.source.slice(1)
         : "";
       const lines = [
         currentTrack?.title || "",
@@ -1611,7 +1633,9 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
   const handleLike = () => {
     if (currentTrack) {
-      playHaptic(isSongLiked(currentTrack.id) ? Haptic.ToggleOff : Haptic.ToggleOn);
+      playHaptic(
+        isSongLiked(currentTrack.id) ? Haptic.ToggleOff : Haptic.ToggleOn,
+      );
       toggleLikeSong(currentTrack);
     }
   };
@@ -1936,80 +1960,89 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
               <ProgressContainer>
                 <ProgressBarContainer>
-
                   {settings.waveformSeekBar ? (
-                  <Waveform
-                    peaks={waveformPeaks}
-                    barMaxHeight={30}
-                    seekRatio={seekRatio}
-                    progressRatio={seekRatio}
-                    isSeeking={isSeeking}
-                    onSeek={(ratio) => commitSeekValue(ratio * effectiveDurationSeconds)}
-                    onDrag={(ratio) => previewSeekValue(ratio * effectiveDurationSeconds)}
-                    onDragStart={(ratio) => previewSeekValue(ratio * effectiveDurationSeconds)}
-                    onDragEnd={() => {
-                      setIsSeeking(false);
-                      setSeekValue(position >= 0 ? position : 0);
-                    }}
-                    canSeek={canSeek}
-                    accessibilityLabel={language === "fa" ? "تغییر موقعیت پخش" : "Seek playback"}
-                  />
+                    <Waveform
+                      peaks={waveformPeaks}
+                      barMaxHeight={30}
+                      seekRatio={seekRatio}
+                      progressRatio={seekRatio}
+                      isSeeking={isSeeking}
+                      onSeek={(ratio) =>
+                        commitSeekValue(ratio * effectiveDurationSeconds)
+                      }
+                      onDrag={(ratio) =>
+                        previewSeekValue(ratio * effectiveDurationSeconds)
+                      }
+                      onDragStart={(ratio) =>
+                        previewSeekValue(ratio * effectiveDurationSeconds)
+                      }
+                      onDragEnd={() => {
+                        setIsSeeking(false);
+                        setSeekValue(position >= 0 ? position : 0);
+                      }}
+                      canSeek={canSeek}
+                      accessibilityLabel={
+                        language === "fa" ? "تغییر موقعیت پخش" : "Seek playback"
+                      }
+                    />
                   ) : (
-                  <View
-                    onLayout={handleSeekBarLayout}
-                    accessible
-                    focusable
-                    accessibilityRole="adjustable"
-                    accessibilityLabel={
-                      language === "fa" ? "تغییر موقعیت پخش" : "Seek playback"
-                    }
-                    accessibilityActions={[
-                      {
-                        name: "decrement",
-                        label: language === "fa" ? "عقب بردن" : "Seek backward",
-                      },
-                      {
-                        name: "increment",
-                        label: language === "fa" ? "جلو بردن" : "Seek forward",
-                      },
-                    ]}
-                    accessibilityValue={{
-                      min: 0,
-                      max: Math.round(effectiveDurationSeconds || 0),
-                      now: Math.round(displayedSeekValue),
-                      text: `${formatTime(displayedSeekValue * 1000)} / ${formatTime(
-                        (effectiveDurationSeconds || 0) * 1000,
-                      )}`,
-                    }}
-                    onAccessibilityAction={handleSeekAccessibilityAction}
-                    {...seekBarPanResponder.panHandlers}
-                    style={{
-                      width: "100%",
-                      height: 40,
-                      justifyContent: "center",
-                    }}
-                  >
-                    <ProgressTrack
+                    <View
+                      onLayout={handleSeekBarLayout}
+                      accessible
+                      focusable
+                      accessibilityRole="adjustable"
+                      accessibilityLabel={
+                        language === "fa" ? "تغییر موقعیت پخش" : "Seek playback"
+                      }
+                      accessibilityActions={[
+                        {
+                          name: "decrement",
+                          label:
+                            language === "fa" ? "عقب بردن" : "Seek backward",
+                        },
+                        {
+                          name: "increment",
+                          label:
+                            language === "fa" ? "جلو بردن" : "Seek forward",
+                        },
+                      ]}
+                      accessibilityValue={{
+                        min: 0,
+                        max: Math.round(effectiveDurationSeconds || 0),
+                        now: Math.round(displayedSeekValue),
+                        text: `${formatTime(displayedSeekValue * 1000)} / ${formatTime(
+                          (effectiveDurationSeconds || 0) * 1000,
+                        )}`,
+                      }}
+                      onAccessibilityAction={handleSeekAccessibilityAction}
+                      {...seekBarPanResponder.panHandlers}
                       style={{
-                        backgroundColor: withOpacity(colors.foreground, 0.24),
+                        width: "100%",
+                        height: 40,
+                        justifyContent: "center",
                       }}
                     >
-                      <ProgressFill
+                      <ProgressTrack
                         style={{
-                          width: `${seekRatio * 100}%`,
+                          backgroundColor: withOpacity(colors.foreground, 0.24),
+                        }}
+                      >
+                        <ProgressFill
+                          style={{
+                            width: `${seekRatio * 100}%`,
+                            backgroundColor: colors.foreground,
+                          }}
+                        />
+                      </ProgressTrack>
+                      <ProgressThumb
+                        pointerEvents="none"
+                        style={{
+                          left: thumbOffset,
                           backgroundColor: colors.foreground,
+                          borderColor: colors.background,
                         }}
                       />
-                    </ProgressTrack>
-                    <ProgressThumb
-                      pointerEvents="none"
-                      style={{
-                        left: thumbOffset,
-                        backgroundColor: colors.foreground,
-                        borderColor: colors.background,
-                      }}
-                    />
-                  </View>
+                    </View>
                   )}
                 </ProgressBarContainer>
                 <TimeContainer>
@@ -2018,7 +2051,10 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   >
                     {formatTime((displayPositionSeconds || 0) * 1000)}
                   </TimeText>
-                  <SpeedBadge rate={speedBadgeRate} onPress={() => setShowSpeedSheet(true)} />
+                  <SpeedBadge
+                    rate={speedBadgeRate}
+                    onPress={() => setShowSpeedSheet(true)}
+                  />
                   <TimeText
                     style={{ fontFamily: getAppFontFamily(isRtl, "medium") }}
                   >
@@ -2111,9 +2147,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   borderWidth: 1,
                 }}
               >
-                <LyricsHeader
-                  style={{ flexDirection: "row" }}
-                >
+                <LyricsHeader style={{ flexDirection: "row" }}>
                   <LyricsTitle
                     style={{
                       color: colors.foreground,
@@ -2503,22 +2537,206 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 )}
               </LyricsCard>
 
-
               {SHOW_UP_NEXT_SECTION &&
-              (isSuggestionPanelVisible ? (
-                <View
-                  style={{
-                    marginTop: 20,
-                    marginHorizontal: 28,
-                    padding: 18,
-                    borderRadius: 18,
-                    backgroundColor: withOpacity(colors.surface1, 0.72),
-                    borderWidth: 1,
-                    borderColor: colors.borderSubtle,
-                  }}
-                >
+                (isSuggestionPanelVisible ? (
                   <View
                     style={{
+                      marginTop: 20,
+                      marginHorizontal: 28,
+                      padding: 18,
+                      borderRadius: 18,
+                      backgroundColor: withOpacity(colors.surface1, 0.72),
+                      borderWidth: 1,
+                      borderColor: colors.borderSubtle,
+                    }}
+                  >
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 12,
+                      }}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          style={{
+                            color: colors.foreground,
+                            fontSize: 16,
+                            fontFamily: getAppFontFamily(isRtl, "bold"),
+                            ...getTextDirectionStyle(isRtl),
+                          }}
+                        >
+                          {copy.upNext}
+                        </Text>
+                        <Text
+                          style={{
+                            color: mutedTextColor,
+                            fontSize: 12,
+                            marginTop: 4,
+                            fontFamily: getAppFontFamily(isRtl, "regular"),
+                            ...getTextDirectionStyle(isRtl),
+                          }}
+                        >
+                          {playlist.length > 1
+                            ? copy.queuePosition(
+                                currentIndex + 1,
+                                playlist.length,
+                              )
+                            : copy.tapToPlay}
+                        </Text>
+                      </View>
+
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel={copy.hideUpNext}
+                        onPress={() => setIsSuggestionPanelVisible(false)}
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 17,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: withOpacity(colors.surface2, 0.72),
+                          borderWidth: 1,
+                          borderColor: withOpacity(colors.borderSubtle, 0.9),
+                        }}
+                      >
+                        <Ionicons name="close" size={18} color={iconColor} />
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={{ marginTop: 14, gap: 10 }}>
+                      {upNextTracks.length > 0 ? (
+                        upNextTracks.map(({ track, index }) => (
+                          <TouchableOpacity
+                            key={`${track.id}-${index}`}
+                            onPress={() => {
+                              void handleUpNextPress(index);
+                            }}
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 12,
+                              borderRadius: 16,
+                              padding: 12,
+                              backgroundColor: withOpacity(
+                                colors.surface2,
+                                0.76,
+                              ),
+                              borderWidth: 1,
+                              borderColor: withOpacity(
+                                colors.borderSubtle,
+                                0.8,
+                              ),
+                            }}
+                          >
+                            {track.thumbnail ? (
+                              <View
+                                style={{
+                                  width: 52,
+                                  height: 52,
+                                  borderRadius: 12,
+                                  overflow: "hidden",
+                                  backgroundColor: colors.surface2,
+                                }}
+                              >
+                                <AlbumArt
+                                  source={{ uri: track.thumbnail }}
+                                  style={{ width: "100%", height: "100%" }}
+                                />
+                              </View>
+                            ) : (
+                              <View
+                                style={{
+                                  width: 52,
+                                  height: 52,
+                                  borderRadius: 12,
+                                  backgroundColor: colors.surface2,
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                }}
+                              >
+                                <Ionicons
+                                  name="musical-notes"
+                                  size={20}
+                                  color={mutedTextColor}
+                                />
+                              </View>
+                            )}
+
+                            <View style={{ flex: 1 }}>
+                              <Text
+                                numberOfLines={1}
+                                style={{
+                                  color: colors.foreground,
+                                  fontSize: 14,
+                                  fontFamily: getAppFontFamily(
+                                    isRtl,
+                                    "semibold",
+                                  ),
+                                  ...getTextDirectionStyle(isRtl),
+                                }}
+                              >
+                                {track.title}
+                              </Text>
+                              <Text
+                                numberOfLines={1}
+                                style={{
+                                  color: mutedTextColor,
+                                  fontSize: 12,
+                                  marginTop: 3,
+                                  fontFamily: getAppFontFamily(
+                                    isRtl,
+                                    "regular",
+                                  ),
+                                  ...getTextDirectionStyle(isRtl),
+                                }}
+                              >
+                                {track.artist ||
+                                  t("screens.artist.unknown_artist")}
+                              </Text>
+                            </View>
+
+                            <Text
+                              style={{
+                                color: withOpacity(colors.foreground, 0.58),
+                                fontSize: 12,
+                                fontFamily: getAppFontFamily(isRtl, "semibold"),
+                              }}
+                            >
+                              {index + 1}
+                            </Text>
+                          </TouchableOpacity>
+                        ))
+                      ) : (
+                        <Text
+                          style={{
+                            color: mutedTextColor,
+                            fontSize: 13,
+                            fontFamily: getAppFontFamily(isRtl, "regular"),
+                            ...getTextDirectionStyle(isRtl),
+                          }}
+                        >
+                          {copy.noUpNext}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel={copy.showUpNext}
+                    onPress={() => setIsSuggestionPanelVisible(true)}
+                    style={{
+                      marginTop: 20,
+                      marginHorizontal: 28,
+                      paddingHorizontal: 16,
+                      paddingVertical: 14,
+                      borderRadius: 18,
+                      backgroundColor: withOpacity(colors.surface1, 0.6),
+                      borderWidth: 1,
+                      borderColor: colors.borderSubtle,
                       flexDirection: "row",
                       alignItems: "center",
                       justifyContent: "space-between",
@@ -2529,12 +2747,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                       <Text
                         style={{
                           color: colors.foreground,
-                          fontSize: 16,
+                          fontSize: 15,
                           fontFamily: getAppFontFamily(isRtl, "bold"),
                           ...getTextDirectionStyle(isRtl),
                         }}
                       >
-                        {copy.upNext}
+                        {copy.showUpNext}
                       </Text>
                       <Text
                         style={{
@@ -2554,184 +2772,13 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                       </Text>
                     </View>
 
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel={copy.hideUpNext}
-                      onPress={() => setIsSuggestionPanelVisible(false)}
-                      style={{
-                        width: 34,
-                        height: 34,
-                        borderRadius: 17,
-                        alignItems: "center",
-                        justifyContent: "center",
-                        backgroundColor: withOpacity(colors.surface2, 0.72),
-                        borderWidth: 1,
-                        borderColor: withOpacity(colors.borderSubtle, 0.9),
-                      }}
-                    >
-                      <Ionicons name="close" size={18} color={iconColor} />
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={{ marginTop: 14, gap: 10 }}>
-                    {upNextTracks.length > 0 ? (
-                      upNextTracks.map(({ track, index }) => (
-                        <TouchableOpacity
-                          key={`${track.id}-${index}`}
-                          onPress={() => {
-                            void handleUpNextPress(index);
-                          }}
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            gap: 12,
-                            borderRadius: 16,
-                            padding: 12,
-                            backgroundColor: withOpacity(colors.surface2, 0.76),
-                            borderWidth: 1,
-                            borderColor: withOpacity(colors.borderSubtle, 0.8),
-                          }}
-                        >
-                          {track.thumbnail ? (
-                            <View
-                              style={{
-                                width: 52,
-                                height: 52,
-                                borderRadius: 12,
-                                overflow: "hidden",
-                                backgroundColor: colors.surface2,
-                              }}
-                            >
-                              <AlbumArt
-                                source={{ uri: track.thumbnail }}
-                                style={{ width: "100%", height: "100%" }}
-                              />
-                            </View>
-                          ) : (
-                            <View
-                              style={{
-                                width: 52,
-                                height: 52,
-                                borderRadius: 12,
-                                backgroundColor: colors.surface2,
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
-                              <Ionicons
-                                name="musical-notes"
-                                size={20}
-                                color={mutedTextColor}
-                              />
-                            </View>
-                          )}
-
-                          <View style={{ flex: 1 }}>
-                            <Text
-                              numberOfLines={1}
-                              style={{
-                                color: colors.foreground,
-                                fontSize: 14,
-                                fontFamily: getAppFontFamily(isRtl, "semibold"),
-                                ...getTextDirectionStyle(isRtl),
-                              }}
-                            >
-                              {track.title}
-                            </Text>
-                            <Text
-                              numberOfLines={1}
-                              style={{
-                                color: mutedTextColor,
-                                fontSize: 12,
-                                marginTop: 3,
-                                fontFamily: getAppFontFamily(isRtl, "regular"),
-                                ...getTextDirectionStyle(isRtl),
-                              }}
-                            >
-                              {track.artist ||
-                                t("screens.artist.unknown_artist")}
-                            </Text>
-                          </View>
-
-                          <Text
-                            style={{
-                              color: withOpacity(colors.foreground, 0.58),
-                              fontSize: 12,
-                              fontFamily: getAppFontFamily(isRtl, "semibold"),
-                            }}
-                          >
-                            {index + 1}
-                          </Text>
-                        </TouchableOpacity>
-                      ))
-                    ) : (
-                      <Text
-                        style={{
-                          color: mutedTextColor,
-                          fontSize: 13,
-                          fontFamily: getAppFontFamily(isRtl, "regular"),
-                          ...getTextDirectionStyle(isRtl),
-                        }}
-                      >
-                        {copy.noUpNext}
-                      </Text>
-                    )}
-                  </View>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel={copy.showUpNext}
-                  onPress={() => setIsSuggestionPanelVisible(true)}
-                  style={{
-                    marginTop: 20,
-                    marginHorizontal: 28,
-                    paddingHorizontal: 16,
-                    paddingVertical: 14,
-                    borderRadius: 18,
-                    backgroundColor: withOpacity(colors.surface1, 0.6),
-                    borderWidth: 1,
-                    borderColor: colors.borderSubtle,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 12,
-                  }}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={{
-                        color: colors.foreground,
-                        fontSize: 15,
-                        fontFamily: getAppFontFamily(isRtl, "bold"),
-                        ...getTextDirectionStyle(isRtl),
-                      }}
-                    >
-                      {copy.showUpNext}
-                    </Text>
-                    <Text
-                      style={{
-                        color: mutedTextColor,
-                        fontSize: 12,
-                        marginTop: 4,
-                        fontFamily: getAppFontFamily(isRtl, "regular"),
-                        ...getTextDirectionStyle(isRtl),
-                      }}
-                    >
-                      {playlist.length > 1
-                        ? copy.queuePosition(currentIndex + 1, playlist.length)
-                        : copy.tapToPlay}
-                    </Text>
-                  </View>
-
-                  <Ionicons
-
-                    name={"chevron-back"}
-                    size={18}
-                    color={iconColor}
-                  />
-                </TouchableOpacity>
-              ))}
+                    <Ionicons
+                      name={"chevron-back"}
+                      size={18}
+                      color={iconColor}
+                    />
+                  </TouchableOpacity>
+                ))}
 
               <Spacer size={40} />
             </ScrollView>
