@@ -803,6 +803,7 @@ export const searchAPI = {
       | "youtubemusic"
       | "soundcloud"
       | "spotify"
+      | "subsonic"
       | "jiosaavn" = "youtube",
   ): Promise<string[]> => {
     if (!query.trim()) {

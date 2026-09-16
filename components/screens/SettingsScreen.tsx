@@ -812,8 +812,8 @@ export default function SettingsScreen({
             }
           />
           <SettingRow
-            label="ListenBrainz scrobbling"
-            description="Send your plays to ListenBrainz — free account, just paste a token."
+            label={t("settings.listenbrainz_scrobbling")}
+            description={t("settings.listenbrainz_scrobbling_desc")}
             colors={colors}
             controlPlacement="inline"
             control={
@@ -829,8 +829,8 @@ export default function SettingsScreen({
             }
           />
           <SettingRow
-            label="Last.fm scrobbling"
-            description="Send your plays to Last.fm — connect with your last.fm account."
+            label={t("settings.lastfm_scrobbling")}
+            description={t("settings.lastfm_scrobbling_desc")}
             colors={colors}
             controlPlacement="inline"
             control={

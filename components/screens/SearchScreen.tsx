@@ -100,7 +100,7 @@ const toPlayableSearchTrack = (item: any) => ({
     item.artistSource || item.playbackSource || item.source || "youtube",
   duration: parseInt(item.duration) || 0,
   thumbnail: item.thumbnailUrl || item.img,
-  audioUrl: item.source === "local" ? item.href : undefined,
+  audioUrl: item.source === "local" ? item.href : item.streamUrl ?? undefined,
   url: item.href,
   source: item.playbackSource || item.source || "youtube",
   providerHint: item.providerHint,
@@ -357,7 +357,8 @@ type SourceType =
   | "youtubemusic"
   | "soundcloud"
   | "jiosaavn"
-  | "local";
+  | "local"
+  | "subsonic";
 
 // --- Interfaces ---
 
@@ -398,6 +399,7 @@ const SEARCH_SOURCE_OPTIONS: SearchSourceOption[] = [
   { id: "soundcloud", labelKey: "source.soundcloud", color: "#ff7700" },
   { id: "jiosaavn", labelKey: "source.jiosaavn", color: "#1fa18a" },
   { id: "local", labelKey: "source.local", color: "#5e9eff" },
+  { id: "subsonic", labelKey: "source.subsonic", color: "#0188d1" },
 ];
 
 const SEARCH_CATEGORY_IMAGES = {
@@ -991,6 +993,18 @@ export default function SearchScreen({ navigation }: any) {
             20,
           );
           paginationRef.current.nextpage = null;
+        } else if (requestSource === "subsonic") {
+          // Subsonic server search — requires user-configured credentials.
+          const { subsonicService: subsonic } = await import("../../modules/subsonicService");
+          if (!subsonic.isConfigured()) {
+            results = [];
+          } else {
+            try {
+              results = await subsonic.search(trimmedQuery, 20);
+            } catch {
+              results = [];
+            }
+          }
         } else if (requestSource === "local") {
           // Device library. No pagination — MediaStore scans are cheap enough
           // to filter fully on-device.

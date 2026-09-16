@@ -6,14 +6,22 @@
  *  shown right in the sheet.
  *******************************************************************/
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  ActivityIndicator,
+  Modal,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import * as Linking from "expo-linking";
 import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAppLanguage } from "../hooks/useAppLanguage";
 import { useTheme, withOpacity } from "../hooks/useTheme";
 import { getAppFontFamily, getTextDirectionStyle } from "../utils/fonts";
-import { t } from "../utils/localization";
 import { scrobblerService } from "../services/ScrobblerService";
 
 export type ScrobbleProvider = "listenbrainz" | "lastfm";
@@ -72,16 +80,6 @@ const StepText = styled.Text`
   line-height: 17px;
   margin-bottom: 2px;
 `;
-const LinkText = styled.Text`
-  font-size: 12px;
-  line-height: 17px;
-  text-decoration-line: underline;
-`;
-const Divider = styled.View`
-  height: 1px;
-  margin: 20px 0;
-`;
-
 export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({
   visible,
   onClose,
@@ -89,7 +87,7 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({
 }) => {
   const isLbz = provider === "listenbrainz";
   const { colors } = useTheme();
-  const { isRtl } = useAppLanguage();
+  const { t, isRtl } = useAppLanguage();
 
   // --- ListenBrainz state ---
   const [lbzToken, setLbzToken] = useState("");
@@ -104,6 +102,7 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({
   const [lfmStatus, setLfmStatus] = useState("");
   const [lfmUsername, setLfmUsername] = useState("");
   const lfmPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lfmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const font = useCallback(
     (w: "regular" | "semibold" | "bold") => getAppFontFamily(isRtl, w),
@@ -133,7 +132,10 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({
         setLfmStatus(`Connected as ${uname || "unknown"}`);
       }
     })();
-    return () => { if (lfmPollRef.current) clearInterval(lfmPollRef.current); };
+    return () => {
+      if (lfmPollRef.current) clearInterval(lfmPollRef.current);
+      if (lfmTimeoutRef.current) clearTimeout(lfmTimeoutRef.current);
+    };
   }, [visible]);
 
   // ------- ListenBrainz save -------
@@ -145,13 +147,13 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({
       const { listenbrainz } = await scrobblerService.getEnabledProviders();
       setLbzStatus(
         listenbrainz
-          ? "Token saved — scrobbling to ListenBrainz is active."
+          ? t("scrobble.st_lbz_active")
           : tok
-            ? "Saved — please verify at listenbrainz.org."
-            : "Token cleared.",
+            ? t("scrobble.st_lbz_verify")
+            : t("scrobble.st_lbz_cleared"),
       );
     } catch {
-      setLbzStatus("Error saving token.");
+      setLbzStatus(t("scrobble.st_lbz_error"));
     } finally {
       setLbzSaving(false);
     }
@@ -160,15 +162,18 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({
   // ------- Last.fm guided flow -------
   const startLfmAuth = async () => {
     setLfmSaving(true);
-    setLfmStatus("Requesting authorization token from Last.fm…");
+    setLfmStatus(t("scrobble.st_requesting"));
     try {
+      // Persist the entered keys so requestLastfmAuthToken() signs with them.
+      await scrobblerService.setLastfmCreds(lfmKey.trim(), lfmSecret.trim());
       const token = await scrobblerService.requestLastfmAuthToken();
       if (!token) {
-        setLfmStatus("Error: could not obtain an auth token. Check your API key and secret, then try again.");
+        setLfmStatus(t("scrobble.st_no_token"));
+        setLfmSaving(false);
         return;
       }
       setLfmToken(token);
-      setLfmStatus(`Token received — authorizing…`);
+      setLfmStatus(t("scrobble.st_token_received"));
       // Open Last.fm in browser for the user to approve.
       const url = scrobblerService.buildLastfmAuthUrl(token);
       if (Platform.OS === "android" || Platform.OS === "ios") {
@@ -176,29 +181,33 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({
       }
       // Poll a few times for the session to land.
       lfmPollRef.current = setInterval(async () => {
-        const { ok, username } = await scrobblerService.completeLastfmAuth(token);
+        const { ok, username } =
+          await scrobblerService.completeLastfmAuth(token);
         if (ok) {
           clearInterval(lfmPollRef.current!);
           lfmPollRef.current = null;
           setLfmUsername(username ?? "");
-          setLfmStatus(`Connected to Last.fm as ${username ?? "unknown"}. Scrobbling is active.`);
+          setLfmStatus(
+            `${t("scrobble.st_connected_prefix")} ${username ?? t("scrobble.st_unknown")}.`,
+          );
           setLfmSaving(false);
         }
       }, 2000);
       // Timeout after 60 seconds.
-      setTimeout(() => {
+      const timeoutHandle = setTimeout(() => {
         if (lfmPollRef.current) {
           clearInterval(lfmPollRef.current);
           lfmPollRef.current = null;
           if (!lfmUsername) {
-            setLfmStatus("Auth timed out — the user may not have approved the token. Please try again.");
+            setLfmStatus(t("scrobble.st_timed_out"));
             setLfmSaving(false);
           }
         }
       }, 60000);
+      lfmTimeoutRef.current = timeoutHandle;
       return; // polling continues in the background
     } catch {
-      setLfmStatus("Network error — check your connection and try again.");
+      setLfmStatus(t("scrobble.st_network"));
       setLfmSaving(false);
     }
   };
@@ -212,13 +221,13 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({
       const { lastfm } = await scrobblerService.getEnabledProviders();
       setLfmStatus(
         !ak
-          ? "API key and secret cleared."
+          ? t("scrobble.st_keys_cleared")
           : lastfm
-            ? "Keys saved — Last.fm scrobbling is active."
-            : "Keys saved — now run the authorization flow above to connect.",
+            ? t("scrobble.st_keys_active")
+            : t("scrobble.st_keys_need_auth"),
       );
     } catch {
-      setLfmStatus("Error saving keys.");
+      setLfmStatus(t("scrobble.st_keys_error"));
     } finally {
       setLfmSaving(false);
     }
@@ -228,7 +237,7 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({
     await scrobblerService.clearLastfmAuth();
     setLfmUsername("");
     setLfmToken("");
-    setLfmStatus("Last.fm disconnected.");
+    setLfmStatus(t("scrobble.st_disconnected"));
   };
 
   if (!visible) return null;
@@ -253,14 +262,28 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      onRequestClose={onClose}
+    >
       <SheetBackdrop activeOpacity={1} onPress={onClose} />
       <SheetBody style={{ backgroundColor: colors.background }}>
         <SheetHeader>
-          <SheetTitle style={{ color: colors.foreground, fontFamily: font("bold"), ...rtl() }}>
-            {isLbz ? "ListenBrainz" : "Last.fm"}
+          <SheetTitle
+            style={{
+              color: colors.foreground,
+              fontFamily: font("bold"),
+              ...rtl(),
+            }}
+          >
+            {isLbz ? t("scrobble.lbz_title") : t("scrobble.lf_title")}
           </SheetTitle>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <TouchableOpacity
+            onPress={onClose}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
             <Ionicons name="close" size={22} color={muted} />
           </TouchableOpacity>
         </SheetHeader>
@@ -269,130 +292,192 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({
           {/* ============ LISTENBRAINZ ============ */}
           {isLbz && (
             <>
-          <SectionLabel style={labelStyle}>How to connect</SectionLabel>
-          <GuideText style={helpStyle}>
-            ListenBrainz is a free, open-source music scrobbling service. Setup takes under a minute:
-          </GuideText>
-          <StepText style={helpStyle}>1. Create a free account at listenbrainz.org</StepText>
-          <StepText style={helpStyle}>2. Go to Settings → Profile</StepText>
-          <StepText style={helpStyle}>3. Copy the "User Token" value (a UUID like xxxxxxxx-xxxx-…)</StepText>
-          <StepText style={helpStyle}>4. Paste it in the field below and press Save</StepText>
-          <View style={{ height: 8 }} />
-          <TokenInput
-            value={lbzToken}
-            onChangeText={setLbzToken}
-            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-            placeholderTextColor={withOpacity(muted, 0.7)}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={inputStyle()}
-          />
-          <SaveButton
-            activeOpacity={0.88}
-            disabled={lbzSaving}
-            onPress={() => void saveLbz()}
-            style={{ backgroundColor: colors.foreground, opacity: lbzSaving ? 0.6 : 1 }}
-          >
-            {lbzSaving
-              ? <ActivityIndicator size="small" color={colors.background} />
-              : <Text style={{ color: colors.background, fontSize: 14, fontFamily: font("semibold") }}>Save</Text>
-            }
-          </SaveButton>
-          {!!lbzStatus && (
-            <Text style={{ color: muted, fontSize: 12, marginTop: 10, fontFamily: font("regular"), ...rtl(), ...getTextDirectionStyle(isRtl, "center") }}>
-              {lbzStatus}
-            </Text>
-          )}
-
-          </>
+              <SectionLabel style={labelStyle}>
+                {t("scrobble.how_to_connect")}
+              </SectionLabel>
+              <GuideText style={helpStyle}>{t("scrobble.lbz_intro")}</GuideText>
+              <StepText style={helpStyle}>{t("scrobble.lbz_step1")}</StepText>
+              <StepText style={helpStyle}>{t("scrobble.lbz_step2")}</StepText>
+              <StepText style={helpStyle}>{t("scrobble.lbz_step3")}</StepText>
+              <StepText style={helpStyle}>{t("scrobble.lbz_step4")}</StepText>
+              <View style={{ height: 8 }} />
+              <TokenInput
+                value={lbzToken}
+                onChangeText={setLbzToken}
+                placeholder={t("scrobble.lbz_token_placeholder")}
+                placeholderTextColor={withOpacity(muted, 0.7)}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={inputStyle()}
+              />
+              <SaveButton
+                activeOpacity={0.88}
+                disabled={lbzSaving}
+                onPress={() => void saveLbz()}
+                style={{
+                  backgroundColor: colors.foreground,
+                  opacity: lbzSaving ? 0.6 : 1,
+                }}
+              >
+                {lbzSaving ? (
+                  <ActivityIndicator size="small" color={colors.background} />
+                ) : (
+                  <Text
+                    style={{
+                      color: colors.background,
+                      fontSize: 14,
+                      fontFamily: font("semibold"),
+                    }}
+                  >
+                    {t("scrobble.save")}
+                  </Text>
+                )}
+              </SaveButton>
+              {!!lbzStatus && (
+                <Text
+                  style={{
+                    color: muted,
+                    fontSize: 12,
+                    marginTop: 10,
+                    fontFamily: font("regular"),
+                    ...rtl(),
+                    ...getTextDirectionStyle(isRtl, "center"),
+                  }}
+                >
+                  {lbzStatus}
+                </Text>
+              )}
+            </>
           )}
 
           {/* ============ LAST.FM ============ */}
           {!isLbz && (
             <>
-          <SectionLabel style={labelStyle}>How to connect</SectionLabel>
-          <GuideText style={helpStyle}>
-            Last.fm tracks your listening history and builds detailed stats. Setup requires four simple steps:
-          </GuideText>
-          <StepText style={helpStyle}>1. Go to last.fm/api/account/create and create an application</StepText>
-          <StepText style={helpStyle}>2. Copy the "API Key" and "Shared Secret" — paste them here</StepText>
-          <StepText style={helpStyle}>3. Press "Connect to Last.fm" — a browser will open to authorize the app</StepText>
-          <StepText style={helpStyle}>4. Approve the request in your browser; scrobbling starts automatically</StepText>
-          <View style={{ height: 8 }} />
+              <SectionLabel style={labelStyle}>How to connect</SectionLabel>
+              <GuideText style={helpStyle}>{t("scrobble.lf_intro")}</GuideText>
+              <StepText style={helpStyle}>{t("scrobble.lf_step1")}</StepText>
+              <StepText style={helpStyle}>{t("scrobble.lf_step2")}</StepText>
+              <StepText style={helpStyle}>{t("scrobble.lf_step3")}</StepText>
+              <StepText style={helpStyle}>{t("scrobble.lf_step4")}</StepText>
+              <View style={{ height: 8 }} />
 
-          <TokenInput
-            value={lfmKey}
-            onChangeText={setLfmKey}
-            placeholder="API Key"
-            placeholderTextColor={withOpacity(muted, 0.7)}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={inputStyle()}
-          />
-          <TokenInput
-            value={lfmSecret}
-            onChangeText={setLfmSecret}
-            placeholder="Shared Secret"
-            placeholderTextColor={withOpacity(muted, 0.7)}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-            style={inputStyle()}
-          />
-          <SaveButton
-            activeOpacity={0.88}
-            disabled={lfmSaving}
-            onPress={() => void saveLfmKeys()}
-            style={{ backgroundColor: colors.foreground, opacity: lfmSaving ? 0.6 : 1 }}
-          >
-            {lfmSaving && !lfmToken
-              ? <ActivityIndicator size="small" color={colors.background} />
-              : <Text style={{ color: colors.background, fontSize: 14, fontFamily: font("semibold") }}>Save API Keys</Text>
-            }
-          </SaveButton>
-
-          {/* Connect button — only shown after keys are saved and no session yet */}
-          {!!lfmKey && !!lfmSecret && !lfmUsername && (
-            <>
-              <View style={{ height: 10 }} />
+              <TokenInput
+                value={lfmKey}
+                onChangeText={setLfmKey}
+                placeholder={t("scrobble.lf_key_placeholder")}
+                placeholderTextColor={withOpacity(muted, 0.7)}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={inputStyle()}
+              />
+              <TokenInput
+                value={lfmSecret}
+                onChangeText={setLfmSecret}
+                placeholder={t("scrobble.lf_secret_placeholder")}
+                placeholderTextColor={withOpacity(muted, 0.7)}
+                autoCapitalize="none"
+                autoCorrect={false}
+                secureTextEntry
+                style={inputStyle()}
+              />
               <SaveButton
                 activeOpacity={0.88}
                 disabled={lfmSaving}
-                onPress={() => void startLfmAuth()}
-                style={{ backgroundColor: colors.accent, opacity: lfmSaving ? 0.6 : 1 }}
+                onPress={() => void saveLfmKeys()}
+                style={{
+                  backgroundColor: colors.foreground,
+                  opacity: lfmSaving ? 0.6 : 1,
+                }}
               >
-                {lfmSaving
-                  ? <ActivityIndicator size="small" color={colors.background} />
-                  : <Text style={{ color: colors.background, fontSize: 14, fontFamily: font("semibold") }}>
-                      {lfmToken ? "Authorizing… (check your browser)" : "Connect to Last.fm"}
+                {lfmSaving && !lfmToken ? (
+                  <ActivityIndicator size="small" color={colors.background} />
+                ) : (
+                  <Text
+                    style={{
+                      color: colors.background,
+                      fontSize: 14,
+                      fontFamily: font("semibold"),
+                    }}
+                  >
+                    {t("scrobble.lf_save_keys")}
+                  </Text>
+                )}
+              </SaveButton>
+
+              {/* Connect button — only shown after keys are saved and no session yet */}
+              {!!lfmKey && !!lfmSecret && !lfmUsername && (
+                <>
+                  <View style={{ height: 10 }} />
+                  <SaveButton
+                    activeOpacity={0.88}
+                    disabled={lfmSaving}
+                    onPress={() => void startLfmAuth()}
+                    style={{
+                      backgroundColor: colors.accent,
+                      opacity: lfmSaving ? 0.6 : 1,
+                    }}
+                  >
+                    {lfmSaving ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={colors.background}
+                      />
+                    ) : (
+                      <Text
+                        style={{
+                          color: colors.background,
+                          fontSize: 14,
+                          fontFamily: font("semibold"),
+                        }}
+                      >
+                        {lfmToken
+                          ? t("scrobble.lf_authorizing")
+                          : t("scrobble.lf_connect")}
+                      </Text>
+                    )}
+                  </SaveButton>
+                </>
+              )}
+
+              {/* Disconnect button — shown when connected */}
+              {!!lfmUsername && (
+                <>
+                  <View style={{ height: 10 }} />
+                  <SaveButton
+                    activeOpacity={0.88}
+                    onPress={() => void disconnectLfm()}
+                    style={{
+                      backgroundColor: withOpacity(colors.foreground, 0.15),
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: colors.foreground,
+                        fontSize: 14,
+                        fontFamily: font("semibold"),
+                      }}
+                    >
+                      {t("scrobble.lf_disconnect")}
                     </Text>
-                }
-              </SaveButton>
-            </>
-          )}
+                  </SaveButton>
+                </>
+              )}
 
-          {/* Disconnect button — shown when connected */}
-          {!!lfmUsername && (
-            <>
-              <View style={{ height: 10 }} />
-              <SaveButton
-                activeOpacity={0.88}
-                onPress={() => void disconnectLfm()}
-                style={{ backgroundColor: withOpacity(colors.foreground, 0.15) }}
-              >
-                <Text style={{ color: colors.foreground, fontSize: 14, fontFamily: font("semibold") }}>
-                  Disconnect Last.fm
+              {!!lfmStatus && (
+                <Text
+                  style={{
+                    color: muted,
+                    fontSize: 12,
+                    marginTop: 10,
+                    fontFamily: font("regular"),
+                    ...rtl(),
+                    ...getTextDirectionStyle(isRtl, "center"),
+                  }}
+                >
+                  {lfmStatus}
                 </Text>
-              </SaveButton>
+              )}
             </>
-          )}
-
-          {!!lfmStatus && (
-            <Text style={{ color: muted, fontSize: 12, marginTop: 10, fontFamily: font("regular"), ...rtl(), ...getTextDirectionStyle(isRtl, "center") }}>
-              {lfmStatus}
-            </Text>
-          )}
-          </>
           )}
         </ScrollView>
       </SheetBody>

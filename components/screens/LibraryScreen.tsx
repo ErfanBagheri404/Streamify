@@ -1252,8 +1252,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
     if (activeSection === "Playlists") {
       return language === "fa"
-        ? `${playlists.length + 2} پلی‌لیست • ${formatSongCount(likedSongs.length)}`
-        : `${playlists.length + 2} playlists • ${formatSongCount(
+        ? `${playlistItems.length} پلی‌لیست • ${formatSongCount(likedSongs.length)}`
+        : `${playlistItems.length} playlists • ${formatSongCount(
             likedSongs.length,
           )}`;
     }

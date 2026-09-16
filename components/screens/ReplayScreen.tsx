@@ -246,7 +246,7 @@ export const ReplayScreen: React.FC = () => {
     } catch {
       // User dismissed the share sheet — nothing to do.
     }
-  }, [summary, period]);
+  }, [summary, period, t]);
 
   const handleTrackPlay = useCallback(
     async (track: any, index: number, list: any[]) => {
@@ -257,6 +257,13 @@ export const ReplayScreen: React.FC = () => {
         title: entry.title,
         artist: entry.artist,
         thumbnail: entry.thumbnail,
+        // Carry the provider/source flags so PlayerContext can resolve a
+        // playable URL for each queued track instead of treating it as
+        // a generic YouTube entry.
+        source: entry.source,
+        providerHint: entry.providerHint,
+        _isSoundCloud: entry._isSoundCloud,
+        _isJioSaavn: entry._isJioSaavn,
       }));
       await playTrack(track, queue, index);
     },

@@ -16,7 +16,10 @@ import {
 } from "../utils/listeningStats";
 import { scrobblerService } from "../services/ScrobblerService";
 import { fadeService } from "../services/FadeService";
-import { computeTrackGainFactor, resolveGainSourcePath } from "../modules/replayGain";
+import {
+  computeTrackGainFactor,
+  resolveGainSourcePath,
+} from "../modules/replayGain";
 import * as FileSystem from "expo-file-system";
 import {
   getAudioStreamUrl,
@@ -221,7 +224,6 @@ const PlaybackProgressContext = createContext<PlaybackProgressContextType>({
   duration: 0,
 });
 
-
 export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -271,20 +273,26 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   // The progress event's duration (not the track metadata) — this is the
   // accurate source for crossfade window calculation.
   const progressDurationRef = useRef(0);
-  const setPositionStable = useCallback((next: number | ((prev: number) => number)) => {
-    positionRef.current =
-      typeof next === "function"
-        ? next(positionRef.current)
-        : Math.max(0, next);
-    setPosition(positionRef.current);
-  }, []);
-  const setDurationStable = useCallback((next: number | ((prev: number) => number)) => {
-    durationRef.current =
-      typeof next === "function"
-        ? next(durationRef.current)
-        : Math.max(0, next);
-    setDuration(durationRef.current);
-  }, []);
+  const setPositionStable = useCallback(
+    (next: number | ((prev: number) => number)) => {
+      positionRef.current =
+        typeof next === "function"
+          ? next(positionRef.current)
+          : Math.max(0, next);
+      setPosition(positionRef.current);
+    },
+    [],
+  );
+  const setDurationStable = useCallback(
+    (next: number | ((prev: number) => number)) => {
+      durationRef.current =
+        typeof next === "function"
+          ? next(durationRef.current)
+          : Math.max(0, next);
+      setDuration(durationRef.current);
+    },
+    [],
+  );
   const resetProgressState = useCallback(
     (nextPosition = 0, nextDuration?: number) => {
       positionRef.current = Math.max(0, nextPosition);
@@ -297,11 +305,19 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [],
   );
   const [playbackError, setPlaybackError] = useState<string | null>(null);
-  const [cacheToast, setCacheToast] = useState<{ visible: boolean; message: string }>({ visible: false, message: "" });
-  const [queueConflictModal, setQueueConflictModal] = useState<{ visible: boolean; trackTitle: string }>({ visible: false, trackTitle: "" });
+  const [cacheToast, setCacheToast] = useState<{
+    visible: boolean;
+    message: string;
+  }>({ visible: false, message: "" });
+  const [queueConflictModal, setQueueConflictModal] = useState<{
+    visible: boolean;
+    trackTitle: string;
+  }>({ visible: false, trackTitle: "" });
   const [cacheQueueVersion, setCacheQueueVersion] = useState(0);
   const [cacheCooldownSeconds, setCacheCooldownSeconds] = useState(0);
-  const queueConflictResolverRef = useRef<((choice: "cancel" | "play") => void) | null>(null);
+  const queueConflictResolverRef = useRef<
+    ((choice: "cancel" | "play") => void) | null
+  >(null);
   const drmPlayerRef = useRef<DrmAudioPlayerRef>(null);
   // DRM watchdog: native Widevine provisioning can hang forever when the
   // device has no route to the SC license server (no VPN). Force an error
@@ -322,6 +338,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const statsLastPositionRef = useRef(0);
   const statsAccumulatedMsRef = useRef(0);
   const statsPlayCountedRef = useRef<string | null>(null);
+  /** Always points at the active track; drives the telemetry sampler. */
+  const activeTrackRef = useRef<Track | null>(null);
   const playRequestIdRef = useRef(0);
   const suppressNonPlayingStateRef = useRef(false);
   const playStateSuppressionTimeoutRef = useRef<ReturnType<
@@ -549,9 +567,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           item.id != null
             ? String(item.id)
             : item.url || item.title || "unknown";
-        const existing = currentTrack && currentTrack.id === id
-          ? currentTrack
-          : playlist.find((p) => p.id === id);
+        const existing =
+          currentTrack && currentTrack.id === id
+            ? currentTrack
+            : playlist.find((p) => p.id === id);
         const thumbnail =
           existing?.thumbnail ||
           item.thumbnail ||
@@ -563,7 +582,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         return {
           id,
           title: item.title || existing?.title || "Unknown Title",
-          artist: item.artist || item.author || existing?.artist || "Unknown Artist",
+          artist:
+            item.artist || item.author || existing?.artist || "Unknown Artist",
           duration: item.duration || existing?.duration || 0,
           thumbnail,
           audioUrl: item.url,
@@ -671,157 +691,163 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, [clearPlayStateSuppression, currentTrack, normalizePlaybackError]);
 
-  const syncCurrentTrackFromPlayer = useCallback(async (retryCount = 0) => {
-    try {
-      const queue = await TrackPlayer.getQueue();
-      if (!Array.isArray(queue) || queue.length === 0) {
-        if (retryCount < 3) {
-          await new Promise((r) => setTimeout(r, 300));
-          return syncCurrentTrackFromPlayer(retryCount + 1);
+  const syncCurrentTrackFromPlayer = useCallback(
+    async (retryCount = 0) => {
+      try {
+        const queue = await TrackPlayer.getQueue();
+        if (!Array.isArray(queue) || queue.length === 0) {
+          if (retryCount < 3) {
+            await new Promise((r) => setTimeout(r, 300));
+            return syncCurrentTrackFromPlayer(retryCount + 1);
+          }
+          return;
         }
-        return;
-      }
 
-      const activeTrackIndex =
-        typeof (TrackPlayer as any).getActiveTrackIndex === "function"
-          ? await (TrackPlayer as any).getActiveTrackIndex()
-          : await TrackPlayer.getCurrentTrack();
+        const activeTrackIndex =
+          typeof (TrackPlayer as any).getActiveTrackIndex === "function"
+            ? await (TrackPlayer as any).getActiveTrackIndex()
+            : await TrackPlayer.getCurrentTrack();
 
-      if (
-        activeTrackIndex === null ||
-        activeTrackIndex < 0 ||
-        activeTrackIndex >= queue.length
-      ) {
-        if (retryCount < 3) {
-          await new Promise((r) => setTimeout(r, 300));
-          return syncCurrentTrackFromPlayer(retryCount + 1);
+        if (
+          activeTrackIndex === null ||
+          activeTrackIndex < 0 ||
+          activeTrackIndex >= queue.length
+        ) {
+          if (retryCount < 3) {
+            await new Promise((r) => setTimeout(r, 300));
+            return syncCurrentTrackFromPlayer(retryCount + 1);
+          }
+          return;
         }
-        return;
-      }
 
-      const existingTracks =
-        currentPlaylistContextRef.current.length > 0
-          ? currentPlaylistContextRef.current
-          : playlist;
+        const existingTracks =
+          currentPlaylistContextRef.current.length > 0
+            ? currentPlaylistContextRef.current
+            : playlist;
 
-      // When tracks are skipped from the native queue (no audioUrl yet),
-      // the queue is shorter than the full playlist.  Use the unfiltered
-      // playlist stored by addTracks to preserve all tracks so next/prev
-      // navigation still works.  Only rebuild from queue when it matches.
-      const fullPlaylist = trackPlayerService.getFullPlaylist();
-      const shortQueue =
-        fullPlaylist.length > 0 && queue.length < fullPlaylist.length;
+        // When tracks are skipped from the native queue (no audioUrl yet),
+        // the queue is shorter than the full playlist.  Use the unfiltered
+        // playlist stored by addTracks to preserve all tracks so next/prev
+        // navigation still works.  Only rebuild from queue when it matches.
+        const fullPlaylist = trackPlayerService.getFullPlaylist();
+        const shortQueue =
+          fullPlaylist.length > 0 && queue.length < fullPlaylist.length;
 
-      if (shortQueue) {
-        // Queue was truncated by addTracks — do NOT clobber the playlist.
-        // Queue indices don't match original playlist indices when tracks
-        // were skipped, so locate the active track by ID and map back to
-        // its ORIGINAL playlist position for next/prev navigation.
-        const queueItem = queue[activeTrackIndex];
-        const currentTrackId =
-          queueItem?.id != null ? String(queueItem.id) : undefined;
-        const originalIndex = currentTrackId
-          ? fullPlaylist.findIndex((t) => t.id === currentTrackId)
-          : -1;
-        const baseTrack =
-          (originalIndex >= 0 ? fullPlaylist[originalIndex] : null) ??
-          existingTracks.find((t) => t.id === currentTrackId);
+        if (shortQueue) {
+          // Queue was truncated by addTracks — do NOT clobber the playlist.
+          // Queue indices don't match original playlist indices when tracks
+          // were skipped, so locate the active track by ID and map back to
+          // its ORIGINAL playlist position for next/prev navigation.
+          const queueItem = queue[activeTrackIndex];
+          const currentTrackId =
+            queueItem?.id != null ? String(queueItem.id) : undefined;
+          const originalIndex = currentTrackId
+            ? fullPlaylist.findIndex((t) => t.id === currentTrackId)
+            : -1;
+          const baseTrack =
+            (originalIndex >= 0 ? fullPlaylist[originalIndex] : null) ??
+            existingTracks.find((t) => t.id === currentTrackId);
+          const [positionSeconds, durationSeconds] = await Promise.all([
+            TrackPlayer.getPosition(),
+            TrackPlayer.getDuration(),
+          ]);
+          const nextCurrentTrack = queueItem
+            ? {
+                ...baseTrack,
+                id: currentTrackId ?? baseTrack?.id,
+                title: queueItem.title || baseTrack?.title || "Unknown Title",
+                artist:
+                  queueItem.artist ||
+                  queueItem.author ||
+                  baseTrack?.artist ||
+                  "Unknown Artist",
+                duration:
+                  typeof queueItem.duration === "number"
+                    ? queueItem.duration
+                    : baseTrack?.duration || 0,
+                thumbnail:
+                  queueItem.artwork ||
+                  queueItem.thumbnail ||
+                  baseTrack?.thumbnail ||
+                  "",
+                audioUrl: queueItem.url || baseTrack?.audioUrl,
+              }
+            : baseTrack;
+          if (originalIndex >= 0) {
+            setCurrentIndex(originalIndex);
+          }
+          setCurrentTrack(nextCurrentTrack);
+          // Same sync for the telemetry sampler (remapped track).
+          activeTrackRef.current = (nextCurrentTrack as Track | null) ?? null;
+          statsAccumulatedMsRef.current = 0;
+          statsPlayCountedRef.current = null;
+          statsLastPositionRef.current = 0;
+          setPositionStable(positionSeconds);
+          setDurationStable(durationSeconds || nextCurrentTrack?.duration || 0);
+          setIsLoading(false);
+          setIsTransitioning(false);
+          return;
+        }
+
+        const mappedPlaylist: Track[] = queue.map((item: any) => {
+          const id =
+            item.id != null
+              ? String(item.id)
+              : item.url || item.title || "unknown";
+          const existingTrack = existingTracks.find((entry) => entry.id === id);
+
+          return {
+            ...existingTrack,
+            id,
+            title: item.title || existingTrack?.title || "Unknown Title",
+            artist:
+              item.artist ||
+              item.author ||
+              existingTrack?.artist ||
+              "Unknown Artist",
+            duration:
+              typeof item.duration === "number"
+                ? item.duration
+                : existingTrack?.duration || 0,
+            thumbnail:
+              item.artwork ||
+              item.thumbnail ||
+              item.thumbnailUrl ||
+              item.img ||
+              existingTrack?.thumbnail ||
+              "",
+            audioUrl: item.url || existingTrack?.audioUrl,
+            url: item.url || existingTrack?.url,
+            source: item.source || existingTrack?.source,
+            providerHint: item.providerHint || existingTrack?.providerHint,
+            _isSoundCloud: item._isSoundCloud ?? existingTrack?._isSoundCloud,
+            _isJioSaavn: item._isJioSaavn ?? existingTrack?._isJioSaavn,
+          };
+        });
+
+        const nextCurrentTrack = mappedPlaylist[activeTrackIndex];
         const [positionSeconds, durationSeconds] = await Promise.all([
           TrackPlayer.getPosition(),
           TrackPlayer.getDuration(),
         ]);
-        const nextCurrentTrack = queueItem
-          ? {
-              ...baseTrack,
-              id: currentTrackId ?? baseTrack?.id,
-              title: queueItem.title || baseTrack?.title || "Unknown Title",
-              artist:
-                queueItem.artist ||
-                queueItem.author ||
-                baseTrack?.artist ||
-                "Unknown Artist",
-              duration:
-                typeof queueItem.duration === "number"
-                  ? queueItem.duration
-                  : baseTrack?.duration || 0,
-              thumbnail:
-                queueItem.artwork ||
-                queueItem.thumbnail ||
-                baseTrack?.thumbnail ||
-                "",
-              audioUrl: queueItem.url || baseTrack?.audioUrl,
-            }
-          : baseTrack;
-        if (originalIndex >= 0) {
-          setCurrentIndex(originalIndex);
-        }
+
+        currentPlaylistContextRef.current = mappedPlaylist;
+        setPlaylist(mappedPlaylist);
+        setCurrentIndex(activeTrackIndex);
         setCurrentTrack(nextCurrentTrack);
         setPositionStable(positionSeconds);
-        setDurationStable(
-          durationSeconds || nextCurrentTrack?.duration || 0,
-        );
+        setDurationStable(durationSeconds || nextCurrentTrack?.duration || 0);
         setIsLoading(false);
         setIsTransitioning(false);
-        return;
+      } catch (error) {
+        console.log(
+          "[PlayerContext] Failed to sync active track from TrackPlayer:",
+          error,
+        );
       }
-
-      const mappedPlaylist: Track[] = queue.map((item: any) => {
-        const id =
-          item.id != null
-            ? String(item.id)
-            : item.url || item.title || "unknown";
-        const existingTrack = existingTracks.find((entry) => entry.id === id);
-
-        return {
-          ...existingTrack,
-          id,
-          title: item.title || existingTrack?.title || "Unknown Title",
-          artist:
-            item.artist ||
-            item.author ||
-            existingTrack?.artist ||
-            "Unknown Artist",
-          duration:
-            typeof item.duration === "number"
-              ? item.duration
-              : existingTrack?.duration || 0,
-          thumbnail:
-            item.artwork ||
-            item.thumbnail ||
-            item.thumbnailUrl ||
-            item.img ||
-            existingTrack?.thumbnail ||
-            "",
-          audioUrl: item.url || existingTrack?.audioUrl,
-          url: item.url || existingTrack?.url,
-          source: item.source || existingTrack?.source,
-          providerHint: item.providerHint || existingTrack?.providerHint,
-          _isSoundCloud: item._isSoundCloud ?? existingTrack?._isSoundCloud,
-          _isJioSaavn: item._isJioSaavn ?? existingTrack?._isJioSaavn,
-        };
-      });
-
-      const nextCurrentTrack = mappedPlaylist[activeTrackIndex];
-      const [positionSeconds, durationSeconds] = await Promise.all([
-        TrackPlayer.getPosition(),
-        TrackPlayer.getDuration(),
-      ]);
-
-      currentPlaylistContextRef.current = mappedPlaylist;
-      setPlaylist(mappedPlaylist);
-      setCurrentIndex(activeTrackIndex);
-      setCurrentTrack(nextCurrentTrack);
-      setPositionStable(positionSeconds);
-      setDurationStable(durationSeconds || nextCurrentTrack?.duration || 0);
-      setIsLoading(false);
-      setIsTransitioning(false);
-    } catch (error) {
-      console.log(
-        "[PlayerContext] Failed to sync active track from TrackPlayer:",
-        error,
-      );
-    }
-  }, [playlist]);
+    },
+    [playlist],
+  );
 
   useEffect(() => {
     const subscriptions: Array<{ remove?: () => void }> = [];
@@ -843,6 +869,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             0,
             typeof nextTrack?.duration === "number" ? nextTrack.duration : 0,
           );
+          // Keep telemetry sampler on the active track; reset its window.
+          activeTrackRef.current = (nextTrack as Track | null) ?? null;
+          statsAccumulatedMsRef.current = 0;
+          statsPlayCountedRef.current = null;
+          statsLastPositionRef.current = 0;
           // Scrobbler: finalize the outgoing track, start the incoming one.
           // Fire-and-forget on purpose — never blocks the player sync below.
           if (nextTrack?.title) {
@@ -851,8 +882,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 id: String(nextTrack.id ?? ""),
                 title: nextTrack.title,
                 artist: nextTrack.artist,
-                album:
-                  (nextTrack as any).albumName ?? (nextTrack as any).album,
+                album: (nextTrack as any).albumName ?? (nextTrack as any).album,
                 duration: nextTrack.duration,
               })
               .catch(() => {});
@@ -939,7 +969,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         if (!cancelled) fadeService.setTrackGain(1, false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [currentTrack?.id, settings.replayGainEnabled]);
 
   useEffect(() => {
@@ -1338,11 +1370,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               setCacheProgress({
                 trackId: nextTrackToCache.id,
                 percentage: Math.round(p.percentage),
-                fileSize: typeof p.lastFileSize === "number"
-                  ? Math.round(p.lastFileSize / (1024 * 1024))
-                  : typeof p.downloadedSize === "number"
-                    ? Math.round(p.downloadedSize / (1024 * 1024))
-                    : 0,
+                fileSize:
+                  typeof p.lastFileSize === "number"
+                    ? Math.round(p.lastFileSize / (1024 * 1024))
+                    : typeof p.downloadedSize === "number"
+                      ? Math.round(p.downloadedSize / (1024 * 1024))
+                      : 0,
               });
             }
           } catch {}
@@ -1370,8 +1403,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         publishCacheInfo(nextTrackToCache.id, latestInfo);
 
         const isFullyDone =
-          latestInfo.isFullyCached ||
-          latestInfo.percentage >= 100;
+          latestInfo.isFullyCached || latestInfo.percentage >= 100;
 
         if (isFullyDone) {
           // Cache thumbnail for offline use — fire-and-forget
@@ -1760,7 +1792,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       let effectiveIndex: number;
 
       if (!track) {
-        console.error("[PlayerContext] playTrack() called with null/undefined track");
+        console.error(
+          "[PlayerContext] playTrack() called with null/undefined track",
+        );
         setIsTransitioning(false);
         setIsLoading(false);
         return;
@@ -1776,6 +1810,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         effectiveIndex = 0;
       }
 
+      // Seed the telemetry active-track ref + reset sampler window for the new track.
+      activeTrackRef.current = track;
+      statsAccumulatedMsRef.current = 0;
+      statsPlayCountedRef.current = null;
+      statsLastPositionRef.current = 0;
       // Reset stream retry counter when starting a new track
       setStreamRetryCount(0);
       // Reset stream failed flag when starting a new track
@@ -1801,12 +1840,21 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         let isActivelyCaching = false;
         let isQueuedForCaching = false;
         if (!isFullyCached) {
-          isActivelyCaching = !!(track?.id && activeCacheTrackIdRef.current === track.id);
-          const isLikedSong = track?.id && likedSongsRef.current.some((s) => s.id === track.id);
+          isActivelyCaching = !!(
+            track?.id && activeCacheTrackIdRef.current === track.id
+          );
+          const isLikedSong =
+            track?.id && likedSongsRef.current.some((s) => s.id === track.id);
           // Also check actual cache status — a downloaded song may still have its original HTTP URL
-          const cacheInfo = track?.id ? await getAudioCacheInfo(track.id) : null;
-          const isReallyCached = isFullyCached || cacheInfo?.isFullyCached || false;
-          isQueuedForCaching = isLikedSong && !isReallyCached && !canceledTrackIdsRef.current.has(track.id);
+          const cacheInfo = track?.id
+            ? await getAudioCacheInfo(track.id)
+            : null;
+          const isReallyCached =
+            isFullyCached || cacheInfo?.isFullyCached || false;
+          isQueuedForCaching =
+            isLikedSong &&
+            !isReallyCached &&
+            !canceledTrackIdsRef.current.has(track.id);
         }
         if (isActivelyCaching || isQueuedForCaching) {
           if (settings.autoQueueConflictAutoRemove) {
@@ -1814,13 +1862,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             cancelCaching(track.id);
           } else {
             // Ask user mode - show themed modal
-            const choice = await new Promise<'cancel' | 'play'>((resolve) => {
+            const choice = await new Promise<"cancel" | "play">((resolve) => {
               queueConflictResolverRef.current = resolve;
-              setQueueConflictModal({ visible: true, trackTitle: track.title || "" });
+              setQueueConflictModal({
+                visible: true,
+                trackTitle: track.title || "",
+              });
             });
             setQueueConflictModal({ visible: false, trackTitle: "" });
             queueConflictResolverRef.current = null;
-            if (choice === 'cancel') {
+            if (choice === "cancel") {
               setIsLoading(false);
               setIsTransitioning(false);
               return;
@@ -1876,9 +1927,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           drmWatchdogRef.current = null;
         }
         try {
-          const { AudioStreamManager } = await import(
-            "../modules/audioStreaming"
-          );
+          const { AudioStreamManager } =
+            await import("../modules/audioStreaming");
           AudioStreamManager.getInstance().lastBackendDrm = null as any;
         } catch {}
         try {
@@ -1907,7 +1957,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           }
         }
 
-        if (audioUrl && typeof audioUrl === "string" && !audioUrl.startsWith("file://")) {
+        if (
+          audioUrl &&
+          typeof audioUrl === "string" &&
+          !audioUrl.startsWith("file://")
+        ) {
           console.log(
             `[PlayerContext] Using provided streaming URL as original: ${audioUrl}`,
           );
@@ -1948,9 +2002,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             // Match on audioType (not URL) since the returned URL may be
             // rewritten by caching/proxy layers downstream.
             try {
-              const { AudioStreamManager } = await import(
-                "../modules/audioStreaming"
-              );
+              const { AudioStreamManager } =
+                await import("../modules/audioStreaming");
               const drm = AudioStreamManager.getInstance().lastBackendDrm;
               if (drm && drm.audioType === "soundcloud-drm") {
                 (track as any).audioType = drm.audioType;
@@ -2093,42 +2146,42 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               setIsDrmPlayback(true);
               setIsPlaying(true);
               setPlaybackError(null);
-               // Register a placeholder track in RNTP so the system media
-               // notification appears (with artwork, title, artist). The
-               // track is kept paused — ExoPlayer can't decode Widevine HLS
-               // so we never actually play it through RNTP.
-               // First, stop any existing RNTP queue.
-               try {
-                 await TrackPlayer.stop();
-                 await TrackPlayer.reset();
-               } catch {}
-               // Add a silent placeholder so the media notification shows
-               // artwork + title + artist without triggering ExoPlayer error.
-               const placeholderTrack = {
-                 id: track.id,
-                 // eslint-disable-next-line @typescript-eslint/no-var-requires
-                 url: require("../assets/silent.wav") as any,
-                 title: track.title,
-                 artist: track.artist || t("screens.artist.unknown_artist"),
-                 album: "Streamify",
-                 artwork:
-                   (track.source === "youtube" || track.source === "youtubemusic"
-                     ? normalizeYouTubeThumbnailUrl({
-                         url: track.thumbnail,
-                         videoId: track.id,
-                         variant: "hqdefault.jpg",
-                       }) || track.thumbnail
-                     : track.thumbnail) ||
-                   (track.id ? getCachedThumbnailPath(track.id) : undefined) ||
-                   undefined,
-                 duration: track.duration || 0,
-               } as any;
-               try {
-                 await TrackPlayer.add([placeholderTrack]);
-                 await TrackPlayer.skip(0);
-                 // Keep paused — only the metadata matters for the notification.
-                 await TrackPlayer.pause();
-               } catch {}
+              // Register a placeholder track in RNTP so the system media
+              // notification appears (with artwork, title, artist). The
+              // track is kept paused — ExoPlayer can't decode Widevine HLS
+              // so we never actually play it through RNTP.
+              // First, stop any existing RNTP queue.
+              try {
+                await TrackPlayer.stop();
+                await TrackPlayer.reset();
+              } catch {}
+              // Add a silent placeholder so the media notification shows
+              // artwork + title + artist without triggering ExoPlayer error.
+              const placeholderTrack = {
+                id: track.id,
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                url: require("../assets/silent.wav") as any,
+                title: track.title,
+                artist: track.artist || t("screens.artist.unknown_artist"),
+                album: "Streamify",
+                artwork:
+                  (track.source === "youtube" || track.source === "youtubemusic"
+                    ? normalizeYouTubeThumbnailUrl({
+                        url: track.thumbnail,
+                        videoId: track.id,
+                        variant: "hqdefault.jpg",
+                      }) || track.thumbnail
+                    : track.thumbnail) ||
+                  (track.id ? getCachedThumbnailPath(track.id) : undefined) ||
+                  undefined,
+                duration: track.duration || 0,
+              } as any;
+              try {
+                await TrackPlayer.add([placeholderTrack]);
+                await TrackPlayer.skip(0);
+                // Keep paused — only the metadata matters for the notification.
+                await TrackPlayer.pause();
+              } catch {}
               // Tag this DRM session and arm a watchdog: if native Widevine
               // provisioning doesn't start within 20s (no VPN / blocked
               // license server), force-fail so JioSaavn fallback kicks in.
@@ -2207,9 +2260,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                     // from the current track, so translate via both mapped
                     // positions.
                     const targetQueueIndex =
-                      trackPlayerService.getOriginalIndexToQueueIndex(targetIndex);
+                      trackPlayerService.getOriginalIndexToQueueIndex(
+                        targetIndex,
+                      );
                     const currentQueueIndex =
-                      trackPlayerService.getOriginalIndexToQueueIndex(effectiveIndex);
+                      trackPlayerService.getOriginalIndexToQueueIndex(
+                        effectiveIndex,
+                      );
                     if (targetQueueIndex >= 0 && currentQueueIndex >= 0) {
                       try {
                         await trackPlayerService.updateQueuedTrackUrl(
@@ -2338,9 +2395,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             // Credit the elapsed wall time since the last sample, but only
             // when playback is actually moving forward (a stuck position
             // means buffering/silence, not listening).
-            const statsTrack = track as Track | null;
+            const statsTrack = activeTrackRef.current as Track | null;
             if (statsTrack?.id) {
-              const deltaMs = Math.round((position - statsLastPositionRef.current) * 1000);
+              const deltaMs = Math.round(
+                (position - statsLastPositionRef.current) * 1000,
+              );
               if (
                 deltaMs > 0 &&
                 deltaMs < 4000 &&
@@ -2357,7 +2416,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                     id: statsTrack.id,
                     title: statsTrack.title,
                     artist: statsTrack.artist,
-                    albumName: (statsTrack as any).albumName ?? (statsTrack as any).album,
+                    albumName:
+                      (statsTrack as any).albumName ??
+                      (statsTrack as any).album,
                     thumbnail: statsTrack.thumbnail,
                     artistId: statsTrack.artistId,
                     albumId: (statsTrack as any).albumId,
@@ -2368,7 +2429,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 // Feed the same verified-played delta to the scrobbler so
                 // paused/buffering time can never inflate a scrobble.
                 scrobblerService.recordProgress(deltaMs);
-                if (shouldCountPlay) statsPlayCountedRef.current = statsTrack.id;
+                if (shouldCountPlay)
+                  statsPlayCountedRef.current = statsTrack.id;
               } else if (deltaMs <= 0) {
                 // Track restarted / seeked backwards: reset accumulation.
                 statsAccumulatedMsRef.current = 0;
@@ -2589,10 +2651,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           "[PlayerContext] previousTrack() - Restarting current track from current position",
         );
         setPositionStable(0);
-        resetProgressState(0, durationRef.current || currentTrack.duration || 0);
+        resetProgressState(
+          0,
+          durationRef.current || currentTrack.duration || 0,
+        );
         await seekToRef.current(0);
         setPositionStable(0);
-        resetProgressState(0, durationRef.current || currentTrack.duration || 0);
+        resetProgressState(
+          0,
+          durationRef.current || currentTrack.duration || 0,
+        );
         return;
       }
 
@@ -2619,10 +2687,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           );
           await playTrack(currentTrack!, currentPlaylist, 0);
         } else {
-          resetProgressState(0, durationRef.current || currentTrack?.duration || 0);
+          resetProgressState(
+            0,
+            durationRef.current || currentTrack?.duration || 0,
+          );
           await seekToRef.current(0);
           setPositionStable(0);
-          resetProgressState(0, durationRef.current || currentTrack?.duration || 0);
+          resetProgressState(
+            0,
+            durationRef.current || currentTrack?.duration || 0,
+          );
         }
         return;
       }
@@ -2640,10 +2714,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log(
           "[PlayerContext] previousTrack() - At start of queue with no repeat-all",
         );
-        resetProgressState(0, durationRef.current || currentTrack?.duration || 0);
+        resetProgressState(
+          0,
+          durationRef.current || currentTrack?.duration || 0,
+        );
         await seekToRef.current(0);
         setPositionStable(0);
-        resetProgressState(0, durationRef.current || currentTrack?.duration || 0);
+        resetProgressState(
+          0,
+          durationRef.current || currentTrack?.duration || 0,
+        );
         return;
       }
 
@@ -3149,68 +3229,68 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     clearPlayerRef.current = clearPlayer;
   }, [clearPlayer]);
-   // ── DRM media notification remote handlers ──────────────────────
-   // When DRM is active, route notification play/pause to react-native-video
-   // instead of RNTP's ExoPlayer (which can't decode Widevine).
-   useEffect(() => {
-     if (isDrmPlayback) {
-       trackPlayerService.onRemotePlay = () => {
-         drmPlayerRef.current?.play();
-         setIsPlaying(true);
-       };
-       trackPlayerService.onRemotePause = () => {
-         drmPlayerRef.current?.pause();
-         setIsPlaying(false);
-       };
-     } else {
-       trackPlayerService.onRemotePlay = undefined;
-       trackPlayerService.onRemotePause = undefined;
-     }
-     return () => {
-       trackPlayerService.onRemotePlay = undefined;
-       trackPlayerService.onRemotePause = undefined;
-     };
-   }, [isDrmPlayback]);
+  // ── DRM media notification remote handlers ──────────────────────
+  // When DRM is active, route notification play/pause to react-native-video
+  // instead of RNTP's ExoPlayer (which can't decode Widevine).
+  useEffect(() => {
+    if (isDrmPlayback) {
+      trackPlayerService.onRemotePlay = () => {
+        drmPlayerRef.current?.play();
+        setIsPlaying(true);
+      };
+      trackPlayerService.onRemotePause = () => {
+        drmPlayerRef.current?.pause();
+        setIsPlaying(false);
+      };
+    } else {
+      trackPlayerService.onRemotePlay = undefined;
+      trackPlayerService.onRemotePause = undefined;
+    }
+    return () => {
+      trackPlayerService.onRemotePlay = undefined;
+      trackPlayerService.onRemotePause = undefined;
+    };
+  }, [isDrmPlayback]);
 
-   // ── Foreground resume: refresh expired stream URLs ───────────────
-   // YouTube/SoundCloud/JioSaavn signed URLs expire while backgrounded.
-   // When the user returns and presses play, the stale URL silently fails.
-   // Proactively refresh on foreground resume.
-   useEffect(() => {
-     const wasBackgrounded = { current: false };
-     const subscription = AppState.addEventListener("change", (next) => {
-       if (next === "background" || next === "inactive") {
-         wasBackgrounded.current = true;
-         // Persist listening stats promptly when leaving the foreground.
-         void flushListeningStats();
-         // Drain queued scrobbles, but do NOT finalize the in-progress track:
-         // playback continues in the background, so the track-change event
-         // still owns that scrobble.
-         void scrobblerService.flushPendingOnly().catch(() => {});
-       }
-       if (next === "active" && wasBackgrounded.current) {
-         wasBackgrounded.current = false;
-         const track = currentTrack;
-         if (!track?.id || typeof track.audioUrl !== "string") return;
-         const isLocal = track.audioUrl.startsWith("file://");
-         if (isLocal) return;
-         // Only refresh remote (non-cached) URLs
-         if (lastAppliedCachedUrlRef.current) return;
-         void (async () => {
-           try {
-             const freshUrl = await getFullyCachedAudioUrl(track.id);
-             if (freshUrl && freshUrl !== track.audioUrl) {
-               await trackPlayerService.updateCurrentTrack(freshUrl);
-               syncResolvedTrackUrlInState(track.id, freshUrl);
-             }
-           } catch {}
-         })();
-       }
-     });
-     return () => {
-       subscription.remove();
-     };
-   }, [currentTrack?.id, currentTrack?.audioUrl, syncResolvedTrackUrlInState]);
+  // ── Foreground resume: refresh expired stream URLs ───────────────
+  // YouTube/SoundCloud/JioSaavn signed URLs expire while backgrounded.
+  // When the user returns and presses play, the stale URL silently fails.
+  // Proactively refresh on foreground resume.
+  useEffect(() => {
+    const wasBackgrounded = { current: false };
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (next === "background" || next === "inactive") {
+        wasBackgrounded.current = true;
+        // Persist listening stats promptly when leaving the foreground.
+        void flushListeningStats();
+        // Drain queued scrobbles, but do NOT finalize the in-progress track:
+        // playback continues in the background, so the track-change event
+        // still owns that scrobble.
+        void scrobblerService.flushPendingOnly().catch(() => {});
+      }
+      if (next === "active" && wasBackgrounded.current) {
+        wasBackgrounded.current = false;
+        const track = currentTrack;
+        if (!track?.id || typeof track.audioUrl !== "string") return;
+        const isLocal = track.audioUrl.startsWith("file://");
+        if (isLocal) return;
+        // Only refresh remote (non-cached) URLs
+        if (lastAppliedCachedUrlRef.current) return;
+        void (async () => {
+          try {
+            const freshUrl = await getFullyCachedAudioUrl(track.id);
+            if (freshUrl && freshUrl !== track.audioUrl) {
+              await trackPlayerService.updateCurrentTrack(freshUrl);
+              syncResolvedTrackUrlInState(track.id, freshUrl);
+            }
+          } catch {}
+        })();
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [currentTrack?.id, currentTrack?.audioUrl, syncResolvedTrackUrlInState]);
 
   const toggleShuffle = useCallback(() => {
     if (playlist.length <= 1) {
@@ -3292,7 +3372,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }, 100); // Small delay to let React state settle
       }
     },
-    [removeLikedSong, settings.autoCacheLikedSongs, processLikedSongsCacheQueue],
+    [
+      removeLikedSong,
+      settings.autoCacheLikedSongs,
+      processLikedSongsCacheQueue,
+    ],
   );
 
   const isSongLiked = useCallback(
@@ -3322,17 +3406,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             // Pass just the single track — no playlist — so the UI shows
             // the correct song instead of resolving to index 0 of the
             // old playlist (which is a different track).
-            await playTrack(
-              {
-                ...failedTrack,
-                id: `${failedTrack.id}-jio`,
-                audioType: "jiosaavn" as any,
-                audioUrl: fallback.audioUrl,
-                drmLicenseUrl: undefined,
-                drmScheme: undefined,
-                drmHeaders: undefined,
-              },
-            );
+            await playTrack({
+              ...failedTrack,
+              id: `${failedTrack.id}-jio`,
+              audioType: "jiosaavn" as any,
+              audioUrl: fallback.audioUrl,
+              drmLicenseUrl: undefined,
+              drmScheme: undefined,
+              drmHeaders: undefined,
+            });
             return;
           }
         } catch (e) {
@@ -3343,9 +3425,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             String(
               rawError instanceof Error
                 ? rawError.message
-                : typeof rawError === "object" && rawError && "message" in rawError
-                ? (rawError as any).message
-                : rawError || "DRM playback failed",
+                : typeof rawError === "object" &&
+                    rawError &&
+                    "message" in rawError
+                  ? (rawError as any).message
+                  : rawError || "DRM playback failed",
             ),
             failedTrack,
           ),
@@ -3449,53 +3533,56 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const memoValue = useMemo<PlayerContextType>(() => value, [
-    // exhaustive list of value members
-    currentTrack,
-    playlist,
-    currentIndex,
-    isPlaying,
-    isLoading,
-    showFullPlayer,
-    repeatMode,
-    isShuffled,
-    isInPlaylistContext,
-    canSkipNext,
-    canSkipPrevious,
-    canToggleShuffle,
-    colorTheme,
-    likedSongs,
-    previouslyPlayedSongs,
-    cacheProgress,
-    cacheQueueVersion,
-    cacheCooldownSeconds,
-    isTransitioning,
-    streamRetryCount,
-    hasStreamFailed,
-    playbackError,
-    playTrack,
-    playPause,
-    nextTrack,
-    previousTrack,
-    seekTo,
-    setShowFullPlayer,
-    setRepeatMode,
-    cycleRepeatMode,
-    toggleShuffle,
-    clearPlayer,
-    handleStreamFailure,
-    clearAudioMonitoring,
-    cancelLoadingState,
-    toggleLikeSong,
-    stopCachingAndUnlike,
-    isSongLiked,
-    getCacheInfo,
-    cancelCaching,
-    startCacheQueue,
-    resetStreamRetryCount,
-    applyPredefinedTheme,
-    clearPlaybackError,
-  ]);
+  const memoValue = useMemo<PlayerContextType>(
+    () => value,
+    [
+      // exhaustive list of value members
+      currentTrack,
+      playlist,
+      currentIndex,
+      isPlaying,
+      isLoading,
+      showFullPlayer,
+      repeatMode,
+      isShuffled,
+      isInPlaylistContext,
+      canSkipNext,
+      canSkipPrevious,
+      canToggleShuffle,
+      colorTheme,
+      likedSongs,
+      previouslyPlayedSongs,
+      cacheProgress,
+      cacheQueueVersion,
+      cacheCooldownSeconds,
+      isTransitioning,
+      streamRetryCount,
+      hasStreamFailed,
+      playbackError,
+      playTrack,
+      playPause,
+      nextTrack,
+      previousTrack,
+      seekTo,
+      setShowFullPlayer,
+      setRepeatMode,
+      cycleRepeatMode,
+      toggleShuffle,
+      clearPlayer,
+      handleStreamFailure,
+      clearAudioMonitoring,
+      cancelLoadingState,
+      toggleLikeSong,
+      stopCachingAndUnlike,
+      isSongLiked,
+      getCacheInfo,
+      cancelCaching,
+      startCacheQueue,
+      resetStreamRetryCount,
+      applyPredefinedTheme,
+      clearPlaybackError,
+    ],
+  );
 
   return (
     <>
@@ -3533,62 +3620,64 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             handleDrmFailure(failedTrack, error);
           }}
         >
-        <DrmAudioPlayer
-          ref={drmPlayerRef}
-          track={currentTrack}
-          onPlaybackStarted={() => {
-            // Provisioning succeeded — cancel the watchdog.
-            if (drmWatchdogRef.current) {
-              clearTimeout(drmWatchdogRef.current);
-              drmWatchdogRef.current = null;
-            }
-            setIsPlaying(true);
-            setIsLoading(false);
-          }}
-           onProgress={(data) => {
-             const currentTime = Number(data?.currentTime) || 0;
-             const playableDuration = Number(data?.playableDuration) || 0;
-             setPositionStable(currentTime);
-             if (playableDuration > 0) {
-               setDurationStable(playableDuration);
-             }
-             // Sync progress into the RNTP placeholder so the media
-             // notification timer advances (not stuck at 00:00).
-             TrackPlayer.seekTo(currentTime).catch(() => {});
-           }}
-          onPlaybackError={(error) => {
-            console.error("[PlayerContext] DRM playback error:", error);
-            const failedTrack = currentTrack;
-            // Stale guard: a late error from a previous track must not bleed
-            // onto the now-playing track.
-            if (
-              !failedTrack ||
-              activeDrmTrackIdRef.current !== failedTrack.id
-            ) {
-              console.log(
-                "[PlayerContext] Ignoring stale DRM error for:",
-                failedTrack?.title,
+          <DrmAudioPlayer
+            ref={drmPlayerRef}
+            track={currentTrack}
+            onPlaybackStarted={() => {
+              // Provisioning succeeded — cancel the watchdog.
+              if (drmWatchdogRef.current) {
+                clearTimeout(drmWatchdogRef.current);
+                drmWatchdogRef.current = null;
+              }
+              setIsPlaying(true);
+              setIsLoading(false);
+            }}
+            onProgress={(data) => {
+              const currentTime = Number(data?.currentTime) || 0;
+              const playableDuration = Number(data?.playableDuration) || 0;
+              setPositionStable(currentTime);
+              if (playableDuration > 0) {
+                setDurationStable(playableDuration);
+              }
+              // Sync progress into the RNTP placeholder so the media
+              // notification timer advances (not stuck at 00:00).
+              TrackPlayer.seekTo(currentTime).catch(() => {});
+            }}
+            onPlaybackError={(error) => {
+              console.error("[PlayerContext] DRM playback error:", error);
+              const failedTrack = currentTrack;
+              // Stale guard: a late error from a previous track must not bleed
+              // onto the now-playing track.
+              if (
+                !failedTrack ||
+                activeDrmTrackIdRef.current !== failedTrack.id
+              ) {
+                console.log(
+                  "[PlayerContext] Ignoring stale DRM error for:",
+                  failedTrack?.title,
+                );
+                return;
+              }
+              handleDrmFailure(failedTrack, error);
+            }}
+            onPlaybackEnded={() => {
+              // Clear the RNTP placeholder track so the notification goes away.
+              try {
+                TrackPlayer.reset();
+              } catch {}
+              const currentIdx = currentPlaylistContextRef.current.findIndex(
+                (t) => t.id === currentTrack?.id,
               );
-              return;
-            }
-            handleDrmFailure(failedTrack, error);
-          }}
-          onPlaybackEnded={() => {
-             // Clear the RNTP placeholder track so the notification goes away.
-             try { TrackPlayer.reset(); } catch {}
-            const currentIdx = currentPlaylistContextRef.current.findIndex(
-              (t) => t.id === currentTrack?.id,
-            );
-            const nextTrack =
-              currentPlaylistContextRef.current[currentIdx + 1];
-            if (nextTrack) {
-              void playTrack(nextTrack, currentPlaylistContextRef.current);
-            } else {
-              setIsPlaying(false);
-              setIsDrmPlayback(false);
-            }
-          }}
-        />
+              const nextTrack =
+                currentPlaylistContextRef.current[currentIdx + 1];
+              if (nextTrack) {
+                void playTrack(nextTrack, currentPlaylistContextRef.current);
+              } else {
+                setIsPlaying(false);
+                setIsDrmPlayback(false);
+              }
+            }}
+          />
         </DrmPlayerBoundary>
       ) : null}
     </>

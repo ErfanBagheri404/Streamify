@@ -213,7 +213,11 @@
     "waveformSeek": "نوار موجی جستجو",
     "waveformSeekDescription": "نمایش موج صدا روی نوار جستجو (آهنگ‌های محلی/کش‌شده، اندروید)",
     "replayGain": "یکسان‌سازی بلندی صدا (ReplayGain)",
-    "replayGainDescription": "تنظیم خودکار بلندی آهنگ‌ها با برچسب‌های ReplayGain"
+    "replayGainDescription": "تنظیم خودکار بلندی آهنگ‌ها با برچسب‌های ReplayGain",
+    "listenbrainz_scrobbling": "اسکرابل لیسن‌برینز",
+    "listenbrainz_scrobbling_desc": "پخش‌هایت را به ListenBrainz بفرست — ردیابی موسیقی متن‌باز.",
+    "lastfm_scrobbling": "اسکرابل لست‌اف‌ام",
+    "lastfm_scrobbling_desc": "پخش‌هایت را به Last.fm بفرست — با حساب last.fm خود متصل شو."
   },
   "piped": {
     "enter_auth": "آدرس API نمونه احراز هویت پایپد را وارد کنید:",
@@ -1042,13 +1046,43 @@
     "plain": "ساده"
   },
   "scrobble": {
-    "title": "اسکرابل",
-    "listenbrainzToken": "توکن کاربری ListenBrainz",
-    "listenbrainzHelp": "توکن کاربری خود را از تنظیمات listenbrainz.org وارد کنید.",
+    "how_to_connect": "نحوه اتصال",
+    "lbz_intro": "ListenBrainz یک سرویس رایگان و متن‌باز برای اسکرابل موسیقی است. راه‌اندازی کمتر از یک دقیقه طول می‌کشد:",
+    "lbz_step1": "۱. در listenbrainz.org یک حساب رایگان بسازید",
+    "lbz_step2": "۲. به Settings → Profile بروید",
+    "lbz_step3": "۳. مقدار «User Token» (شبیه xxxxxxxx-xxxx-…) را کپی کنید",
+    "lbz_step4": "۴. آن را در فیلد پایین بچسبانید و Save را بزنید",
+    "lbz_token_placeholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
     "save": "ذخیره",
-    "savedConnected": "ذخیره شد، اسکرابل فعال است",
-    "cleared": "توکن پاک شد",
-    "connected": "متصل"
+    "lf_intro": "Last.fm تاریخچه گوش‌دادن شما را ثبت می‌کند و آمار دقیقی می‌سازد. راه‌اندازی چهار گام ساده دارد:",
+    "lf_step1": "۱. به last.fm/api/account/create بروید و یک برنامه بسازید",
+    "lf_step2": "۲. «API Key» و «Shared Secret» را کپی کنید و اینجا بچسبانید",
+    "lf_step3": "۳. «اتصال به Last.fm» را بزنید — مرورگر برای مجوز باز می‌شود",
+    "lf_step4": "۴. در مرورگر درخواست را تأیید کنید؛ اسکرابل خودکار شروع می‌شود",
+    "lf_key_placeholder": "کلید API",
+    "lf_secret_placeholder": "کلید مشترک (Shared Secret)",
+    "lf_save_keys": "ذخیره کلیدهای API",
+    "lf_connect": "اتصال به Last.fm",
+    "lf_authorizing": "در حال اعتبارسنجی… (مرورگر را بررسی کنید)",
+    "lf_disconnect": "قطع اتصال Last.fm",
+    "st_requesting": "در حال درخواست توکن اعتبارسنجی از Last.fm…",
+    "st_no_token": "خطا: توکن اعتبارسنجی دریافت نشد. کلید API و رمز مشترک را بررسی کنید.",
+    "st_token_received": "توکن دریافت شد — در حال اعتبارسنجی…",
+    "st_connected_prefix": "به Last.fm متصل شدید به‌عنوان",
+    "st_timed_out": "اعتبارسنجی به مهلت رسید — شاید توکن را در مرورگر تأیید نکرده‌اید.",
+    "st_network": "خطای شبکه — اتصال خود را بررسی کنید و دوباره تلاش کنید.",
+    "st_keys_cleared": "کلید API و رمز مشترک پاک شدند.",
+    "st_keys_active": "کلیدها ذخیره شدند — اسکرابل Last.fm فعال است.",
+    "st_keys_need_auth": "کلیدها ذخیره شدند — حالا مراحل اتصال بالا را انجام دهید.",
+    "st_keys_error": "خطا در ذخیره کلیدها.",
+    "st_disconnected": "اتصال Last.fm قطع شد.",
+    "st_lbz_active": "توکن ذخیره شد — اسکرابل به ListenBrainz فعال است.",
+    "st_lbz_verify": "ذخیره شد — در listenbrainz.org بررسی کنید.",
+    "st_lbz_cleared": "توکن پاک شد.",
+    "st_lbz_error": "خطا در ذخیره توکن.",
+    "st_unknown": "ناشناس",
+    "lbz_title": "ListenBrainz",
+    "lf_title": "Last.fm"
   },
   "actions.cancel": "انصراف",
   "actions.save": "ذخیره",
@@ -1068,5 +1102,8 @@
   "replay.shareSummary": "{time} گوش داده‌شده · {plays} پخش",
   "replay.shareTopArtist": "هنرمند برتر: {artist}",
   "replay.shareTopTracks": "آهنگ‌های برتر:",
-  "replay.sharePeak": "بیشترین زمان گوش‌دادن: {hour}"
+  "replay.sharePeak": "بیشترین زمان گوش‌دادن: {hour}",
+  "source": {
+    "subsonic": "سابسونیک"
+  }
 }

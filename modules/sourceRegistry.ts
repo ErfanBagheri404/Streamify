@@ -129,9 +129,43 @@ const archiveSource: SourcePlugin = {
   },
 };
 
+// --- Subsonic ----------------------------------------------------------------
+// Requires user-configured server (baseUrl + credentials).  The plugin is
+// never auto-enabled; users toggle it explicitly in Settings.  Plugin is
+// lazy-imported so module init stays cheap when Subsonic is unused.
+const subsonicSource: SourcePlugin = {
+  id: "subsonic",
+  label: "Subsonic",
+  requiresAuth: true,
+  async search(query, limit) {
+    // Lazy import to avoid pulling the service into bundle when unused.
+    const { subsonicService: subsonic } = await import("./subsonicService");
+    if (!subsonic.isConfigured()) return [];
+    const tracks = await subsonic.search(query, limit);
+    return tracks.map((t) => ({
+      id: String(t.id),
+      title: t.title,
+      author: t.artist,
+      duration: t.durationSec ?? 0,
+      thumbnailUrl: t.coverArtId ?? undefined,
+      handle: String(t.id),
+      source: "subsonic",
+    }));
+  },
+  async resolve(result) {
+    const { subsonicService: subsonic } = await import("./subsonicService");
+    if (!subsonic.isConfigured()) return null;
+    // The search result carries streamUrl at discovery time; re-derive it
+    // so we don't ship stale URLs across app restarts.
+    const tracks = await subsonic.search(result.title, 1);
+    const match = tracks.find((t) => String(t.id) === result.handle);
+    return match?.streamUrl ?? null;
+  },
+};
+
 // --- Registry ----------------------------------------------------------------
 
-const sources: SourcePlugin[] = [audiusSource, archiveSource];
+const sources: SourcePlugin[] = [audiusSource, archiveSource, subsonicSource];
 
 export function getRegisteredSources(): readonly SourcePlugin[] {
   return sources;

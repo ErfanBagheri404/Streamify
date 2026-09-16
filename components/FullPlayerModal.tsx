@@ -2882,14 +2882,18 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
             if (!currentTrack) {
               return;
             }
+            const trackId = currentTrack.id;
             void lyricsService
               .applyLyricsSearchResult(currentTrack, result)
               .then((payload) => {
+                // Discard stale results: if track changed while we were fetching, ignore.
+                if (currentTrack.id !== trackId) return;
                 setLyricsText(payload.lyrics);
                 setIsSyncedLyrics(Boolean(payload.isSynced));
                 setLyricsError(null);
               })
               .catch(() => {
+                if (currentTrack.id !== trackId) return;
                 setLyricsError(copy.manualSearchFailed);
               });
           }}
