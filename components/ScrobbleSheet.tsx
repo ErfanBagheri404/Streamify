@@ -181,8 +181,16 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({
       }
       // Poll a few times for the session to land.
       lfmPollRef.current = setInterval(async () => {
-        const { ok, username } =
-          await scrobblerService.completeLastfmAuth(token);
+        let polled: Awaited<
+          ReturnType<typeof scrobblerService.completeLastfmAuth>
+        > | null = null;
+        try {
+          polled = await scrobblerService.completeLastfmAuth(token);
+        } catch {
+          // Network hiccup — keep polling until the auth timeout.
+          return;
+        }
+        const { ok, username } = polled;
         if (ok) {
           clearInterval(lfmPollRef.current!);
           lfmPollRef.current = null;

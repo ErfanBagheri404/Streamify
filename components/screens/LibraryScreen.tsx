@@ -76,7 +76,7 @@ const HeaderActions = styled.View`
 
 const HeaderIconButton = styled.TouchableOpacity`
   padding: 8px;
-  marginstart: 8px;
+  margin-start: 8px;
 `;
 
 const HeaderIconText = styled.Text`
@@ -94,7 +94,7 @@ const SortRow = styled.View`
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  paddingstart: 16px;
+  padding-start: 16px;
   margin-bottom: 12px;
 `;
 
@@ -106,7 +106,7 @@ const SortLeft = styled.TouchableOpacity`
 const SortIcon = styled.Text`
   color: #a3a3a3;
   font-size: 16px;
-  marginend: 8px;
+  margin-end: 8px;
   font-family: GoogleSansRegular;
   line-height: 20px;
 `;

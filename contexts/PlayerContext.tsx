@@ -316,7 +316,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [cacheQueueVersion, setCacheQueueVersion] = useState(0);
   const [cacheCooldownSeconds, setCacheCooldownSeconds] = useState(0);
   const queueConflictResolverRef = useRef<
-    ((choice: "cancel" | "play") => void) | null
+    ((_choice: "cancel" | "play") => void) | null
   >(null);
   const drmPlayerRef = useRef<DrmAudioPlayerRef>(null);
   // DRM watchdog: native Widevine provisioning can hang forever when the
@@ -3278,12 +3278,36 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         if (lastAppliedCachedUrlRef.current) return;
         void (async () => {
           try {
-            const freshUrl = await getFullyCachedAudioUrl(track.id);
+            // Prefer a fully cached local file when one exists.
+            const cachedUrl = await getFullyCachedAudioUrl(track.id);
+            if (cachedUrl && cachedUrl !== track.audioUrl) {
+              await trackPlayerService.updateCurrentTrack(cachedUrl);
+              syncResolvedTrackUrlInState(track.id, cachedUrl);
+              return;
+            }
+            // No cached file: the remote URL may have expired while
+            // backgrounded. Resolve a fresh stream from the track's source
+            // so resume doesn't start from a dead URL (initial error).
+            const resolvedSource = resolveTrackSource(track);
+            const lookupId =
+              resolvedSource === "soundcloud"
+                ? track.url || track.id
+                : track.id;
+            const freshUrl = await getAudioStreamUrl(
+              lookupId,
+              () => {},
+              resolvedSource,
+              track.title,
+              track.artist,
+              { urlHint: track.url, providerHint: track.providerHint },
+            );
             if (freshUrl && freshUrl !== track.audioUrl) {
               await trackPlayerService.updateCurrentTrack(freshUrl);
               syncResolvedTrackUrlInState(track.id, freshUrl);
             }
-          } catch {}
+          } catch {
+            // TrackPlayerService's reactive URL refresh handles hard failures.
+          }
         })();
       }
     });

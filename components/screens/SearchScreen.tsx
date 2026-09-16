@@ -100,7 +100,7 @@ const toPlayableSearchTrack = (item: any) => ({
     item.artistSource || item.playbackSource || item.source || "youtube",
   duration: parseInt(item.duration) || 0,
   thumbnail: item.thumbnailUrl || item.img,
-  audioUrl: item.source === "local" ? item.href : item.streamUrl ?? undefined,
+  audioUrl: item.source === "local" ? item.href : (item.streamUrl ?? undefined),
   url: item.href,
   source: item.playbackSource || item.source || "youtube",
   providerHint: item.providerHint,
@@ -179,12 +179,12 @@ const SearchContainer = styled.View`
   align-items: center;
   background-color: #262626;
   border-radius: 24px;
-  paddingEnd: 8px;
+  paddingend: 8px;
 `;
 
 const SearchIconWrapper = styled.View`
-  paddingStart: 12px;
-  paddingEnd: 4px;
+  paddingstart: 12px;
+  paddingend: 4px;
 `;
 
 const SearchInput = styled.TextInput`
@@ -201,7 +201,7 @@ const SearchInput = styled.TextInput`
 
 const ClearButton = styled.TouchableOpacity`
   padding: 8px;
-  marginEnd: 4px;
+  marginend: 4px;
   opacity: ${(props) => (props.disabled ? 0.3 : 1)};
 `;
 
@@ -534,7 +534,8 @@ const DEFAULT_SEARCH_CATEGORY_CARDS: SearchCategoryPlaylist[] = [
     category: "Synthwave",
     imageFileName: "Synthwave.jpg",
     playlistTitle: "Synthwave & Retrowave",
-    playlistUrl: "https://soundcloud.com/theociderecords/sets/best-of-synthwave",
+    playlistUrl:
+      "https://soundcloud.com/theociderecords/sets/best-of-synthwave",
     source: "soundcloud",
   },
 ];
@@ -849,9 +850,7 @@ export default function SearchScreen({ navigation }: any) {
       await StorageService.clearLastSearchState();
       if (!cancelled) {
         setSelectedSource(preferredSource);
-        setSelectedFilter(
-          normalizeFilterForSource(preferredSource, undefined),
-        );
+        setSelectedFilter(normalizeFilterForSource(preferredSource, undefined));
       }
     };
 
@@ -995,16 +994,41 @@ export default function SearchScreen({ navigation }: any) {
           paginationRef.current.nextpage = null;
         } else if (requestSource === "subsonic") {
           // Subsonic server search — requires user-configured credentials.
-          const { subsonicService: subsonic } = await import("../../modules/subsonicService");
+          const { subsonicService: subsonic } =
+            await import("../../modules/subsonicService");
           if (!subsonic.isConfigured()) {
             results = [];
           } else {
             try {
-              results = await subsonic.search(trimmedQuery, 20);
+              const subsonicTracks = await subsonic.search(trimmedQuery, 20);
+              // Map SubsonicTrack -> the result shape this screen consumes
+              // (author / duration string / thumbnailUrl), otherwise the Songs
+              // filter and playable-queue checks drop every row.
+              results = (subsonicTracks || []).map((track) => {
+                const artwork =
+                  subsonic.getCoverArtUrl((track as any).coverArtId) ?? "";
+                return {
+                  id: track.id ?? "",
+                  title: track.title ?? "",
+                  author: track.artist ?? "",
+                  albumName: track.album ?? "",
+                  duration: String((track as any).durationSec ?? 0),
+                  thumbnailUrl: artwork,
+                  img: artwork,
+                  href: track.streamUrl ?? "",
+                  audioUrl: track.streamUrl ?? "",
+                  source: "subsonic" as const,
+                  type: "song" as const,
+                };
+              });
             } catch {
               results = [];
             }
           }
+          // The service returns a single page; Load More would repeat it.
+          paginationRef.current.nextpage = null;
+          paginationRef.current.hasMore = false;
+          setHasMoreResults(false);
         } else if (requestSource === "local") {
           // Device library. No pagination — MediaStore scans are cheap enough
           // to filter fully on-device.
@@ -1898,7 +1922,13 @@ export default function SearchScreen({ navigation }: any) {
 
   return (
     <Screen padded={false}>
-      <Header style={{ flexDirection: isRtl ? "row-reverse" : "row", direction: dir, paddingStart: 0 }}>
+      <Header
+        style={{
+          flexDirection: isRtl ? "row-reverse" : "row",
+          direction: dir,
+          paddingStart: 0,
+        }}
+      >
         <SearchContainer
           style={{
             flexDirection: isRtl ? "row-reverse" : "row",
@@ -2005,38 +2035,41 @@ export default function SearchScreen({ navigation }: any) {
             {SEARCH_SOURCE_OPTIONS.map((source, index) => {
               const isSelected = selectedSource === source.id;
               return (
-                <View key={source.id} style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
-                <Chip
+                <View
                   key={source.id}
-                  label={t(source.labelKey)}
-                  selected={isSelected}
-                  onPress={() => handleSourceSelect(source.id)}
-                  chipStyle={[
-                    styles.searchChip,
-                    {
-                      marginLeft: !isRtl && index === 0 ? 0 : 8,
-                      backgroundColor: isSelected
-                        ? source.color + "2E" // ~18% opacity via hex
-                        : "transparent",
-                      borderColor: isSelected
-                        ? source.color + "6B" // ~42% opacity
-                        : colors.borderSubtle,
-                    },
-                  ]}
-                  textStyle={[
-                    styles.searchChipText,
-                    isRtl ? styles.searchChipTextRtl : null,
-                  ]}
-                  icon={
-                    <SourceIcon
-                      source={source.id}
-                      size={16}
-                      color={isSelected ? colors.foreground : colors.muted}
-                    />
-                  }
-                  selectedTextColor={colors.foreground}
-                  unselectedTextColor={colors.muted}
-                />
+                  style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}
+                >
+                  <Chip
+                    key={source.id}
+                    label={t(source.labelKey)}
+                    selected={isSelected}
+                    onPress={() => handleSourceSelect(source.id)}
+                    chipStyle={[
+                      styles.searchChip,
+                      {
+                        marginLeft: !isRtl && index === 0 ? 0 : 8,
+                        backgroundColor: isSelected
+                          ? source.color + "2E" // ~18% opacity via hex
+                          : "transparent",
+                        borderColor: isSelected
+                          ? source.color + "6B" // ~42% opacity
+                          : colors.borderSubtle,
+                      },
+                    ]}
+                    textStyle={[
+                      styles.searchChipText,
+                      isRtl ? styles.searchChipTextRtl : null,
+                    ]}
+                    icon={
+                      <SourceIcon
+                        source={source.id}
+                        size={16}
+                        color={isSelected ? colors.foreground : colors.muted}
+                      />
+                    }
+                    selectedTextColor={colors.foreground}
+                    unselectedTextColor={colors.muted}
+                  />
                 </View>
               );
             })}
@@ -2140,8 +2173,7 @@ export default function SearchScreen({ navigation }: any) {
                 </SuggestionText>
                 <SuggestionMeta
                   style={{ color: withOpacity(colors.foreground, 0.32) }}
-                >
-                </SuggestionMeta>
+                ></SuggestionMeta>
               </SuggestionItem>
             ))
           )}

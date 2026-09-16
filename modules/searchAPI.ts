@@ -834,6 +834,12 @@ export const searchAPI = {
       return await searchAPI.getSpotifySuggestions(query);
     }
 
+    // Subsonic servers don't expose a suggestions endpoint.
+    // Returning [] prevents user queries from leaking to Piped.
+    if (source === "subsonic") {
+      return [];
+    }
+
     const endpoint = `/suggestions?query=${encodeURIComponent(query)}`;
     const data = await fetchWithFallbacks([...PIPED_INSTANCES], endpoint);
     let suggestions: string[] = [];

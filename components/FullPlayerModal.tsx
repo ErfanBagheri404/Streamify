@@ -691,6 +691,10 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [showSleepTimerSheet, setShowSleepTimerSheet] = useState(false);
   const [showSpeedSheet, setShowSpeedSheet] = useState(false);
   const [showLyricsSearchSheet, setShowLyricsSearchSheet] = useState(false);
+  // Latest rendered track id — used by async lyrics callbacks instead of the
+  // stale closure value, so a late result cannot overwrite a newer track.
+  const currentTrackIdRef = useRef(currentTrack?.id ?? null);
+  currentTrackIdRef.current = currentTrack?.id ?? null;
   const speedRate = usePlaybackSpeedStore((state) => state.rate);
   const speedBadgeRate = Math.abs(speedRate - 1) < 0.001 ? 1 : speedRate;
   const [showPlaylistSelection, setShowPlaylistSelection] = useState(false);
@@ -2929,18 +2933,19 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
             if (!currentTrack) {
               return;
             }
-            const trackId = currentTrack.id;
+            const applyTrackId = currentTrackIdRef.current;
+            const snapshot = currentTrack;
             void lyricsService
-              .applyLyricsSearchResult(currentTrack, result)
+              .applyLyricsSearchResult(snapshot, result)
               .then((payload) => {
-                // Discard stale results: if track changed while we were fetching, ignore.
-                if (currentTrack.id !== trackId) return;
+                // Discard stale results: track changed while we were fetching.
+                if (currentTrackIdRef.current !== applyTrackId) return;
                 setLyricsText(payload.lyrics);
                 setIsSyncedLyrics(Boolean(payload.isSynced));
                 setLyricsError(null);
               })
               .catch(() => {
-                if (currentTrack.id !== trackId) return;
+                if (currentTrackIdRef.current !== applyTrackId) return;
                 setLyricsError(copy.manualSearchFailed);
               });
           }}
