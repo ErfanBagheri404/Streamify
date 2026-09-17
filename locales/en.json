@@ -1104,6 +1104,6 @@
   "replay.shareTopTracks": "Top tracks:",
   "replay.sharePeak": "Peak listening time: {hour}",
   "source": {
-    "subsonic": "Subsonic"
+
   }
 }

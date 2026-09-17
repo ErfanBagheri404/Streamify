@@ -357,8 +357,7 @@ type SourceType =
   | "youtubemusic"
   | "soundcloud"
   | "jiosaavn"
-  | "local"
-  | "subsonic";
+  | "local";
 
 // --- Interfaces ---
 
@@ -399,7 +398,6 @@ const SEARCH_SOURCE_OPTIONS: SearchSourceOption[] = [
   { id: "soundcloud", labelKey: "source.soundcloud", color: "#ff7700" },
   { id: "jiosaavn", labelKey: "source.jiosaavn", color: "#1fa18a" },
   { id: "local", labelKey: "source.local", color: "#5e9eff" },
-  { id: "subsonic", labelKey: "source.subsonic", color: "#0188d1" },
 ];
 
 const SEARCH_CATEGORY_IMAGES = {
@@ -992,43 +990,6 @@ export default function SearchScreen({ navigation }: any) {
             20,
           );
           paginationRef.current.nextpage = null;
-        } else if (requestSource === "subsonic") {
-          // Subsonic server search — requires user-configured credentials.
-          const { subsonicService: subsonic } =
-            await import("../../modules/subsonicService");
-          if (!subsonic.isConfigured()) {
-            results = [];
-          } else {
-            try {
-              const subsonicTracks = await subsonic.search(trimmedQuery, 20);
-              // Map SubsonicTrack -> the result shape this screen consumes
-              // (author / duration string / thumbnailUrl), otherwise the Songs
-              // filter and playable-queue checks drop every row.
-              results = (subsonicTracks || []).map((track) => {
-                const artwork =
-                  subsonic.getCoverArtUrl((track as any).coverArtId) ?? "";
-                return {
-                  id: track.id ?? "",
-                  title: track.title ?? "",
-                  author: track.artist ?? "",
-                  albumName: track.album ?? "",
-                  duration: String((track as any).durationSec ?? 0),
-                  thumbnailUrl: artwork,
-                  img: artwork,
-                  href: track.streamUrl ?? "",
-                  audioUrl: track.streamUrl ?? "",
-                  source: "subsonic" as const,
-                  type: "song" as const,
-                };
-              });
-            } catch {
-              results = [];
-            }
-          }
-          // The service returns a single page; Load More would repeat it.
-          paginationRef.current.nextpage = null;
-          paginationRef.current.hasMore = false;
-          setHasMoreResults(false);
         } else if (requestSource === "local") {
           // Device library. No pagination — MediaStore scans are cheap enough
           // to filter fully on-device.
