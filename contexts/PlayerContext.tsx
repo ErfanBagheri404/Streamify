@@ -51,6 +51,11 @@ import DrmAudioPlayer, {
 } from "../components/DrmAudioPlayer";
 import { DrmPlayerBoundary } from "../components/DrmPlayerBoundary";
 import { resolveJioSaavnFallback } from "../lib/backend-api";
+import {
+  getLocalPlaybackUri,
+  isLocalPlaybackTrack,
+  normalizeLocalPlaybackTrack,
+} from "../modules/localPlayback";
 
 export interface Track {
   id: string;
@@ -1120,21 +1125,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const resolveTrackStreamUrl = useCallback(async (track: Track) => {
+    if (isLocalPlaybackTrack(track)) return getLocalPlaybackUri(track);
+
     if (track.id) {
       const cachedAudioUrl = await getFullyCachedAudioUrl(track.id);
       if (cachedAudioUrl) {
         return cachedAudioUrl;
       }
-    }
-
-    if (track.audioUrl?.startsWith("file://")) {
-      return track.audioUrl;
-    }
-
-    // Local MediaStore tracks play straight from their content:// URI — no
-    // streaming stack, no cache, no per-source resolution.
-    if (track._isLocal || track.audioUrl?.startsWith("content://")) {
-      return track.audioUrl as string;
     }
 
     const resolvedSource = resolveTrackSource(track);
@@ -1272,6 +1269,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           (t) =>
             t?.id &&
             t.title &&
+            !isLocalPlaybackTrack(t) &&
             !attemptedTrackIds.has(t.id) &&
             !canceledTrackIdsRef.current.has(t.id),
         );
@@ -1800,9 +1798,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         return;
       }
 
+      track = normalizeLocalPlaybackTrack(track);
       if (playlistData.length > 0) {
         // Explicit playlist provided (e.g. search results, album, artist)
-        effectivePlaylist = playlistData;
+        effectivePlaylist = playlistData.map(normalizeLocalPlaybackTrack);
         effectiveIndex = index >= 0 ? index : 0;
       } else {
         // No explicit playlist: treat this track as a single-track playlist
@@ -1836,10 +1835,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         // FileSystem.write conflicts and native crashes when playing a
         // song that is currently being cached in the background.
         const isFullyCached = track?.audioUrl?.startsWith("file://");
-        // For already-cached songs (file:// URL), skip the expensive async checks
+        // Device files and downloads cannot conflict with remote caching.
         let isActivelyCaching = false;
         let isQueuedForCaching = false;
-        if (!isFullyCached) {
+        if (!isLocalPlaybackTrack(track)) {
           isActivelyCaching = !!(
             track?.id && activeCacheTrackIdRef.current === track.id
           );
@@ -1947,7 +1946,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         // Get audio URL using the streaming manager
         let audioUrl = track.audioUrl;
 
-        if (track.id) {
+        if (track.id && !isLocalPlaybackTrack(track)) {
           const cachedAudioUrl = await getFullyCachedAudioUrl(track.id);
           if (cachedAudioUrl) {
             audioUrl = cachedAudioUrl;
@@ -1967,7 +1966,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           );
         }
 
-        if (!audioUrl && track.id) {
+        if (!audioUrl && track.id && !isLocalPlaybackTrack(track)) {
           try {
             const resolvedSource = resolveTrackSource(track);
             const lookupId =
@@ -2230,6 +2229,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 ) {
                   break;
                 }
+                if (isLocalPlaybackTrack(targetTrack)) continue;
                 try {
                   const resolvedUrl = await getAudioStreamUrl(
                     targetTrack.id,
@@ -3272,8 +3272,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         wasBackgrounded.current = false;
         const track = currentTrack;
         if (!track?.id || typeof track.audioUrl !== "string") return;
-        const isLocal = track.audioUrl.startsWith("file://");
-        if (isLocal) return;
+        if (isLocalPlaybackTrack(track)) return;
         // Only refresh remote (non-cached) URLs
         if (lastAppliedCachedUrlRef.current) return;
         void (async () => {

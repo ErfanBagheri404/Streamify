@@ -1993,7 +1993,7 @@ export default function SearchScreen({ navigation }: any) {
               },
             ]}
           >
-            {SEARCH_SOURCE_OPTIONS.map((source, index) => {
+            {SEARCH_SOURCE_OPTIONS.map((source) => {
               const isSelected = selectedSource === source.id;
               return (
                 <View
@@ -2008,7 +2008,6 @@ export default function SearchScreen({ navigation }: any) {
                     chipStyle={[
                       styles.searchChip,
                       {
-                        marginLeft: !isRtl && index === 0 ? 0 : 8,
                         backgroundColor: isSelected
                           ? source.color + "2E" // ~18% opacity via hex
                           : "transparent",
@@ -2049,7 +2048,7 @@ export default function SearchScreen({ navigation }: any) {
                 },
               ]}
             >
-              {activeFilterOptions.map((filter, index) => (
+              {activeFilterOptions.map((filter) => (
                 <Chip
                   key={filter.value || "all"}
                   label={t(filter.labelKey)}
@@ -2058,7 +2057,6 @@ export default function SearchScreen({ navigation }: any) {
                   chipStyle={[
                     styles.searchChip,
                     {
-                      marginLeft: !isRtl && index === 0 ? 0 : 8,
                       opacity: selectedFilter === filter.value ? 1 : 0.72,
                     },
                   ]}
@@ -2447,6 +2445,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
     paddingEnd: 16,
     alignItems: "center",
+    gap: 8,
   },
   filterRowSpacing: {
     paddingHorizontal: 16,

@@ -1,16 +1,9 @@
-import React, {
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import React, { useMemo, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Image,
   ScrollView,
   StyleSheet,
-  Switch,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -28,6 +21,7 @@ import { Screen } from "../ui/Screen";
 import { ScrobbleSheet } from "../ScrobbleSheet";
 import { BodyText, MutedText, TitleText } from "../ui/Text";
 import { AccentButton } from "../ui/Button";
+import { SettingsSwitch } from "../ui/SettingsSwitch";
 import { useAppLanguage } from "../../hooks/useAppLanguage";
 import {
   CURRENT_APP_VERSION,
@@ -155,24 +149,22 @@ function getUserAccountLabel(
   return t("settings.accountGuest");
 }
 
-/** Static section card. Categories are switched via the tab bar, so sections
- *  never collapse — removing collapse state, y-offset measurement, and
- *  scroll-chasing entirely. */
+/** Flat content group within the selected settings category. */
 function Section({
   title,
   description,
-  colors,
   children,
 }: {
   title: string;
   description: string;
-  colors: ReturnType<typeof useTheme>["colors"];
   children: ReactNode;
 }) {
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeaderStatic}>
-        <TitleText style={styles.sectionTitle}>{title}</TitleText>
+        <TitleText accessibilityRole="header" style={styles.sectionTitle}>
+          {title}
+        </TitleText>
         <MutedText style={styles.sectionDescription}>{description}</MutedText>
       </View>
       <View style={styles.sectionContent}>{children}</View>
@@ -236,7 +228,6 @@ function SettingRow({
         styles.settingRow,
         isInline && styles.settingRowInline,
         {
-          backgroundColor: colors.surface1,
           borderBottomColor: colors.borderSubtle,
         },
       ]}
@@ -268,10 +259,13 @@ function ChoiceChip({
   return (
     <TouchableOpacity
       onPress={onPress}
+      accessibilityRole="radio"
+      accessibilityLabel={label}
+      accessibilityState={{ checked: selected }}
       style={[
         styles.chip,
         {
-          backgroundColor: selected ? colors.accent : colors.surface2,
+          backgroundColor: selected ? colors.accent : colors.background,
           borderColor: selected ? colors.accent : colors.borderSubtle,
         },
       ]}
@@ -304,10 +298,13 @@ function ThemeChoiceCard({
   return (
     <TouchableOpacity
       onPress={onPress}
+      accessibilityRole="radio"
+      accessibilityLabel={label}
+      accessibilityState={{ checked: selected }}
       style={[
         styles.themeCard,
         {
-          backgroundColor: selected ? colors.surface2 : colors.surface3,
+          backgroundColor: selected ? colors.surface2 : colors.background,
           borderColor: selected ? colors.accent : colors.borderSubtle,
         },
       ]}
@@ -363,7 +360,7 @@ export default function SettingsScreen({
   route: any;
 }) {
   const { colors, isLight } = useTheme();
-  const { t, isRtl } = useAppLanguage();
+  const { t } = useAppLanguage();
   const { settings, updateSettings, hasHydratedSettings } = useAppSettings();
   const { availableUpdateInfo, isCheckingForUpdates, reopenUpdateModal } =
     useAppUpdate();
@@ -418,12 +415,6 @@ export default function SettingsScreen({
     return rawMessage || t("settings.syncFailed");
   };
 
-  const switchTrackColor = {
-    false: withOpacity(colors.foreground, 0.22),
-    true: colors.accent,
-  };
-  const switchThumbColor = isLight ? "#ffffff" : colors.foreground;
-
   const sourceLabels: Record<PreferredSearchSource, string> = useMemo(
     () => ({
       mixed: t("search.all"),
@@ -458,18 +449,6 @@ export default function SettingsScreen({
     [t],
   );
 
-  const motionLabel = settings.disableAnimations
-    ? t("settings.animationsOff")
-    : t("settings.animationsOn");
-  const searchMemoryLabel = settings.rememberLastSearch
-    ? t("settings.searchMemoryOn")
-    : t("settings.searchMemoryOff");
-  const retrySummary =
-    settings.playbackRetryMode === "always"
-      ? t("settings.alwaysRetryOnce")
-      : settings.playbackRetryMode === "never"
-        ? t("settings.neverRetryAutomatically")
-        : t("settings.askWhenPlaybackFails");
   const updateDescription = availableUpdateInfo
     ? t("settings.updateReadyDescription", {
         currentVersion: CURRENT_APP_VERSION,
@@ -586,77 +565,79 @@ export default function SettingsScreen({
           <TouchableOpacity
             onPress={() => navigation.goBack()}
             style={styles.iconButton}
+            accessibilityRole="button"
+            accessibilityLabel={t("common.back")}
           >
             <Ionicons name="chevron-back" size={24} color={colors.foreground} />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <TitleText style={styles.headerTitle}>
+            <TitleText accessibilityRole="header" style={styles.headerTitle}>
               {t("settings.title")}
             </TitleText>
           </View>
-          <View style={styles.headerSpacer} />
+        </View>
+
+        <View
+          style={[
+            styles.tabBar,
+            {
+              backgroundColor: colors.background,
+              borderBottomColor: colors.borderSubtle,
+            },
+          ]}
+        >
+          {SETTINGS_TABS.map((tab) => {
+            const active = activeTab === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                onPress={() => setActiveTab(tab.key)}
+                activeOpacity={0.75}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={t(tab.labelKey)}
+                style={[
+                  styles.tabItem,
+                  {
+                    borderBottomColor: active ? colors.accent : "transparent",
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={tab.icon}
+                  size={20}
+                  color={active ? colors.foreground : colors.muted}
+                />
+                <BodyText
+                  style={[
+                    styles.tabLabel,
+                    {
+                      color: active ? colors.foreground : colors.muted,
+                      fontWeight: active ? "700" : "500",
+                    },
+                  ]}
+                >
+                  {t(tab.labelKey)}
+                </BodyText>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
-          <View
-            style={[
-              styles.tabBar,
-              {
-                backgroundColor: colors.surface1,
-                borderBottomColor: colors.borderSubtle,
-              },
-            ]}
-          >
-            {SETTINGS_TABS.map((tab) => {
-              const active = activeTab === tab.key;
-              return (
-                <TouchableOpacity
-                  key={tab.key}
-                  onPress={() => setActiveTab(tab.key)}
-                  activeOpacity={0.75}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: active }}
-                  accessibilityLabel={t(tab.labelKey)}
-                  style={[
-                    styles.tabItem,
-                    {
-                      borderBottomColor: active ? colors.accent : "transparent",
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={tab.icon}
-                    size={20}
-                    color={active ? colors.accent : colors.foreground}
-                  />
-                  <BodyText
-                    style={[
-                      styles.tabLabel,
-                      { color: active ? colors.accent : colors.foreground },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {t(tab.labelKey)}
-                  </BodyText>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
           {activeTab === "account" ? (
             <Section
               title={t("settings.account")}
               description={t("settings.accountDescription")}
-              colors={colors}
             >
               <View
                 style={[
                   styles.accountCard,
                   {
-                    backgroundColor: colors.surface3,
+                    backgroundColor: colors.background,
                     borderColor: colors.borderSubtle,
                     flexDirection: "row",
                   },
@@ -713,9 +694,10 @@ export default function SettingsScreen({
                           onPress={() => {
                             void handleSyncLibrary();
                           }}
-                          style={{
-                            opacity: isSyncing || !isConfigured ? 0.55 : 1,
-                          }}
+                          style={[
+                            styles.primaryButton,
+                            { opacity: isSyncing || !isConfigured ? 0.55 : 1 },
+                          ]}
                         />
                         <TouchableOpacity
                           onPress={() => {
@@ -825,13 +807,13 @@ export default function SettingsScreen({
                 colors={colors}
                 controlPlacement="inline"
                 control={
-                  <Switch
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.autoSyncLibrary")}
+                    accessibilityHint={t("settings.autoSyncLibraryDescription")}
                     value={settings.autoSyncLibrary}
                     onValueChange={(value) =>
                       updateSettings({ autoSyncLibrary: value })
                     }
-                    trackColor={switchTrackColor}
-                    thumbColor={switchThumbColor}
                   />
                 }
               />
@@ -892,7 +874,6 @@ export default function SettingsScreen({
             <Section
               title={t("settings.themeAndMotion")}
               description={t("settings.themeAndMotionDescription")}
-              colors={colors}
             >
               <SettingRow
                 label={t("settings.theme")}
@@ -919,13 +900,15 @@ export default function SettingsScreen({
                 colors={colors}
                 controlPlacement="inline"
                 control={
-                  <Switch
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.disableAnimations")}
+                    accessibilityHint={t(
+                      "settings.disableAnimationsDescription",
+                    )}
                     value={settings.disableAnimations}
                     onValueChange={(value) =>
                       updateSettings({ disableAnimations: value })
                     }
-                    trackColor={switchTrackColor}
-                    thumbColor={switchThumbColor}
                   />
                 }
               />
@@ -958,7 +941,6 @@ export default function SettingsScreen({
             <Section
               title={t("settings.musicBehaves")}
               description={t("settings.musicBehavesDescription")}
-              colors={colors}
             >
               <SettingRow
                 label={t("settings.autoRetryPlayback")}
@@ -986,13 +968,15 @@ export default function SettingsScreen({
                 colors={colors}
                 controlPlacement="inline"
                 control={
-                  <Switch
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.autoplayRecommendedTracks")}
+                    accessibilityHint={t(
+                      "settings.autoplayRecommendedTracksDescription",
+                    )}
                     value={settings.autoplayRecommendations}
                     onValueChange={(value) =>
                       updateSettings({ autoplayRecommendations: value })
                     }
-                    trackColor={switchTrackColor}
-                    thumbColor={switchThumbColor}
                   />
                 }
               />
@@ -1004,13 +988,17 @@ export default function SettingsScreen({
                 colors={colors}
                 controlPlacement="inline"
                 control={
-                  <Switch
+                  <SettingsSwitch
+                    accessibilityLabel={t(
+                      "settings.openNowPlayingAutomatically",
+                    )}
+                    accessibilityHint={t(
+                      "settings.openNowPlayingAutomaticallyDescription",
+                    )}
                     value={settings.openFullscreenOnPlay}
                     onValueChange={(value) =>
                       updateSettings({ openFullscreenOnPlay: value })
                     }
-                    trackColor={switchTrackColor}
-                    thumbColor={switchThumbColor}
                   />
                 }
               />
@@ -1020,13 +1008,13 @@ export default function SettingsScreen({
                 colors={colors}
                 controlPlacement="inline"
                 control={
-                  <Switch
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.haptics")}
+                    accessibilityHint={t("settings.hapticsDescription")}
                     value={settings.hapticsEnabled}
                     onValueChange={(value) =>
                       updateSettings({ hapticsEnabled: value })
                     }
-                    trackColor={switchTrackColor}
-                    thumbColor={switchThumbColor}
                   />
                 }
               />
@@ -1036,13 +1024,15 @@ export default function SettingsScreen({
                 colors={colors}
                 controlPlacement="inline"
                 control={
-                  <Switch
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.autoCacheLikedSongs")}
+                    accessibilityHint={t(
+                      "settings.autoCacheLikedSongsDescription",
+                    )}
                     value={settings.autoCacheLikedSongs}
                     onValueChange={(value) =>
                       updateSettings({ autoCacheLikedSongs: value })
                     }
-                    trackColor={switchTrackColor}
-                    thumbColor={switchThumbColor}
                   />
                 }
               />
@@ -1052,13 +1042,13 @@ export default function SettingsScreen({
                 colors={colors}
                 controlPlacement="inline"
                 control={
-                  <Switch
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.crossfade")}
+                    accessibilityHint={t("settings.crossfadeDescription")}
                     value={settings.crossfadeEnabled}
                     onValueChange={(value) =>
                       updateSettings({ crossfadeEnabled: value })
                     }
-                    trackColor={switchTrackColor}
-                    thumbColor={switchThumbColor}
                   />
                 }
               />
@@ -1088,13 +1078,13 @@ export default function SettingsScreen({
                 colors={colors}
                 controlPlacement="inline"
                 control={
-                  <Switch
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.waveformSeek")}
+                    accessibilityHint={t("settings.waveformSeekDescription")}
                     value={settings.waveformSeekBar}
                     onValueChange={(value) =>
                       updateSettings({ waveformSeekBar: value })
                     }
-                    trackColor={switchTrackColor}
-                    thumbColor={switchThumbColor}
                   />
                 }
               />
@@ -1104,13 +1094,13 @@ export default function SettingsScreen({
                 colors={colors}
                 controlPlacement="inline"
                 control={
-                  <Switch
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.replayGain")}
+                    accessibilityHint={t("settings.replayGainDescription")}
                     value={settings.replayGainEnabled}
                     onValueChange={(value) =>
                       updateSettings({ replayGainEnabled: value })
                     }
-                    trackColor={switchTrackColor}
-                    thumbColor={switchThumbColor}
                   />
                 }
               />
@@ -1121,7 +1111,6 @@ export default function SettingsScreen({
             <Section
               title={t("settings.searchPreferences")}
               description={t("settings.searchPreferencesDescription")}
-              colors={colors}
             >
               <SettingRow
                 label={t("settings.defaultSearchSource")}
@@ -1149,13 +1138,15 @@ export default function SettingsScreen({
                 colors={colors}
                 controlPlacement="inline"
                 control={
-                  <Switch
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.rememberLastSearch")}
+                    accessibilityHint={t(
+                      "settings.rememberLastSearchDescription",
+                    )}
                     value={settings.rememberLastSearch}
                     onValueChange={(value) =>
                       updateSettings({ rememberLastSearch: value })
                     }
-                    trackColor={switchTrackColor}
-                    thumbColor={switchThumbColor}
                   />
                 }
               />
@@ -1166,7 +1157,6 @@ export default function SettingsScreen({
             <Section
               title={t("settings.readingAndInput")}
               description={t("settings.readingAndInputDescription")}
-              colors={colors}
             >
               <SettingRow
                 label={t("settings.lyrics")}
@@ -1174,13 +1164,13 @@ export default function SettingsScreen({
                 colors={colors}
                 controlPlacement="inline"
                 control={
-                  <Switch
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.lyrics")}
+                    accessibilityHint={t("settings.lyricsDescription")}
                     value={settings.lyricsEnabled}
                     onValueChange={(value) =>
                       updateSettings({ lyricsEnabled: value })
                     }
-                    trackColor={switchTrackColor}
-                    thumbColor={switchThumbColor}
                   />
                 }
               />
@@ -1190,14 +1180,16 @@ export default function SettingsScreen({
                 colors={colors}
                 controlPlacement="inline"
                 control={
-                  <Switch
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.autoScrollSyncedLyrics")}
+                    accessibilityHint={t(
+                      "settings.autoScrollSyncedLyricsDescription",
+                    )}
                     value={settings.autoScrollLyrics}
                     disabled={!settings.lyricsEnabled}
                     onValueChange={(value) =>
                       updateSettings({ autoScrollLyrics: value })
                     }
-                    trackColor={switchTrackColor}
-                    thumbColor={switchThumbColor}
                   />
                 }
               />
@@ -1207,13 +1199,15 @@ export default function SettingsScreen({
                 colors={colors}
                 controlPlacement="inline"
                 control={
-                  <Switch
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.keyboardShortcuts")}
+                    accessibilityHint={t(
+                      "settings.keyboardShortcutsDescription",
+                    )}
                     value={settings.keyboardShortcuts}
                     onValueChange={(value) =>
                       updateSettings({ keyboardShortcuts: value })
                     }
-                    trackColor={switchTrackColor}
-                    thumbColor={switchThumbColor}
                   />
                 }
               />
@@ -1244,7 +1238,6 @@ export default function SettingsScreen({
             <Section
               title={t("settings.appUpdates")}
               description={t("settings.appUpdatesDescription")}
-              colors={colors}
             >
               <SettingRow
                 label={t("settings.checkForUpdates")}
@@ -1264,9 +1257,10 @@ export default function SettingsScreen({
                       onPress={() => {
                         void handleCheckForUpdates();
                       }}
-                      style={{
-                        opacity: isCheckingForUpdates ? 0.6 : 1,
-                      }}
+                      style={[
+                        styles.primaryButton,
+                        { opacity: isCheckingForUpdates ? 0.6 : 1 },
+                      ]}
                     />
                     <View
                       style={[
@@ -1338,6 +1332,7 @@ export default function SettingsScreen({
                 colors={colors}
                 control={
                   <AccentButton
+                    style={styles.primaryButton}
                     title={t("settings.communityOpen")}
                     onPress={() => setIsCommunityOpenedManually(true)}
                   />
@@ -1375,58 +1370,60 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: 8,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
+    paddingVertical: 10,
     gap: 8,
   },
   iconButton: {
-    padding: 8,
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerCenter: {
     flex: 1,
-    alignItems: "center",
-  },
-  headerSpacer: {
-    width: 40,
   },
   headerTitle: {
-    fontSize: 18,
-    lineHeight: 22,
-    fontWeight: "900",
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: "700",
   },
   scrollContent: {
-    paddingHorizontal: 12,
-    paddingTop: 4,
+    paddingHorizontal: 20,
+    paddingTop: 24,
     paddingBottom: 120,
-    gap: 10,
+    gap: 32,
   },
   tabBar: {
     flexDirection: "row",
+    paddingHorizontal: 12,
     borderBottomWidth: 1,
   },
   tabItem: {
     flex: 1,
-    minHeight: 48,
+    minHeight: 60,
+    minWidth: 44,
     alignItems: "center",
     justifyContent: "center",
-    gap: 4,
-    paddingHorizontal: 4,
+    gap: 6,
+    paddingHorizontal: 2,
+    paddingVertical: 10,
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
   },
   tabLabel: {
     fontSize: 11,
+    lineHeight: 16,
     fontWeight: "600",
     textAlign: "center",
   },
 
   section: {
-    gap: 10,
+    gap: 8,
   },
   sectionHeaderStatic: {
-    paddingHorizontal: 4,
+    paddingBottom: 12,
+    gap: 6,
   },
   sectionTitle: {
     fontSize: 20,
@@ -1434,17 +1431,15 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   sectionDescription: {
-    marginTop: 2,
-    fontSize: 12.5,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
   },
   sectionContent: {
-    gap: 2,
+    gap: 0,
   },
   settingRow: {
     borderBottomWidth: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 18,
     gap: 12,
   },
   settingRowInline: {
@@ -1456,22 +1451,23 @@ const styles = StyleSheet.create({
   },
   settingCopyInline: {
     flex: 1,
+    minWidth: 0,
   },
   settingLabel: {
     fontSize: 16,
-    lineHeight: 20,
+    lineHeight: 22,
     fontWeight: "600",
   },
   settingDescription: {
     fontSize: 13,
-    lineHeight: 18,
+    lineHeight: 19,
   },
   settingControl: {
-    marginTop: 4,
+    marginTop: 0,
   },
   settingControlInline: {
     marginTop: 0,
-    marginLeft: 12,
+    flexShrink: 0,
     alignItems: "flex-end",
     justifyContent: "center",
   },
@@ -1481,15 +1477,19 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chip: {
-    borderRadius: 999,
+    minHeight: 44,
+    minWidth: 44,
+    maxWidth: "100%",
     borderWidth: 1,
     paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingVertical: 10,
+    justifyContent: "center",
   },
   chipText: {
     fontSize: 13,
     lineHeight: 16,
     fontWeight: "600",
+    textAlign: "center",
   },
   themeGrid: {
     flexDirection: "row",
@@ -1505,14 +1505,15 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexShrink: 1,
     borderWidth: 1,
-    borderRadius: 18,
+    minHeight: 80,
     padding: 12,
     gap: 10,
     position: "relative",
   },
   themePreviewRow: {
     flexDirection: "row",
-    gap: 8,
+    paddingRight: 24,
+    gap: 6,
   },
   previewDot: {
     width: 16,
@@ -1537,8 +1538,7 @@ const styles = StyleSheet.create({
   },
   accountCard: {
     borderBottomWidth: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 18,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
@@ -1575,11 +1575,17 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8,
   },
+  primaryButton: {
+    borderRadius: 0,
+    minHeight: 44,
+  },
   secondaryButton: {
-    borderRadius: 999,
+    minHeight: 44,
+    maxWidth: "100%",
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 12,
+    justifyContent: "center",
   },
   secondaryButtonText: {
     fontSize: 13,
@@ -1587,33 +1593,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   syncFeedbackBox: {
-    marginTop: 14,
-    borderRadius: 18,
+    marginTop: 12,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
   syncFeedbackText: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  summaryCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 14,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  summaryValue: {
-    marginTop: 4,
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: "600",
-  },
-  summaryDescription: {
-    marginTop: 4,
     fontSize: 13,
     lineHeight: 18,
   },
