@@ -19,6 +19,7 @@ import {
 } from "../../lib/app-settings";
 import { Screen } from "../ui/Screen";
 import { ScrobbleSheet } from "../ScrobbleSheet";
+import { SubsonicSheet } from "../SubsonicSheet";
 import { BodyText, MutedText, TitleText } from "../ui/Text";
 import { AccentButton } from "../ui/Button";
 import { SettingsSwitch } from "../ui/SettingsSwitch";
@@ -375,6 +376,7 @@ export default function SettingsScreen({
     message: string;
   } | null>(null);
   const [showScrobbleSheet, setShowScrobbleSheet] = useState(false);
+  const [showSubsonicSheet, setShowSubsonicSheet] = useState(false);
   const [scrobbleProvider, setScrobbleProvider] = useState<
     "listenbrainz" | "lastfm"
   >("listenbrainz");
@@ -867,6 +869,28 @@ export default function SettingsScreen({
                   </TouchableOpacity>
                 }
               />
+              <SettingRow
+                label={t("settings.subsonic")}
+                description={t("settings.subsonic_desc")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setShowSubsonicSheet(true)}
+                    style={[
+                      styles.secondaryButton,
+                      { borderColor: colors.borderSubtle },
+                    ]}
+                  >
+                    <BodyText
+                      style={{ color: colors.foreground, fontSize: 13 }}
+                    >
+                      {t("settings.configure")}
+                    </BodyText>
+                  </TouchableOpacity>
+                }
+              />
             </Section>
           ) : null}
 
@@ -1350,6 +1374,11 @@ export default function SettingsScreen({
             visible={showScrobbleSheet}
             provider={scrobbleProvider}
             onClose={() => setShowScrobbleSheet(false)}
+          />
+
+          <SubsonicSheet
+            visible={showSubsonicSheet}
+            onClose={() => setShowSubsonicSheet(false)}
           />
         </ScrollView>
       </View>

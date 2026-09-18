@@ -100,13 +100,17 @@ const toPlayableSearchTrack = (item: any) => ({
     item.artistSource || item.playbackSource || item.source || "youtube",
   duration: parseInt(item.duration) || 0,
   thumbnail: item.thumbnailUrl || item.img,
-  audioUrl: item.source === "local" ? item.href : (item.streamUrl ?? undefined),
+  audioUrl:
+    item.source === "local" || item.source === "subsonic"
+      ? item.href
+      : (item.streamUrl ?? undefined),
   url: item.href,
   source: item.playbackSource || item.source || "youtube",
   providerHint: item.providerHint,
   _isSoundCloud: item.source === "soundcloud",
   _isJioSaavn: item.playbackSource === "jiosaavn" || item.source === "jiosaavn",
   _isLocal: item.source === "local",
+  _isSubsonic: item.source === "subsonic",
 });
 
 const getDefaultFilterForSource = (source: SourceType): string => {
@@ -357,7 +361,8 @@ type SourceType =
   | "youtubemusic"
   | "soundcloud"
   | "jiosaavn"
-  | "local";
+  | "local"
+  | "subsonic";
 
 // --- Interfaces ---
 
@@ -380,6 +385,7 @@ interface SearchResult {
     | "jiosaavn"
     | "youtube_channel"
     | "youtubemusic"
+    | "subsonic"
     | "local";
   playbackSource?: "youtube" | "youtubemusic" | "soundcloud" | "jiosaavn";
   providerHint?: "itunes" | "deezer";
@@ -391,13 +397,14 @@ interface SearchResult {
 
 const SEARCH_SOURCE_OPTIONS: SearchSourceOption[] = [
   { id: "mixed", labelKey: "source.mixed", color: "#1ed760" },
+  { id: "local", labelKey: "source.local", color: "#5e9eff" },
   { id: "itunes", labelKey: "source.itunes", color: "#fa243c" },
   { id: "deezer", labelKey: "source.deezer", color: "#a238ff" },
   { id: "youtube", labelKey: "source.youtube", color: "#ff0000" },
   { id: "youtubemusic", labelKey: "source.youtubemusic", color: "#ff0000" },
   { id: "soundcloud", labelKey: "source.soundcloud", color: "#ff7700" },
   { id: "jiosaavn", labelKey: "source.jiosaavn", color: "#1fa18a" },
-  { id: "local", labelKey: "source.local", color: "#5e9eff" },
+  { id: "subsonic", labelKey: "source.subsonic", color: "#0188d1" },
 ];
 
 const SEARCH_CATEGORY_IMAGES = {
@@ -990,6 +997,42 @@ export default function SearchScreen({ navigation }: any) {
             20,
           );
           paginationRef.current.nextpage = null;
+        } else if (requestSource === "subsonic") {
+          // Subsonic server search — requires user-configured credentials.
+          const { subsonicService: subsonic } =
+            await import("../../modules/subsonicService");
+          // loadConfig() hydrates cachedConfig from AsyncStorage on first call;
+          // isConfigured() only works after that, so always call search()
+          // which handles the config check internally.
+          try {
+            const subsonicTracks = await subsonic.search(trimmedQuery, 20);
+            // Map SubsonicTrack -> the result shape this screen consumes
+            // (author / duration string / thumbnailUrl), otherwise the Songs
+            // filter and playable-queue checks drop every row.
+            results = (subsonicTracks || []).map((track) => {
+              const artwork =
+                subsonic.getCoverArtUrl((track as any).coverArtId) ?? "";
+              return {
+                id: track.id ?? "",
+                title: track.title ?? "",
+                author: track.artist ?? "",
+                albumName: track.album ?? "",
+                duration: String((track as any).durationSec ?? 0),
+                thumbnailUrl: artwork,
+                img: artwork,
+                href: track.streamUrl ?? "",
+                audioUrl: track.streamUrl ?? "",
+                source: "subsonic" as const,
+                type: "song" as const,
+              };
+            });
+          } catch {
+            results = [];
+          }
+          // The service returns a single page; Load More would repeat it.
+          paginationRef.current.nextpage = null;
+          paginationRef.current.hasMore = false;
+          setHasMoreResults(false);
         } else if (requestSource === "local") {
           // Device library. No pagination — MediaStore scans are cheap enough
           // to filter fully on-device.

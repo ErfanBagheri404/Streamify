@@ -217,7 +217,10 @@
     "listenbrainz_scrobbling": "ListenBrainz scrobbling",
     "listenbrainz_scrobbling_desc": "Send your plays to ListenBrainz — open source music tracking.",
     "lastfm_scrobbling": "Last.fm scrobbling",
-    "lastfm_scrobbling_desc": "Send your plays to Last.fm — connect with your last.fm account."
+    "lastfm_scrobbling_desc": "Send your plays to Last.fm — connect with your last.fm account.",
+    "subsonic": "Subsonic Server",
+    "subsonic_desc": "Play music from your own Subsonic or Navidrome server.",
+    "configure": "Configure"
   },
   "piped": {
     "enter_auth": "Enter the Piped Authentication Instance API URL :",
@@ -1104,6 +1107,25 @@
   "replay.shareTopTracks": "Top tracks:",
   "replay.sharePeak": "Peak listening time: {hour}",
   "source": {
-
+    "subsonic": "Subsonic"
+  },
+  "subsonic": {
+    "title": "Subsonic Server",
+    "how_to_connect": "How to connect",
+    "intro": "Streamify can play the music library on your own Subsonic-compatible server. Nothing is uploaded — searches and playback go straight to your server.",
+    "step1": "1. Find your server address. For Navidrome it is usually http://your-server-ip:4533",
+    "step2": "2. Use the same username and password you sign in with on the server web page.",
+    "step3": "3. Enter them below and press Connect. Streamify verifies the connection before saving.",
+    "serverUrl": "Server URL",
+    "serverUrlPlaceholder": "https://music.example.com",
+    "username": "Username",
+    "usernamePlaceholder": "your username",
+    "password": "Password",
+    "passwordPlaceholder": "your password",
+    "connect": "Connect",
+    "disconnect": "Disconnect this server",
+    "saved": "Connected. Subsonic now appears in search sources.",
+    "cleared": "Server disconnected.",
+    "connectFailed": "Could not connect. Check the URL, username, and password."
   }
 }

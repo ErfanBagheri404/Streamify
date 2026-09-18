@@ -52,8 +52,8 @@ import DrmAudioPlayer, {
 import { DrmPlayerBoundary } from "../components/DrmPlayerBoundary";
 import { resolveJioSaavnFallback } from "../lib/backend-api";
 import {
-  getLocalPlaybackUri,
-  isLocalPlaybackTrack,
+  getDirectPlayUri,
+  isDirectPlayTrack,
   normalizeLocalPlaybackTrack,
 } from "../modules/localPlayback";
 
@@ -74,6 +74,8 @@ export interface Track {
   _isJioSaavn?: boolean;
   /** Device file played straight from MediaStore; skip stream resolution. */
   _isLocal?: boolean;
+  /** Self-hosted Subsonic/Navidrome server track; stream URL is authoritative. */
+  _isSubsonic?: boolean;
   // DRM playback metadata (returned by backend for SoundCloud Widevine tracks)
   audioType?: string;
   drmLicenseUrl?: string;
@@ -1125,7 +1127,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const resolveTrackStreamUrl = useCallback(async (track: Track) => {
-    if (isLocalPlaybackTrack(track)) return getLocalPlaybackUri(track);
+    if (isDirectPlayTrack(track)) return getDirectPlayUri(track);
 
     if (track.id) {
       const cachedAudioUrl = await getFullyCachedAudioUrl(track.id);
@@ -1269,7 +1271,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           (t) =>
             t?.id &&
             t.title &&
-            !isLocalPlaybackTrack(t) &&
+            !isDirectPlayTrack(t) &&
             !attemptedTrackIds.has(t.id) &&
             !canceledTrackIdsRef.current.has(t.id),
         );
@@ -1838,7 +1840,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         // Device files and downloads cannot conflict with remote caching.
         let isActivelyCaching = false;
         let isQueuedForCaching = false;
-        if (!isLocalPlaybackTrack(track)) {
+        if (!isDirectPlayTrack(track)) {
           isActivelyCaching = !!(
             track?.id && activeCacheTrackIdRef.current === track.id
           );
@@ -1946,7 +1948,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         // Get audio URL using the streaming manager
         let audioUrl = track.audioUrl;
 
-        if (track.id && !isLocalPlaybackTrack(track)) {
+        if (track.id && !isDirectPlayTrack(track)) {
           const cachedAudioUrl = await getFullyCachedAudioUrl(track.id);
           if (cachedAudioUrl) {
             audioUrl = cachedAudioUrl;
@@ -1966,7 +1968,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           );
         }
 
-        if (!audioUrl && track.id && !isLocalPlaybackTrack(track)) {
+        if (!audioUrl && track.id && !isDirectPlayTrack(track)) {
           try {
             const resolvedSource = resolveTrackSource(track);
             const lookupId =
@@ -2229,7 +2231,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 ) {
                   break;
                 }
-                if (isLocalPlaybackTrack(targetTrack)) continue;
+                if (isDirectPlayTrack(targetTrack)) continue;
                 try {
                   const resolvedUrl = await getAudioStreamUrl(
                     targetTrack.id,
@@ -3272,7 +3274,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         wasBackgrounded.current = false;
         const track = currentTrack;
         if (!track?.id || typeof track.audioUrl !== "string") return;
-        if (isLocalPlaybackTrack(track)) return;
+        if (isDirectPlayTrack(track)) return;
         // Only refresh remote (non-cached) URLs
         if (lastAppliedCachedUrlRef.current) return;
         void (async () => {

@@ -55,7 +55,22 @@ export const SourceIcon: React.FC<SourceIconProps> = ({
   }
 
   const SvgComponent = SOURCE_ICON_MAP[key];
-  if (!SvgComponent) return null;
+  if (!SvgComponent) {
+    // Subsonic is a self-hosted server with no brand mark; a server glyph
+    // keeps the chip from rendering an empty icon slot.
+    if (key === "subsonic") {
+      return (
+        <View style={[{ width: size, height: size, alignItems: "center", justifyContent: "center" }, style]}>
+          <Ionicons
+            name="server-outline"
+            size={Math.round(size * 0.95)}
+            color={color || "#0188d1"}
+          />
+        </View>
+      );
+    }
+    return null;
+  }
 
   // StreamifyLogo fills its entire viewBox with no internal padding,
   // so visually it looks bigger than other source icons at the same size.
