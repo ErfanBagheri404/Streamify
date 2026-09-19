@@ -44,7 +44,7 @@ export interface SubsonicTrack {
 let cachedConfig: SubsonicConfig | null | undefined; // undefined = not loaded yet
 
 function debug(...args: unknown[]) {
-  console.log("[Subsonic]", ...args);
+  if (__DEV__) console.log("[Subsonic]", ...args);
 }
 
 function randomSalt(): string {
@@ -114,7 +114,8 @@ function normalizeSongs(raw: any[]): SubsonicTrack[] {
 }
 
 function buildStreamUrl(trackId: string): string {
-  const config = cachedConfig!;
+  const config = cachedConfig;
+  if (!config) return "";
   const url = new URL("/rest/stream.view", config.baseUrl);
   for (const [k, v] of Object.entries({ ...authParams(config), id: trackId })) {
     url.searchParams.set(k, String(v));
@@ -134,10 +135,6 @@ export const subsonicService = {
       cachedConfig = null;
     }
     return cachedConfig;
-  },
-
-  isConfigured(): boolean {
-    return Boolean(cachedConfig);
   },
 
   /** Validate with ping.test then persist. Throws with a human-readable reason. */

@@ -138,9 +138,7 @@ const subsonicSource: SourcePlugin = {
   label: "Subsonic",
   requiresAuth: true,
   async search(query, limit) {
-    // Lazy import to avoid pulling the service into bundle when unused.
     const { subsonicService: subsonic } = await import("./subsonicService");
-    if (!subsonic.isConfigured()) return [];
     const tracks = await subsonic.search(query, limit);
     return tracks.map((t) => ({
       id: String(t.id),
@@ -154,7 +152,6 @@ const subsonicSource: SourcePlugin = {
   },
   async resolve(result) {
     const { subsonicService: subsonic } = await import("./subsonicService");
-    if (!subsonic.isConfigured()) return null;
     // The search result carries streamUrl at discovery time; re-derive it
     // so we don't ship stale URLs across app restarts.
     const tracks = await subsonic.search(result.title, 1);
