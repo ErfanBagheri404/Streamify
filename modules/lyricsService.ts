@@ -19,7 +19,27 @@ type LrcLibResponse = {
   artistName?: unknown;
 };
 
+/**
+ * Tracks whether any lyrics upstream was actually reached (HTTP response
+ * received, any status code). A "miss" only counts when we asked and got an
+ * answer — a network-level failure must not poison the miss cache, or one
+ * offline moment suppresses lyrics lookups for 6 hours.
+ */
+type UpstreamReachContext = {
+  reachedUpstream: boolean;
+};
+
 export type CachedLyrics = LyricsCacheEntry;
+
+export interface LyricsSearchResult {
+  id?: number;
+  trackName: string;
+  artistName: string;
+  albumName?: string;
+  duration?: number;
+  lyrics: string;
+  isSynced: boolean;
+}
 
 const LYRICS_CACHE_KEY = "lyrics_cache";
 const CACHE_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
@@ -117,7 +137,9 @@ export class LyricsService {
     return Date.now() - cachedAt > CACHE_EXPIRY_MS;
   }
 
-  private async fetchWithTimeout(url: string): Promise<Response | null> {
+  private async fetchWithTimeout(
+    url: string,
+  ): Promise<{ response: Response; reachable: true } | { reachable: false }> {
     const controller = new AbortController();
     const timeoutId = setTimeout(
       () => controller.abort(),
@@ -125,12 +147,19 @@ export class LyricsService {
     );
 
     try {
-      return await fetch(url, {
+      const response = await fetch(url, {
         cache: "no-store",
         signal: controller.signal,
+        // lrclib rejects okhttp user-agents with HTTP 520, and RN's Android
+        // fetch defaults to "okhttp/x.x.x". Send an explicit app UA instead.
+        headers: { "User-Agent": "Streamify/20.32 (lyrics lookup)" },
       });
+      return { response, reachable: true };
     } catch {
-      return null;
+      // Network-level failure (offline, DNS, TLS, abort): the upstream was
+      // never reached, so the caller must NOT treat this as "lyrics don't
+      // exist" — only as "couldn't check right now".
+      return { reachable: false };
     } finally {
       clearTimeout(timeoutId);
     }
@@ -138,11 +167,21 @@ export class LyricsService {
 
   private async fetchFirstSuccessfulResponse(
     urls: string[],
+    reachContext: UpstreamReachContext,
   ): Promise<{ response: Response; url: string } | null> {
     for (const url of urls) {
-      const response = await this.fetchWithTimeout(url);
-      if (response?.ok) {
-        return { response, url };
+      const result = await this.fetchWithTimeout(url);
+      if (!result.reachable) {
+        continue;
+      }
+      if (result.response.ok || result.response.status === 404) {
+        // Only a successful answer or a definitive "not found" counts as the
+        // upstream having spoken. 429/5xx are retryable — keep trying and
+        // never let them mark the upstream as reached.
+        reachContext.reachedUpstream = true;
+      }
+      if (result.response.ok) {
+        return { response: result.response, url };
       }
     }
 
@@ -151,7 +190,8 @@ export class LyricsService {
 
   private async fetchLrcLibLyrics(
     candidate: LyricsCandidate,
-    durationSeconds?: number,
+    durationSeconds: number | undefined,
+    reachContext: UpstreamReachContext,
   ): Promise<CachedLyrics | null> {
     const providerEndpoints = await getProviderEndpoints();
     const requestVariants = [
@@ -180,7 +220,7 @@ export class LyricsService {
     ];
 
     for (const urls of requestVariants) {
-      const result = await this.fetchFirstSuccessfulResponse(urls);
+      const result = await this.fetchFirstSuccessfulResponse(urls, reachContext);
       if (!result) {
         continue;
       }
@@ -222,6 +262,7 @@ export class LyricsService {
 
   private async fetchLyricsOvhLyrics(
     candidate: LyricsCandidate,
+    reachContext: UpstreamReachContext,
   ): Promise<CachedLyrics | null> {
     const providerEndpoints = await getProviderEndpoints();
     const encodedPath = `/${encodeURIComponent(
@@ -232,7 +273,7 @@ export class LyricsService {
       [`/v1${encodedPath}`, encodedPath],
     );
 
-    const result = await this.fetchFirstSuccessfulResponse(urls);
+    const result = await this.fetchFirstSuccessfulResponse(urls, reachContext);
     if (!result) {
       return null;
     }
@@ -278,6 +319,10 @@ export class LyricsService {
       missedAt &&
       Date.now() - missedAt <= MISS_CACHE_EXPIRY_MS
     ) {
+      console.log(
+        "[Lyrics] Miss cache short-circuit for:",
+        track.title || "(untitled)",
+      );
       return null;
     }
 
@@ -287,10 +332,18 @@ export class LyricsService {
     }
 
     const request = (async () => {
+      const reachContext: UpstreamReachContext = { reachedUpstream: false };
       try {
         const candidates = buildLyricsCandidates(track);
         if (!candidates.length) {
-          this.missCache.set(cacheKey, Date.now());
+          // No usable artist/title pair — nothing to query upstream. Do NOT
+          // poison the miss cache here: metadata can arrive late (track
+          // object still hydrating), and a cached miss would suppress every
+          // retry for 6h. Just report the miss for this call.
+          console.log(
+            "[Lyrics] No lookup candidates for:",
+            track.title || "(untitled)",
+          );
           return null;
         }
 
@@ -302,6 +355,7 @@ export class LyricsService {
           const payload = await this.fetchLrcLibLyrics(
             candidate,
             track.duration,
+            reachContext,
           );
           if (!payload) {
             continue;
@@ -314,6 +368,10 @@ export class LyricsService {
           this.cache.set(cacheKey, resolvedPayload);
           this.missCache.delete(cacheKey);
           await this.saveCache();
+          console.log(
+            "[Lyrics] Found via lrclib:",
+            payload.trackName || candidate.title,
+          );
           return resolvedPayload;
         }
 
@@ -322,7 +380,10 @@ export class LyricsService {
           MAX_LYRICS_OVH_CANDIDATES,
         );
         for (const candidate of lyricsOvhCandidates) {
-          const payload = await this.fetchLyricsOvhLyrics(candidate);
+          const payload = await this.fetchLyricsOvhLyrics(
+            candidate,
+            reachContext,
+          );
           if (!payload) {
             continue;
           }
@@ -334,10 +395,26 @@ export class LyricsService {
           this.cache.set(cacheKey, resolvedPayload);
           this.missCache.delete(cacheKey);
           await this.saveCache();
+          console.log(
+            "[Lyrics] Found via lyrics.ovh:",
+            payload.trackName || candidate.title,
+          );
           return resolvedPayload;
         }
 
-        this.missCache.set(cacheKey, Date.now());
+        if (reachContext.reachedUpstream) {
+          // Upstreams answered and genuinely have nothing for this track —
+          // safe to remember the miss for a while.
+          this.missCache.set(cacheKey, Date.now());
+          console.log("[Lyrics] No lyrics upstream for:", track.title || "(untitled)");
+        } else {
+          // Never got through to any upstream (offline / DNS / timeout).
+          // Don't cache the miss — retry on the next lyrics open.
+          console.log(
+            "[Lyrics] Upstreams unreachable for:",
+            track.title || "(untitled)",
+          );
+        }
         return null;
       } finally {
         this.pendingRequests.delete(cacheKey);
@@ -354,6 +431,101 @@ export class LyricsService {
     this.pendingRequests.clear();
     await StorageService.removeItem(LYRICS_CACHE_KEY);
     console.log("[Lyrics] Cache cleared");
+  }
+
+  /**
+   * Ranked lyrics lookup via LRCLIB /search (fuzzy, unlike /get which is an
+   * exact triplet match). Used by the manual "Search lyrics" UI so a track
+   * whose stored title/artist doesn't match exactly can still be found.
+   * Never throws — returns [] on any failure.
+   */
+  public async searchLyrics(query: string, limit = 10): Promise<LyricsSearchResult[]> {
+    const trimmed = (query || "").trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    const providerEndpoints = await getProviderEndpoints();
+    const urls = buildProviderUrlCandidates(
+      providerEndpoints.providers.lyrics.lrclibBase,
+      ["/search", "/api/search"],
+      { q: trimmed },
+    );
+
+    const reachContext: UpstreamReachContext = { reachedUpstream: false };
+    const result = await this.fetchFirstSuccessfulResponse(urls, reachContext);
+    if (!result) {
+      console.log("[Lyrics] Search found no upstream response for:", trimmed);
+      return [];
+    }
+
+    try {
+      const json = await result.response.json();
+      const list = Array.isArray(json) ? json : [];
+      return list
+        .map((entry: any): LyricsSearchResult | null => {
+          const trackName = typeof entry?.trackName === "string" ? entry.trackName : "";
+          const artistName = typeof entry?.artistName === "string" ? entry.artistName : "";
+          if (!trackName && !artistName) {
+            return null;
+          }
+          const syncedLyrics =
+            typeof entry?.syncedLyrics === "string" ? entry.syncedLyrics : "";
+          const plainLyrics = typeof entry?.plainLyrics === "string" ? entry.plainLyrics : "";
+          const lyrics = syncedLyrics || plainLyrics;
+          if (!lyrics) {
+            return null;
+          }
+          return {
+            id: entry?.id,
+            trackName,
+            artistName,
+            albumName: typeof entry?.albumName === "string" ? entry.albumName : undefined,
+            duration:
+              typeof entry?.duration === "number" && Number.isFinite(entry.duration)
+                ? entry.duration
+                : undefined,
+            lyrics,
+            isSynced: Boolean(syncedLyrics),
+          };
+        })
+        .filter((entry: LyricsSearchResult | null): entry is LyricsSearchResult => Boolean(entry))
+        .sort((a, b) => Number(b.isSynced) - Number(a.isSynced))
+        .slice(0, limit);
+    } catch (error) {
+      console.log("[Lyrics] Search parse failed:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Apply a user-picked search result to a track: stores it in the normal
+   * lyrics cache (so it survives track changes) and remembers the choice so
+   * future automatic lookups for this track prefer it.
+   */
+  public async applyLyricsSearchResult(
+    track: Track,
+    result: LyricsSearchResult,
+  ): Promise<CachedLyrics> {
+    // Merge into the persisted cache first — saving on a fresh instance
+    // without this would overwrite every previously cached lyric.
+    await this.loadCache();
+    const cacheKey = getTrackCacheKey(track);
+    const payload = normalizeCacheEntry({
+      lyrics: result.lyrics,
+      isSynced: result.isSynced,
+      trackId: track.id,
+      trackName: result.trackName,
+      artistName: result.artistName,
+      searchEngine: "lrclib/search",
+      cachedAt: Date.now(),
+    });
+
+    this.cache.set(cacheKey, payload);
+    this.missCache.delete(cacheKey);
+    await this.saveCache();
+    console.log("[Lyrics] Applied manual match for:", track.title || "(untitled)");
+    return payload;
   }
 
   public getCacheSize(): number {

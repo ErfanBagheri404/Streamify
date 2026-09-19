@@ -20,6 +20,11 @@ import styled from "styled-components/native";
 import { Ionicons } from "@expo/vector-icons";
 import StreamItem, { StreamItemSkeleton } from "../StreamItem";
 import { searchAPI } from "../../modules/searchAPI";
+import {
+  isLocalMediaSupported,
+  requestStoragePermission,
+  scanLocalTracks,
+} from "../../modules/localMedia";
 import { Screen } from "../ui/Screen";
 import { Chip } from "../ui/Chip";
 import SourceIcon from "../ui/SourceIcon";
@@ -95,12 +100,17 @@ const toPlayableSearchTrack = (item: any) => ({
     item.artistSource || item.playbackSource || item.source || "youtube",
   duration: parseInt(item.duration) || 0,
   thumbnail: item.thumbnailUrl || item.img,
-  audioUrl: undefined,
+  audioUrl:
+    item.source === "local" || item.source === "subsonic"
+      ? item.href
+      : (item.streamUrl ?? undefined),
   url: item.href,
   source: item.playbackSource || item.source || "youtube",
   providerHint: item.providerHint,
   _isSoundCloud: item.source === "soundcloud",
   _isJioSaavn: item.playbackSource === "jiosaavn" || item.source === "jiosaavn",
+  _isLocal: item.source === "local",
+  _isSubsonic: item.source === "subsonic",
 });
 
 const getDefaultFilterForSource = (source: SourceType): string => {
@@ -173,12 +183,12 @@ const SearchContainer = styled.View`
   align-items: center;
   background-color: #262626;
   border-radius: 24px;
-  paddingEnd: 8px;
+  paddingend: 8px;
 `;
 
 const SearchIconWrapper = styled.View`
-  paddingStart: 12px;
-  paddingEnd: 4px;
+  paddingstart: 12px;
+  paddingend: 4px;
 `;
 
 const SearchInput = styled.TextInput`
@@ -195,7 +205,7 @@ const SearchInput = styled.TextInput`
 
 const ClearButton = styled.TouchableOpacity`
   padding: 8px;
-  marginEnd: 4px;
+  marginend: 4px;
   opacity: ${(props) => (props.disabled ? 0.3 : 1)};
 `;
 
@@ -350,7 +360,9 @@ type SourceType =
   | "youtube"
   | "youtubemusic"
   | "soundcloud"
-  | "jiosaavn";
+  | "jiosaavn"
+  | "local"
+  | "subsonic";
 
 // --- Interfaces ---
 
@@ -372,7 +384,9 @@ interface SearchResult {
     | "soundcloud"
     | "jiosaavn"
     | "youtube_channel"
-    | "youtubemusic";
+    | "youtubemusic"
+    | "subsonic"
+    | "local";
   playbackSource?: "youtube" | "youtubemusic" | "soundcloud" | "jiosaavn";
   providerHint?: "itunes" | "deezer";
   type?: "song" | "album" | "artist" | "playlist" | "unknown";
@@ -383,12 +397,14 @@ interface SearchResult {
 
 const SEARCH_SOURCE_OPTIONS: SearchSourceOption[] = [
   { id: "mixed", labelKey: "source.mixed", color: "#1ed760" },
+  { id: "local", labelKey: "source.local", color: "#5e9eff" },
   { id: "itunes", labelKey: "source.itunes", color: "#fa243c" },
   { id: "deezer", labelKey: "source.deezer", color: "#a238ff" },
   { id: "youtube", labelKey: "source.youtube", color: "#ff0000" },
   { id: "youtubemusic", labelKey: "source.youtubemusic", color: "#ff0000" },
   { id: "soundcloud", labelKey: "source.soundcloud", color: "#ff7700" },
   { id: "jiosaavn", labelKey: "source.jiosaavn", color: "#1fa18a" },
+  { id: "subsonic", labelKey: "source.subsonic", color: "#0188d1" },
 ];
 
 const SEARCH_CATEGORY_IMAGES = {
@@ -523,7 +539,8 @@ const DEFAULT_SEARCH_CATEGORY_CARDS: SearchCategoryPlaylist[] = [
     category: "Synthwave",
     imageFileName: "Synthwave.jpg",
     playlistTitle: "Synthwave & Retrowave",
-    playlistUrl: "https://soundcloud.com/theociderecords/sets/best-of-synthwave",
+    playlistUrl:
+      "https://soundcloud.com/theociderecords/sets/best-of-synthwave",
     source: "soundcloud",
   },
 ];
@@ -606,6 +623,7 @@ export default function SearchScreen({ navigation }: any) {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [localPermissionDenied, setLocalPermissionDenied] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMoreResults, setHasMoreResults] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -837,9 +855,7 @@ export default function SearchScreen({ navigation }: any) {
       await StorageService.clearLastSearchState();
       if (!cancelled) {
         setSelectedSource(preferredSource);
-        setSelectedFilter(
-          normalizeFilterForSource(preferredSource, undefined),
-        );
+        setSelectedFilter(normalizeFilterForSource(preferredSource, undefined));
       }
     };
 
@@ -981,6 +997,81 @@ export default function SearchScreen({ navigation }: any) {
             20,
           );
           paginationRef.current.nextpage = null;
+        } else if (requestSource === "subsonic") {
+          // Subsonic server search — requires user-configured credentials.
+          const { subsonicService: subsonic } =
+            await import("../../modules/subsonicService");
+          // loadConfig() hydrates cachedConfig from AsyncStorage on first call;
+          // isConfigured() only works after that, so always call search()
+          // which handles the config check internally.
+          try {
+            const subsonicTracks = await subsonic.search(trimmedQuery, 20);
+            // Map SubsonicTrack -> the result shape this screen consumes
+            // (author / duration string / thumbnailUrl), otherwise the Songs
+            // filter and playable-queue checks drop every row.
+            results = (subsonicTracks || []).map((track) => {
+              const artwork =
+                subsonic.getCoverArtUrl((track as any).coverArtId) ?? "";
+              return {
+                id: track.id ?? "",
+                title: track.title ?? "",
+                author: track.artist ?? "",
+                albumName: track.album ?? "",
+                duration: String((track as any).durationSec ?? 0),
+                thumbnailUrl: artwork,
+                img: artwork,
+                href: track.streamUrl ?? "",
+                audioUrl: track.streamUrl ?? "",
+                source: "subsonic" as const,
+                type: "song" as const,
+              };
+            });
+          } catch {
+            results = [];
+          }
+          // The service returns a single page; Load More would repeat it.
+          paginationRef.current.nextpage = null;
+          paginationRef.current.hasMore = false;
+          setHasMoreResults(false);
+        } else if (requestSource === "local") {
+          // Device library. No pagination — MediaStore scans are cheap enough
+          // to filter fully on-device.
+          if (!isLocalMediaSupported) {
+            results = [];
+          } else {
+            const granted = await requestStoragePermission();
+            if (!granted) {
+              setLocalPermissionDenied(true);
+              results = [];
+            } else {
+              setLocalPermissionDenied(false);
+              const needle = trimmedQuery.toLowerCase();
+              const all = await scanLocalTracks(400);
+              results = all
+                .filter(
+                  (t) =>
+                    t.title.toLowerCase().includes(needle) ||
+                    t.artist.toLowerCase().includes(needle) ||
+                    (t.album && t.album.toLowerCase().includes(needle)),
+                )
+                .slice(0, 40)
+                .map((t) => ({
+                  id: `local-${t.id}`,
+                  title: t.title,
+                  author: t.artist,
+                  albumName: t.album,
+                  duration: String(Math.floor(t.durationMs / 1000)),
+                  thumbnailUrl: t.artworkUri,
+                  img: t.artworkUri,
+                  href: t.contentUri,
+                  source: "local" as const,
+                  type: "song" as const,
+                }));
+            }
+            paginationRef.current.nextpage = null;
+            paginationRef.current.hasMore = false;
+            setHasMoreResults(false);
+          }
         } else if (requestSource === "soundcloud") {
           // SoundCloud Search
           results = await searchAPI.searchWithSoundCloud(
@@ -1744,6 +1835,13 @@ export default function SearchScreen({ navigation }: any) {
 
       // Debounce suggestions (200ms - faster suggestions)
       typingTimeoutRef.current = setTimeout(async () => {
+        // Local (on-device) source has no suggestion backend — skip the
+        // network call entirely instead of showing junk suggestions.
+        if (selectedSource === "local") {
+          setSuggestions([]);
+          setShowSuggestions(false);
+          return;
+        }
         try {
           setIsLoadingSuggestions(true);
           setShowSuggestions(true);
@@ -1828,7 +1926,13 @@ export default function SearchScreen({ navigation }: any) {
 
   return (
     <Screen padded={false}>
-      <Header style={{ flexDirection: isRtl ? "row-reverse" : "row", direction: dir, paddingStart: 0 }}>
+      <Header
+        style={{
+          flexDirection: isRtl ? "row-reverse" : "row",
+          direction: dir,
+          paddingStart: 0,
+        }}
+      >
         <SearchContainer
           style={{
             flexDirection: isRtl ? "row-reverse" : "row",
@@ -1932,41 +2036,43 @@ export default function SearchScreen({ navigation }: any) {
               },
             ]}
           >
-            {SEARCH_SOURCE_OPTIONS.map((source, index) => {
+            {SEARCH_SOURCE_OPTIONS.map((source) => {
               const isSelected = selectedSource === source.id;
               return (
-                <View key={source.id} style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}>
-                <Chip
+                <View
                   key={source.id}
-                  label={t(source.labelKey)}
-                  selected={isSelected}
-                  onPress={() => handleSourceSelect(source.id)}
-                  chipStyle={[
-                    styles.searchChip,
-                    {
-                      marginLeft: !isRtl && index === 0 ? 0 : 8,
-                      backgroundColor: isSelected
-                        ? source.color + "2E" // ~18% opacity via hex
-                        : "transparent",
-                      borderColor: isSelected
-                        ? source.color + "6B" // ~42% opacity
-                        : colors.borderSubtle,
-                    },
-                  ]}
-                  textStyle={[
-                    styles.searchChipText,
-                    isRtl ? styles.searchChipTextRtl : null,
-                  ]}
-                  icon={
-                    <SourceIcon
-                      source={source.id}
-                      size={16}
-                      color={isSelected ? colors.foreground : colors.muted}
-                    />
-                  }
-                  selectedTextColor={colors.foreground}
-                  unselectedTextColor={colors.muted}
-                />
+                  style={isRtl ? { transform: [{ scaleX: -1 }] } : undefined}
+                >
+                  <Chip
+                    key={source.id}
+                    label={t(source.labelKey)}
+                    selected={isSelected}
+                    onPress={() => handleSourceSelect(source.id)}
+                    chipStyle={[
+                      styles.searchChip,
+                      {
+                        backgroundColor: isSelected
+                          ? source.color + "2E" // ~18% opacity via hex
+                          : "transparent",
+                        borderColor: isSelected
+                          ? source.color + "6B" // ~42% opacity
+                          : colors.borderSubtle,
+                      },
+                    ]}
+                    textStyle={[
+                      styles.searchChipText,
+                      isRtl ? styles.searchChipTextRtl : null,
+                    ]}
+                    icon={
+                      <SourceIcon
+                        source={source.id}
+                        size={16}
+                        color={isSelected ? colors.foreground : colors.muted}
+                      />
+                    }
+                    selectedTextColor={colors.foreground}
+                    unselectedTextColor={colors.muted}
+                  />
                 </View>
               );
             })}
@@ -1985,7 +2091,7 @@ export default function SearchScreen({ navigation }: any) {
                 },
               ]}
             >
-              {activeFilterOptions.map((filter, index) => (
+              {activeFilterOptions.map((filter) => (
                 <Chip
                   key={filter.value || "all"}
                   label={t(filter.labelKey)}
@@ -1994,7 +2100,6 @@ export default function SearchScreen({ navigation }: any) {
                   chipStyle={[
                     styles.searchChip,
                     {
-                      marginLeft: !isRtl && index === 0 ? 0 : 8,
                       opacity: selectedFilter === filter.value ? 1 : 0.72,
                     },
                   ]}
@@ -2070,8 +2175,7 @@ export default function SearchScreen({ navigation }: any) {
                 </SuggestionText>
                 <SuggestionMeta
                   style={{ color: withOpacity(colors.foreground, 0.32) }}
-                >
-                </SuggestionMeta>
+                ></SuggestionMeta>
               </SuggestionItem>
             ))
           )}
@@ -2082,7 +2186,7 @@ export default function SearchScreen({ navigation }: any) {
       <ResultsContainer
         ref={scrollViewRef}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 144 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 220 }}
         onScrollBeginDrag={handleOutsidePress}
         style={{ direction: dir }}
         onScroll={(event) => {
@@ -2161,7 +2265,9 @@ export default function SearchScreen({ navigation }: any) {
               <NoResultsText
                 style={[{ color: colors.muted }, centeredLocalizedTextStyle]}
               >
-                {copy.noResults}
+                {localPermissionDenied && selectedSource === "local"
+                  ? "Streamify needs permission to read audio files on this device."
+                  : copy.noResults}
               </NoResultsText>
             </Animated.View>
           )}
@@ -2380,7 +2486,9 @@ const styles = StyleSheet.create({
   },
   filterRowContent: {
     paddingHorizontal: 0,
+    paddingEnd: 16,
     alignItems: "center",
+    gap: 8,
   },
   filterRowSpacing: {
     paddingHorizontal: 16,
@@ -2391,6 +2499,7 @@ const styles = StyleSheet.create({
     height: 32,
     minHeight: 32,
     marginEnd: 0,
+    marginStart: 0,
     paddingHorizontal: 10,
     alignSelf: "center",
   },

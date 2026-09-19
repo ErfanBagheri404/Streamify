@@ -12,6 +12,7 @@ import {
   sanitizeAppSettings,
 } from "../lib/app-settings";
 import { StorageService } from "../utils/storage";
+import { setHapticsEnabled } from "../utils/haptics";
 
 interface SettingsContextValue {
   settings: AppSettings;
@@ -58,6 +59,12 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
 
     void StorageService.saveAppSettings(settings);
   }, [hasHydratedSettings, settings]);
+
+  // Keep the haptics module gate in sync with the setting so every
+  // playHaptic call site is covered by one switch.
+  useEffect(() => {
+    setHapticsEnabled(settings.hapticsEnabled);
+  }, [settings.hapticsEnabled]);
 
   const updateSettings = useCallback((updates: Partial<AppSettings>) => {
     setSettings((current) => sanitizeAppSettings({ ...current, ...updates }));

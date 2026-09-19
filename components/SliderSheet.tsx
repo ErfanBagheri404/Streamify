@@ -62,11 +62,12 @@ const SheetContainer = styled(Animated.View)`
   bottom: 0;
 `;
 
+
 const SheetInner = styled.View`
   background-color: #000000;
   border-top-left-radius: 24px;
   border-top-right-radius: 24px;
-  padding-bottom: 32px;
+  padding-bottom: 56px;
   overflow: hidden;
 `;
 
@@ -195,14 +196,14 @@ export const SliderSheet: React.FC<SliderSheetProps> = ({
             toValue: FULL_HEIGHT,
             duration: 180,
             easing: Easing.in(Easing.cubic),
-            useNativeDriver: false,
+            useNativeDriver: true,
           }).start(() => {
             onClose();
           });
         } else {
           Animated.spring(translateY, {
             toValue: 0,
-            useNativeDriver: false,
+            useNativeDriver: true,
             friction: 8,
             tension: 40,
           }).start();
@@ -211,7 +212,7 @@ export const SliderSheet: React.FC<SliderSheetProps> = ({
       onPanResponderTerminate: () => {
         Animated.spring(translateY, {
           toValue: 0,
-          useNativeDriver: false,
+          useNativeDriver: true,
           friction: 8,
           tension: 40,
         }).start();
@@ -224,12 +225,13 @@ export const SliderSheet: React.FC<SliderSheetProps> = ({
       setRenderModal(true);
       translateY.setValue(FULL_HEIGHT);
       overlayOpacity.setValue(0);
+
       Animated.parallel([
         Animated.timing(translateY, {
           toValue: 0,
           duration: 320,
           easing: Easing.out(Easing.cubic),
-          useNativeDriver: false,
+          useNativeDriver: true,
         }),
         Animated.timing(overlayOpacity, {
           toValue: 1,
@@ -238,12 +240,13 @@ export const SliderSheet: React.FC<SliderSheetProps> = ({
         }),
       ]).start();
     } else if (renderModal) {
+
       Animated.parallel([
         Animated.timing(translateY, {
           toValue: FULL_HEIGHT,
           duration: 260,
           easing: Easing.in(Easing.cubic),
-          useNativeDriver: false,
+          useNativeDriver: true,
         }),
         Animated.timing(overlayOpacity, {
           toValue: 0,
@@ -260,8 +263,11 @@ export const SliderSheet: React.FC<SliderSheetProps> = ({
   }
 
   const handleOptionPress = (option: string) => {
+    // Keep the sheet open after selection: the parent decides when to close
+    // (each sub-sheet closes itself when its action completes, or the user
+    // dismisses via backdrop/X). Closing the menu on every tap made sub-flow
+    // launches race the menu's own exit animation.
     onOptionPress(option);
-    onClose();
   };
 
   return (

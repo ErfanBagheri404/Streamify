@@ -1,6 +1,13 @@
 import React, { useRef, useState } from "react";
 const { Animated, PanResponder, Dimensions } = require("react-native");
-import { Image, View, TouchableOpacity, Text, TextInput, Share } from "react-native";
+import {
+  Image,
+  View,
+  TouchableOpacity,
+  Text,
+  TextInput,
+  Share,
+} from "react-native";
 import styled from "styled-components/native";
 import { LinearGradient } from "expo-linear-gradient";
 import AntDesign from "@expo/vector-icons/AntDesign";
@@ -25,6 +32,7 @@ import { SectionHeader as UiSectionHeader } from "../ui/SectionHeader";
 import { MutedText } from "../ui/Text";
 import { AccentButton } from "../ui/Button";
 import { useAppLanguage } from "../../hooks/useAppLanguage";
+import { isLocalMediaSupported } from "../../modules/localMedia";
 import { useTheme, withOpacity } from "../../hooks/useTheme";
 import { PlaylistCreateModal } from "../PlaylistCreateModal";
 import { sanitizeImageUrl } from "../core/image";
@@ -68,7 +76,7 @@ const HeaderActions = styled.View`
 
 const HeaderIconButton = styled.TouchableOpacity`
   padding: 8px;
-  marginStart: 8px;
+  margin-start: 8px;
 `;
 
 const HeaderIconText = styled.Text`
@@ -86,7 +94,7 @@ const SortRow = styled.View`
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  paddingStart: 16px;
+  padding-start: 16px;
   margin-bottom: 12px;
 `;
 
@@ -98,7 +106,7 @@ const SortLeft = styled.TouchableOpacity`
 const SortIcon = styled.Text`
   color: #a3a3a3;
   font-size: 16px;
-  marginEnd: 8px;
+  margin-end: 8px;
   font-family: GoogleSansRegular;
   line-height: 20px;
 `;
@@ -249,10 +257,12 @@ type LibraryViewMode = "grid" | "list";
 type LibraryArtworkKind =
   | "liked"
   | "history"
+  | "replay"
   | "music"
   | "playlist"
   | "image"
-  | "artist";
+  | "artist"
+  | "local";
 
 type LibraryDisplayItem = {
   id: string;
@@ -691,7 +701,12 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [likedSongs.length, downloadingTracks.length, loadDownloadingTracks, loadDownloadedTracks]);
+  }, [
+    likedSongs.length,
+    downloadingTracks.length,
+    loadDownloadingTracks,
+    loadDownloadedTracks,
+  ]);
 
   React.useEffect(() => {
     contentOpacity.setValue(0.58);
@@ -762,10 +777,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       goToArtists: language === "fa" ? "رفتن به هنرمندان" : "Go to artists",
       downloadMoreQueued:
         language === "fa"
-          ? (count: number) =>
-              `و ${count} آهنگ دیگر در صف هستند`
-          : (count: number) =>
-              `and ${count} more songs queued`,
+          ? (count: number) => `و ${count} آهنگ دیگر در صف هستند`
+          : (count: number) => `and ${count} more songs queued`,
       sleepTimer: language === "fa" ? "تایمر خواب" : "Sleep timer",
       songRadio: language === "fa" ? "رفتن به رادیوی آهنگ" : "Go to song radio",
     }),
@@ -964,13 +977,25 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   const playlistItems = React.useMemo<LibraryDisplayItem[]>(
     () => [
       {
+        id: "replay",
+        title: "Replay",
+        subtitle: copy.playlist,
+        meta: copy.previouslyPlayed,
+        itemType: "collection",
+        imageShape: "rounded",
+        pinOrder: 0,
+        searchText: ["Replay", "stats", "listening"].join(" "),
+        artworkKind: "replay",
+        onPress: () => navigation.navigate("Replay" as never),
+      },
+      {
         id: "liked",
         title: copy.likedSongs,
         subtitle: copy.playlist,
         meta: formatSongCount(likedSongs.length),
         itemType: "collection",
         imageShape: "rounded",
-        pinOrder: 0,
+        pinOrder: 1,
         searchText: [
           copy.likedSongs,
           likedSongs.map((track) => track.title).join(" "),
@@ -987,7 +1012,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         meta: formatSongCount(previouslyPlayedSongs.length),
         itemType: "collection",
         imageShape: "rounded",
-        pinOrder: 1,
+        pinOrder: 2,
         searchText: [
           copy.previouslyPlayed,
           previouslyPlayedSongs.map((track) => track.title).join(" "),
@@ -996,6 +1021,33 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           .join(" "),
         artworkKind: "history",
         onPress: handlePreviouslyPlayedPress,
+      },
+      {
+        id: "local-files",
+        title: language === "fa" ? "فایل‌های محلی" : "Local files",
+        subtitle: copy.playlist,
+        meta: isLocalMediaSupported
+          ? language === "fa"
+            ? "موسیقی روی این دستگاه"
+            : "Music on this device"
+          : language === "fa"
+            ? "پشتیبانی نمی‌شود"
+            : "Not supported",
+        itemType: "collection",
+        imageShape: "rounded",
+        pinOrder: 3,
+        searchText: [
+          language === "fa" ? "فایل‌های محلی" : "Local files",
+          "local",
+          "device",
+          "storage",
+        ].join(" "),
+        artworkKind: "local",
+        onPress: () => {
+          if (isLocalMediaSupported) {
+            navigation.navigate("LocalFiles" as never);
+          }
+        },
       },
       ...playlists.map((playlist) => {
         const artworkUri = getPlaylistArtworkUri(playlist);
@@ -1118,9 +1170,9 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   const activeItems = React.useMemo<LibraryDisplayItem[]>(() => {
     if (activeSection === null) {
       return [
-        ...playlistItems.slice(0, 2),
+        ...playlistItems.slice(0, 4),
         ...mixedLibraryItems,
-        ...playlistItems.slice(2),
+        ...playlistItems.slice(4),
       ];
     }
     if (activeSection === "Artists") return topArtistItems;
@@ -1210,8 +1262,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
     if (activeSection === "Playlists") {
       return language === "fa"
-        ? `${playlists.length + 2} پلی‌لیست • ${formatSongCount(likedSongs.length)}`
-        : `${playlists.length + 2} playlists • ${formatSongCount(
+        ? `${playlistItems.length} پلی‌لیست • ${formatSongCount(likedSongs.length)}`
+        : `${playlistItems.length} playlists • ${formatSongCount(
             likedSongs.length,
           )}`;
     }
@@ -1259,11 +1311,15 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           colors={
             item.artworkKind === "liked"
               ? [colors.accent, colors.heroMid, colors.heroEnd]
-              : item.artworkKind === "artist"
-                ? [colors.surface1, colors.surface2, colors.surface3]
-                : item.artworkKind === "playlist"
-                  ? [colors.accent, colors.heroMid, colors.heroEnd]
-                  : ["#1a1a1a", "#404040", "#525252"]
+              : item.artworkKind === "replay"
+                ? ["#f43f5e", "#a21caf", "#4f46e5"]
+                : item.artworkKind === "local"
+                  ? ["#059669", "#10b981", "#34d399"]
+                  : item.artworkKind === "artist"
+                    ? [colors.surface1, colors.surface2, colors.surface3]
+                    : item.artworkKind === "playlist"
+                      ? [colors.accent, colors.heroMid, colors.heroEnd]
+                      : ["#1a1a1a", "#404040", "#525252"]
           }
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -1281,6 +1337,12 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
               size={iconSize}
               color={colors.accentContrast}
             />
+          ) : item.artworkKind === "local" ? (
+            <Ionicons
+              name="albums-outline"
+              size={iconSize}
+              color={colors.foreground}
+            />
           ) : item.artworkKind === "artist" ? (
             <Ionicons
               name="person-outline"
@@ -1294,7 +1356,9 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                   ? "heart"
                   : item.artworkKind === "history"
                     ? "back-in-time"
-                    : "music"
+                    : item.artworkKind === "replay"
+                      ? "infinity"
+                      : "music"
               }
               size={iconSize}
               color="white"
@@ -1775,23 +1839,17 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                   rowIndex * 2,
                   (rowIndex + 1) * 2,
                 );
-                const rowCards: Array<LibraryDisplayItem | null> = isRtl
-                  ? rowItems.length === 1
-                    ? [null, rowItems[0]]
-                    : [rowItems[1], rowItems[0]]
-                  : rowItems;
-
                 return (
                   <GridRow
                     key={`row-${rowIndex}`}
                     style={{
-                      flexDirection: "row",
+                      flexDirection: isRtl ? "row-reverse" : "row",
                       justifyContent: "space-between",
                       marginHorizontal: 0,
                       paddingHorizontal: 0,
                     }}
                   >
-                    {rowCards.map((item, columnIndex) => {
+                    {rowItems.map((item, columnIndex) => {
                       if (!item) return null;
                       return (
                         <CollectionCard
@@ -1808,7 +1866,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                               overflow: "hidden",
                             }}
                           >
-                             {renderArtwork(item, "full")}
+                            {renderArtwork(item, "full")}
                             {item.onSecondaryAction ? (
                               <TouchableOpacity
                                 onPress={item.onSecondaryAction}
@@ -1938,19 +1996,19 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             },
           ]}
           onOptionPress={(option) => {
-             if (option === "Share" && selectedTrack?.title) {
-               const artistSuffix = selectedTrack.artist
-                 ? ` — ${selectedTrack.artist}`
-                 : "";
-               Share.share({
-                 message: `${selectedTrack.title}${artistSuffix}`,
-                 url: selectedTrack.url || selectedTrack.thumbnail || "",
-               }).catch((error) => {
-                 console.log("[LibraryScreen] Share failed:", error);
-               });
-             }
-             closeSongActionSheet();
-           }}
+            if (option === "Share" && selectedTrack?.title) {
+              const artistSuffix = selectedTrack.artist
+                ? ` — ${selectedTrack.artist}`
+                : "";
+              Share.share({
+                message: `${selectedTrack.title}${artistSuffix}`,
+                url: selectedTrack.url || selectedTrack.thumbnail || "",
+              }).catch((error) => {
+                console.log("[LibraryScreen] Share failed:", error);
+              });
+            }
+            closeSongActionSheet();
+          }}
         />
       </LibraryShell>
     </UiScreen>

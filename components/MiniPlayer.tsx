@@ -17,6 +17,7 @@ import { useAppSettings } from "../hooks/useAppSettings";
 import { getAppFontFamily } from "../utils/fonts";
 import SourceIcon from "./ui/SourceIcon";
 import { sanitizeImageUrl, normalizeYouTubeThumbnailUrl } from "./core/image";
+import { Haptic, playHaptic } from "../utils/haptics";
 
 const MiniPlayerContainer = styled.View`
   position: absolute;
@@ -210,14 +211,17 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
         : "Loading playback..."
       : null);
   const handlePlayPause = async () => {
+    playHaptic(isPlaying ? Haptic.Pause : Haptic.Resume);
     await playPause();
   };
 
   const handleNext = async () => {
+    playHaptic(Haptic.SkipNext);
     await nextTrack();
   };
 
   const handlePrevious = async () => {
+    playHaptic(Haptic.SkipPrevious);
     await previousTrack();
   };
 
