@@ -29,7 +29,7 @@
     "@types/hls.js": "^0.13.3",
     "@types/sortablejs": "^1.15.9",
     "@types/styled-components-react-native": "^5.2.5",
-    "babel-preset-expo": "~54.0.10",
+    "babel-preset-expo": "~57.0.12",
     "base64-js": "^1.5.1",
     "expo": "~54.0.35",
     "expo-av": "~16.0.8",
