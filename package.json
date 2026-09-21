@@ -74,7 +74,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.27.0",
-    "@babel/plugin-transform-optional-chaining": "^7.27.1",
+    "@babel/plugin-transform-optional-chaining": "^8.0.5",
     "@babel/plugin-transform-template-literals": "^7.27.1",
     "@babel/preset-typescript": "^7.27.1",
     "@react-native-community/cli": "^20.0.2",
