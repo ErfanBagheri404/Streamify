@@ -2,7 +2,7 @@
   "expo": {
     "newArchEnabled": false,
     "name": "Streamify",
-    "version": "20.30.90",
+    "version": "2.31.00",
     "slug": "streamify-mobile",
     "scheme": "streamify",
     "sdkVersion": "54.0.0",
@@ -29,7 +29,8 @@
           }
         }
       ],
-      "react-native-video"
+      "react-native-video",
+      "expo-secure-store"
     ],
     "android": {
       "package": "com.erfanbagheri.streamifymobile",

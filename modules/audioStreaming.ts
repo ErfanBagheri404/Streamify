@@ -26,6 +26,204 @@ import {
 } from "../lib/provider-endpoints";
 import { getRuntimeServiceConfig } from "../lib/runtime-services";
 import { fetchBackendRoute, getBackendBaseUrls } from "../lib/backend-api";
+import { resolveInnertubeStream, type InnertubeStream } from "./innertube";
+
+/**
+ * Download an Innertube-resolved googlevideo stream to a local file. Three
+ * hard-won on-device facts drive this shape:
+ * 1) Only JS `fetch` passes googlevideo — expo's downloadAsync builds a
+ *    separate OkHttp client and 403s even on a fresh URL with proper headers.
+ * 2) Bounded ranges (`bytes=a-b`) are accepted; open-ended (`bytes=0-`) 403s.
+ * 3) Each URL serves exactly ONE successful fetch — any second fetch of the
+ *    same URL 403s (confirmed on device), so one URL can never be chunked.
+ * Therefore: probe URL A with a 1-byte bounded fetch to learn the total
+ * length, remint a fresh URL B, and pull the whole file in one bounded
+ * request. Every URL is fetched exactly once, every range is bounded.
+ */
+async function innertubeFetch(
+  url: string,
+  headers: Record<string, string>,
+  timeoutMs: number,
+): Promise<Response | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { headers, signal: controller.signal });
+  } catch (e) {
+    console.warn(
+      "[InnertubeDownload] fetch failed:",
+      e instanceof Error ? e.message : e,
+    );
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function downloadInnertubeToFile(
+  stream: InnertubeStream,
+): Promise<string | null> {
+  try {
+    // Prefer the app's own cache directory so the existing cleanup /
+    // eviction passes apply to these files too.
+    const dir =
+      (await AudioStreamManager.getInstance().getCacheDirectory()) ?? null;
+    const base =
+      dir ?? FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+    if (!base) {
+      console.warn("[InnertubeDownload] no writable base directory");
+      return null;
+    }
+    // getCacheDirectory() already returns the app's Streamify/cache path
+    // with a trailing slash. Only fall back to creating a subdirectory when
+    // the legacy cacheDirectory path is used (no Streamify/cache prefix).
+    const cacheDir = dir ? base : `${base}Streamify/cache/`;
+    try {
+      await FileSystem.makeDirectoryAsync(cacheDir, {
+        intermediates: true,
+      });
+    } catch {
+      /* may already exist */
+    }
+
+    // Step 1: probe the minted URL for the total size with a 1-byte bounded
+    // fetch. This consumes the URL (one fetch per URL) — that is expected.
+    const probe = await innertubeFetch(
+      stream.url,
+      { ...stream.mediaHeaders, Range: "bytes=0-0" },
+      20000,
+    );
+    if (!probe || probe.status !== 206) {
+      console.warn(
+        `[InnertubeDownload] probe ${probe?.status ?? "error"} for ${stream.videoId}`,
+      );
+      return null;
+    }
+    const m = /\/(\d+)\s*$/.exec(probe.headers.get("content-range") ?? "");
+    const total = m ? parseInt(m[1]!, 10) : 0;
+    if (!total) {
+      console.warn(
+        `[InnertubeDownload] no total in content-range for ${stream.videoId}`,
+      );
+      return null;
+    }
+
+    // Step 2: remint a fresh URL and pull the whole file in one bounded
+    // fetch. Both URLs are now fetched exactly once.
+    const fresh = await resolveInnertubeStream(stream.videoId);
+    if (!fresh?.url) {
+      console.warn(`[InnertubeDownload] remint failed for ${stream.videoId}`);
+      return null;
+    }
+    const ext = fresh.mimeType?.includes("webm") ? "weba" : "m4a";
+    const safeName = stream.videoId.replace(/[^a-zA-Z0-9_-]/g, "");
+    const localPath = `${cacheDir}yt_${safeName}_${fresh.itag}.${ext}`;
+    // Pull the file in bounded chunks, REMINTING A FRESH URL PER CHUNK —
+    // proven on device: each request is capped (first 1MB of a range passes,
+    // a full-size bounded range 403s instantly) and open-ended ranges 403.
+    // Every chunk: fresh resolve + one bounded fetch of <= cap bytes.
+    const capes = [1048576, 524288]; // shrink once if a chunk size 403s
+    const parts: Uint8Array[] = [];
+    let offset = 0;
+    let capIdx = 0;
+    let failsAtOffset = 0;
+    for (let guard = 0; guard < 40 && offset < total; guard++) {
+      const cap = capes[capIdx] ?? 131072;
+      const end = Math.min(offset + cap - 1, total - 1);
+      const chunkStream =
+        offset === 0 ? fresh : await resolveInnertubeStream(stream.videoId);
+      if (!chunkStream?.url) {
+        console.warn(
+          `[InnertubeDownload] remint failed at ${offset} for ${stream.videoId}`,
+        );
+        return null;
+      }
+      const dl = await innertubeFetch(
+        chunkStream.url,
+        { ...chunkStream.mediaHeaders, Range: `bytes=${offset}-${end}` },
+        90000,
+      );
+      const status = dl?.status ?? 0;
+      console.log(
+        `[InnertubeDownload] chunk ${offset}-${end} -> ${status} for ${stream.videoId}`,
+      );
+      if (status === 206) {
+        const buf = new Uint8Array(await dl!.arrayBuffer());
+        if (!buf.length) break;
+        parts.push(buf);
+        offset += buf.length;
+        failsAtOffset = 0;
+        continue;
+      }
+      if (status === 200 && offset === 0) {
+        // Full-body response for the first chunk is valid only when the
+        // server simply doesn't support Range.  Check Content-Length before
+        // buffering: the node/readable-stream polyfill in React Native reads
+        // the whole body into memory first, so an unchecked 200 is a heap
+        // risk.  Cap at 20 MB — beyond that the file is almost certainly
+        // malformed or not a bounded googlevideo response.
+        const MAX_SINGLE_FETCH = 20 * 1024 * 1024;
+        const cl = parseInt(dl!.headers.get("content-length") ?? "0", 10);
+        if (!cl || cl > MAX_SINGLE_FETCH) {
+          console.warn(
+            `[InnertubeDownload] 200 body too large or missing content-length (${cl}) for ${stream.videoId}, retrying as ranged`,
+          );
+          // Instead of loading the full body, switch to the ranged
+          // fallback path below (which will try a bounded chunk next).
+          break;
+        }
+        const buf = new Uint8Array(await dl!.arrayBuffer());
+        if (!buf.length) break;
+        parts.push(buf);
+        offset += buf.length;
+        break; // entire file is already in this one chunk
+      }
+      // status 200 at a nonzero offset means the server ignored Range and
+      // returned the full file while we already have earlier chunks — that
+      // data is unusable and must not be appended.
+      if (status === 200) {
+        console.warn(
+          `[InnertubeDownload] server ignored Range at ${offset}, got full body for ${stream.videoId}`,
+        );
+        return null;
+      }
+      // Same size again is pointless; shrink the cap once, then bail.
+      failsAtOffset++;
+      if (failsAtOffset > capes.length) {
+        console.warn(
+          `[InnertubeDownload] stuck at ${offset} for ${stream.videoId}`,
+        );
+        return null;
+      }
+      capIdx++;
+    }
+    if (!offset || offset < total) {
+      console.warn(
+        `[InnertubeDownload] incomplete ${offset}/${total} for ${stream.videoId}`,
+      );
+      return null;
+    }
+    const merged = new Uint8Array(offset);
+    let head = 0;
+    for (const part of parts) {
+      merged.set(part, head);
+      head += part.length;
+    }
+    await FileSystem.writeAsStringAsync(localPath, fromByteArray(merged), {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    console.log(
+      `[InnertubeDownload] saved ${merged.length}/${total} bytes for ${stream.videoId} -> ${localPath}`,
+    );
+    return localPath;
+  } catch (e) {
+    console.warn(
+      "[InnertubeDownload] failed:",
+      e instanceof Error ? e.message : e,
+    );
+    return null;
+  }
+}
 
 type GetAudioStreamOptions = {
   urlHint?: string;
@@ -870,7 +1068,10 @@ export class AudioStreamManager {
         const entry = entries[trackId];
         if (!entry?.isFullyCached) continue;
         for (const ext of candidateExtensions) {
-          candidates.push({ trackId, candidate: `${cacheDir}${trackId}${ext}` });
+          candidates.push({
+            trackId,
+            candidate: `${cacheDir}${trackId}${ext}`,
+          });
         }
       }
 
@@ -4321,7 +4522,11 @@ export class AudioStreamManager {
       let partialBytes = 0;
       try {
         const partialInfo = await FileSystem.getInfoAsync(properCacheFilePath);
-        if (partialInfo.exists && typeof partialInfo.size === "number" && partialInfo.size > 1024) {
+        if (
+          partialInfo.exists &&
+          typeof partialInfo.size === "number" &&
+          partialInfo.size > 1024
+        ) {
           partialBytes = partialInfo.size;
         }
       } catch {}
@@ -4360,13 +4565,22 @@ export class AudioStreamManager {
       const existingProgress = this.cacheProgress.get(trackId);
       const estimatedTotal = existingProgress?.estimatedTotalSize || 0;
       const pollTimer = setInterval(async () => {
-        if (controller.signal.aborted) { clearInterval(pollTimer); return; }
+        if (controller.signal.aborted) {
+          clearInterval(pollTimer);
+          return;
+        }
         try {
           const info = await FileSystem.getInfoAsync(properCacheFilePath);
           if (info.exists && typeof info.size === "number" && info.size > 0) {
-            const pct = estimatedTotal > 0
-              ? Math.min(99, Math.round((info.size / estimatedTotal) * 100))
-              : Math.min(99, Math.round(Math.min(info.size / (3 * 1024 * 1024), 0.99) * 100));
+            const pct =
+              estimatedTotal > 0
+                ? Math.min(99, Math.round((info.size / estimatedTotal) * 100))
+                : Math.min(
+                    99,
+                    Math.round(
+                      Math.min(info.size / (3 * 1024 * 1024), 0.99) * 100,
+                    ),
+                  );
             const cur = this.cacheProgress.get(trackId);
             if (cur) {
               cur.percentage = pct;
@@ -4389,10 +4603,16 @@ export class AudioStreamManager {
 
       if (result.status === 200 || result.status === 206) {
         const fileInfo = await FileSystem.getInfoAsync(properCacheFilePath);
-        if (fileInfo.exists && typeof fileInfo.size === "number" && fileInfo.size > 1024) {
+        if (
+          fileInfo.exists &&
+          typeof fileInfo.size === "number" &&
+          fileInfo.size > 1024
+        ) {
           this.registerValidatedFullTrackPath(trackId, properCacheFilePath);
           this.markDownloadCompleted(trackId, fileInfo.size / (1024 * 1024));
-          console.log("[Audio] Cached: " + trackId + " (" + fileInfo.size + " bytes)");
+          console.log(
+            "[Audio] Cached: " + trackId + " (" + fileInfo.size + " bytes)",
+          );
           onProgress?.(100);
         }
       } else {
@@ -4402,7 +4622,9 @@ export class AudioStreamManager {
           isDownloading: false,
           isFullyCached: false,
         });
-        console.warn("[Audio] Download returned " + result.status + " for " + trackId);
+        console.warn(
+          "[Audio] Download returned " + result.status + " for " + trackId,
+        );
       }
       markCacheUrlInactive(streamUrl);
     } catch (error) {
@@ -4417,12 +4639,31 @@ export class AudioStreamManager {
     }
   }
 
-
   static getInstance(): AudioStreamManager {
     if (!AudioStreamManager.instance) {
       AudioStreamManager.instance = new AudioStreamManager();
     }
     return AudioStreamManager.instance;
+  }
+
+  /**
+   * Device-side Innertube resolution: mint a plain-URL stream via the
+   * on-device client walk, then download to the cache so the player reads a
+   * local file (sidesteps googlevideo ip= re-binding). The download is the
+   * first and only fetch of the minted URL — URLs are one-shot, so a failed
+   * download means reminting a fresh URL, never re-fetching the old one.
+   */
+  private async tryDeviceInnertube(videoId: string): Promise<string | null> {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const innertube = await resolveInnertubeStream(videoId);
+      if (!innertube?.url) return null;
+      const localPath = await downloadInnertubeToFile(innertube);
+      if (localPath) return localPath;
+      console.warn(
+        `[AudioStreamManager] Innertube download failed for ${videoId} (attempt ${attempt}/2), reminting fresh URL`,
+      );
+    }
+    return null;
   }
 
   private setupFallbackStrategies() {
@@ -4505,24 +4746,19 @@ export class AudioStreamManager {
       const audioUrl =
         typeof payload.audioUrl === "string" ? payload.audioUrl.trim() : "";
       const audioType =
-        typeof payload.audioType === "string"
-          ? payload.audioType.trim()
-          : "";
+        typeof payload.audioType === "string" ? payload.audioType.trim() : "";
       const drmLicenseUrl =
         typeof payload.drmLicenseUrl === "string"
           ? payload.drmLicenseUrl.trim()
           : "";
       const drmScheme =
-        typeof payload.drmScheme === "string"
-          ? payload.drmScheme.trim()
-          : "";
+        typeof payload.drmScheme === "string" ? payload.drmScheme.trim() : "";
       const drmProvider =
         typeof payload.drmProvider === "string"
           ? payload.drmProvider.trim()
           : "";
       const drmHeaders =
-        typeof payload.drmHeaders === "object" &&
-        payload.drmHeaders !== null
+        typeof payload.drmHeaders === "object" && payload.drmHeaders !== null
           ? (payload.drmHeaders as Record<string, string>)
           : undefined;
 
@@ -4748,6 +4984,8 @@ export class AudioStreamManager {
                   this.currentTrackArtist,
                 ),
             ],
+            // Last resort: on-device Innertube when JioSaavn can't find it
+            ["Device Innertube", this.tryDeviceInnertube.bind(this)],
           ]
         : [
             ["Invidious", this.tryInvidious.bind(this)],
@@ -4756,6 +4994,9 @@ export class AudioStreamManager {
             ["Local Extraction", this.tryLocalExtraction.bind(this)],
             ["YouTube Music", this.tryYouTubeMusic.bind(this)],
             ["YouTube Embed", this.tryYouTubeEmbed.bind(this)],
+            // Last resort: on-device Innertube walk (mint + client walk +
+            // download to local file). Fires only when everything above fails.
+            ["Device Innertube", this.tryDeviceInnertube.bind(this)],
           ];
 
       for (let i = 0; i < strategies.length; i++) {
@@ -5666,7 +5907,10 @@ export class AudioStreamManager {
 
       // Step 2: Only search-match if direct fetch failed and we have title
       if (trackTitle?.trim()) {
-        const matchedSong = await this.findJioSaavnMatch(trackTitle, trackArtist);
+        const matchedSong = await this.findJioSaavnMatch(
+          trackTitle,
+          trackArtist,
+        );
         if (matchedSong?.id) {
           const matchedPayload = await this.fetchJioSaavnSongPayload(
             matchedSong.id,
@@ -6387,7 +6631,9 @@ export class AudioStreamManager {
       const resolutionAttempts: Promise<any | null>[] = [];
       if (isPermalink) {
         resolutionAttempts.push(
-          this.resolveSoundCloudTrackDataByUrl(normalizedUrlHint!).catch(() => null),
+          this.resolveSoundCloudTrackDataByUrl(normalizedUrlHint!).catch(
+            () => null,
+          ),
         );
       }
       if (trackId) {
@@ -7534,11 +7780,17 @@ export const loadAudioCacheIndex = async (): Promise<AudioCacheIndex> => {
  * Returns a Map<trackId, { percentage, isFullyCached, isDownloading }>.
  */
 export async function getAllTrackCacheStatus(): Promise<
-  Map<string, { percentage: number; isFullyCached: boolean; isDownloading: boolean }>
+  Map<
+    string,
+    { percentage: number; isFullyCached: boolean; isDownloading: boolean }
+  >
 > {
   const index = await loadAudioCacheIndex();
   const manager = AudioStreamManager.getInstance();
-  const result = new Map<string, { percentage: number; isFullyCached: boolean; isDownloading: boolean }>();
+  const result = new Map<
+    string,
+    { percentage: number; isFullyCached: boolean; isDownloading: boolean }
+  >();
 
   for (const [trackId, entry] of Object.entries(index.entries)) {
     // Check in-memory progress first (more up-to-date)
@@ -7552,7 +7804,10 @@ export async function getAllTrackCacheStatus(): Promise<
     } else {
       const downloaded = entry.downloadedBytes || 0;
       const estimated = entry.estimatedSizeBytes || 0;
-      const percentage = estimated > 0 ? Math.min(100, Math.round((downloaded / estimated) * 100)) : 0;
+      const percentage =
+        estimated > 0
+          ? Math.min(100, Math.round((downloaded / estimated) * 100))
+          : 0;
       result.set(trackId, {
         percentage,
         isFullyCached: !!entry.isFullyCached,
@@ -7563,7 +7818,8 @@ export async function getAllTrackCacheStatus(): Promise<
 
   // Also include tracks that are in in-memory progress but NOT in the cache index
   // (e.g. markDownloadCompleted wrote to memory but AsyncStorage hasn't flushed yet)
-  const memProgress: Map<string, any> | undefined = (manager as any).cacheProgress;
+  const memProgress: Map<string, any> | undefined = (manager as any)
+    .cacheProgress;
   if (memProgress && typeof memProgress.forEach === "function") {
     memProgress.forEach((progress: any, trackId: string) => {
       if (!result.has(trackId)) {
@@ -7589,12 +7845,24 @@ export async function getAllTrackCacheStatus(): Promise<
         const trackId = file.substring(0, dotIdx);
         if (result.has(trackId)) continue; // already in the map
         const ext = file.substring(dotIdx);
-        const validExts = [".mp3", ".webm", ".m4a", ".ogg", ".oga", ".aac", ".cache"];
+        const validExts = [
+          ".mp3",
+          ".webm",
+          ".m4a",
+          ".ogg",
+          ".oga",
+          ".aac",
+          ".cache",
+        ];
         if (!validExts.includes(ext)) continue;
         // File exists on disk — check it's valid (>1KB)
         try {
           const info = await FileSystem.getInfoAsync(offlineDir + file);
-          if (info.exists && typeof info.size === "number" && info.size > 1024) {
+          if (
+            info.exists &&
+            typeof info.size === "number" &&
+            info.size > 1024
+          ) {
             result.set(trackId, {
               percentage: 100,
               isFullyCached: true,

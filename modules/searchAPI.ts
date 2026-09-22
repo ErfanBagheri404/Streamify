@@ -803,6 +803,7 @@ export const searchAPI = {
       | "youtubemusic"
       | "soundcloud"
       | "spotify"
+      | "subsonic"
       | "jiosaavn" = "youtube",
   ): Promise<string[]> => {
     if (!query.trim()) {
@@ -831,6 +832,12 @@ export const searchAPI = {
     }
     if (source === "spotify") {
       return await searchAPI.getSpotifySuggestions(query);
+    }
+
+    // Subsonic servers don't expose a suggestions endpoint.
+    // Returning [] prevents user queries from leaking to Piped.
+    if (source === "subsonic") {
+      return [];
     }
 
     const endpoint = `/suggestions?query=${encodeURIComponent(query)}`;

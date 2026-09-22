@@ -1,16 +1,10 @@
-import React, {
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   ActivityIndicator,
   Image,
   ScrollView,
   StyleSheet,
-  Switch,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -22,12 +16,14 @@ import {
   type AppTheme,
   type PlaybackRetryMode,
   type PreferredSearchSource,
-  type SettingsSectionKey,
   isLightAppTheme,
 } from "../../lib/app-settings";
 import { Screen } from "../ui/Screen";
+import { ScrobbleSheet } from "../ScrobbleSheet";
+import { SubsonicSheet } from "../SubsonicSheet";
 import { BodyText, MutedText, TitleText } from "../ui/Text";
 import { AccentButton } from "../ui/Button";
+import { SettingsSwitch } from "../ui/SettingsSwitch";
 import { useAppLanguage } from "../../hooks/useAppLanguage";
 import {
   CURRENT_APP_VERSION,
@@ -36,6 +32,10 @@ import {
 import { useAppSettings } from "../../hooks/useAppSettings";
 import { useAuth } from "../../hooks/useAuth";
 import { useTheme, withOpacity } from "../../hooks/useTheme";
+import {
+  CommunityModal,
+  useCommunityModalAutoShow,
+} from "../ui/CommunityModal";
 import {
   buildCurrentLocalLibrarySyncSource,
   pushCloudLibrarySnapshot,
@@ -151,78 +151,63 @@ function getUserAccountLabel(
   return t("settings.accountGuest");
 }
 
+/** Flat content group within the selected settings category. */
 function Section({
-  eyebrow,
   title,
   description,
-  colors,
   children,
-  collapsed = false,
-  onToggle,
-  isRtl,
-  sectionKey,
-  onMeasure,
 }: {
-  eyebrow: string;
   title: string;
   description: string;
-  colors: ReturnType<typeof useTheme>["colors"];
   children: ReactNode;
-  collapsed?: boolean;
-  onToggle?: () => void;
-  isRtl: boolean;
-  sectionKey?: SettingsSectionKey;
-  onMeasure?: (section: SettingsSectionKey, y: number) => void;
 }) {
   return (
-    <View
-      onLayout={(event) => {
-        if (!sectionKey || !onMeasure) {
-          return;
-        }
-        onMeasure(sectionKey, event.nativeEvent.layout.y);
-      }}
-      style={[
-        styles.section,
-        {
-          backgroundColor: colors.surface1,
-          borderColor: colors.borderSubtle,
-        },
-      ]}
-    >
-      <TouchableOpacity
-        activeOpacity={0.82}
-        disabled={!onToggle}
-        onPress={onToggle}
-        style={[styles.sectionHeader, { flexDirection: "row" }]}
-      >
-        <View style={styles.sectionHeaderCopy}>
-          <MutedText style={styles.eyebrow}>{eyebrow}</MutedText>
-          <TitleText style={styles.sectionTitle}>{title}</TitleText>
-          <MutedText style={styles.sectionDescription}>{description}</MutedText>
-        </View>
-        <View
-          style={[
-            styles.sectionToggle,
-            {
-              backgroundColor: colors.surface3,
-              borderColor: colors.borderSubtle,
-            },
-          ]}
-        >
-          <Ionicons
-            name={collapsed ? "chevron-down" : "chevron-up"}
-            size={18}
-            color={colors.foreground}
-          />
-        </View>
-      </TouchableOpacity>
-      {!collapsed ? (
-        <View style={styles.sectionContent}>{children}</View>
-      ) : null}
+    <View style={styles.section}>
+      <View style={styles.sectionHeaderStatic}>
+        <TitleText accessibilityRole="header" style={styles.sectionTitle}>
+          {title}
+        </TitleText>
+        <MutedText style={styles.sectionDescription}>{description}</MutedText>
+      </View>
+      <View style={styles.sectionContent}>{children}</View>
     </View>
   );
 }
+
+type SettingsTabKey =
+  | "account"
+  | "playback"
+  | "appearance"
+  | "library"
+  | "about";
+
+const SETTINGS_TABS: Array<{
+  key: SettingsTabKey;
+  icon: keyof typeof Ionicons.glyphMap;
+  labelKey: string;
+}> = [
+  {
+    key: "account",
+    icon: "person-circle-outline",
+    labelKey: "settings.tabAccount",
+  },
+  {
+    key: "playback",
+    icon: "play-circle-outline",
+    labelKey: "settings.tabPlayback",
+  },
+  {
+    key: "appearance",
+    icon: "color-palette-outline",
+    labelKey: "settings.tabAppearance",
+  },
+  { key: "library", icon: "library-outline", labelKey: "settings.tabLibrary" },
+  {
+    key: "about",
+    icon: "information-circle-outline",
+    labelKey: "settings.tabAbout",
+  },
+];
 
 function SettingRow({
   label,
@@ -245,8 +230,7 @@ function SettingRow({
         styles.settingRow,
         isInline && styles.settingRowInline,
         {
-          backgroundColor: colors.surface3,
-          borderColor: colors.borderSubtle,
+          borderBottomColor: colors.borderSubtle,
         },
       ]}
     >
@@ -277,10 +261,13 @@ function ChoiceChip({
   return (
     <TouchableOpacity
       onPress={onPress}
+      accessibilityRole="radio"
+      accessibilityLabel={label}
+      accessibilityState={{ checked: selected }}
       style={[
         styles.chip,
         {
-          backgroundColor: selected ? colors.accent : colors.surface2,
+          backgroundColor: selected ? colors.accent : colors.background,
           borderColor: selected ? colors.accent : colors.borderSubtle,
         },
       ]}
@@ -294,34 +281,6 @@ function ChoiceChip({
         {label}
       </BodyText>
     </TouchableOpacity>
-  );
-}
-
-function SummaryCard({
-  label,
-  value,
-  description,
-  colors,
-}: {
-  label: string;
-  value: string;
-  description: string;
-  colors: ReturnType<typeof useTheme>["colors"];
-}) {
-  return (
-    <View
-      style={[
-        styles.summaryCard,
-        {
-          backgroundColor: colors.surface3,
-          borderColor: colors.borderSubtle,
-        },
-      ]}
-    >
-      <MutedText style={styles.summaryLabel}>{label}</MutedText>
-      <BodyText style={styles.summaryValue}>{value}</BodyText>
-      <MutedText style={styles.summaryDescription}>{description}</MutedText>
-    </View>
   );
 }
 
@@ -341,10 +300,13 @@ function ThemeChoiceCard({
   return (
     <TouchableOpacity
       onPress={onPress}
+      accessibilityRole="radio"
+      accessibilityLabel={label}
+      accessibilityState={{ checked: selected }}
       style={[
         styles.themeCard,
         {
-          backgroundColor: selected ? colors.surface2 : colors.surface3,
+          backgroundColor: selected ? colors.surface2 : colors.background,
           borderColor: selected ? colors.accent : colors.borderSubtle,
         },
       ]}
@@ -400,7 +362,7 @@ export default function SettingsScreen({
   route: any;
 }) {
   const { colors, isLight } = useTheme();
-  const { t, isRtl } = useAppLanguage();
+  const { t } = useAppLanguage();
   const { settings, updateSettings, hasHydratedSettings } = useAppSettings();
   const { availableUpdateInfo, isCheckingForUpdates, reopenUpdateModal } =
     useAppUpdate();
@@ -414,11 +376,21 @@ export default function SettingsScreen({
     tone: "error" | "success" | "info";
     message: string;
   } | null>(null);
-  const collapsedSections = settings.collapsedSettingsSections;
-  const scrollViewRef = useRef<ScrollView>(null);
-  const sectionOffsetsRef = useRef<Partial<Record<SettingsSectionKey, number>>>(
-    {},
-  );
+  const [showScrobbleSheet, setShowScrobbleSheet] = useState(false);
+  const [showSubsonicSheet, setShowSubsonicSheet] = useState(false);
+  const [scrobbleProvider, setScrobbleProvider] = useState<
+    "listenbrainz" | "lastfm"
+  >("listenbrainz");
+
+  const { autoVisible: communityAutoVisible, closeAuto: closeCommunityAuto } =
+    useCommunityModalAutoShow();
+  const [isCommunityOpenedManually, setIsCommunityOpenedManually] =
+    useState(false);
+  const isCommunityVisible = communityAutoVisible || isCommunityOpenedManually;
+  const closeCommunity = () => {
+    closeCommunityAuto();
+    setIsCommunityOpenedManually(false);
+  };
 
   const accountName = getUserDisplayName(user) || t("settings.accountGuest");
   const accountAvatarUrl = getUserAvatarUrl(user);
@@ -445,12 +417,6 @@ export default function SettingsScreen({
 
     return rawMessage || t("settings.syncFailed");
   };
-
-  const switchTrackColor = {
-    false: withOpacity(colors.foreground, 0.22),
-    true: colors.accent,
-  };
-  const switchThumbColor = isLight ? "#ffffff" : colors.foreground;
 
   const sourceLabels: Record<PreferredSearchSource, string> = useMemo(
     () => ({
@@ -486,18 +452,6 @@ export default function SettingsScreen({
     [t],
   );
 
-  const motionLabel = settings.disableAnimations
-    ? t("settings.animationsOff")
-    : t("settings.animationsOn");
-  const searchMemoryLabel = settings.rememberLastSearch
-    ? t("settings.searchMemoryOn")
-    : t("settings.searchMemoryOff");
-  const retrySummary =
-    settings.playbackRetryMode === "always"
-      ? t("settings.alwaysRetryOnce")
-      : settings.playbackRetryMode === "never"
-        ? t("settings.neverRetryAutomatically")
-        : t("settings.askWhenPlaybackFails");
   const updateDescription = availableUpdateInfo
     ? t("settings.updateReadyDescription", {
         currentVersion: CURRENT_APP_VERSION,
@@ -582,73 +536,29 @@ export default function SettingsScreen({
     }
   };
 
-  const toggleSection = (section: SettingsSectionKey) => {
-    updateSettings({
-      collapsedSettingsSections: {
-        ...collapsedSections,
-        [section]: !collapsedSections?.[section],
-      },
-    });
-  };
-  const handleSectionMeasure = useCallback(
-    (section: SettingsSectionKey, y: number) => {
-      sectionOffsetsRef.current[section] = y;
-    },
-    [],
-  );
-  const jumpToSection = useCallback(
-    (section: SettingsSectionKey) => {
-      const isCollapsed = Boolean(collapsedSections?.[section]);
-      if (isCollapsed) {
-        updateSettings({
-          collapsedSettingsSections: {
-            ...collapsedSections,
-            [section]: false,
-          },
-        });
+  // ---- Category tabs (settings rework) ----
+  // Remember last selected tab; default to Account on first launch.
+  const [activeTab, setActiveTab] = useState<SettingsTabKey>("account");
+  const SETTINGS_TAB_KEY = "settings_active_tab";
+
+  useEffect(() => {
+    if (!hasHydratedSettings) return;
+    void (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(SETTINGS_TAB_KEY);
+        if (raw && ["account", "playback", "appearance", "library", "about"].includes(raw)) {
+          setActiveTab(raw as SettingsTabKey);
+        }
+      } catch {
+        // ignore — default to account
       }
+    })();
+  }, [hasHydratedSettings]);
 
-      const scrollToSection = () => {
-        const offsetY = Math.max(
-          0,
-          (sectionOffsetsRef.current[section] ?? 0) - 96,
-        );
-        (
-          scrollViewRef.current as unknown as {
-            scrollTo: (options: {
-              y?: number;
-              x?: number;
-              animated?: boolean;
-            }) => void;
-          }
-        )?.scrollTo({
-          y: offsetY,
-          animated: !settings.disableAnimations,
-        });
-      };
-
-      if (isCollapsed) {
-        setTimeout(scrollToSection, settings.disableAnimations ? 0 : 180);
-        return;
-      }
-
-      requestAnimationFrame(scrollToSection);
-    },
-    [collapsedSections, settings.disableAnimations, updateSettings],
-  );
-
-  const quickAccessSections = useMemo(
-    () =>
-      [
-        { key: "account", label: t("settings.account") },
-        { key: "appearance", label: t("settings.themeAndMotion") },
-        { key: "playback", label: t("settings.musicBehaves") },
-        { key: "discovery", label: t("settings.searchPreferences") },
-        { key: "lyrics", label: t("settings.readingAndInput") },
-        { key: "updates", label: t("settings.appUpdates") },
-      ] as Array<{ key: SettingsSectionKey; label: string }>,
-    [t],
-  );
+  const selectTab = useCallback((tab: SettingsTabKey) => {
+    setActiveTab(tab);
+    void AsyncStorage.setItem(SETTINGS_TAB_KEY, tab).catch(() => {});
+  }, []);
 
   if (!hasHydratedSettings) {
     return (
@@ -679,748 +589,819 @@ export default function SettingsScreen({
           <TouchableOpacity
             onPress={() => navigation.goBack()}
             style={styles.iconButton}
+            accessibilityRole="button"
+            accessibilityLabel={t("common.back")}
           >
             <Ionicons name="chevron-back" size={24} color={colors.foreground} />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <TitleText style={styles.headerTitle}>
+            <TitleText accessibilityRole="header" style={styles.headerTitle}>
               {t("settings.title")}
             </TitleText>
           </View>
-          <View style={styles.headerSpacer} />
+        </View>
+
+        <View
+          style={[
+            styles.tabBar,
+            {
+              backgroundColor: colors.background,
+              borderBottomColor: colors.borderSubtle,
+            },
+          ]}
+        >
+          {SETTINGS_TABS.map((tab) => {
+            const active = activeTab === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                onPress={() => selectTab(tab.key)}
+                activeOpacity={0.75}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={t(tab.labelKey)}
+                style={[
+                  styles.tabItem,
+                  {
+                    borderBottomColor: active ? colors.accent : "transparent",
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={tab.icon}
+                  size={20}
+                  color={active ? colors.foreground : colors.muted}
+                />
+                <BodyText
+                  style={[
+                    styles.tabLabel,
+                    {
+                      color: active ? colors.foreground : colors.muted,
+                      fontWeight: active ? "700" : "500",
+                    },
+                  ]}
+                >
+                  {t(tab.labelKey)}
+                </BodyText>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         <ScrollView
-          ref={scrollViewRef}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
-          <View
-            style={[
-              styles.hero,
-              {
-                backgroundColor: colors.surface1,
-                borderColor: colors.borderSubtle,
-              },
-            ]}
-          >
-            <View
-              style={[
-                styles.heroBadge,
-                {
-                  backgroundColor: withOpacity(colors.foreground, 0.06),
-                  alignSelf: "flex-start",
-                  flexDirection: "row",
-                },
-              ]}
+          {activeTab === "account" ? (
+            <Section
+              title={t("settings.account")}
+              description={t("settings.accountDescription")}
             >
-              <Ionicons
-                name="sparkles-outline"
-                size={14}
-                color={colors.accent}
-              />
-              <BodyText style={styles.heroBadgeText}>
-                {t("settings.personalize")}
-              </BodyText>
-            </View>
-            <TitleText style={styles.heroTitle}>
-              {t("settings.title")}
-            </TitleText>
-            <MutedText style={styles.heroDescription}>
-              {t("settings.description")}
-            </MutedText>
-            <View style={[styles.heroPills, { flexDirection: "row" }]}>
-              {[
-                `${t("settings.autoRetry")}: ${retrySummary}`,
-                `${t("settings.searchLabel")}: ${
-                  sourceLabels[settings.preferredSearchSource]
-                }`,
-                `${t("settings.seekJump")}: ${settings.seekStepSeconds}s`,
-                `${t("settings.theme")}: ${themeLabels[settings.theme]}`,
-                `${t("settings.motion")}: ${motionLabel}`,
-                `${t("settings.searchMemory")}: ${searchMemoryLabel}`,
-              ].map((pill) => (
-                <View
-                  key={pill}
-                  style={[
-                    styles.heroPill,
-                    {
-                      backgroundColor: withOpacity(colors.foreground, 0.05),
-                      borderColor: withOpacity(colors.foreground, 0.08),
-                    },
-                  ]}
-                >
-                  <MutedText style={styles.heroPillText}>{pill}</MutedText>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          <View
-            style={[
-              styles.quickAccessCard,
-              {
-                backgroundColor: colors.surface1,
-                borderColor: colors.borderSubtle,
-              },
-            ]}
-          >
-            <MutedText style={styles.quickAccessEyebrow}>
-              {t("settings.quickAccess")}
-            </MutedText>
-            <TitleText style={styles.quickAccessTitle}>
-              {t("settings.quickAccess")}
-            </TitleText>
-            <MutedText style={styles.quickAccessDescription}>
-              {t("settings.quickAccessDescription")}
-            </MutedText>
-            <View style={[styles.quickAccessWrap, { flexDirection: "row" }]}>
-              {quickAccessSections.map((section) => (
-                <TouchableOpacity
-                  key={section.key}
-                  onPress={() => jumpToSection(section.key)}
-                  style={[
-                    styles.quickAccessChip,
-                    {
-                      backgroundColor: colors.surface3,
-                      borderColor: colors.borderSubtle,
-                    },
-                  ]}
-                >
-                  <BodyText style={styles.quickAccessChipText}>
-                    {section.label}
-                  </BodyText>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          <Section
-            eyebrow={t("settings.account")}
-            title={t("settings.account")}
-            description={t("settings.accountDescription")}
-            colors={colors}
-            collapsed={Boolean(collapsedSections.account)}
-            onToggle={() => toggleSection("account")}
-            isRtl={isRtl}
-            sectionKey="account"
-            onMeasure={handleSectionMeasure}
-          >
-            <View
-              style={[
-                styles.accountCard,
-                {
-                  backgroundColor: colors.surface3,
-                  borderColor: colors.borderSubtle,
-                  flexDirection: "row",
-                },
-              ]}
-            >
-              {accountAvatarUrl ? (
-                <Image
-                  source={{ uri: accountAvatarUrl }}
-                  style={styles.accountAvatarImage}
-                />
-              ) : (
-                <View
-                  style={[
-                    styles.accountAvatar,
-                    {
-                      backgroundColor: colors.surface2,
-                      borderColor: colors.borderSubtle,
-                    },
-                  ]}
-                >
-                  <BodyText style={styles.accountAvatarText}>
-                    {accountName.charAt(0).toUpperCase() || "G"}
-                  </BodyText>
-                </View>
-              )}
-              <View style={styles.accountCopy}>
-                <BodyText style={styles.accountName}>
-                  {isAuthLoading ? t("settings.accountLoading") : accountName}
-                </BodyText>
-                <MutedText>
-                  {user
-                    ? accountProviderLabel
-                    : t("settings.cloudSyncDescription")}
-                </MutedText>
-              </View>
-            </View>
-            <SettingRow
-              label={t("settings.cloudSync")}
-              description={t("settings.cloudSyncDescription")}
-              colors={colors}
-              control={
-                <View style={[styles.accountActions, { flexDirection: "row" }]}>
-                  {user ? (
-                    <>
-                      <AccentButton
-                        title={
-                          isSyncing
-                            ? t("settings.syncInProgress")
-                            : t("settings.syncLibrary")
-                        }
-                        disabled={isSyncing || !isConfigured}
-                        onPress={() => {
-                          void handleSyncLibrary();
-                        }}
-                        style={{
-                          opacity: isSyncing || !isConfigured ? 0.55 : 1,
-                        }}
-                      />
-                      <TouchableOpacity
-                        onPress={() => {
-                          void signOut();
-                        }}
-                        style={[
-                          styles.secondaryButton,
-                          {
-                            backgroundColor: colors.surface2,
-                            borderColor: colors.borderSubtle,
-                          },
-                        ]}
-                      >
-                        <BodyText style={styles.secondaryButtonText}>
-                          {t("settings.signOut")}
-                        </BodyText>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <>
-                      <TouchableOpacity
-                        disabled={!isConfigured}
-                        onPress={() =>
-                          navigation.navigate("Onboarding", {
-                            openAuth: "signin",
-                          })
-                        }
-                        style={[
-                          styles.secondaryButton,
-                          {
-                            backgroundColor: colors.surface2,
-                            borderColor: colors.borderSubtle,
-                            opacity: isConfigured ? 1 : 0.45,
-                          },
-                        ]}
-                      >
-                        <BodyText style={styles.secondaryButtonText}>
-                          {t("settings.continueToSignIn")}
-                        </BodyText>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        disabled={!isConfigured}
-                        onPress={() =>
-                          navigation.navigate("Onboarding", {
-                            openAuth: "signup",
-                          })
-                        }
-                        style={[
-                          styles.secondaryButton,
-                          {
-                            backgroundColor: colors.surface2,
-                            borderColor: colors.borderSubtle,
-                            opacity: isConfigured ? 1 : 0.45,
-                          },
-                        ]}
-                      >
-                        <BodyText style={styles.secondaryButtonText}>
-                          {t("settings.continueToSignUp")}
-                        </BodyText>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              }
-            />
-            {syncFeedback ? (
               <View
                 style={[
-                  styles.syncFeedbackBox,
+                  styles.accountCard,
                   {
-                    backgroundColor:
-                      syncFeedback.tone === "error"
-                        ? "rgba(220, 38, 38, 0.12)"
-                        : syncFeedback.tone === "success"
-                          ? withOpacity(colors.accent, 0.12)
-                          : withOpacity(colors.foreground, 0.05),
-                    borderColor:
-                      syncFeedback.tone === "error"
-                        ? "rgba(248, 113, 113, 0.22)"
-                        : syncFeedback.tone === "success"
-                          ? withOpacity(colors.accent, 0.28)
-                          : withOpacity(colors.foreground, 0.08),
+                    backgroundColor: colors.background,
+                    borderColor: colors.borderSubtle,
+                    flexDirection: "row",
                   },
                 ]}
               >
-                <BodyText
-                  style={[
-                    styles.syncFeedbackText,
-                    {
-                      color:
-                        syncFeedback.tone === "error"
-                          ? isLight
-                            ? "#991b1b"
-                            : "#fecaca"
-                          : colors.foreground,
-                    },
-                  ]}
-                >
-                  {syncFeedback.message}
-                </BodyText>
-              </View>
-            ) : null}
-          </Section>
-
-          <SettingRow
-            label={t("settings.autoSyncLibrary")}
-            description={t("settings.autoSyncLibraryDescription")}
-            colors={colors}
-            controlPlacement="inline"
-            control={
-              <Switch
-                value={settings.autoSyncLibrary}
-                onValueChange={(value) =>
-                  updateSettings({ autoSyncLibrary: value })
-                }
-                trackColor={switchTrackColor}
-                thumbColor={switchThumbColor}
-              />
-            }
-          />
-
-          <Section
-            eyebrow={t("settings.appearance")}
-            title={t("settings.themeAndMotion")}
-            description={t("settings.themeAndMotionDescription")}
-            colors={colors}
-            collapsed={Boolean(collapsedSections.appearance)}
-            onToggle={() => toggleSection("appearance")}
-            isRtl={isRtl}
-            sectionKey="appearance"
-            onMeasure={handleSectionMeasure}
-          >
-            <SettingRow
-              label={t("settings.theme")}
-              description={t("settings.themeDescription")}
-              colors={colors}
-              control={
-                <View style={styles.themeGrid}>
-                  {APP_THEME_OPTIONS.map((theme) => (
-                    <ThemeChoiceCard
-                      key={theme}
-                      theme={theme}
-                      label={themeLabels[theme]}
-                      selected={settings.theme === theme}
-                      colors={colors}
-                      onPress={() => updateSettings({ theme })}
-                    />
-                  ))}
-                </View>
-              }
-            />
-            <SettingRow
-              label={t("settings.disableAnimations")}
-              description={t("settings.disableAnimationsDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.disableAnimations}
-                  onValueChange={(value) =>
-                    updateSettings({ disableAnimations: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.language")}
-              description={t("settings.languageDescription")}
-              colors={colors}
-              control={
-                <View style={styles.choiceWrap}>
-                  {(["en", "fa"] as AppLanguage[]).map((language) => (
-                    <ChoiceChip
-                      key={language}
-                      label={
-                        language === "en"
-                          ? t("language.english")
-                          : t("language.persian")
-                      }
-                      selected={settings.language === language}
-                      onPress={() => updateSettings({ language })}
-                      colors={colors}
-                    />
-                  ))}
-                </View>
-              }
-            />
-          </Section>
-
-          <Section
-            eyebrow={t("settings.playback")}
-            title={t("settings.musicBehaves")}
-            description={t("settings.musicBehavesDescription")}
-            colors={colors}
-            collapsed={Boolean(collapsedSections.playback)}
-            onToggle={() => toggleSection("playback")}
-            isRtl={isRtl}
-            sectionKey="playback"
-            onMeasure={handleSectionMeasure}
-          >
-            <SettingRow
-              label={t("settings.autoRetryPlayback")}
-              description={t("settings.autoRetryPlaybackDescription")}
-              colors={colors}
-              control={
-                <View style={styles.choiceWrap}>
-                  {RETRY_MODES.map((mode) => (
-                    <ChoiceChip
-                      key={mode}
-                      label={retryLabels[mode]}
-                      selected={settings.playbackRetryMode === mode}
-                      onPress={() =>
-                        updateSettings({ playbackRetryMode: mode })
-                      }
-                      colors={colors}
-                    />
-                  ))}
-                </View>
-              }
-            />
-            <SettingRow
-              label={t("settings.autoplayRecommendedTracks")}
-              description={t("settings.autoplayRecommendedTracksDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.autoplayRecommendations}
-                  onValueChange={(value) =>
-                    updateSettings({ autoplayRecommendations: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.openNowPlayingAutomatically")}
-              description={t("settings.openNowPlayingAutomaticallyDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.openFullscreenOnPlay}
-                  onValueChange={(value) =>
-                    updateSettings({ openFullscreenOnPlay: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.autoCacheLikedSongs")}
-              description={t("settings.autoCacheLikedSongsDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.autoCacheLikedSongs}
-                  onValueChange={(value) =>
-                    updateSettings({ autoCacheLikedSongs: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-          </Section>
-
-          <Section
-            eyebrow={t("settings.discovery")}
-            title={t("settings.searchPreferences")}
-            description={t("settings.searchPreferencesDescription")}
-            colors={colors}
-            collapsed={Boolean(collapsedSections.discovery)}
-            onToggle={() => toggleSection("discovery")}
-            isRtl={isRtl}
-            sectionKey="discovery"
-            onMeasure={handleSectionMeasure}
-          >
-            <SettingRow
-              label={t("settings.defaultSearchSource")}
-              description={t("settings.defaultSearchSourceDescription")}
-              colors={colors}
-              control={
-                <View style={styles.choiceWrap}>
-                  {SEARCH_SOURCES.map((source) => (
-                    <ChoiceChip
-                      key={source}
-                      label={sourceLabels[source]}
-                      selected={settings.preferredSearchSource === source}
-                      onPress={() =>
-                        updateSettings({ preferredSearchSource: source })
-                      }
-                      colors={colors}
-                    />
-                  ))}
-                </View>
-              }
-            />
-            <SettingRow
-              label={t("settings.rememberLastSearch")}
-              description={t("settings.rememberLastSearchDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.rememberLastSearch}
-                  onValueChange={(value) =>
-                    updateSettings({ rememberLastSearch: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-          </Section>
-
-          <Section
-            eyebrow={t("settings.lyricsAndControls")}
-            title={t("settings.readingAndInput")}
-            description={t("settings.readingAndInputDescription")}
-            colors={colors}
-            collapsed={Boolean(collapsedSections.lyrics)}
-            onToggle={() => toggleSection("lyrics")}
-            isRtl={isRtl}
-            sectionKey="lyrics"
-            onMeasure={handleSectionMeasure}
-          >
-            <SettingRow
-              label={t("settings.lyrics")}
-              description={t("settings.lyricsDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.lyricsEnabled}
-                  onValueChange={(value) =>
-                    updateSettings({ lyricsEnabled: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.autoScrollSyncedLyrics")}
-              description={t("settings.autoScrollSyncedLyricsDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.autoScrollLyrics}
-                  disabled={!settings.lyricsEnabled}
-                  onValueChange={(value) =>
-                    updateSettings({ autoScrollLyrics: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.keyboardShortcuts")}
-              description={t("settings.keyboardShortcutsDescription")}
-              colors={colors}
-              controlPlacement="inline"
-              control={
-                <Switch
-                  value={settings.keyboardShortcuts}
-                  onValueChange={(value) =>
-                    updateSettings({ keyboardShortcuts: value })
-                  }
-                  trackColor={switchTrackColor}
-                  thumbColor={switchThumbColor}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.seekJumpLength")}
-              description={t("settings.seekJumpLengthDescription")}
-              colors={colors}
-              control={
-                <View style={styles.choiceWrap}>
-                  {SEEK_STEP_OPTIONS.map((seconds) => (
-                    <ChoiceChip
-                      key={seconds}
-                      label={`${seconds}s`}
-                      selected={settings.seekStepSeconds === seconds}
-                      onPress={() =>
-                        updateSettings({ seekStepSeconds: seconds })
-                      }
-                      colors={colors}
-                    />
-                  ))}
-                </View>
-              }
-            />
-          </Section>
-
-          <Section
-            eyebrow={t("settings.activeSetup")}
-            title={t("settings.activeSetup")}
-            description={t("settings.quickHelp")}
-            colors={colors}
-            collapsed={Boolean(collapsedSections.summary)}
-            onToggle={() => toggleSection("summary")}
-            isRtl={isRtl}
-            sectionKey="summary"
-            onMeasure={handleSectionMeasure}
-          >
-            <SummaryCard
-              label={t("settings.playbackSummary")}
-              value={retrySummary}
-              description={
-                settings.autoplayRecommendations
-                  ? t("settings.recommendationsContinue")
-                  : t("settings.playbackStops")
-              }
-              colors={colors}
-            />
-            <SummaryCard
-              label={t("settings.searchSummary")}
-              value={sourceLabels[settings.preferredSearchSource]}
-              description={
-                settings.rememberLastSearch
-                  ? t("settings.searchRestores")
-                  : t("settings.searchOpensFresh")
-              }
-              colors={colors}
-            />
-            <SummaryCard
-              label={t("settings.lyricsControlsSummary")}
-              value={
-                settings.lyricsEnabled
-                  ? t("settings.lyricsOn")
-                  : t("settings.lyricsOff")
-              }
-              description={
-                settings.keyboardShortcuts
-                  ? t("settings.shortcutsEnabled", {
-                      seconds: settings.seekStepSeconds,
-                    })
-                  : t("settings.shortcutsDisabled")
-              }
-              colors={colors}
-            />
-            <SummaryCard
-              label={t("settings.appearancePerformance")}
-              value={themeLabels[settings.theme]}
-              description={motionLabel}
-              colors={colors}
-            />
-          </Section>
-
-          <Section
-            eyebrow={t("settings.appUpdates")}
-            title={t("settings.appUpdates")}
-            description={t("settings.appUpdatesDescription")}
-            colors={colors}
-            collapsed={Boolean(collapsedSections.updates)}
-            onToggle={() => toggleSection("updates")}
-            isRtl={isRtl}
-            sectionKey="updates"
-            onMeasure={handleSectionMeasure}
-          >
-            <SettingRow
-              label={t("settings.checkForUpdates")}
-              description={updateDescription}
-              colors={colors}
-              control={
-                <View style={[styles.accountActions, { flexDirection: "row" }]}>
-                  <AccentButton
-                    title={
-                      availableUpdateInfo
-                        ? t("settings.openUpdate")
-                        : t("settings.checkForUpdates")
-                    }
-                    disabled={isCheckingForUpdates}
-                    onPress={() => {
-                      void handleCheckForUpdates();
-                    }}
-                    style={{
-                      opacity: isCheckingForUpdates ? 0.6 : 1,
-                    }}
+                {accountAvatarUrl ? (
+                  <Image
+                    source={{ uri: accountAvatarUrl }}
+                    style={styles.accountAvatarImage}
                   />
+                ) : (
                   <View
                     style={[
-                      styles.secondaryButton,
+                      styles.accountAvatar,
                       {
                         backgroundColor: colors.surface2,
                         borderColor: colors.borderSubtle,
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 8,
-                        opacity: 1,
                       },
                     ]}
                   >
-                    {isCheckingForUpdates ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={colors.foreground}
-                      />
-                    ) : null}
-                    <BodyText style={styles.secondaryButtonText}>
-                      {availableUpdateInfo?.version || CURRENT_APP_VERSION}
+                    <BodyText style={styles.accountAvatarText}>
+                      {accountName.charAt(0).toUpperCase() || "G"}
                     </BodyText>
                   </View>
+                )}
+                <View style={styles.accountCopy}>
+                  <BodyText style={styles.accountName}>
+                    {isAuthLoading ? t("settings.accountLoading") : accountName}
+                  </BodyText>
+                  <MutedText>
+                    {user
+                      ? accountProviderLabel
+                      : t("settings.cloudSyncDescription")}
+                  </MutedText>
                 </View>
-              }
-            />
-            {updateFeedback ? (
-              <View
-                style={[
-                  styles.syncFeedbackBox,
-                  {
-                    backgroundColor:
-                      updateFeedback.tone === "error"
-                        ? "rgba(220, 38, 38, 0.12)"
-                        : updateFeedback.tone === "success"
-                          ? withOpacity(colors.accent, 0.12)
-                          : withOpacity(colors.foreground, 0.05),
-                    borderColor:
-                      updateFeedback.tone === "error"
-                        ? "rgba(248, 113, 113, 0.22)"
-                        : updateFeedback.tone === "success"
-                          ? withOpacity(colors.accent, 0.28)
-                          : withOpacity(colors.foreground, 0.08),
-                  },
-                ]}
-              >
-                <BodyText
+              </View>
+              <SettingRow
+                label={t("settings.cloudSync")}
+                description={t("settings.cloudSyncDescription")}
+                colors={colors}
+                control={
+                  <View
+                    style={[styles.accountActions, { flexDirection: "row" }]}
+                  >
+                    {user ? (
+                      <>
+                        <AccentButton
+                          title={
+                            isSyncing
+                              ? t("settings.syncInProgress")
+                              : t("settings.syncLibrary")
+                          }
+                          disabled={isSyncing || !isConfigured}
+                          onPress={() => {
+                            void handleSyncLibrary();
+                          }}
+                          style={[
+                            styles.primaryButton,
+                            { opacity: isSyncing || !isConfigured ? 0.55 : 1 },
+                          ]}
+                        />
+                        <TouchableOpacity
+                          onPress={() => {
+                            void signOut();
+                          }}
+                          style={[
+                            styles.secondaryButton,
+                            {
+                              backgroundColor: colors.surface2,
+                              borderColor: colors.borderSubtle,
+                            },
+                          ]}
+                        >
+                          <BodyText style={styles.secondaryButtonText}>
+                            {t("settings.signOut")}
+                          </BodyText>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          disabled={!isConfigured}
+                          onPress={() =>
+                            navigation.navigate("Onboarding", {
+                              openAuth: "signin",
+                            })
+                          }
+                          style={[
+                            styles.secondaryButton,
+                            {
+                              backgroundColor: colors.surface2,
+                              borderColor: colors.borderSubtle,
+                              opacity: isConfigured ? 1 : 0.45,
+                            },
+                          ]}
+                        >
+                          <BodyText style={styles.secondaryButtonText}>
+                            {t("settings.continueToSignIn")}
+                          </BodyText>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          disabled={!isConfigured}
+                          onPress={() =>
+                            navigation.navigate("Onboarding", {
+                              openAuth: "signup",
+                            })
+                          }
+                          style={[
+                            styles.secondaryButton,
+                            {
+                              backgroundColor: colors.surface2,
+                              borderColor: colors.borderSubtle,
+                              opacity: isConfigured ? 1 : 0.45,
+                            },
+                          ]}
+                        >
+                          <BodyText style={styles.secondaryButtonText}>
+                            {t("settings.continueToSignUp")}
+                          </BodyText>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
+                }
+              />
+              {syncFeedback ? (
+                <View
                   style={[
-                    styles.syncFeedbackText,
+                    styles.syncFeedbackBox,
                     {
-                      color:
-                        updateFeedback.tone === "error"
-                          ? isLight
-                            ? "#991b1b"
-                            : "#fecaca"
-                          : colors.foreground,
+                      backgroundColor:
+                        syncFeedback.tone === "error"
+                          ? "rgba(220, 38, 38, 0.12)"
+                          : syncFeedback.tone === "success"
+                            ? withOpacity(colors.accent, 0.12)
+                            : withOpacity(colors.foreground, 0.05),
+                      borderColor:
+                        syncFeedback.tone === "error"
+                          ? "rgba(248, 113, 113, 0.22)"
+                          : syncFeedback.tone === "success"
+                            ? withOpacity(colors.accent, 0.28)
+                            : withOpacity(colors.foreground, 0.08),
                     },
                   ]}
                 >
-                  {updateFeedback.message}
-                </BodyText>
-              </View>
-            ) : null}
-          </Section>
+                  <BodyText
+                    style={[
+                      styles.syncFeedbackText,
+                      {
+                        color:
+                          syncFeedback.tone === "error"
+                            ? isLight
+                              ? "#991b1b"
+                              : "#fecaca"
+                            : colors.foreground,
+                      },
+                    ]}
+                  >
+                    {syncFeedback.message}
+                  </BodyText>
+                </View>
+              ) : null}
+
+              <SettingRow
+                label={t("settings.autoSyncLibrary")}
+                description={t("settings.autoSyncLibraryDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.autoSyncLibrary")}
+                    accessibilityHint={t("settings.autoSyncLibraryDescription")}
+                    value={settings.autoSyncLibrary}
+                    onValueChange={(value) =>
+                      updateSettings({ autoSyncLibrary: value })
+                    }
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.listenbrainz_scrobbling")}
+                description={t("settings.listenbrainz_scrobbling_desc")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setScrobbleProvider("listenbrainz");
+                      setShowScrobbleSheet(true);
+                    }}
+                    style={[
+                      styles.secondaryButton,
+                      { borderColor: colors.borderSubtle },
+                    ]}
+                  >
+                    <BodyText
+                      style={{ color: colors.foreground, fontSize: 13 }}
+                    >
+                      {t("settings.connect")}
+                    </BodyText>
+                  </TouchableOpacity>
+                }
+              />
+              <SettingRow
+                label={t("settings.lastfm_scrobbling")}
+                description={t("settings.lastfm_scrobbling_desc")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setScrobbleProvider("lastfm");
+                      setShowScrobbleSheet(true);
+                    }}
+                    style={[
+                      styles.secondaryButton,
+                      { borderColor: colors.borderSubtle },
+                    ]}
+                  >
+                    <BodyText
+                      style={{ color: colors.foreground, fontSize: 13 }}
+                    >
+                      {t("settings.connect")}
+                    </BodyText>
+                  </TouchableOpacity>
+                }
+              />
+              <SettingRow
+                label={t("settings.subsonic")}
+                description={t("settings.subsonic_desc")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setShowSubsonicSheet(true)}
+                    style={[
+                      styles.secondaryButton,
+                      { borderColor: colors.borderSubtle },
+                    ]}
+                  >
+                    <BodyText
+                      style={{ color: colors.foreground, fontSize: 13 }}
+                    >
+                      {t("settings.configure")}
+                    </BodyText>
+                  </TouchableOpacity>
+                }
+              />
+            </Section>
+          ) : null}
+
+          {activeTab === "appearance" ? (
+            <Section
+              title={t("settings.themeAndMotion")}
+              description={t("settings.themeAndMotionDescription")}
+            >
+              <SettingRow
+                label={t("settings.theme")}
+                description={t("settings.themeDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.themeGrid}>
+                    {APP_THEME_OPTIONS.map((theme) => (
+                      <ThemeChoiceCard
+                        key={theme}
+                        theme={theme}
+                        label={themeLabels[theme]}
+                        selected={settings.theme === theme}
+                        colors={colors}
+                        onPress={() => updateSettings({ theme })}
+                      />
+                    ))}
+                  </View>
+                }
+              />
+              <SettingRow
+                label={t("settings.disableAnimations")}
+                description={t("settings.disableAnimationsDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.disableAnimations")}
+                    accessibilityHint={t(
+                      "settings.disableAnimationsDescription",
+                    )}
+                    value={settings.disableAnimations}
+                    onValueChange={(value) =>
+                      updateSettings({ disableAnimations: value })
+                    }
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.language")}
+                description={t("settings.languageDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.choiceWrap}>
+                    {(["en", "fa"] as AppLanguage[]).map((language) => (
+                      <ChoiceChip
+                        key={language}
+                        label={
+                          language === "en"
+                            ? t("language.english")
+                            : t("language.persian")
+                        }
+                        selected={settings.language === language}
+                        onPress={() => updateSettings({ language })}
+                        colors={colors}
+                      />
+                    ))}
+                  </View>
+                }
+              />
+            </Section>
+          ) : null}
+
+          {activeTab === "playback" ? (
+            <Section
+              title={t("settings.musicBehaves")}
+              description={t("settings.musicBehavesDescription")}
+            >
+              <SettingRow
+                label={t("settings.autoRetryPlayback")}
+                description={t("settings.autoRetryPlaybackDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.choiceWrap}>
+                    {RETRY_MODES.map((mode) => (
+                      <ChoiceChip
+                        key={mode}
+                        label={retryLabels[mode]}
+                        selected={settings.playbackRetryMode === mode}
+                        onPress={() =>
+                          updateSettings({ playbackRetryMode: mode })
+                        }
+                        colors={colors}
+                      />
+                    ))}
+                  </View>
+                }
+              />
+              <SettingRow
+                label={t("settings.autoplayRecommendedTracks")}
+                description={t("settings.autoplayRecommendedTracksDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.autoplayRecommendedTracks")}
+                    accessibilityHint={t(
+                      "settings.autoplayRecommendedTracksDescription",
+                    )}
+                    value={settings.autoplayRecommendations}
+                    onValueChange={(value) =>
+                      updateSettings({ autoplayRecommendations: value })
+                    }
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.openNowPlayingAutomatically")}
+                description={t(
+                  "settings.openNowPlayingAutomaticallyDescription",
+                )}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t(
+                      "settings.openNowPlayingAutomatically",
+                    )}
+                    accessibilityHint={t(
+                      "settings.openNowPlayingAutomaticallyDescription",
+                    )}
+                    value={settings.openFullscreenOnPlay}
+                    onValueChange={(value) =>
+                      updateSettings({ openFullscreenOnPlay: value })
+                    }
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.haptics")}
+                description={t("settings.hapticsDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.haptics")}
+                    accessibilityHint={t("settings.hapticsDescription")}
+                    value={settings.hapticsEnabled}
+                    onValueChange={(value) =>
+                      updateSettings({ hapticsEnabled: value })
+                    }
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.autoCacheLikedSongs")}
+                description={t("settings.autoCacheLikedSongsDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.autoCacheLikedSongs")}
+                    accessibilityHint={t(
+                      "settings.autoCacheLikedSongsDescription",
+                    )}
+                    value={settings.autoCacheLikedSongs}
+                    onValueChange={(value) =>
+                      updateSettings({ autoCacheLikedSongs: value })
+                    }
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.crossfade")}
+                description={t("settings.crossfadeDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.crossfade")}
+                    accessibilityHint={t("settings.crossfadeDescription")}
+                    value={settings.crossfadeEnabled}
+                    onValueChange={(value) =>
+                      updateSettings({ crossfadeEnabled: value })
+                    }
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.crossfadeSeconds")}
+                description={t("settings.crossfadeSecondsDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.choiceWrap}>
+                    {[2, 4, 6, 8].map((seconds) => (
+                      <ChoiceChip
+                        key={seconds}
+                        label={`${seconds}s`}
+                        selected={settings.crossfadeSeconds === seconds}
+                        onPress={() =>
+                          updateSettings({ crossfadeSeconds: seconds })
+                        }
+                        colors={colors}
+                      />
+                    ))}
+                  </View>
+                }
+              />
+              <SettingRow
+                label={t("settings.waveformSeek")}
+                description={t("settings.waveformSeekDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.waveformSeek")}
+                    accessibilityHint={t("settings.waveformSeekDescription")}
+                    value={settings.waveformSeekBar}
+                    onValueChange={(value) =>
+                      updateSettings({ waveformSeekBar: value })
+                    }
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.replayGain")}
+                description={t("settings.replayGainDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.replayGain")}
+                    accessibilityHint={t("settings.replayGainDescription")}
+                    value={settings.replayGainEnabled}
+                    onValueChange={(value) =>
+                      updateSettings({ replayGainEnabled: value })
+                    }
+                  />
+                }
+              />
+            </Section>
+          ) : null}
+
+          {activeTab === "library" ? (
+            <Section
+              title={t("settings.searchPreferences")}
+              description={t("settings.searchPreferencesDescription")}
+            >
+              <SettingRow
+                label={t("settings.defaultSearchSource")}
+                description={t("settings.defaultSearchSourceDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.choiceWrap}>
+                    {SEARCH_SOURCES.map((source) => (
+                      <ChoiceChip
+                        key={source}
+                        label={sourceLabels[source]}
+                        selected={settings.preferredSearchSource === source}
+                        onPress={() =>
+                          updateSettings({ preferredSearchSource: source })
+                        }
+                        colors={colors}
+                      />
+                    ))}
+                  </View>
+                }
+              />
+              <SettingRow
+                label={t("settings.rememberLastSearch")}
+                description={t("settings.rememberLastSearchDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.rememberLastSearch")}
+                    accessibilityHint={t(
+                      "settings.rememberLastSearchDescription",
+                    )}
+                    value={settings.rememberLastSearch}
+                    onValueChange={(value) =>
+                      updateSettings({ rememberLastSearch: value })
+                    }
+                  />
+                }
+              />
+            </Section>
+          ) : null}
+
+          {activeTab === "library" ? (
+            <Section
+              title={t("settings.readingAndInput")}
+              description={t("settings.readingAndInputDescription")}
+            >
+              <SettingRow
+                label={t("settings.lyrics")}
+                description={t("settings.lyricsDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.lyrics")}
+                    accessibilityHint={t("settings.lyricsDescription")}
+                    value={settings.lyricsEnabled}
+                    onValueChange={(value) =>
+                      updateSettings({ lyricsEnabled: value })
+                    }
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.autoScrollSyncedLyrics")}
+                description={t("settings.autoScrollSyncedLyricsDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.autoScrollSyncedLyrics")}
+                    accessibilityHint={t(
+                      "settings.autoScrollSyncedLyricsDescription",
+                    )}
+                    value={settings.autoScrollLyrics}
+                    disabled={!settings.lyricsEnabled}
+                    onValueChange={(value) =>
+                      updateSettings({ autoScrollLyrics: value })
+                    }
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.keyboardShortcuts")}
+                description={t("settings.keyboardShortcutsDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.keyboardShortcuts")}
+                    accessibilityHint={t(
+                      "settings.keyboardShortcutsDescription",
+                    )}
+                    value={settings.keyboardShortcuts}
+                    onValueChange={(value) =>
+                      updateSettings({ keyboardShortcuts: value })
+                    }
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.seekJumpLength")}
+                description={t("settings.seekJumpLengthDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.choiceWrap}>
+                    {SEEK_STEP_OPTIONS.map((seconds) => (
+                      <ChoiceChip
+                        key={seconds}
+                        label={`${seconds}s`}
+                        selected={settings.seekStepSeconds === seconds}
+                        onPress={() =>
+                          updateSettings({ seekStepSeconds: seconds })
+                        }
+                        colors={colors}
+                      />
+                    ))}
+                  </View>
+                }
+              />
+            </Section>
+          ) : null}
+
+          {activeTab === "about" ? (
+            <Section
+              title={t("settings.appUpdates")}
+              description={t("settings.appUpdatesDescription")}
+            >
+              <SettingRow
+                label={t("settings.checkForUpdates")}
+                description={updateDescription}
+                colors={colors}
+                control={
+                  <View
+                    style={[styles.accountActions, { flexDirection: "row" }]}
+                  >
+                    <AccentButton
+                      title={
+                        availableUpdateInfo
+                          ? t("settings.openUpdate")
+                          : t("settings.checkForUpdates")
+                      }
+                      disabled={isCheckingForUpdates}
+                      onPress={() => {
+                        void handleCheckForUpdates();
+                      }}
+                      style={[
+                        styles.primaryButton,
+                        { opacity: isCheckingForUpdates ? 0.6 : 1 },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.secondaryButton,
+                        {
+                          backgroundColor: colors.surface2,
+                          borderColor: colors.borderSubtle,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 8,
+                          opacity: 1,
+                        },
+                      ]}
+                    >
+                      {isCheckingForUpdates ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={colors.foreground}
+                        />
+                      ) : null}
+                      <BodyText style={styles.secondaryButtonText}>
+                        {availableUpdateInfo?.version || CURRENT_APP_VERSION}
+                      </BodyText>
+                    </View>
+                  </View>
+                }
+              />
+              {updateFeedback ? (
+                <View
+                  style={[
+                    styles.syncFeedbackBox,
+                    {
+                      backgroundColor:
+                        updateFeedback.tone === "error"
+                          ? "rgba(220, 38, 38, 0.12)"
+                          : updateFeedback.tone === "success"
+                            ? withOpacity(colors.accent, 0.12)
+                            : withOpacity(colors.foreground, 0.05),
+                      borderColor:
+                        updateFeedback.tone === "error"
+                          ? "rgba(248, 113, 113, 0.22)"
+                          : updateFeedback.tone === "success"
+                            ? withOpacity(colors.accent, 0.28)
+                            : withOpacity(colors.foreground, 0.08),
+                    },
+                  ]}
+                >
+                  <BodyText
+                    style={[
+                      styles.syncFeedbackText,
+                      {
+                        color:
+                          updateFeedback.tone === "error"
+                            ? isLight
+                              ? "#991b1b"
+                              : "#fecaca"
+                            : colors.foreground,
+                      },
+                    ]}
+                  >
+                    {updateFeedback.message}
+                  </BodyText>
+                </View>
+              ) : null}
+
+              <SettingRow
+                label={t("settings.communityTitle")}
+                description={t("settings.communityDescription")}
+                colors={colors}
+                control={
+                  <AccentButton
+                    style={styles.primaryButton}
+                    title={t("settings.communityOpen")}
+                    onPress={() => setIsCommunityOpenedManually(true)}
+                  />
+                }
+              />
+            </Section>
+          ) : null}
+
+          <CommunityModal
+            visible={isCommunityVisible}
+            onClose={closeCommunity}
+          />
+
+          <ScrobbleSheet
+            visible={showScrobbleSheet}
+            provider={scrobbleProvider}
+            onClose={() => setShowScrobbleSheet(false)}
+          />
+
+          <SubsonicSheet
+            visible={showSubsonicSheet}
+            onClose={() => setShowSubsonicSheet(false)}
+          />
         </ScrollView>
       </View>
     </Screen>
@@ -1440,164 +1421,76 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: 8,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
+    paddingVertical: 10,
     gap: 8,
   },
   iconButton: {
-    padding: 8,
-  },
-  headerCenter: {
-    flex: 1,
-    alignItems: "center",
-  },
-  headerSpacer: {
-    width: 40,
-  },
-  headerTitle: {
-    fontSize: 18,
-    lineHeight: 22,
-    fontWeight: "900",
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 120,
-    gap: 16,
-  },
-  hero: {
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 18,
-  },
-  heroBadge: {
-    alignSelf: "flex-start",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  heroBadgeText: {
-    fontSize: 11,
-    lineHeight: 14,
-    fontWeight: "600",
-  },
-  heroTitle: {
-    marginTop: 14,
-    fontSize: 32,
-    lineHeight: 36,
-    fontWeight: "900",
-  },
-  heroDescription: {
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  heroPills: {
-    marginTop: 16,
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  heroPill: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  heroPillText: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: "500",
-  },
-  quickAccessCard: {
-    borderRadius: 22,
-    borderWidth: 1,
-    padding: 16,
-  },
-  quickAccessEyebrow: {
-    fontSize: 11,
-    lineHeight: 16,
-    textTransform: "uppercase",
-    letterSpacing: 1.1,
-    fontWeight: "600",
-  },
-  quickAccessTitle: {
-    marginTop: 10,
-    fontSize: 22,
-    lineHeight: 26,
-    fontWeight: "700",
-  },
-  quickAccessDescription: {
-    marginTop: 6,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  quickAccessWrap: {
-    marginTop: 14,
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  quickAccessChip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  quickAccessChipText: {
-    fontSize: 13,
-    lineHeight: 16,
-    fontWeight: "600",
-  },
-  section: {
-    borderRadius: 22,
-    borderWidth: 1,
-    padding: 16,
-  },
-  sectionHeader: {
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  sectionHeaderCopy: {
-    flex: 1,
-  },
-  eyebrow: {
-    fontSize: 11,
-    lineHeight: 16,
-    textTransform: "uppercase",
-    letterSpacing: 1.1,
-    fontWeight: "600",
-  },
-  sectionTitle: {
-    marginTop: 10,
-    fontSize: 24,
-    lineHeight: 28,
-    fontWeight: "700",
-  },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  sectionToggle: {
-    width: 34,
-    height: 34,
-    borderRadius: 999,
-    borderWidth: 1,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
+  headerCenter: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: "700",
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 120,
+    gap: 32,
+  },
+  tabBar: {
+    flexDirection: "row",
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+  },
+  tabItem: {
+    flex: 1,
+    minHeight: 60,
+    minWidth: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 2,
+    paddingVertical: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
+  },
+  tabLabel: {
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  section: {
+    gap: 8,
+  },
+  sectionHeaderStatic: {
+    paddingBottom: 12,
+    gap: 6,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: "700",
+  },
+  sectionDescription: {
+    fontSize: 13,
+    lineHeight: 19,
+  },
   sectionContent: {
-    marginTop: 16,
-    gap: 12,
+    gap: 0,
   },
   settingRow: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 14,
+    borderBottomWidth: 1,
+    paddingVertical: 18,
     gap: 12,
   },
   settingRowInline: {
@@ -1609,22 +1502,23 @@ const styles = StyleSheet.create({
   },
   settingCopyInline: {
     flex: 1,
+    minWidth: 0,
   },
   settingLabel: {
     fontSize: 16,
-    lineHeight: 20,
+    lineHeight: 22,
     fontWeight: "600",
   },
   settingDescription: {
     fontSize: 13,
-    lineHeight: 18,
+    lineHeight: 19,
   },
   settingControl: {
-    marginTop: 4,
+    marginTop: 0,
   },
   settingControlInline: {
     marginTop: 0,
-    marginLeft: 12,
+    flexShrink: 0,
     alignItems: "flex-end",
     justifyContent: "center",
   },
@@ -1634,15 +1528,19 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chip: {
-    borderRadius: 999,
+    minHeight: 44,
+    minWidth: 44,
+    maxWidth: "100%",
     borderWidth: 1,
     paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingVertical: 10,
+    justifyContent: "center",
   },
   chipText: {
     fontSize: 13,
     lineHeight: 16,
     fontWeight: "600",
+    textAlign: "center",
   },
   themeGrid: {
     flexDirection: "row",
@@ -1658,14 +1556,15 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexShrink: 1,
     borderWidth: 1,
-    borderRadius: 18,
+    minHeight: 80,
     padding: 12,
     gap: 10,
     position: "relative",
   },
   themePreviewRow: {
     flexDirection: "row",
-    gap: 8,
+    paddingRight: 24,
+    gap: 6,
   },
   previewDot: {
     width: 16,
@@ -1689,9 +1588,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   accountCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 14,
+    borderBottomWidth: 1,
+    paddingVertical: 18,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
@@ -1728,11 +1626,17 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8,
   },
+  primaryButton: {
+    borderRadius: 0,
+    minHeight: 44,
+  },
   secondaryButton: {
-    borderRadius: 999,
+    minHeight: 44,
+    maxWidth: "100%",
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 12,
+    justifyContent: "center",
   },
   secondaryButtonText: {
     fontSize: 13,
@@ -1740,33 +1644,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   syncFeedbackBox: {
-    marginTop: 14,
-    borderRadius: 18,
+    marginTop: 12,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
   syncFeedbackText: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  summaryCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 14,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  summaryValue: {
-    marginTop: 4,
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: "600",
-  },
-  summaryDescription: {
-    marginTop: 4,
     fontSize: 13,
     lineHeight: 18,
   },

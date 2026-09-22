@@ -78,6 +78,16 @@ export interface AppSettings {
   /** When true, playing a queued song auto-removes it from download queue.
    * When false, shows a confirmation popup first. */
   autoQueueConflictAutoRemove: boolean;
+  /** When true, player controls give tactile feedback. */
+  hapticsEnabled: boolean;
+  /** Fade in/out at track boundaries instead of hard cuts. Off by default. */
+  crossfadeEnabled: boolean;
+  /** Fade window in seconds (clamped 1-12). */
+  crossfadeSeconds: number;
+  /** Show a waveform seek bar (local + fully-cached tracks, Android only). Off by default. */
+  waveformSeekBar: boolean;
+  /** Enable ReplayGain normalization on local/cached tracks. */
+  replayGainEnabled: boolean;
   collapsedSettingsSections: Partial<Record<SettingsSectionKey, boolean>>;
 }
 
@@ -156,6 +166,11 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoCacheLikedSongs: false,
   autoSyncLibrary: true,
   autoQueueConflictAutoRemove: false,
+  hapticsEnabled: true,
+  crossfadeEnabled: false,
+  crossfadeSeconds: 4,
+  waveformSeekBar: false,
+  replayGainEnabled: false,
   collapsedSettingsSections: {},
 };
 
@@ -284,10 +299,33 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
       typeof record.autoSyncLibrary === "boolean"
         ? record.autoSyncLibrary
         : DEFAULT_APP_SETTINGS.autoSyncLibrary,
-    autoQueueConflictAutoRemove:
+    hapticsEnabled:
+      typeof record.hapticsEnabled === "boolean"
+        ? record.hapticsEnabled
+        : DEFAULT_APP_SETTINGS.hapticsEnabled,
+  autoQueueConflictAutoRemove:
       typeof record.autoQueueConflictAutoRemove === "boolean"
         ? record.autoQueueConflictAutoRemove
         : DEFAULT_APP_SETTINGS.autoQueueConflictAutoRemove,
+    crossfadeEnabled:
+      typeof record.crossfadeEnabled === "boolean"
+        ? record.crossfadeEnabled
+        : DEFAULT_APP_SETTINGS.crossfadeEnabled,
+    crossfadeSeconds:
+      typeof record.crossfadeSeconds === "number" &&
+      Number.isFinite(record.crossfadeSeconds) &&
+      record.crossfadeSeconds >= 1 &&
+      record.crossfadeSeconds <= 12
+        ? Math.round(record.crossfadeSeconds)
+        : DEFAULT_APP_SETTINGS.crossfadeSeconds,
+    replayGainEnabled:
+      typeof record.replayGainEnabled === "boolean"
+        ? record.replayGainEnabled
+        : DEFAULT_APP_SETTINGS.replayGainEnabled,
+    waveformSeekBar:
+      typeof record.waveformSeekBar === "boolean"
+        ? record.waveformSeekBar
+        : DEFAULT_APP_SETTINGS.waveformSeekBar,
 
     collapsedSettingsSections: sanitizeCollapsedSettingsSections(
       record.collapsedSettingsSections,
