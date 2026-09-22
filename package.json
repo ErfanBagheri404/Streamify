@@ -81,7 +81,7 @@
     "@babel/preset-typescript": "^7.27.1",
     "@react-native-community/cli": "^20.0.2",
     "@react-native-community/eslint-config": "^3.2.0",
-    "@react-native/metro-config": "^0.83.0",
+    "@react-native/metro-config": "^0.87.1",
     "@types/react": "~19.1.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
