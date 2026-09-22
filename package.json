@@ -67,7 +67,7 @@
     "react-native-video": "^6.19.2",
     "react-native-video-cache": "^2.7.4",
     "react-native-webview": "^14.0.1",
-    "sortablejs": "^1.15.6",
+    "sortablejs": "^1.15.7",
     "spotify-web-api-node": "^5.0.2",
     "styled-components": "^6.1.19",
     "uhtml": "^5.0.9",
