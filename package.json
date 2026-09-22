@@ -37,7 +37,7 @@
     "expo-blur": "^15.0.8",
     "expo-build-properties": "~1.0.10",
     "expo-constants": "~18.0.13",
-    "expo-dev-client": "~6.0.21",
+    "expo-dev-client": "~57.0.19",
     "expo-file-system": "~19.0.23",
     "expo-font": "~14.0.12",
     "expo-haptics": "~15.0.8",
