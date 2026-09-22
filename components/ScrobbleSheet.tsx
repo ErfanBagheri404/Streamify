@@ -8,6 +8,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -273,10 +274,14 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({
     <Modal
       visible={visible}
       transparent
-      animationType="none"
+      animationType="slide"
       onRequestClose={onClose}
     >
       <SheetBackdrop activeOpacity={1} onPress={onClose} />
+      <KeyboardAvoidingView
+        behavior="padding"
+        style={{ width: "100%", alignSelf: "center" }}
+      >
       <SheetBody style={{ backgroundColor: colors.background }}>
         <SheetHeader>
           <SheetTitle
@@ -489,6 +494,7 @@ export const ScrobbleSheet: React.FC<ScrobbleSheetProps> = ({
           )}
         </ScrollView>
       </SheetBody>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };

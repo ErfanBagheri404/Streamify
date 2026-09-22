@@ -1,4 +1,5 @@
-import React, { useMemo, useState, type ReactNode } from "react";
+import React, { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   ActivityIndicator,
   Image,
@@ -536,7 +537,28 @@ export default function SettingsScreen({
   };
 
   // ---- Category tabs (settings rework) ----
-  const [activeTab, setActiveTab] = useState<SettingsTabKey>("playback");
+  // Remember last selected tab; default to Account on first launch.
+  const [activeTab, setActiveTab] = useState<SettingsTabKey>("account");
+  const SETTINGS_TAB_KEY = "settings_active_tab";
+
+  useEffect(() => {
+    if (!hasHydratedSettings) return;
+    void (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(SETTINGS_TAB_KEY);
+        if (raw && ["account", "playback", "appearance", "library", "about"].includes(raw)) {
+          setActiveTab(raw as SettingsTabKey);
+        }
+      } catch {
+        // ignore — default to account
+      }
+    })();
+  }, [hasHydratedSettings]);
+
+  const selectTab = useCallback((tab: SettingsTabKey) => {
+    setActiveTab(tab);
+    void AsyncStorage.setItem(SETTINGS_TAB_KEY, tab).catch(() => {});
+  }, []);
 
   if (!hasHydratedSettings) {
     return (
@@ -593,7 +615,7 @@ export default function SettingsScreen({
             return (
               <TouchableOpacity
                 key={tab.key}
-                onPress={() => setActiveTab(tab.key)}
+                onPress={() => selectTab(tab.key)}
                 activeOpacity={0.75}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: active }}

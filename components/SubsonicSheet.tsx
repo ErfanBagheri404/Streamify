@@ -12,7 +12,9 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   Text,
   TextInput,
@@ -156,136 +158,141 @@ export function SubsonicSheet({ visible, onClose }: SubsonicSheetProps) {
     <Modal
       visible={visible}
       transparent
-      animationType="none"
+      animationType="slide"
       onRequestClose={onClose}
     >
       <SheetBackdrop activeOpacity={1} onPress={onClose} />
-      <SheetBody style={{ backgroundColor: colors.background }}>
-        <SheetHeader>
-          <SheetTitle
-            style={{
-              color: colors.foreground,
-              fontFamily: font("bold"),
-              ...rtl(),
-            }}
-          >
-            {t("subsonic.title")}
-          </SheetTitle>
-          <TouchableOpacity
-            onPress={onClose}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="close" size={22} color={colors.muted} />
-          </TouchableOpacity>
-        </SheetHeader>
-
-        <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
-          <SectionLabel style={labelStyle}>
-            {t("subsonic.how_to_connect")}
-          </SectionLabel>
-          <GuideText style={helpStyle}>{t("subsonic.intro")}</GuideText>
-          <GuideText style={helpStyle}>{t("subsonic.step1")}</GuideText>
-          <GuideText style={helpStyle}>{t("subsonic.step2")}</GuideText>
-          <GuideText style={helpStyle}>{t("subsonic.step3")}</GuideText>
-          <View style={{ height: 8 }} />
-
-          <SectionLabel style={labelStyle}>
-            {t("subsonic.serverUrl")}
-          </SectionLabel>
-          <FieldInput
-            value={baseUrl}
-            onChangeText={setBaseUrl}
-            placeholder={t("subsonic.serverUrlPlaceholder")}
-            placeholderTextColor={withOpacity(colors.muted, 0.7)}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
-            style={inputStyle}
-          />
-
-          <SectionLabel style={labelStyle}>
-            {t("subsonic.username")}
-          </SectionLabel>
-          <FieldInput
-            value={username}
-            onChangeText={setUsername}
-            placeholder={t("subsonic.usernamePlaceholder")}
-            placeholderTextColor={withOpacity(colors.muted, 0.7)}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={inputStyle}
-          />
-
-          <SectionLabel style={labelStyle}>
-            {t("subsonic.password")}
-          </SectionLabel>
-          <FieldInput
-            value={password}
-            onChangeText={setPassword}
-            placeholder={t("subsonic.passwordPlaceholder")}
-            placeholderTextColor={withOpacity(colors.muted, 0.7)}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-            style={inputStyle}
-          />
-
-          <SaveButton
-            activeOpacity={0.88}
-            disabled={saving}
-            onPress={() => void save()}
-            style={{
-              backgroundColor: colors.foreground,
-              opacity: saving ? 0.6 : 1,
-            }}
-          >
-            {saving ? (
-              <ActivityIndicator size="small" color={colors.background} />
-            ) : (
-              <Text
-                style={{
-                  color: colors.background,
-                  fontFamily: font("bold"),
-                  fontSize: 14,
-                }}
-              >
-                {t("subsonic.connect")}
-              </Text>
-            )}
-          </SaveButton>
-
-          {feedback ? (
-            <View style={{ marginTop: 12 }}>
-              <Text
-                style={{
-                  color:
-                    feedback.tone === "error" ? "#ef4444" : colors.foreground,
-                  fontFamily: font("regular"),
-                  fontSize: 12,
-                  ...rtl(),
-                }}
-              >
-                {feedback.message}
-              </Text>
-            </View>
-          ) : null}
-
-          <TouchableOpacity
-            onPress={() => void disconnect()}
-            style={{ marginTop: 16, alignSelf: "center" }}
-          >
-            <Text
+      <KeyboardAvoidingView
+        behavior="padding"
+        style={{ width: "100%", alignSelf: "center" }}
+      >
+        <SheetBody style={{ backgroundColor: colors.background }}>
+          <SheetHeader>
+            <SheetTitle
               style={{
-                color: colors.muted,
-                fontFamily: font("regular"),
-                fontSize: 12,
+                color: colors.foreground,
+                fontFamily: font("bold"),
+                ...rtl(),
               }}
             >
-              {t("subsonic.disconnect")}
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SheetBody>
+              {t("subsonic.title")}
+            </SheetTitle>
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="close" size={22} color={colors.muted} />
+            </TouchableOpacity>
+          </SheetHeader>
+
+          <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+            <SectionLabel style={labelStyle}>
+              {t("subsonic.how_to_connect")}
+            </SectionLabel>
+            <GuideText style={helpStyle}>{t("subsonic.intro")}</GuideText>
+            <GuideText style={helpStyle}>{t("subsonic.step1")}</GuideText>
+            <GuideText style={helpStyle}>{t("subsonic.step2")}</GuideText>
+            <GuideText style={helpStyle}>{t("subsonic.step3")}</GuideText>
+            <View style={{ height: 8 }} />
+
+            <SectionLabel style={labelStyle}>
+              {t("subsonic.serverUrl")}
+            </SectionLabel>
+            <FieldInput
+              value={baseUrl}
+              onChangeText={setBaseUrl}
+              placeholder={t("subsonic.serverUrlPlaceholder")}
+              placeholderTextColor={withOpacity(colors.muted, 0.7)}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              style={inputStyle}
+            />
+
+            <SectionLabel style={labelStyle}>
+              {t("subsonic.username")}
+            </SectionLabel>
+            <FieldInput
+              value={username}
+              onChangeText={setUsername}
+              placeholder={t("subsonic.usernamePlaceholder")}
+              placeholderTextColor={withOpacity(colors.muted, 0.7)}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={inputStyle}
+            />
+
+            <SectionLabel style={labelStyle}>
+              {t("subsonic.password")}
+            </SectionLabel>
+            <FieldInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder={t("subsonic.passwordPlaceholder")}
+              placeholderTextColor={withOpacity(colors.muted, 0.7)}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              style={inputStyle}
+            />
+
+            <SaveButton
+              activeOpacity={0.88}
+              disabled={saving}
+              onPress={() => void save()}
+              style={{
+                backgroundColor: colors.foreground,
+                opacity: saving ? 0.6 : 1,
+              }}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color={colors.background} />
+              ) : (
+                <Text
+                  style={{
+                    color: colors.background,
+                    fontFamily: font("bold"),
+                    fontSize: 14,
+                  }}
+                >
+                  {t("subsonic.connect")}
+                </Text>
+              )}
+            </SaveButton>
+
+            {feedback ? (
+              <View style={{ marginTop: 12 }}>
+                <Text
+                  style={{
+                    color:
+                      feedback.tone === "error" ? "#ef4444" : colors.foreground,
+                    fontFamily: font("regular"),
+                    fontSize: 12,
+                    ...rtl(),
+                  }}
+                >
+                  {feedback.message}
+                </Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              onPress={() => void disconnect()}
+              style={{ marginTop: 16, alignSelf: "center" }}
+            >
+              <Text
+                style={{
+                  color: colors.muted,
+                  fontFamily: font("regular"),
+                  fontSize: 12,
+                }}
+              >
+                {t("subsonic.disconnect")}
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </SheetBody>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

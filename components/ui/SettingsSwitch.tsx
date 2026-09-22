@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { StyleSheet, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useRef } from "react";
+import { Animated, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../hooks/useTheme";
 
@@ -11,7 +11,13 @@ interface SettingsSwitchProps {
   disabled?: boolean;
 }
 
-/** Controlled, motion-free switch with a full-size touch target. */
+const TRACK_WIDTH = 44;
+const TRACK_HEIGHT = 26;
+const THUMB_SIZE = 18;
+const PADDING = 3;
+const THUMB_MAX_X = TRACK_WIDTH - THUMB_SIZE - PADDING * 2;
+
+/** Animated switch: thumb slides with spring, colors snap instantly. */
 export function SettingsSwitch({
   value,
   onValueChange,
@@ -20,8 +26,28 @@ export function SettingsSwitch({
   disabled = false,
 }: SettingsSwitchProps) {
   const { colors } = useTheme();
-  const [focused, setFocused] = useState(false);
-  const [pressed, setPressed] = useState(false);
+  const progress = useRef(new Animated.Value(value ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(progress, {
+      toValue: value ? 1 : 0,
+      damping: 16,
+      stiffness: 190,
+      mass: 0.7,
+      useNativeDriver: true,
+    }).start();
+  }, [value, progress]);
+
+  const thumbTranslateX = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, THUMB_MAX_X],
+  });
+
+  // Colors snap instantly — no RGB interpolation, so no red/purple flash
+  // while the thumb is mid-animation.
+  const trackBg = value ? colors.foreground : colors.surface1;
+  const trackBorder = value ? colors.foreground : colors.muted;
+  const thumbBg = value ? colors.background : colors.foreground;
 
   return (
     <TouchableOpacity
@@ -31,19 +57,8 @@ export function SettingsSwitch({
       accessibilityState={{ checked: value, disabled }}
       disabled={disabled}
       onPress={() => onValueChange(!value)}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
       activeOpacity={1}
-      style={[
-        styles.target,
-        {
-          borderColor: focused ? colors.foreground : "transparent",
-          backgroundColor: pressed ? colors.surface2 : "transparent",
-          opacity: disabled ? 0.45 : 1,
-        },
-      ]}
+      style={[styles.target, { opacity: disabled ? 0.45 : 1 }]}
     >
       <View
         accessible={false}
@@ -51,31 +66,20 @@ export function SettingsSwitch({
         style={[
           styles.track,
           {
-            backgroundColor: value ? colors.accent : colors.background,
-            borderColor: value ? colors.accent : colors.muted,
-            alignItems: value ? "flex-end" : "flex-start",
+            backgroundColor: trackBg,
+            borderColor: trackBorder,
           },
         ]}
       >
-        <View
+        <Animated.View
           style={[
             styles.thumb,
             {
-              backgroundColor: value
-                ? colors.accentContrast
-                : colors.foreground,
+              backgroundColor: thumbBg,
+              transform: [{ translateX: thumbTranslateX }],
             },
           ]}
-        >
-          {value ? (
-            <Ionicons
-              accessible={false}
-              name="checkmark"
-              size={12}
-              color={colors.accent}
-            />
-          ) : null}
-        </View>
+        />
       </View>
     </TouchableOpacity>
   );
@@ -86,22 +90,21 @@ const styles = StyleSheet.create({
     width: 56,
     height: 44,
     flexShrink: 0,
-    borderWidth: 2,
     alignItems: "center",
     justifyContent: "center",
   },
   track: {
-    width: 44,
-    height: 26,
-    borderRadius: 13,
+    width: TRACK_WIDTH,
+    height: TRACK_HEIGHT,
+    borderRadius: TRACK_HEIGHT / 2,
     borderWidth: 1,
-    padding: 3,
+    padding: PADDING,
     justifyContent: "center",
   },
   thumb: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
+    borderRadius: THUMB_SIZE / 2,
     alignItems: "center",
     justifyContent: "center",
   },

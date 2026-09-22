@@ -52,6 +52,7 @@ import { useTheme, withOpacity } from "../hooks/useTheme";
 import { getAppFontFamily, getTextDirectionStyle } from "../utils/fonts";
 import { Haptic, playHaptic } from "../utils/haptics";
 import { usePlaybackSpeedStore } from "../services/PlaybackSpeedService";
+import { isLocalPlaybackTrack } from "../modules/localPlayback";
 
 const { Animated, PanResponder } = require("react-native");
 const LYRICS_MANUAL_SCROLL_HOLD_MS = 1500;
@@ -643,6 +644,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [seekBarWidth, setSeekBarWidth] = useState(0);
   const [pendingSeekValue, setPendingSeekValue] = useState<number | null>(null);
   const [isSeekPending, setIsSeekPending] = useState(false);
+  // Device files / Subsonic streams need no caching, queue, or radio actions.
+  const isLocalTrack = currentTrack ? isLocalPlaybackTrack(currentTrack) : false;
   // Waveform seek bar (feature: local + fully-cached tracks, Android only).
 
   // Deterministic pseudo-random envelope for the fallback bars — seeded
@@ -693,8 +696,11 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [showLyricsSearchSheet, setShowLyricsSearchSheet] = useState(false);
   // Latest rendered track id — used by async lyrics callbacks instead of the
   // stale closure value, so a late result cannot overwrite a newer track.
+  // Updated in an effect (post-commit) rather than during render.
   const currentTrackIdRef = useRef(currentTrack?.id ?? null);
-  currentTrackIdRef.current = currentTrack?.id ?? null;
+  useEffect(() => {
+    currentTrackIdRef.current = currentTrack?.id ?? null;
+  }, [currentTrack?.id]);
   const speedRate = usePlaybackSpeedStore((state) => state.rate);
   const speedBadgeRate = Math.abs(speedRate - 1) < 0.001 ? 1 : speedRate;
   const [showPlaylistSelection, setShowPlaylistSelection] = useState(false);
@@ -867,7 +873,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     fullscreenArtworkSources.lowRes,
   ]);
 
-  const playerSheetOptions = React.useMemo(
+  const fullSheetOptions = React.useMemo(
     () => [
       {
         key: "Share",
@@ -927,6 +933,19 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       },
     ],
     [language],
+  );
+
+  // Device files / Subsonic: no queue-from-library or remote radio.
+  const playerSheetOptions = React.useMemo(
+    () =>
+      isLocalTrack
+        ? fullSheetOptions.filter(
+            (o) =>
+              o.key !== "Smart queue from library" &&
+              o.key !== "Go to song radio",
+          )
+        : fullSheetOptions,
+    [fullSheetOptions, isLocalTrack],
   );
 
   // Memoize position calculations to prevent unnecessary re-renders
@@ -1789,7 +1808,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                       }}
                     />
                   ) : null}
-                  {showCacheSize && (
+                  {showCacheSize && !isLocalTrack && (
                     <CacheOverlay>
                       <CacheInfoContainer>
                         {!isSongLiked(currentTrack.id) ? (
@@ -1828,10 +1847,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                       </CacheInfoContainer>
                     </CacheOverlay>
                   )}
-                  <CacheTouchable
-                    onPress={() => setShowCacheSize(!showCacheSize)}
-                    activeOpacity={1}
-                  />
+                  {!isLocalTrack && (
+                    <CacheTouchable
+                      onPress={() => setShowCacheSize(!showCacheSize)}
+                      activeOpacity={1}
+                    />
+                  )}
                 </AlbumArtWrapper>
               ) : (
                 <AlbumArtWrapper>
@@ -1842,7 +1863,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                       color={iconColor}
                     />
                   </PlaceholderAlbumArtWithOpacity>
-                  {showCacheSize && (
+                  {showCacheSize && !isLocalTrack && (
                     <CacheOverlay>
                       <CacheInfoContainer>
                         {!isSongLiked(currentTrack.id) ? (
@@ -1869,10 +1890,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                       </CacheInfoContainer>
                     </CacheOverlay>
                   )}
-                  <CacheTouchable
-                    onPress={() => setShowCacheSize(!showCacheSize)}
-                    activeOpacity={1}
-                  />
+                  {!isLocalTrack && (
+                    <CacheTouchable
+                      onPress={() => setShowCacheSize(!showCacheSize)}
+                      activeOpacity={1}
+                    />
+                  )}
                 </AlbumArtWrapper>
               )}
 
