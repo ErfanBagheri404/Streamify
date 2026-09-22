@@ -3282,6 +3282,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             // Prefer a fully cached local file when one exists.
             const cachedUrl = await getFullyCachedAudioUrl(track.id);
             if (cachedUrl && cachedUrl !== track.audioUrl) {
+              // The user may have switched tracks while resolving — never
+              // overwrite a different track's URL with this stale result.
+              if (activeTrackRef.current?.id !== track.id) return;
               await trackPlayerService.updateCurrentTrack(cachedUrl);
               syncResolvedTrackUrlInState(track.id, cachedUrl);
               return;
@@ -3303,6 +3306,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               { urlHint: track.url, providerHint: track.providerHint },
             );
             if (freshUrl && freshUrl !== track.audioUrl) {
+              if (activeTrackRef.current?.id !== track.id) return;
               await trackPlayerService.updateCurrentTrack(freshUrl);
               syncResolvedTrackUrlInState(track.id, freshUrl);
             }

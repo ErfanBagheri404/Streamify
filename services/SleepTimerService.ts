@@ -3,7 +3,8 @@
  *
  *  Design notes (performance contract):
  *  - No always-on intervals. When armed with minutes, exactly ONE
- *    setTimeout exists. When armed end-of-track, ONE event subscription.
+ *    setTimeout exists. When armed end-of-track, at most TWO event
+ *    subscriptions exist (track advance + queue exhaustion).
  *  - UI countdown display re-derives remaining time from `endsAt`;
  *    a ticking interval lives only inside the open sheet (disposed on close).
  *  - No PlayerContext state is touched; UI reads this zustand store.
@@ -80,22 +81,29 @@ export const sleepTimerService = {
     };
 
     const activeTrackChanged = (Event as any).PlaybackActiveTrackChanged;
+    const subs: { remove: () => void }[] = [];
     if (activeTrackChanged) {
-      internal.endOfTrackSub = TrackPlayer.addEventListener(activeTrackChanged, () => {
-        // Only stop when playback actually moved to another item, not a
-        // removal/reorder of the queue.
-        TrackPlayer.getActiveTrackIndex()
-          .then((index) => {
-            if (index != null && index >= 0) {
-              onEvent();
-            }
-          })
-          .catch(() => onEvent());
-      });
-    } else {
-      // Legacy fallback: queue ended = track over.
-      internal.endOfTrackSub = TrackPlayer.addEventListener(Event.PlaybackQueueEnded, onEvent);
+      subs.push(
+        TrackPlayer.addEventListener(activeTrackChanged, () => {
+          // Only stop when playback actually moved to another item, not a
+          // removal/reorder of the queue.
+          TrackPlayer.getActiveTrackIndex()
+            .then((index) => {
+              if (index != null && index >= 0) {
+                onEvent();
+              }
+            })
+            .catch(() => onEvent());
+        }),
+      );
     }
+    // Queue exhaustion never fires ActiveTrackChanged with a next item
+    // (getActiveTrackIndex returns undefined), so the last queue item would
+    // leave the timer armed without this second listener.
+    subs.push(
+      TrackPlayer.addEventListener(Event.PlaybackQueueEnded, onEvent),
+    );
+    internal.endOfTrackSub = { remove: () => subs.forEach((s) => s.remove()) };
   },
 
   /** Disarm and reset. Safe to call any number of times. */

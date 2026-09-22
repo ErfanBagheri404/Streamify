@@ -49,7 +49,6 @@ interface ScrobbleEntry {
 
 type ScrobbleProvider = "lastfm" | "listenbrainz";
 
-
 const internal = {
   lastfmSessionKey: null as string | null,
   listenbrainzToken: null as string | null,
@@ -70,7 +69,6 @@ function debug(...args: unknown[]) {
 
 // --- Last.fm (needs api_key + session key + signature) -----------------------
 
-
 /** User-pasted key wins; build-time constant is the fallback. */
 function lastfmApiKey(): string {
   return internal.lastfmUserKey || LASTFM_API_KEY;
@@ -82,7 +80,10 @@ function lastfmSecret(): string {
 const lastfmEnabled = (): boolean =>
   Boolean(lastfmApiKey() && lastfmSecret() && internal.lastfmSessionKey);
 
-async function lastfmSignedCall(method: string, params: Record<string, string>): Promise<boolean> {
+async function lastfmSignedCall(
+  method: string,
+  params: Record<string, string>,
+): Promise<boolean> {
   if (!lastfmEnabled()) {
     return false;
   }
@@ -113,11 +114,12 @@ async function lastfmApiCall(
       ...(needsSession ? { sk: internal.lastfmSessionKey || "" } : {}),
       ...params,
     };
-    const sigBase = Object.keys(unsigned)
-      .filter((k) => k !== "format" && unsigned[k])
-      .sort()
-      .map((k) => `${k}${unsigned[k]}`)
-      .join("") + lastfmSecret();
+    const sigBase =
+      Object.keys(unsigned)
+        .filter((k) => k !== "format" && unsigned[k])
+        .sort()
+        .map((k) => `${k}${unsigned[k]}`)
+        .join("") + lastfmSecret();
     const body = new URLSearchParams({
       ...unsigned,
       api_sig: md5(sigBase),
@@ -251,8 +253,7 @@ export const scrobblerService = {
     }
     internal.initialized = true;
     try {
-  
-    const [sk, lbz, lfmKey, lfmSecret] = await Promise.all([
+      const [sk, lbz, lfmKey, lfmSecret] = await Promise.all([
         SecureStore.getItemAsync(SECURE_KEY_LASTFM_SK).catch(() => null),
         AsyncStorage.getItem(SETTINGS_KEY_LBZ),
         AsyncStorage.getItem(SETTINGS_KEY_LASTFM_USER_KEY),
@@ -424,13 +425,21 @@ export const scrobblerService = {
     await flushPending();
   },
 
-
-  async getEnabledProviders(): Promise<{ lastfm: boolean; listenbrainz: boolean }> {
+  async getEnabledProviders(): Promise<{
+    lastfm: boolean;
+    listenbrainz: boolean;
+  }> {
     return { lastfm: lastfmEnabled(), listenbrainz: lbzEnabled() };
   },
 
-  async getLastfmCreds(): Promise<{ apiKey: string | null; secret: string | null }> {
-    return { apiKey: internal.lastfmUserKey, secret: internal.lastfmUserSecret };
+  async getLastfmCreds(): Promise<{
+    apiKey: string | null;
+    secret: string | null;
+  }> {
+    return {
+      apiKey: internal.lastfmUserKey,
+      secret: internal.lastfmUserSecret,
+    };
   },
 
   async getLastfmSessionKey(): Promise<string | null> {
@@ -466,8 +475,14 @@ export const scrobblerService = {
    * Step 2: after the user approved in the browser, exchange the token for
    * a session key. Call a few times — the grant may lag the tap.
    */
-  async completeLastfmAuth(token: string): Promise<{ ok: boolean; username?: string }> {
-    const { ok, data } = await lastfmApiCall("auth.getSession", { token }, false);
+  async completeLastfmAuth(
+    token: string,
+  ): Promise<{ ok: boolean; username?: string }> {
+    const { ok, data } = await lastfmApiCall(
+      "auth.getSession",
+      { token },
+      false,
+    );
     const session = data?.session;
     if (ok && session?.key) {
       await this.setLastFmSessionKey(session.key);
@@ -487,7 +502,10 @@ export const scrobblerService = {
     await AsyncStorage.removeItem(SETTINGS_KEY_LASTFM_USER);
   },
 
-  async setLastfmCreds(apiKey: string | null, secret: string | null): Promise<void> {
+  async setLastfmCreds(
+    apiKey: string | null,
+    secret: string | null,
+  ): Promise<void> {
     internal.lastfmUserKey = apiKey || null;
     internal.lastfmUserSecret = secret || null;
     // API key is public-ish (identifies the app), so AsyncStorage is fine;

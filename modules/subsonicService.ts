@@ -11,14 +11,18 @@
  *  (pure JS, no native dependency).
  *
  *  Perf contract:
- *  - Credentials persist in AsyncStorage; requests are on-demand only.
+ *  - Credentials persist locally: password in hardware-backed SecureStore,
+ *    URL/username in AsyncStorage; requests are on-demand only.
  *  - search() is a single REST call.
  *  - Disabled entirely until the user configures a server (isConfigured()).
  *******************************************************************/
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 import { md5 } from "../utils/md5";
 
 const STORAGE_KEY = "subsonic_config";
+/** Hardware-backed store for the server password (never in AsyncStorage). */
+const SECURE_KEY_SUBSONIC_PASSWORD = "subsonic_password";
 const API_VERSION = "1.16.1";
 const CLIENT_NAME = "Streamify";
 
@@ -69,12 +73,18 @@ function authParams(config: SubsonicConfig): Record<string, string> {
   };
 }
 
+function buildEndpointUrl(config: SubsonicConfig, endpoint: string): URL {
+  // Resolve "rest/x.view" against the base WITH a trailing slash so any path
+  // segment in the configured server URL (e.g. https://host/subsonic) is kept.
+  return new URL(`rest/${endpoint}.view`, `${config.baseUrl}/`);
+}
+
 async function request<T = any>(
   config: SubsonicConfig,
   endpoint: string,
   params: Record<string, string | number> = {},
 ): Promise<T | null> {
-  const url = new URL(`/rest/${endpoint}.view`, config.baseUrl);
+  const url = buildEndpointUrl(config, endpoint);
   for (const [k, v] of Object.entries({ ...authParams(config), ...params })) {
     url.searchParams.set(k, String(v));
   }
@@ -116,7 +126,7 @@ function normalizeSongs(raw: any[]): SubsonicTrack[] {
 function buildStreamUrl(trackId: string): string {
   const config = cachedConfig;
   if (!config) return "";
-  const url = new URL("/rest/stream.view", config.baseUrl);
+  const url = buildEndpointUrl(config, "stream");
   for (const [k, v] of Object.entries({ ...authParams(config), id: trackId })) {
     url.searchParams.set(k, String(v));
   }
@@ -130,7 +140,35 @@ export const subsonicService = {
     }
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
-      cachedConfig = raw ? (JSON.parse(raw) as SubsonicConfig) : null;
+      const stored = raw ? (JSON.parse(raw) as SubsonicConfig) : null;
+      if (!stored) {
+        cachedConfig = null;
+        return cachedConfig;
+      }
+      let password = await SecureStore.getItemAsync(
+        SECURE_KEY_SUBSONIC_PASSWORD,
+      ).catch(() => null);
+      if (!password && stored.password) {
+        // Legacy entry stored the plaintext password in AsyncStorage —
+        // migrate it to SecureStore and strip it from the plain record.
+        password = stored.password;
+        await SecureStore.setItemAsync(
+          SECURE_KEY_SUBSONIC_PASSWORD,
+          password,
+        ).catch(() => {});
+        await AsyncStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({
+            baseUrl: stored.baseUrl,
+            username: stored.username,
+          }),
+        );
+      }
+      cachedConfig = {
+        baseUrl: stored.baseUrl,
+        username: stored.username,
+        password: password ?? "",
+      };
     } catch (e) {
       cachedConfig = null;
     }
@@ -160,13 +198,37 @@ export const subsonicService = {
       throw new Error("Could not connect. Check the URL, username, and password.");
     }
     cachedConfig = trimmed;
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+    // Password goes to hardware-backed SecureStore; AsyncStorage keeps only
+    // the URL + username. If SecureStore is unavailable (unsupported
+    // device/keystore failure) fall back to the legacy plaintext record so
+    // connectivity keeps working rather than bricking the configuration.
+    let secured = false;
+    try {
+      await SecureStore.setItemAsync(
+        SECURE_KEY_SUBSONIC_PASSWORD,
+        trimmed.password,
+      );
+      secured = true;
+    } catch (e) {
+      debug("SecureStore unavailable, falling back to AsyncStorage:", e);
+    }
+    await AsyncStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(
+        secured
+          ? { baseUrl: trimmed.baseUrl, username: trimmed.username }
+          : trimmed,
+      ),
+    );
     debug("Configured for", trimmed.baseUrl);
   },
 
   async clearConfig(): Promise<void> {
     cachedConfig = null;
     await AsyncStorage.removeItem(STORAGE_KEY);
+    await SecureStore.deleteItemAsync(SECURE_KEY_SUBSONIC_PASSWORD).catch(
+      () => {},
+    );
   },
 
   /** SearchMusic3 across the user's whole server library. */
@@ -200,7 +262,7 @@ export const subsonicService = {
     if (!config || !coverArtId) {
       return null;
     }
-    const url = new URL("/rest/getCoverArt.view", config.baseUrl);
+    const url = buildEndpointUrl(config, "getCoverArt");
     for (const [k, v] of Object.entries({ ...authParams(config), id: coverArtId, size: 400 })) {
       url.searchParams.set(k, String(v));
     }
