@@ -15,6 +15,7 @@
  * neither problem.
  */
 import * as Linking from "expo-linking";
+import { parseShareMomentUrl, type ShareMoment } from "./shareMoment";
 
 /** Shortest sensible gap between two identical deliveries of one intent. */
 const COMMAND_DEBOUNCE_MS = 1200;
@@ -35,11 +36,20 @@ const ACTIONS: Handlers = {
   search: () => {},
 };
 
+/**
+ * #33: a share-moment link carries its own track id + timestamp, so unlike a
+ * launcher action it cannot be replayed from a bare command string — the URL
+ * has to be kept verbatim until the handler is registered.
+ */
+let playMomentHandler: (moment: ShareMoment) => void | Promise<void> = () => {};
+
 let installed = false;
 /** True once real handlers have been registered. */
 let ready = false;
 /** Commands that arrived before the app was ready to act on them. */
 let pending: DeepLinkAction[] = [];
+/** Share-moment URLs that arrived before the app was ready to act on them. */
+let pendingMoments: string[] = [];
 
 /**
  * A launcher intent that re-delivers the same URL (some launchers re-send the
@@ -58,7 +68,8 @@ function isDuplicate(action: string): boolean {
 /**
  * Parse a `streamify://<action>` URL. Returns null for anything else so an
  * unrelated deep link (share targets, community links) is ignored rather than
- * misinterpreted.
+ * misinterpreted. Share-moment links (`streamify://track/...`) deliberately do
+ * not parse as actions — they are handled by `handleShareMoment`.
  */
 export function parseDeepLink(url: string | null): DeepLinkAction | null {
   if (!url || !url.startsWith("streamify://")) return null;
@@ -74,8 +85,26 @@ export function parseDeepLink(url: string | null): DeepLinkAction | null {
   return null;
 }
 
+/**
+ * Play a shared moment (issue #33). A link for an unknown track still reports
+ * success so the caller can show a clean message instead of a crash.
+ */
+export async function handleShareMoment(url: string | null): Promise<boolean> {
+  const moment = parseShareMomentUrl(url);
+  if (!moment) return false;
+  if (isDuplicate(url as string)) return false;
+  lastCommand = { action: url as string, at: Date.now() };
+  try {
+    await playMomentHandler(moment);
+  } catch (error) {
+    console.log("[deepLink] Share moment failed:", moment.id, error);
+  }
+  return true;
+}
+
 /** Run one action. Never throws into the caller. */
 export async function handleDeepLink(url: string | null): Promise<boolean> {
+  if (await handleShareMoment(url)) return true;
   const action = parseDeepLink(url);
   if (!action) return false;
   if (isDuplicate(action)) return false;
@@ -90,8 +119,12 @@ export async function handleDeepLink(url: string | null): Promise<boolean> {
 
 async function dispatch(url: string | null) {
   if (!ready) {
-    const action = parseDeepLink(url);
-    if (action) pending.push(action);
+    if (parseShareMomentUrl(url)) {
+      pendingMoments.push(url as string);
+    } else {
+      const action = parseDeepLink(url);
+      if (action) pending.push(action);
+    }
     return;
   }
   await handleDeepLink(url);
@@ -124,6 +157,21 @@ export function setDeepLinkHandlers(handlers: Handlers) {
   for (const action of queued) {
     void handleDeepLink(`streamify://${action}`);
   }
+  const queuedMoments = pendingMoments;
+  pendingMoments = [];
+  for (const url of queuedMoments) {
+    void handleDeepLink(url);
+  }
+}
+
+/**
+ * Register the share-moment handler (#33). Split from the action map because a
+ * moment carries a payload the bare action string cannot express.
+ */
+export function setShareMomentHandler(
+  handler: (moment: ShareMoment) => void | Promise<void>,
+) {
+  playMomentHandler = handler;
 }
 
 /**
@@ -134,7 +182,9 @@ export function __resetDeepLinkForTests() {
   installed = false;
   ready = false;
   pending = [];
+  pendingMoments = [];
   lastCommand = null;
+  playMomentHandler = () => {};
   Object.assign(ACTIONS, {
     resume: () => {},
     "shuffle-liked": () => {},

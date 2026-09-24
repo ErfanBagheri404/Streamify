@@ -58,7 +58,11 @@ import {
   hasCompletedOnboarding,
   markOnboardingCompleted,
 } from "./utils/storage";
-import { setDeepLinkHandlers, type DeepLinkAction } from "./modules/deepLink";
+import { setDeepLinkHandlers, setShareMomentHandler, type DeepLinkAction } from "./modules/deepLink";
+import { type ShareMoment } from "./modules/shareMoment";
+
+/** t= carries seconds; beyond sane bounds is treated as "from the start". */
+const MAX_SHARE_SEEK_SECONDS = 6 * 3600;
 import { buildSeededQueue, shuffleTracks } from "./modules/seededQueue";
 
 // Screens
@@ -424,7 +428,52 @@ const navigationRef = React.createRef<any>();
  */
 function DeepLinkBridge() {
   const { hasHydratedSettings } = useSettings();
-  const { likedSongs, playTrack, currentTrack, setShowFullPlayer } = usePlayer();
+  const {
+    likedSongs,
+    playTrack,
+    currentTrack,
+    setShowFullPlayer,
+    seekTo,
+  } = usePlayer();
+
+  /**
+   * #33: play a shared moment. Local ids resolve instantly; remote sources
+   * need the stream resolver, which works from a bare `{id, source}` track —
+   * no search pass required, the URL shares the id the player already keys on.
+   * The shared title/artist are metadata-only: the truth stays in the library.
+   */
+  const playSharedMoment = React.useCallback(
+    async (moment: ShareMoment) => {
+      const local = likedSongs.find((song) => song.id === moment.id);
+      const track = local ?? {
+        id: moment.id,
+        title: moment.title ?? moment.id,
+        artist: moment.artist,
+        source: moment.source,
+        _isJioSaavn: moment.source === "jiosaavn",
+        _isSoundCloud: moment.source === "soundcloud",
+      };
+
+      await playTrack(track as any, local ? likedSongs : [track as any], local ? likedSongs.indexOf(local) : 0);
+
+      const seconds = Math.floor(moment.seconds);
+      if (seconds > 0 && seconds <= MAX_SHARE_SEEK_SECONDS) {
+        // The resolver loads the stream asynchronously, so seeking
+        // immediately would be clobbered. Wait for the track to finish
+        // loading, then land on the timestamp.
+        for (let attempt = 0; attempt < 60; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          try {
+            await seekTo(seconds);
+            return;
+          } catch {
+            // Not loaded yet; keep waiting.
+          }
+        }
+      }
+    },
+    [likedSongs, playTrack, seekTo],
+  );
 
   React.useEffect(() => {
     if (!hasHydratedSettings) return;
@@ -458,7 +507,8 @@ function DeepLinkBridge() {
     };
 
     setDeepLinkHandlers(actions);
-  }, [hasHydratedSettings, likedSongs, playTrack, currentTrack, setShowFullPlayer]);
+    setShareMomentHandler(playSharedMoment);
+  }, [hasHydratedSettings, likedSongs, playTrack, currentTrack, setShowFullPlayer, playSharedMoment]);
 
   return null;
 }

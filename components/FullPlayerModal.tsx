@@ -3,6 +3,10 @@
  *******************************************************************/
 import React, { useState, useEffect, useRef } from "react";
 import {
+  buildShareMessage,
+  buildShareMomentUrl,
+} from "../modules/shareMoment";
+import {
   Modal,
   Alert,
   TouchableOpacity,
@@ -881,6 +885,14 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
         icon: "share-outline",
       },
       {
+        key: "Share from current position",
+        label:
+          language === "fa"
+            ? "اشتراک‌گذاری از لحظه فعلی"
+            : "Share from current position",
+        icon: "time-outline",
+      },
+      {
         key: "Add to other playlist",
         label:
           language === "fa"
@@ -1298,6 +1310,27 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
           console.log("[FullPlayerModal] Share failed:", error);
         });
       }
+      return;
+    }
+
+    if (option === "Share from current position") {
+      if (!currentTrack?.id) return;
+      const url = buildShareMomentUrl(currentTrack, position);
+      if (!url) return;
+      Share.share({
+        message: buildShareMessage(
+          {
+            id: currentTrack.id,
+            seconds: Math.floor(position),
+            title: currentTrack.title,
+            artist: currentTrack.artist,
+          },
+          url,
+        ),
+        url,
+      }).catch((error) => {
+        console.log("[FullPlayerModal] Share moment failed:", error);
+      });
       return;
     }
 
