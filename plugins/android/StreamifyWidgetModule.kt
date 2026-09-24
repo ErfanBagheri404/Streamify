@@ -37,6 +37,7 @@ class StreamifyWidgetModule(reactContext: ReactApplicationContext) :
           durationMs.toLong(),
       )
       StreamifyWidgetProvider.refreshAll(reactApplicationContext)
+      StreamifyPlaybackTileService.refresh(reactApplicationContext)
     } catch (e: Exception) {
       // Launcher may be unavailable (work profile, locked state); ignore.
     }
@@ -50,6 +51,18 @@ class StreamifyWidgetModule(reactContext: ReactApplicationContext) :
       StreamifyWidgetProvider.refreshAll(reactApplicationContext)
     } catch (e: Exception) {
       // Same as updateState: never propagate into JS playback paths.
+    }
+  }
+
+  /** Dynamic launcher shortcuts: the two most recent tracks (issue #34). */
+  @ReactMethod
+  fun setRecentShortcuts(ids: ReadableArray, titles: ReadableArray, artists: ReadableArray) {
+    try {
+      fun strings(src: ReadableArray) = (0 until src.size()).mapNotNull { src.getString(it) }
+      StreamifyLauncherShortcuts.updateRecentTracks(
+          reactApplicationContext, strings(ids), strings(titles), strings(artists))
+    } catch (_: Exception) {
+      // Best-effort; a launcher without dynamic-shortcut support is fine.
     }
   }
 }

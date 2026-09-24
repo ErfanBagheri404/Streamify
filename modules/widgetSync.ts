@@ -24,6 +24,8 @@ type WidgetNativeModule = {
     durationMs: number,
   ) => void;
   setPlaylistSlots: (names: string[]) => void;
+  /** Dynamic launcher shortcuts: the two most recent tracks (issue #34). */
+  setRecentShortcuts?: (ids: string[], titles: string[], artists: string[]) => void;
 };
 
 const native = (
@@ -92,6 +94,39 @@ export function pushWidgetPlaylistSlots(names: string[]) {
     native.setPlaylistSlots(names.slice(0, 4));
   } catch {
     // Same best-effort contract as pushWidgetState.
+  }
+}
+
+/**
+ * Publish the two most recent tracks as dynamic launcher shortcuts
+ * (issue #34). Called on every track change; the native side re-pushes so the
+ * newest track surfaces first, and the launcher trims whatever exceeds its
+ * own cap.
+ */
+let lastShortcutIds = "";
+
+export function pushRecentShortcuts(
+  tracks: {
+    id: string;
+    title?: string | null;
+    artist?: string | null;
+  }[],
+) {
+  if (!native?.setRecentShortcuts) return;
+  const recent = tracks.filter((t) => t?.id && t?.title).slice(0, 2);
+  // Only cross the bridge when the set actually changed: a 1/s progress tick
+  // would otherwise re-publish shortcuts continuously.
+  const key = recent.map((t) => t.id).join("|");
+  if (key === lastShortcutIds) return;
+  lastShortcutIds = key;
+  try {
+    native.setRecentShortcuts(
+      recent.map((t) => t.id),
+      recent.map((t) => t.title ?? ""),
+      recent.map((t) => t.artist ?? ""),
+    );
+  } catch {
+    // Launcher without dynamic-shortcut support; best-effort only.
   }
 }
 

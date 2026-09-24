@@ -40,6 +40,7 @@ class StreamifyWidgetActions : BroadcastReceiver() {
           StreamifyWidgetStore.setPlaying(context, !StreamifyWidgetStore.isPlaying(context))
         }
         StreamifyWidgetProvider.refreshAll(context)
+        StreamifyPlaybackTileService.refresh(context)
         return
       }
       context.startActivity(

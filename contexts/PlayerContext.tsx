@@ -56,7 +56,7 @@ import {
   isDirectPlayTrack,
   normalizeLocalPlaybackTrack,
 } from "../modules/localPlayback";
-import { startWidgetSync } from "../modules/widgetSync";
+import { startWidgetSync, pushRecentShortcuts } from "../modules/widgetSync";
 
 export interface Track {
   id: string;
@@ -1928,6 +1928,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               ...prev.filter((t) => t.id !== track.id),
             ].slice(0, 100);
             StorageService.savePreviouslyPlayedSongs(updatedPreviouslyPlayed);
+            // Dynamic launcher shortcuts mirror the newest tracks (issue #34).
+            // Publishing from inside the updater reads the current list rather
+            // than this callback's stale `previouslyPlayedSongs` snapshot.
+            pushRecentShortcuts(updatedPreviouslyPlayed);
             return updatedPreviouslyPlayed;
           });
         }
