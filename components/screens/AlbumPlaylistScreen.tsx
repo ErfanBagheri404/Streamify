@@ -7,6 +7,7 @@ import {
   Text,
   TouchableOpacity,
   Share,
+  Alert,
 } from "react-native";
 import { usePlayer } from "../../contexts/PlayerContext";
 import Playlist from "../Playlist";
@@ -19,6 +20,7 @@ import { pickBestImageUrl, sanitizeImageUrl } from "../core/image";
 import { useAppLanguage } from "../../hooks/useAppLanguage";
 import { useTheme, withOpacity } from "../../hooks/useTheme";
 import { getAppFontFamily } from "../../utils/fonts";
+import { exportPlaylist } from "../../modules/playlistTransferIO";
 
 interface AlbumPlaylistScreenProps {
   navigation: any;
@@ -196,6 +198,24 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       if (option === playlistActions.reorder) {
         setIsReorderMode((prev) => !prev);
         closeSongActionSheet();
+        return;
+      }
+
+      if (option === "ExportM3U" || option === "ExportCSV") {
+        closeSongActionSheet();
+        try {
+          await exportPlaylist(
+            albumTitle,
+            albumSongs,
+            option === "ExportCSV" ? "csv" : "m3u",
+          );
+        } catch (error) {
+          console.warn("Export failed:", error);
+          Alert.alert(
+            t("common.error") || "Error",
+            t("library.exportFailed") || "Could not export this playlist.",
+          );
+        }
         return;
       }
     }
@@ -838,6 +858,20 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
                           ? playlistActions.doneReorder
                           : playlistActions.reorder,
                         icon: "reorder-two",
+                      },
+                    ]
+                  : []),
+                ...(source === "user-playlist"
+                  ? [
+                      {
+                        key: "ExportM3U",
+                        label: "Export M3U",
+                        icon: "document-text-outline",
+                      },
+                      {
+                        key: "ExportCSV",
+                        label: "Export CSV",
+                        icon: "grid-outline",
                       },
                     ]
                   : []),
