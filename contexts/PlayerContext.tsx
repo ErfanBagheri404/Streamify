@@ -56,6 +56,7 @@ import {
   isDirectPlayTrack,
   normalizeLocalPlaybackTrack,
 } from "../modules/localPlayback";
+import { startWidgetSync } from "../modules/widgetSync";
 
 export interface Track {
   id: string;
@@ -1447,6 +1448,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  // Mirror playback into the home-screen widget (issue #29). Reads refs, not
+  // state, so it subscribes once and never re-binds on track/progress changes.
+  // RNTP reports position/duration in seconds; the widget store works in ms.
+  useEffect(() => {
+    return startWidgetSync(() => ({
+      track: activeTrackRef.current,
+      isPlaying: isPlayingRef.current,
+      positionMs: Math.round(positionRef.current * 1000),
+      durationMs: Math.round(durationRef.current * 1000),
+    }));
+  }, []);
 
   useEffect(() => {
     if (!settings.autoCacheLikedSongs) {
