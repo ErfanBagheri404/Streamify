@@ -174,8 +174,10 @@ const TabBarIcon: React.FC<IconProps> = ({ name, color, size, focused }) => {
 /* ---------- Custom Tab Bar ---------- */
 function CustomTabBar({ state, descriptors, navigation }: any) {
   const { colors, isLight } = useTheme();
-  const { dir, isRtl } = useAppLanguage();
+  const { dir, isRtl, t } = useAppLanguage();
+  const { settings } = useSettings();
   const insets = useSafeAreaInsets();
+  const incognito = settings.incognitoMode;
 
   return (
     <LinearGradient
@@ -196,6 +198,46 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
         paddingTop: 6,
       }}
     >
+      {/* Private Listening indicator (#44): sits above the tab row on every
+          screen. pointerEvents="none" so it never swallows a tab tap. */}
+      {incognito ? (
+        <View
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{
+            position: "absolute",
+            top: 0,
+            alignSelf: "center",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 4,
+            paddingHorizontal: 8,
+            paddingVertical: 2,
+            borderRadius: 999,
+            backgroundColor: withOpacity(colors.foreground, 0.12),
+            borderWidth: 1,
+            borderColor: withOpacity(colors.foreground, 0.24),
+          }}
+        >
+          <Ionicons
+            name="eye-off"
+            size={11}
+            color={isLight ? colors.background : colors.foreground}
+          />
+          <Text
+            style={{
+              color: isLight ? colors.background : colors.foreground,
+              fontSize: 10,
+              lineHeight: 13,
+              fontFamily: getAppFontFamily(isRtl, "medium"),
+              writingDirection: dir,
+            }}
+          >
+            {t("settings.incognito")}
+          </Text>
+        </View>
+      ) : null}
       <View
         style={{
           flexDirection: isRtl ? "row-reverse" : "row",

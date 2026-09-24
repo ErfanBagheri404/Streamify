@@ -308,6 +308,11 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
           backgroundColor: "transparent",
           flexDirection: isRtl ? "row-reverse" : "row",
           shadowColor: displayTheme.shadow,
+          // Private Listening indicator (#44): orange hairline, not the eye
+          // icon — the tab bar already carries the labeled badge.
+          ...(settings.incognitoMode
+            ? { borderWidth: 1, borderColor: "#f59e0b" }
+            : null),
         }}
       >
         <BackgroundContainer>
