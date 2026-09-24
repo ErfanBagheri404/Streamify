@@ -88,8 +88,18 @@ export interface AppSettings {
   waveformSeekBar: boolean;
   /** Enable ReplayGain normalization on local/cached tracks. */
   replayGainEnabled: boolean;
+  /** Incognito: pause stats, previously-played, scrobbles and cloud push.
+   * Never part of the cloud sync payload. */
+  incognitoMode: boolean;
+  /** How incognito turns itself off. */
+  incognitoAutoExit: IncognitoAutoExit;
+  /** Next local-day boundary captured when incognito turns on; the "dayEnd"
+   * auto-exit fires here. Null when incognito is off. */
+  incognitoDayEnd: number | null;
   collapsedSettingsSections: Partial<Record<SettingsSectionKey, boolean>>;
 }
+
+export type IncognitoAutoExit = "manual" | "queueEnd" | "dayEnd";
 
 export const APP_SETTINGS_STORAGE_KEY = "@app_settings";
 export const LAST_SEARCH_STATE_KEY = "@last_search_state";
@@ -171,6 +181,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   crossfadeSeconds: 4,
   waveformSeekBar: false,
   replayGainEnabled: false,
+  incognitoMode: false,
+  incognitoAutoExit: "manual",
+  incognitoDayEnd: null,
   collapsedSettingsSections: {},
 };
 
@@ -236,6 +249,10 @@ function isSeekStepSeconds(
 
 function isPlaybackRetryMode(value: unknown): value is PlaybackRetryMode {
   return value === "ask" || value === "always" || value === "never";
+}
+
+function isIncognitoAutoExit(value: unknown): value is IncognitoAutoExit {
+  return value === "manual" || value === "queueEnd" || value === "dayEnd";
 }
 
 export function isLightAppTheme(theme: AppTheme): boolean {
@@ -326,6 +343,18 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
       typeof record.waveformSeekBar === "boolean"
         ? record.waveformSeekBar
         : DEFAULT_APP_SETTINGS.waveformSeekBar,
+    incognitoMode:
+      typeof record.incognitoMode === "boolean"
+        ? record.incognitoMode
+        : DEFAULT_APP_SETTINGS.incognitoMode,
+    incognitoAutoExit: isIncognitoAutoExit(record.incognitoAutoExit)
+      ? record.incognitoAutoExit
+      : DEFAULT_APP_SETTINGS.incognitoAutoExit,
+    incognitoDayEnd:
+      typeof record.incognitoDayEnd === "number" &&
+      Number.isFinite(record.incognitoDayEnd)
+        ? record.incognitoDayEnd
+        : null,
 
     collapsedSettingsSections: sanitizeCollapsedSettingsSections(
       record.collapsedSettingsSections,

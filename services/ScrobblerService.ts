@@ -406,6 +406,15 @@ export const scrobblerService = {
     await flushPending();
   },
 
+  /** Abandon the in-progress track without scrobbling or queuing it.
+   *  Used when incognito turns on mid-track — the accumulated listening is
+   *  dropped rather than flushed at the next track change. */
+  async discardActive(): Promise<void> {
+    internal.active = null;
+    internal.activeElapsedMs = 0;
+    internal.activeDurationMs = 0;
+  },
+
   /** Playback stopped or app backgrounded — flush what we have. */
   async flushNow(): Promise<void> {
     const outgoing = internal.active;
