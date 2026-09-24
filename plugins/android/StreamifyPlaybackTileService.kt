@@ -29,8 +29,9 @@ class StreamifyPlaybackTileService : TileService() {
   }
 
   private fun render() {
+    // qsTile is null until QS has bound the tile; that is also the portable
+    // "is it available" test (Tile.isAvailable is API 29+, minSdk here is 21).
     val tile = qsTile ?: return
-    if (!tile.isAvailable) return
     val playing = StreamifyWidgetStore.isPlaying(this)
     tile.state = if (playing) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
     tile.label = getString(if (playing) R.string.tile_pause else R.string.tile_play)
