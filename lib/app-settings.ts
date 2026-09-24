@@ -1,5 +1,7 @@
 "use client";
 
+import type { QualityCap, QualityMode } from "../modules/audioQualityPolicy";
+
 export type PreferredSearchSource =
   | "mixed"
   | "itunes"
@@ -75,6 +77,13 @@ export interface AppSettings {
   /** When true, local library changes auto-push to cloud and a full sync
    * runs when the app returns to foreground. Disable to sync manually only. */
   autoSyncLibrary: boolean;
+  /** Per-network audio bitrate policy (issue #35). "alwaysBest" preserves the
+   * pre-#35 behavior: highest bitrate everywhere, no data accounting. */
+  audioQualityMode: QualityMode;
+  /** Bitrate cap in kbps on Wi-Fi. null = highest available. */
+  wifiCapKbps: QualityCap | null;
+  /** Bitrate cap in kbps on cellular. null = highest available. */
+  cellularCapKbps: QualityCap | null;
   /** When true, playing a queued song auto-removes it from download queue.
    * When false, shows a confirmation popup first. */
   autoQueueConflictAutoRemove: boolean;
@@ -165,6 +174,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   seekStepSeconds: 10,
   autoCacheLikedSongs: false,
   autoSyncLibrary: true,
+  audioQualityMode: "alwaysBest",
+  wifiCapKbps: null,
+  cellularCapKbps: 128,
   autoQueueConflictAutoRemove: false,
   hapticsEnabled: true,
   crossfadeEnabled: false,
@@ -238,6 +250,22 @@ function isPlaybackRetryMode(value: unknown): value is PlaybackRetryMode {
   return value === "ask" || value === "always" || value === "never";
 }
 
+function isAudioQualityMode(value: unknown): value is QualityMode {
+  return (
+    value === "alwaysBest" || value === "networkAware" || value === "alwaysLow"
+  );
+}
+
+function isQualityCap(value: unknown): value is QualityCap {
+  return (
+    value === 96 ||
+    value === 128 ||
+    value === 160 ||
+    value === 320 ||
+    value === null
+  );
+}
+
 export function isLightAppTheme(theme: AppTheme): boolean {
   return (LIGHT_APP_THEMES as readonly AppTheme[]).includes(theme);
 }
@@ -299,6 +327,15 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
       typeof record.autoSyncLibrary === "boolean"
         ? record.autoSyncLibrary
         : DEFAULT_APP_SETTINGS.autoSyncLibrary,
+    audioQualityMode: isAudioQualityMode(record.audioQualityMode)
+      ? record.audioQualityMode
+      : DEFAULT_APP_SETTINGS.audioQualityMode,
+    wifiCapKbps: isQualityCap(record.wifiCapKbps)
+      ? record.wifiCapKbps
+      : DEFAULT_APP_SETTINGS.wifiCapKbps,
+    cellularCapKbps: isQualityCap(record.cellularCapKbps)
+      ? record.cellularCapKbps
+      : DEFAULT_APP_SETTINGS.cellularCapKbps,
     hapticsEnabled:
       typeof record.hapticsEnabled === "boolean"
         ? record.hapticsEnabled
