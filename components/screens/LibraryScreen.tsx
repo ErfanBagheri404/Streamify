@@ -35,6 +35,16 @@ import { useAppLanguage } from "../../hooks/useAppLanguage";
 import { isLocalMediaSupported } from "../../modules/localMedia";
 import { useTheme, withOpacity } from "../../hooks/useTheme";
 import { PlaylistCreateModal } from "../PlaylistCreateModal";
+import { SmartPlaylistModal } from "../SmartPlaylistModal";
+import {
+  type SmartPlaylistDefinition,
+  describeSmartPlaylist,
+} from "../../modules/smartPlaylists";
+import {
+  resolveSmartPlaylistTracks,
+  smartChainWord,
+  smartRuleLabel,
+} from "../../modules/smartPlaylistResolver";
 import { sanitizeImageUrl } from "../core/image";
 import { getAppFontFamily, getTextDirectionStyle } from "../../utils/fonts";
 import { useAuth } from "../../hooks/useAuth";
@@ -381,6 +391,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   const [playlists, setPlaylists] = React.useState<Playlist[]>([]);
   const [showCreatePlaylistModal, setShowCreatePlaylistModal] =
     React.useState(false);
+  const [smartDraft, setSmartDraft] =
+    React.useState<SmartPlaylistDefinition | null>(null);
   const [newPlaylistName, setNewPlaylistName] = useState("");
   const [newPlaylistDescription, setNewPlaylistDescription] = useState("");
   const {
@@ -528,6 +540,37 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   };
 
   const handleUserPlaylistPress = (playlist: Playlist) => {
+    if (playlist.smartDefinition) {
+      // Smart playlists resolve live: likes/plays since last open are in.
+      void (async () => {
+        try {
+          const { tracks } = await resolveSmartPlaylistTracks(
+            playlist.smartDefinition!,
+          );
+          navigation.navigate("AlbumPlaylist", {
+            albumId: playlist.id,
+            albumName: playlist.name,
+            albumArtist: `${tracks.length} ${
+              tracks.length === 1 ? "song" : "songs"
+            }`,
+            source: "user-playlist",
+            tracks,
+          });
+        } catch (error) {
+          console.error("[LibraryScreen] Smart playlist resolve failed:", error);
+          navigation.navigate("AlbumPlaylist", {
+            albumId: playlist.id,
+            albumName: playlist.name,
+            albumArtist: `${playlist.tracks.length} ${
+              playlist.tracks.length === 1 ? "song" : "songs"
+            }`,
+            source: "user-playlist",
+            tracks: playlist.tracks,
+          });
+        }
+      })();
+      return;
+    }
     navigation.navigate("AlbumPlaylist", {
       albumId: playlist.id,
       albumName: playlist.name,
@@ -572,6 +615,36 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     } catch (error) {
       console.error("Error creating playlist:", error);
       console.warn("Failed to create playlist");
+    }
+  };
+
+  const handleSaveSmartPlaylist = async () => {
+    if (!smartDraft) return;
+    const name = smartDraft.name.trim();
+    if (!name || smartDraft.rules.length === 0) return;
+    try {
+      // Persist an empty `tracks` array: the rules are the source of truth and
+      // the list is re-resolved on open, so caching tracks here would only risk
+      // going stale.
+      const newPlaylist: Playlist = {
+        id: smartDraft.id,
+        name,
+        description: describeSmartPlaylist(
+          smartDraft,
+          (field, operator, value) =>
+            smartRuleLabel({ field, operator, value }, language),
+          smartChainWord(smartDraft, language),
+        ),
+        tracks: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        smartDefinition: smartDraft,
+      };
+      await StorageService.addPlaylist(newPlaylist);
+      setPlaylists((current) => [...current, newPlaylist]);
+      setSmartDraft(null);
+    } catch (error) {
+      console.error("Error creating smart playlist:", error);
     }
   };
 
@@ -1051,16 +1124,35 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       },
       ...playlists.map((playlist) => {
         const artworkUri = getPlaylistArtworkUri(playlist);
+        const isSmart = Boolean(playlist.smartDefinition);
+        const ruleSummary = playlist.smartDefinition
+          ? describeSmartPlaylist(
+              playlist.smartDefinition,
+              (field, operator, value) =>
+                smartRuleLabel({ field, operator, value }, language),
+              smartChainWord(playlist.smartDefinition, language),
+            )
+          : "";
         return {
           id: playlist.id,
           title: playlist.name,
-          subtitle: playlist.description?.trim() || copy.playlist,
-          meta: formatSongCount(playlist.tracks.length),
+          // A smart playlist shows its rules instead of a generic label, so the
+          // grid says what the list actually contains before opening it.
+          subtitle:
+            playlist.description?.trim() ||
+            (isSmart ? ruleSummary : copy.playlist),
+          // Rules decide the contents, so a cached track count would lie.
+          meta: isSmart
+            ? language === "fa"
+              ? "هوشمند"
+              : "Smart"
+            : formatSongCount(playlist.tracks.length),
           itemType: "collection" as const,
           imageShape: "rounded" as const,
           searchText: [
             playlist.name,
             playlist.description,
+            isSmart ? ruleSummary : "",
             playlist.tracks
               .map((track) =>
                 [track.title, track.artist].filter(Boolean).join(" "),
@@ -1482,6 +1574,16 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             </HeaderIconButton>
             <HeaderIconButton
               onPress={() => setShowCreatePlaylistModal(true)}
+              onLongPress={() =>
+                setSmartDraft({
+                  id: `smart-${Date.now()}`,
+                  name: "",
+                  rules: [{ field: "plays", operator: "gte", value: 3 }],
+                  chain: "and",
+                  limit: 50,
+                })
+              }
+              delayLongPress={420}
               style={{ marginStart: 6, marginEnd: 8 }}
             >
               <HeaderIconText>
@@ -1952,6 +2054,22 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           title={copy.createPlaylist}
           subtitle={copy.createPlaylistDescription}
           submitLabel={t("common.create")}
+        />
+
+        <SmartPlaylistModal
+          visible={smartDraft !== null}
+          definition={
+            smartDraft ?? {
+              id: "smart-draft",
+              name: "",
+              rules: [],
+              chain: "and",
+              limit: 50,
+            }
+          }
+          onDefinitionChange={setSmartDraft}
+          onClose={() => setSmartDraft(null)}
+          onSubmit={handleSaveSmartPlaylist}
         />
 
         <SliderSheet

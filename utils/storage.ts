@@ -8,6 +8,10 @@ import {
   type AppSettings,
   sanitizeAppSettings,
 } from "../lib/app-settings";
+import {
+  type SmartPlaylistDefinition,
+  sanitizeSmartPlaylist,
+} from "../modules/smartPlaylists";
 
 export interface Playlist {
   id: string;
@@ -17,6 +21,12 @@ export interface Playlist {
   createdAt: string;
   updatedAt: string;
   thumbnail?: string;
+  /**
+   * Present only on a smart playlist (issue #39). Its `tracks` array is a cache
+   * of the last resolution and is never authoritative — the screen re-resolves
+   * the rules on open, so edits to likes/history are reflected without a write.
+   */
+  smartDefinition?: SmartPlaylistDefinition;
 }
 
 const LIKED_SONGS_KEY = "@liked_songs";
@@ -32,7 +42,7 @@ export interface SearchState {
   results?: unknown[];
 }
 
-function emitLibraryUpdated() {
+export function emitLibraryUpdated() {
   DeviceEventEmitter.emit(LIBRARY_UPDATED_EVENT);
 }
 
@@ -54,8 +64,66 @@ function normalizeTrackSource(track: Partial<Track>): string {
   return "youtube";
 }
 
-function getTrackStorageKey(track: Partial<Track>): string {
+export function getTrackStorageKey(track: Partial<Track>): string {
   return `${normalizeTrackSource(track)}:${normalizeString(track.id)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Library added-dates (issue #39 smart playlists)
+//
+// Nothing else in the app records when a track entered the library: `Track`
+// carries play metadata only, and the liked/history/playlist stores hold bare
+// track arrays. A rule like "added in the last 7 days" needs that date, so it
+// is stamped here, at the same choke points that already write those stores.
+// ---------------------------------------------------------------------------
+const ADDED_DATES_KEY = "@library_track_added_dates";
+
+/** Read the added-date map (`<source>:<id>` -> epoch ms); empty on corruption. */
+export async function loadTrackAddedDates(): Promise<Map<string, number>> {
+  try {
+    const raw = await AsyncStorage.getItem(ADDED_DATES_KEY);
+    if (!raw) return new Map();
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const map = new Map<string, number>();
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+        map.set(key, value);
+      }
+    }
+    return map;
+  } catch (error) {
+    console.error("Error loading track added dates:", error);
+    return new Map();
+  }
+}
+
+/**
+ * Stamp `now` for tracks that have no added-date yet.
+ *
+ * Idempotent: an existing stamp is never overwritten, so un-liking and
+ * re-liking a track does not make it "new" again.
+ */
+async function noteTrackAdded(tracks: Track[], now = Date.now()): Promise<void> {
+  try {
+    const map = await loadTrackAddedDates();
+    let added = 0;
+    for (const track of tracks) {
+      const key = getTrackStorageKey(track);
+      if (!key || key === ":") continue;
+      if (map.has(key)) continue;
+      map.set(key, now);
+      added += 1;
+    }
+    if (added > 0) {
+      await AsyncStorage.setItem(
+        ADDED_DATES_KEY,
+        JSON.stringify(Object.fromEntries(map)),
+      );
+    }
+  } catch (error) {
+    // Never let bookkeeping break the write that called it.
+    console.error("Error noting track added dates:", error);
+  }
 }
 
 function normalizeNumber(value: unknown): number | undefined {
@@ -290,6 +358,11 @@ function normalizePlaylistSnapshot(playlist: Playlist): Playlist | null {
           ? playlist.tracks[0]?.thumbnail
           : undefined,
       ) || undefined,
+    // Stored raw JSON is rebuilt defensively: a mangled definition is dropped,
+    // and a dropped definition leaves a normal static playlist behind rather
+    // than a smart one that matches nothing.
+    smartDefinition:
+      sanitizeSmartPlaylist(playlist.smartDefinition, id) ?? undefined,
   };
 }
 
@@ -398,6 +471,7 @@ export const StorageService = {
       const jsonValue = JSON.stringify(normalizedSongs);
       await AsyncStorage.setItem(LIKED_SONGS_KEY, jsonValue);
       await this.updateSongMetadataCache(normalizedSongs);
+      await noteTrackAdded(normalizedSongs);
       emitLibraryUpdated();
     } catch (error) {
       console.error("Error saving liked songs:", error);
@@ -467,6 +541,7 @@ export const StorageService = {
       const jsonValue = JSON.stringify(normalizedSongs);
       await AsyncStorage.setItem(PREVIOUSLY_PLAYED_KEY, jsonValue);
       await this.updateSongMetadataCache(normalizedSongs);
+      await noteTrackAdded(normalizedSongs);
       emitLibraryUpdated();
     } catch (error) {
       console.error("Error saving previously played songs:", error);

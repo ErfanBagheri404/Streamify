@@ -411,3 +411,44 @@ export async function loadReplaySummary(period: ReplayPeriod): Promise<ReplaySum
 
 /** The play-count threshold a caller watching a track should use. */
 export const PLAY_COUNT_THRESHOLD_MS = PLAY_THRESHOLD_MS;
+
+/**
+ * Play counts and last-play times for EVERY track with recorded listening.
+ *
+ * Distinct from `loadReplaySummary`, which caps its lists at 25 for display.
+ * Smart playlists must filter the whole history, so a truncated top-25 would
+ * silently drop most candidates. Returns a plain map keyed by track id.
+ */
+export async function loadTrackPlayStats(): Promise<
+  Map<string, { plays: number; ms: number; lastPlayedAt: number | null }>
+> {
+  await flushListeningStats();
+  const months = await listMonths();
+  const stats = new Map<
+    string,
+    { plays: number; ms: number; lastPlayedAt: number | null }
+  >();
+
+  for (const month of months) {
+    const bucket = (await readBucket(month)) ?? emptyBucket(month);
+    for (const track of bucket.tracks) {
+      const existing = stats.get(track.id);
+      if (existing) {
+        existing.plays += track.plays;
+        existing.ms += track.ms;
+        existing.lastPlayedAt = Math.max(
+          existing.lastPlayedAt ?? 0,
+          track.last ?? 0,
+        ) || null;
+      } else {
+        stats.set(track.id, {
+          plays: track.plays,
+          ms: track.ms,
+          lastPlayedAt: track.last || null,
+        });
+      }
+    }
+  }
+
+  return stats;
+}
