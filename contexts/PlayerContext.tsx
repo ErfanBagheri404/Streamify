@@ -40,6 +40,14 @@ import {
 
 import { StorageService, subscribeToLibraryUpdates } from "../utils/storage";
 import { trackPlayerService } from "../services/TrackPlayerService";
+import {
+  HeadsetGestureDetector,
+  type HeadsetAction,
+} from "../modules/headsetGestures";
+import {
+  sleepTimerService,
+  useSleepTimerStore,
+} from "../services/SleepTimerService";
 import { t } from "../utils/localization";
 import { useAppSettings } from "../hooks/useAppSettings";
 import { CacheToast } from "../components/ui/CacheToast";
@@ -3407,6 +3415,93 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       processLikedSongsCacheQueue,
     ],
   );
+
+  // ── Headset multi-tap gestures (issue #45) ────────────────────────
+  // Hook headset play/pause presses into a multi-tap detector and route
+  // resolved actions to our player operations. Disabled by default:
+  // standard OS play/pause behavior runs with zero delay.
+  const headsetDetectorRef = useRef<HeadsetGestureDetector | null>(null);
+  const headsetActionsRef = useRef({
+    playPause: async () => {},
+    next: async () => {},
+    previous: async () => {},
+    likeCurrent: () => {},
+    shuffle: () => {},
+  });
+
+  const dispatchHeadsetAction = useCallback(async (action: HeadsetAction) => {
+    switch (action) {
+      case "playPause":
+        await headsetActionsRef.current.playPause();
+        break;
+      case "skipNext":
+        await headsetActionsRef.current.next();
+        break;
+      case "skipPrevious":
+        await headsetActionsRef.current.previous();
+        break;
+      case "likeCurrent":
+        headsetActionsRef.current.likeCurrent();
+        break;
+      case "smartQueue":
+        headsetActionsRef.current.shuffle();
+        break;
+      case "sleepTimer": {
+        const store = useSleepTimerStore.getState();
+        if (store.active) {
+          sleepTimerService.clear();
+        } else {
+          sleepTimerService.startMinutes(30);
+        }
+        break;
+      }
+      case "toggleShuffle":
+        headsetActionsRef.current.shuffle();
+        break;
+    }
+  }, []);
+
+  useEffect(() => {
+    headsetActionsRef.current.playPause = playPause;
+    headsetActionsRef.current.next = nextTrack;
+    headsetActionsRef.current.previous = previousTrack;
+    headsetActionsRef.current.likeCurrent = () => {
+      if (currentTrack?.id) {
+        void toggleLikeSong(currentTrack);
+      }
+    };
+    headsetActionsRef.current.shuffle = toggleShuffle;
+  }, [playPause, nextTrack, previousTrack, toggleLikeSong, toggleShuffle, currentTrack]);
+
+  useEffect(() => {
+    if (!settings.headsetGesturesEnabled) {
+      trackPlayerService.onRemoteMediaButton = undefined;
+      headsetDetectorRef.current?.reset();
+      headsetDetectorRef.current = null;
+      return;
+    }
+    if (!headsetDetectorRef.current) {
+      headsetDetectorRef.current = new HeadsetGestureDetector((action) =>
+        dispatchHeadsetAction(action),
+      );
+    }
+    headsetDetectorRef.current.updateConfig({
+      enabled: true,
+      doubleTapAction: settings.headsetDoubleTapAction,
+      tripleTapAction: settings.headsetTripleTapAction,
+    });
+    trackPlayerService.onRemoteMediaButton = () => {
+      headsetDetectorRef.current?.recordTap();
+    };
+    return () => {
+      trackPlayerService.onRemoteMediaButton = undefined;
+    };
+  }, [
+    settings.headsetGesturesEnabled,
+    settings.headsetDoubleTapAction,
+    settings.headsetTripleTapAction,
+    dispatchHeadsetAction,
+  ]);
 
   const isSongLiked = useCallback(
     (trackId: string) => {
