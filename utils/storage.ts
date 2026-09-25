@@ -8,6 +8,11 @@ import {
   type AppSettings,
   sanitizeAppSettings,
 } from "../lib/app-settings";
+import {
+  podcastShowId,
+  type PodcastEpisode,
+  type PodcastShow,
+} from "../modules/podcastFeed";
 
 export interface Playlist {
   id: string;
@@ -793,3 +798,237 @@ export async function markOnboardingCompleted(): Promise<void> {
     // silent
   }
 }
+
+// ---------------------------------------------------------------------------
+// Podcast subscriptions (#30)
+// ---------------------------------------------------------------------------
+const PODCAST_SHOWS_KEY = "@podcast_shows";
+const PODCAST_EPISODES_KEY = "@podcast_episodes";
+const PODCAST_POSITIONS_KEY = "@podcast_episode_positions";
+
+/**
+ * Normalizes a persisted show. A feed can disappear between refreshes, so
+ * every field is re-derived rather than trusted.
+ */
+function normalizePodcastShow(raw: unknown): PodcastShow | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  const feedUrl = normalizeString(record.feedUrl);
+  if (!feedUrl) return null;
+  const title = normalizeString(record.title);
+  return {
+    id: normalizeString(record.id) || podcastShowId(feedUrl),
+    feedUrl,
+    // A feed that lost its <title> is still subscribable; show the URL.
+    title: title || feedUrl,
+    author: normalizeString(record.author) || undefined,
+    description: normalizeString(record.description) || undefined,
+    artworkUrl: normalizeString(record.artworkUrl) || undefined,
+    lastFetchedAt:
+      typeof record.lastFetchedAt === "number" ? record.lastFetchedAt : undefined,
+    unplayedCount:
+      typeof record.unplayedCount === "number" && record.unplayedCount >= 0
+        ? record.unplayedCount
+        : undefined,
+  };
+}
+
+function normalizePodcastEpisode(raw: unknown): PodcastEpisode | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  const id = normalizeString(record.id);
+  const showId = normalizeString(record.showId);
+  const audioUrl = normalizeString(record.audioUrl);
+  // Without an id or a media URL the episode is unplayable and unidentifiable.
+  if (!id || !showId || !audioUrl) return null;
+  return {
+    id,
+    showId,
+    title: normalizeString(record.title) || audioUrl,
+    audioUrl,
+    publishedAt:
+      typeof record.publishedAt === "number" ? record.publishedAt : undefined,
+    durationSeconds:
+      typeof record.durationSeconds === "number" && record.durationSeconds > 0
+        ? record.durationSeconds
+        : undefined,
+    artworkUrl: normalizeString(record.artworkUrl) || undefined,
+    description: normalizeString(record.description) || undefined,
+    positionSeconds:
+      typeof record.positionSeconds === "number" && record.positionSeconds > 0
+        ? record.positionSeconds
+        : undefined,
+    played: record.played === true,
+  };
+}
+
+export async function loadPodcastShows(): Promise<PodcastShow[]> {
+  try {
+    const raw = await AsyncStorage.getItem(PODCAST_SHOWS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map(normalizePodcastShow)
+      .filter((show): show is PodcastShow => show !== null);
+  } catch {
+    return [];
+  }
+}
+
+export async function loadPodcastEpisodes(): Promise<PodcastEpisode[]> {
+  try {
+    const raw = await AsyncStorage.getItem(PODCAST_EPISODES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map(normalizePodcastEpisode)
+      .filter((episode): episode is PodcastEpisode => episode !== null);
+  } catch {
+    return [];
+  }
+}
+
+export async function loadPodcastPositions(): Promise<Record<string, number>> {
+  try {
+    const raw = await AsyncStorage.getItem(PODCAST_POSITIONS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    const result: Record<string, number> = {};
+    for (const [id, value] of Object.entries(parsed)) {
+      if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+        result[id] = value;
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Subscribe to a feed, replacing any previous snapshot of its episodes.
+ * `feed` is the already-parsed result of `parsePodcastFeed`, so this stays
+ * storage-only and testable without the network.
+ */
+export async function subscribeToPodcast(
+  feed: { show: PodcastShow; episodes: PodcastEpisode[] },
+): Promise<PodcastShow[]> {
+  const shows = await loadPodcastShows();
+  const episodes = await loadPodcastEpisodes();
+  const positions = await loadPodcastPositions();
+
+  const nextShow: PodcastShow = {
+    ...feed.show,
+    lastFetchedAt: Date.now(),
+    unplayedCount: feed.episodes.length,
+  };
+
+  const nextShows = [
+    ...shows.filter((show) => show.id !== nextShow.id),
+    nextShow,
+  ];
+
+  // Drop old episodes of this show, but carry their resume points forward:
+  // a re-fetch that re-lists an episode must not lose where the user stopped.
+  const kept = episodes.filter((episode) => episode.showId !== nextShow.id);
+  const nextEpisodes = [
+    ...kept,
+    ...feed.episodes.map((episode) => {
+      const positionSeconds = positions[episode.id] ?? episode.positionSeconds;
+      return {
+        ...episode,
+        positionSeconds,
+        played: positionSeconds !== undefined,
+      };
+    }),
+  ];
+
+  const nextPositions: Record<string, number> = {};
+  for (const episode of nextEpisodes) {
+    if (episode.positionSeconds) nextPositions[episode.id] = episode.positionSeconds;
+  }
+
+  await AsyncStorage.setItem(PODCAST_SHOWS_KEY, JSON.stringify(nextShows));
+  await AsyncStorage.setItem(PODCAST_EPISODES_KEY, JSON.stringify(nextEpisodes));
+  await AsyncStorage.setItem(PODCAST_POSITIONS_KEY, JSON.stringify(nextPositions));
+  emitLibraryUpdated();
+  return nextShows;
+}
+
+/**
+ * Persist a resume point. Writing the episode and a compact position map
+ * together is what lets a cold start restore without re-reading the feed.
+ */
+export async function savePodcastEpisodePosition(
+  episodeId: string,
+  positionSeconds: number,
+): Promise<void> {
+  if (!episodeId || !Number.isFinite(positionSeconds) || positionSeconds < 0) return;
+  const safe = Math.max(0, Math.floor(positionSeconds));
+  const positions = await loadPodcastPositions();
+  positions[episodeId] = safe;
+
+  const episodes = await loadPodcastEpisodes();
+  const index = episodes.findIndex((episode) => episode.id === episodeId);
+  if (index !== -1) {
+    // 95% counts as finished: a podcast is not worth resuming from the end.
+    const played = durationOf(episodes[index]) * 0.95 > 0
+      ? safe >= durationOf(episodes[index]) * 0.95
+      : false;
+    episodes[index] = { ...episodes[index], positionSeconds: safe, played };
+    await AsyncStorage.setItem(PODCAST_EPISODES_KEY, JSON.stringify(episodes));
+  }
+  await AsyncStorage.setItem(PODCAST_POSITIONS_KEY, JSON.stringify(positions));
+}
+
+/**
+ * Mark an episode finished. A separate entry point rather than a sentinel
+ * position: "played to the end" and "stopped at 40%" are different states,
+ * and -1 would have to be special-cased in every reader.
+ */
+export async function markPodcastEpisodeFinished(episodeId: string): Promise<void> {
+  if (!episodeId) return;
+  const episodes = await loadPodcastEpisodes();
+  const index = episodes.findIndex((episode) => episode.id === episodeId);
+  if (index === -1) return;
+  const duration = durationOf(episodes[index]);
+  episodes[index] = {
+    ...episodes[index],
+    played: true,
+    // Keep the position at the end so a manual replay starts from the top.
+    positionSeconds: duration || episodes[index].positionSeconds,
+  };
+  await AsyncStorage.setItem(PODCAST_EPISODES_KEY, JSON.stringify(episodes));
+
+  const positions = await loadPodcastPositions();
+  if (episodes[index].positionSeconds) {
+    positions[episodeId] = episodes[index].positionSeconds as number;
+    await AsyncStorage.setItem(PODCAST_POSITIONS_KEY, JSON.stringify(positions));
+  }
+}
+
+const durationOf = (episode: PodcastEpisode): number => episode.durationSeconds ?? 0;
+
+export async function unsubscribeFromPodcast(showId: string): Promise<PodcastShow[]> {
+  const shows = await loadPodcastShows();
+  const nextShows = shows.filter((show) => show.id !== showId);
+  if (nextShows.length === shows.length) return shows;
+
+  const episodes = await loadPodcastEpisodes();
+  const removedIds = new Set(
+    episodes.filter((episode) => episode.showId === showId).map((episode) => episode.id),
+  );
+  const nextEpisodes = episodes.filter((episode) => episode.showId !== showId);
+  const positions = await loadPodcastPositions();
+  for (const id of removedIds) delete positions[id];
+
+  await AsyncStorage.setItem(PODCAST_SHOWS_KEY, JSON.stringify(nextShows));
+  await AsyncStorage.setItem(PODCAST_EPISODES_KEY, JSON.stringify(nextEpisodes));
+  await AsyncStorage.setItem(PODCAST_POSITIONS_KEY, JSON.stringify(positions));
+  emitLibraryUpdated();
+  return nextShows;
+}
+
