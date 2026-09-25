@@ -220,7 +220,10 @@
     "lastfm_scrobbling_desc": "پخش‌هایت را به Last.fm بفرست — با حساب last.fm خود متصل شو.",
     "subsonic": "سرور سابسونیک",
     "subsonic_desc": "پخش موسیقی از سرور شخصی سابسونیک یا ناویدروم شما.",
-    "configure": "تنظیم"
+    "configure": "تنظیم",
+    "useArtworkTheme": "رنگی شدن رابط از کاور آلبوم",
+    "useArtworkThemeDescription": "رنگ تاکیدی برنامه را از کاور آهنگ فعلی می‌سازد. وقتی کاوری نیست به پالت انتخابی برمی‌گردد",
+    "artworkThemeActive": "از کاور آلبوم رنگی شد"
   },
   "piped": {
     "enter_auth": "آدرس API نمونه احراز هویت پایپد را وارد کنید:",

@@ -220,7 +220,10 @@
     "lastfm_scrobbling_desc": "Send your plays to Last.fm — connect with your last.fm account.",
     "subsonic": "Subsonic Server",
     "subsonic_desc": "Play music from your own Subsonic or Navidrome server.",
-    "configure": "Configure"
+    "configure": "Configure",
+    "useArtworkTheme": "Tint UI from album art",
+    "useArtworkThemeDescription": "Re-colors the app accent from the current track's artwork. Falls back to the chosen palette when no artwork is available",
+    "artworkThemeActive": "Tinted from album art"
   },
   "piped": {
     "enter_auth": "Enter the Piped Authentication Instance API URL :",
