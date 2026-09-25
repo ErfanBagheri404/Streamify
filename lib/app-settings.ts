@@ -88,6 +88,10 @@ export interface AppSettings {
   waveformSeekBar: boolean;
   /** Enable ReplayGain normalization on local/cached tracks. */
   replayGainEnabled: boolean;
+  /** When an app lock or vault is active, hide the track title/artist in the
+   * MiniPlayer so the lock screen and over-the-shoulder glances leak nothing.
+   * Defaults on — a lock that leaks is not a lock. */
+  hideMetadataWhileLocked: boolean;
   collapsedSettingsSections: Partial<Record<SettingsSectionKey, boolean>>;
 }
 
@@ -171,6 +175,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   crossfadeSeconds: 4,
   waveformSeekBar: false,
   replayGainEnabled: false,
+  hideMetadataWhileLocked: true,
   collapsedSettingsSections: {},
 };
 
@@ -322,6 +327,10 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
       typeof record.replayGainEnabled === "boolean"
         ? record.replayGainEnabled
         : DEFAULT_APP_SETTINGS.replayGainEnabled,
+    hideMetadataWhileLocked:
+      typeof record.hideMetadataWhileLocked === "boolean"
+        ? record.hideMetadataWhileLocked
+        : DEFAULT_APP_SETTINGS.hideMetadataWhileLocked,
     waveformSeekBar:
       typeof record.waveformSeekBar === "boolean"
         ? record.waveformSeekBar
