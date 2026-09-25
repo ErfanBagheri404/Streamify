@@ -840,6 +840,8 @@
   "settings.openNowPlayingAutomaticallyDescription": "Jump straight into the full-screen player whenever you start a track from search, home, or your library.",
   "settings.autoCacheLikedSongs": "Auto-Cache Liked Songs",
   "settings.autoCacheLikedSongsDescription": "Automatically cache liked songs in the background. When disabled, caching only happens when you manually start it from the Library screen.",
+  "settings.audioCacheCap": "Offline Storage Limit",
+  "settings.audioCacheCapDescription": "Evicts least-recently-used cached tracks when the cache grows past this size",
   "settings.discovery": "Discovery",
   "settings.searchPreferences": "Search Preferences",
   "settings.searchPreferencesDescription": "Set the source Streamify should favor first when you open Search without a saved query or direct URL parameters.",

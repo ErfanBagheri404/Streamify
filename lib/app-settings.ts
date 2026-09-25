@@ -1,5 +1,7 @@
 "use client";
 
+import { sanitizeCacheCapMb, type CacheCapMb } from "../modules/cacheBudget";
+
 export type PreferredSearchSource =
   | "mixed"
   | "itunes"
@@ -72,6 +74,9 @@ export interface AppSettings {
   preferredSearchSource: PreferredSearchSource;
   seekStepSeconds: number;
   autoCacheLikedSongs: boolean;
+  /** Offline cache storage budget in MB (500/2000/5000). LRU eviction
+   * trims the cache back under it after every completed download. */
+  audioCacheCapMb: CacheCapMb;
   /** When true, local library changes auto-push to cloud and a full sync
    * runs when the app returns to foreground. Disable to sync manually only. */
   autoSyncLibrary: boolean;
@@ -164,6 +169,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   preferredSearchSource: "mixed",
   seekStepSeconds: 10,
   autoCacheLikedSongs: false,
+  audioCacheCapMb: 500,
   autoSyncLibrary: true,
   autoQueueConflictAutoRemove: false,
   hapticsEnabled: true,
@@ -295,6 +301,7 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
       typeof record.autoCacheLikedSongs === "boolean"
         ? record.autoCacheLikedSongs
         : DEFAULT_APP_SETTINGS.autoCacheLikedSongs,
+    audioCacheCapMb: sanitizeCacheCapMb(record.audioCacheCapMb),
     autoSyncLibrary:
       typeof record.autoSyncLibrary === "boolean"
         ? record.autoSyncLibrary
