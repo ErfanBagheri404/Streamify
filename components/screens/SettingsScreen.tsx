@@ -11,6 +11,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import {
   APP_THEME_OPTIONS,
+  HEADSET_GESTURE_ACTIONS,
   SEEK_STEP_OPTIONS,
   type AppLanguage,
   type AppTheme,
@@ -1150,6 +1151,66 @@ export default function SettingsScreen({
                   />
                 }
               />
+              <SettingRow
+                label={t("settings.headsetGestures")}
+                description={t("settings.headsetGesturesDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.headsetGestures")}
+                    accessibilityHint={t("settings.headsetGesturesDescription")}
+                    value={settings.headsetGesturesEnabled}
+                    onValueChange={(value) =>
+                      updateSettings({ headsetGesturesEnabled: value })
+                    }
+                  />
+                }
+              />
+              {settings.headsetGesturesEnabled ? (
+                <>
+                  <SettingRow
+                    label={t("settings.headsetDoubleTap")}
+                    description={t("settings.headsetDoubleTapDescription")}
+                    colors={colors}
+                    control={
+                      <View style={styles.choiceWrap}>
+                        {HEADSET_GESTURE_ACTIONS.map((action) => (
+                          <ChoiceChip
+                            key={action}
+                            label={t(`settings.headsetAction.${action}`)}
+                            selected={settings.headsetDoubleTapAction === action}
+                            onPress={() =>
+                              updateSettings({ headsetDoubleTapAction: action })
+                            }
+                            colors={colors}
+                          />
+                        ))}
+                      </View>
+                    }
+                  />
+                  <SettingRow
+                    label={t("settings.headsetTripleTap")}
+                    description={t("settings.headsetTripleTapDescription")}
+                    colors={colors}
+                    control={
+                      <View style={styles.choiceWrap}>
+                        {HEADSET_GESTURE_ACTIONS.map((action) => (
+                          <ChoiceChip
+                            key={action}
+                            label={t(`settings.headsetAction.${action}`)}
+                            selected={settings.headsetTripleTapAction === action}
+                            onPress={() =>
+                              updateSettings({ headsetTripleTapAction: action })
+                            }
+                            colors={colors}
+                          />
+                        ))}
+                      </View>
+                    }
+                  />
+                </>
+              ) : null}
             </Section>
           ) : null}
 

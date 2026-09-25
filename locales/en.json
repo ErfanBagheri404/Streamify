@@ -220,7 +220,22 @@
     "lastfm_scrobbling_desc": "Send your plays to Last.fm — connect with your last.fm account.",
     "subsonic": "Subsonic Server",
     "subsonic_desc": "Play music from your own Subsonic or Navidrome server.",
-    "configure": "Configure"
+    "configure": "Configure",
+    "headsetGestures": "Headset button gestures",
+    "headsetGesturesDescription": "Remap double and triple clicks on your headphones/earbuds",
+    "headsetDoubleTap": "Double tap action",
+    "headsetDoubleTapDescription": "Choose what happens when clicking twice quickly",
+    "headsetTripleTap": "Triple tap action",
+    "headsetTripleTapDescription": "Choose what happens when clicking three times quickly",
+    "headsetAction": {
+      "playPause": "Play / Pause",
+      "skipNext": "Next track",
+      "skipPrevious": "Previous track",
+      "likeCurrent": "Like / Unlike",
+      "smartQueue": "Smart queue",
+      "sleepTimer": "Sleep timer (30m)",
+      "toggleShuffle": "Toggle shuffle"
+    }
   },
   "piped": {
     "enter_auth": "Enter the Piped Authentication Instance API URL :",
