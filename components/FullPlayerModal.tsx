@@ -45,6 +45,7 @@ import { PlaybackSpeedSheet } from "./PlaybackSpeedSheet";
 import { LyricsSearchSheet } from "./LyricsSearchSheet";
 import { buildRadioQueue } from "../modules/radioService";
 import { buildSmartQueue, loadPlayCounts } from "../modules/aiPlaylistService";
+import { generateAiMix, AI_MIX_OPTION_KEY } from "../modules/aiMixService";
 import { StorageService, Playlist } from "../utils/storage";
 import { useAppSettings } from "../hooks/useAppSettings";
 import { useAppLanguage } from "../hooks/useAppLanguage";
@@ -693,6 +694,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [isOptionsVisible, setIsOptionsVisible] = useState(false);
   const [showSleepTimerSheet, setShowSleepTimerSheet] = useState(false);
   const [showSpeedSheet, setShowSpeedSheet] = useState(false);
+  const [isGeneratingAiMix, setIsGeneratingAiMix] = useState(false);
   const [showLyricsSearchSheet, setShowLyricsSearchSheet] = useState(false);
   // Latest rendered track id — used by async lyrics callbacks instead of the
   // stale closure value, so a late result cannot overwrite a newer track.
@@ -920,6 +922,14 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
             ? "صف پخش هوشمند از کتابخانه"
             : "Smart queue from library",
         icon: "sparkles-outline",
+      },
+      {
+        key: AI_MIX_OPTION_KEY,
+        label:
+          language === "fa"
+            ? (isGeneratingAiMix ? "در حال ساخت میکس…" : "میکس هوشمند من")
+            : (isGeneratingAiMix ? "Building mix…" : "AI Mix from my listening"),
+        icon: "sparkles",
       },
       {
         key: "Go to song radio",
@@ -1343,6 +1353,25 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       }
       return;
     }
+    if (option === AI_MIX_OPTION_KEY) {
+      // Whole-library mix built from listening history, not this track's
+      // radio. Persisted as a pinned Library playlist.
+      setIsGeneratingAiMix(true);
+      try {
+        const mix = await generateAiMix(likedSongs);
+        console.log(
+          "[FullPlayerModal] AI Mix:",
+          mix ? `${mix.tracks.length} tracks` : "nothing to build from",
+        );
+        if (mix && onPlaylistUpdated) {
+          onPlaylistUpdated();
+        }
+      } finally {
+        setIsGeneratingAiMix(false);
+      }
+      return;
+    }
+
     if (option === "Go to song radio") {
       const seedTrack = currentTrack;
       if (!seedTrack) {

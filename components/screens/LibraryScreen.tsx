@@ -24,6 +24,7 @@ import {
   Playlist,
   subscribeToLibraryUpdates,
 } from "../../utils/storage";
+import { AI_MIX_PLAYLIST_ID } from "../../modules/aiMixBuilder";
 import { SliderSheet } from "../SliderSheet";
 import { Track } from "../../contexts/PlayerContext";
 import { Screen as UiScreen } from "../ui/Screen";
@@ -1051,9 +1052,13 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       },
       ...playlists.map((playlist) => {
         const artworkUri = getPlaylistArtworkUri(playlist);
+        const isAiMix = playlist.id === AI_MIX_PLAYLIST_ID;
         return {
           id: playlist.id,
           title: playlist.name,
+          // Pin the generated mix above user playlists; unsorted mode puts
+          // pinned entries first, so it reads as a Library staple.
+          ...(isAiMix ? { pinOrder: 4 } : null),
           subtitle: playlist.description?.trim() || copy.playlist,
           meta: formatSongCount(playlist.tracks.length),
           itemType: "collection" as const,
