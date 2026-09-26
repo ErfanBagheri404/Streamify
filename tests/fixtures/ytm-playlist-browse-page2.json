@@ -1,0 +1,493 @@
+{
+ "_fixture": "trimmed page 2 of the same real response (appendContinuationItemsAction, 4 items, no further continuation)",
+ "onResponseReceivedActions": [
+  {
+   "appendContinuationItemsAction": {
+    "continuationItems": [
+     {
+      "musicResponsiveListItemRenderer": {
+       "thumbnail": {
+        "musicThumbnailRenderer": {
+         "thumbnail": {
+          "thumbnails": [
+           {
+            "url": "https://i.ytimg.com/vi/L7mSNTMb5sY/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3nZ-DFJsH61ENFFM1BfSrmv3_INgA",
+            "width": 400,
+            "height": 225
+           }
+          ]
+         },
+         "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+         "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FIT",
+         "trackingParams": "CJ8MEIS_AiITCOTHjcXHjJcDFbBEegUdZv0bNg=="
+        }
+       },
+       "flexColumns": [
+        {
+         "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {
+           "runs": [
+            {
+             "text": "The Trap Dickey \"On The Radar\" Freestyle (PHILLY EDITION)",
+             "navigationEndpoint": {
+              "clickTrackingParams": "CI4MEMn0AhgBIhMI5MeNxceMlwMVsER6BR1m_Rs2ygEE6aZ1SQ==",
+              "watchEndpoint": {
+               "videoId": "L7mSNTMb5sY",
+               "playlistId": "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
+               "playerParams": "iAQB8AUB",
+               "loggingContext": {
+                "vssLoggingContext": {
+                 "serializedContextData": "GiJQTEZncXVMbkw1OWFsQ2xfMlRRdk9pRDVWZ20xaENhR1NJ"
+                }
+               },
+               "watchEndpointMusicSupportedConfigs": {
+                "watchEndpointMusicConfig": {
+                 "musicVideoType": "MUSIC_VIDEO_TYPE_OMV"
+                }
+               }
+              }
+             }
+            }
+           ]
+          },
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+         }
+        },
+        {
+         "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {
+           "runs": [
+            {
+             "text": "Trap Dickey",
+             "navigationEndpoint": {
+              "clickTrackingParams": "CI4MEMn0AhgBIhMI5MeNxceMlwMVsER6BR1m_Rs2ygEE6aZ1SQ==",
+              "browseEndpoint": {
+               "browseId": "UC7MYhE0qejd5NoAahkpLQGw",
+               "browseEndpointContextSupportedConfigs": {
+                "browseEndpointContextMusicConfig": {
+                 "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                }
+               }
+              }
+             }
+            }
+           ]
+          },
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+         }
+        },
+        {
+         "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {},
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_MEDIUM"
+         }
+        }
+       ],
+       "fixedColumns": [
+        {
+         "musicResponsiveListItemFixedColumnRenderer": {
+          "text": {
+           "runs": [
+            {
+             "text": "2:12"
+            }
+           ],
+           "accessibility": {
+            "accessibilityData": {
+             "label": "2 minutes, 12 seconds"
+            }
+           }
+          },
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH",
+          "size": "MUSIC_RESPONSIVE_LIST_ITEM_FIXED_COLUMN_SIZE_SMALL"
+         }
+        }
+       ]
+      }
+     },
+     {
+      "musicResponsiveListItemRenderer": {
+       "thumbnail": {
+        "musicThumbnailRenderer": {
+         "thumbnail": {
+          "thumbnails": [
+           {
+            "url": "https://i.ytimg.com/vi/1STyaZA7-BY/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3kJ4BvOTJcmrCPq6a7wlWruZgVxqw",
+            "width": 400,
+            "height": 225
+           }
+          ]
+         },
+         "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+         "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FIT",
+         "trackingParams": "CI0MEIS_AiITCOTHjcXHjJcDFbBEegUdZv0bNg=="
+        }
+       },
+       "flexColumns": [
+        {
+         "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {
+           "runs": [
+            {
+             "text": "Holy Night / Cantique de Noël (The Chosen Performance)",
+             "navigationEndpoint": {
+              "clickTrackingParams": "CPwLEMn0AhgCIhMI5MeNxceMlwMVsER6BR1m_Rs2ygEE6aZ1SQ==",
+              "watchEndpoint": {
+               "videoId": "1STyaZA7-BY",
+               "playlistId": "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
+               "playerParams": "iAQB8AUB0gcJCTMC0OBS9m0t",
+               "loggingContext": {
+                "vssLoggingContext": {
+                 "serializedContextData": "GiJQTEZncXVMbkw1OWFsQ2xfMlRRdk9pRDVWZ20xaENhR1NJ"
+                }
+               },
+               "watchEndpointMusicSupportedConfigs": {
+                "watchEndpointMusicConfig": {
+                 "musicVideoType": "MUSIC_VIDEO_TYPE_OMV"
+                }
+               }
+              }
+             }
+            }
+           ]
+          },
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+         }
+        },
+        {
+         "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {
+           "runs": [
+            {
+             "text": "Virginia Bocelli",
+             "navigationEndpoint": {
+              "clickTrackingParams": "CPwLEMn0AhgCIhMI5MeNxceMlwMVsER6BR1m_Rs2ygEE6aZ1SQ==",
+              "browseEndpoint": {
+               "browseId": "UC0A3CRJdM6rfSlWtL16OPmQ",
+               "browseEndpointContextSupportedConfigs": {
+                "browseEndpointContextMusicConfig": {
+                 "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                }
+               }
+              }
+             }
+            },
+            {
+             "text": ", "
+            },
+            {
+             "text": "Matteo Bocelli",
+             "navigationEndpoint": {
+              "clickTrackingParams": "CPwLEMn0AhgCIhMI5MeNxceMlwMVsER6BR1m_Rs2ygEE6aZ1SQ==",
+              "browseEndpoint": {
+               "browseId": "UCMS8xRalYk1dIY6yZQZseKA",
+               "browseEndpointContextSupportedConfigs": {
+                "browseEndpointContextMusicConfig": {
+                 "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                }
+               }
+              }
+             }
+            },
+            {
+             "text": " & "
+            },
+            {
+             "text": "Andrea Bocelli",
+             "navigationEndpoint": {
+              "clickTrackingParams": "CPwLEMn0AhgCIhMI5MeNxceMlwMVsER6BR1m_Rs2ygEE6aZ1SQ==",
+              "browseEndpoint": {
+               "browseId": "UCN0yeXZgAizy8VhiLj0-tIg",
+               "browseEndpointContextSupportedConfigs": {
+                "browseEndpointContextMusicConfig": {
+                 "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                }
+               }
+              }
+             }
+            }
+           ]
+          },
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+         }
+        },
+        {
+         "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {},
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_MEDIUM"
+         }
+        }
+       ],
+       "fixedColumns": [
+        {
+         "musicResponsiveListItemFixedColumnRenderer": {
+          "text": {
+           "runs": [
+            {
+             "text": "4:26"
+            }
+           ],
+           "accessibility": {
+            "accessibilityData": {
+             "label": "4 minutes, 26 seconds"
+            }
+           }
+          },
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH",
+          "size": "MUSIC_RESPONSIVE_LIST_ITEM_FIXED_COLUMN_SIZE_SMALL"
+         }
+        }
+       ]
+      }
+     },
+     {
+      "musicResponsiveListItemRenderer": {
+       "thumbnail": {
+        "musicThumbnailRenderer": {
+         "thumbnail": {
+          "thumbnails": [
+           {
+            "url": "https://yt3.googleusercontent.com/1_LAt8OFaNQJM1VZa9QFB6OnwKhi2OuwGw9DatKXd0ZWOXyHzyPIx3yUFluotwgQKTNAHa4flj9u9gAL=w60-h60-l90-rj",
+            "width": 60,
+            "height": 60
+           },
+           {
+            "url": "https://yt3.googleusercontent.com/1_LAt8OFaNQJM1VZa9QFB6OnwKhi2OuwGw9DatKXd0ZWOXyHzyPIx3yUFluotwgQKTNAHa4flj9u9gAL=w120-h120-l90-rj",
+            "width": 120,
+            "height": 120
+           }
+          ]
+         },
+         "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+         "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FIT",
+         "trackingParams": "CPsLEIS_AiITCOTHjcXHjJcDFbBEegUdZv0bNg=="
+        }
+       },
+       "flexColumns": [
+        {
+         "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {
+           "runs": [
+            {
+             "text": "Federal Contraband 2",
+             "navigationEndpoint": {
+              "clickTrackingParams": "COcLEMn0AhgDIhMI5MeNxceMlwMVsER6BR1m_Rs2ygEE6aZ1SQ==",
+              "watchEndpoint": {
+               "videoId": "Ke9A6XV2H38",
+               "playlistId": "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
+               "playerParams": "iAQB8AUB0gcJCTMC0OBS9m0t",
+               "loggingContext": {
+                "vssLoggingContext": {
+                 "serializedContextData": "GiJQTEZncXVMbkw1OWFsQ2xfMlRRdk9pRDVWZ20xaENhR1NJ"
+                }
+               },
+               "watchEndpointMusicSupportedConfigs": {
+                "watchEndpointMusicConfig": {
+                 "musicVideoType": "MUSIC_VIDEO_TYPE_ATV"
+                }
+               }
+              }
+             }
+            }
+           ]
+          },
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+         }
+        },
+        {
+         "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {
+           "runs": [
+            {
+             "text": "Pooh Shiesty",
+             "navigationEndpoint": {
+              "clickTrackingParams": "COcLEMn0AhgDIhMI5MeNxceMlwMVsER6BR1m_Rs2ygEE6aZ1SQ==",
+              "browseEndpoint": {
+               "browseId": "UCHP-7P6ChK4-jiFoz62RcUg",
+               "browseEndpointContextSupportedConfigs": {
+                "browseEndpointContextMusicConfig": {
+                 "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                }
+               }
+              }
+             }
+            }
+           ]
+          },
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+         }
+        },
+        {
+         "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {
+           "runs": [
+            {
+             "text": "Federal Contraband 2",
+             "navigationEndpoint": {
+              "clickTrackingParams": "COcLEMn0AhgDIhMI5MeNxceMlwMVsER6BR1m_Rs2ygEE6aZ1SQ==",
+              "browseEndpoint": {
+               "browseId": "MPREb_eMVLDe27KCd",
+               "browseEndpointContextSupportedConfigs": {
+                "browseEndpointContextMusicConfig": {
+                 "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+                }
+               }
+              }
+             }
+            }
+           ]
+          },
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_MEDIUM"
+         }
+        }
+       ],
+       "fixedColumns": [
+        {
+         "musicResponsiveListItemFixedColumnRenderer": {
+          "text": {
+           "runs": [
+            {
+             "text": "7:18"
+            }
+           ],
+           "accessibility": {
+            "accessibilityData": {
+             "label": "7 minutes, 18 seconds"
+            }
+           }
+          },
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH",
+          "size": "MUSIC_RESPONSIVE_LIST_ITEM_FIXED_COLUMN_SIZE_SMALL"
+         }
+        }
+       ]
+      }
+     },
+     {
+      "musicResponsiveListItemRenderer": {
+       "thumbnail": {
+        "musicThumbnailRenderer": {
+         "thumbnail": {
+          "thumbnails": [
+           {
+            "url": "https://yt3.googleusercontent.com/a_Tbm18u-xJG3s6YuEWGEHi_6GvYkmYjpg3pQ9V5BNzC_TPIennubRGx0V7b5jvSHf7PuRCwi9RSIJLhzw=w60-h60-l90-rj",
+            "width": 60,
+            "height": 60
+           },
+           {
+            "url": "https://yt3.googleusercontent.com/a_Tbm18u-xJG3s6YuEWGEHi_6GvYkmYjpg3pQ9V5BNzC_TPIennubRGx0V7b5jvSHf7PuRCwi9RSIJLhzw=w120-h120-l90-rj",
+            "width": 120,
+            "height": 120
+           }
+          ]
+         },
+         "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+         "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FIT",
+         "trackingParams": "COYLEIS_AiITCOTHjcXHjJcDFbBEegUdZv0bNg=="
+        }
+       },
+       "flexColumns": [
+        {
+         "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {
+           "runs": [
+            {
+             "text": "Crazy Form",
+             "navigationEndpoint": {
+              "clickTrackingParams": "CNELEMn0AhgEIhMI5MeNxceMlwMVsER6BR1m_Rs2ygEE6aZ1SQ==",
+              "watchEndpoint": {
+               "videoId": "_db-mfu8y1k",
+               "playlistId": "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
+               "playerParams": "iAQB8AUB",
+               "loggingContext": {
+                "vssLoggingContext": {
+                 "serializedContextData": "GiJQTEZncXVMbkw1OWFsQ2xfMlRRdk9pRDVWZ20xaENhR1NJ"
+                }
+               },
+               "watchEndpointMusicSupportedConfigs": {
+                "watchEndpointMusicConfig": {
+                 "musicVideoType": "MUSIC_VIDEO_TYPE_ATV"
+                }
+               }
+              }
+             }
+            }
+           ]
+          },
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+         }
+        },
+        {
+         "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {
+           "runs": [
+            {
+             "text": "ATEEZ",
+             "navigationEndpoint": {
+              "clickTrackingParams": "CNELEMn0AhgEIhMI5MeNxceMlwMVsER6BR1m_Rs2ygEE6aZ1SQ==",
+              "browseEndpoint": {
+               "browseId": "UCmWwbZ-8SngcUzRAD8rCVvw",
+               "browseEndpointContextSupportedConfigs": {
+                "browseEndpointContextMusicConfig": {
+                 "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                }
+               }
+              }
+             }
+            }
+           ]
+          },
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+         }
+        },
+        {
+         "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {
+           "runs": [
+            {
+             "text": "THE WORLD EP.FIN : WILL",
+             "navigationEndpoint": {
+              "clickTrackingParams": "CNELEMn0AhgEIhMI5MeNxceMlwMVsER6BR1m_Rs2ygEE6aZ1SQ==",
+              "browseEndpoint": {
+               "browseId": "MPREb_wsFzSae0tgu",
+               "browseEndpointContextSupportedConfigs": {
+                "browseEndpointContextMusicConfig": {
+                 "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+                }
+               }
+              }
+             }
+            }
+           ]
+          },
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_MEDIUM"
+         }
+        }
+       ],
+       "fixedColumns": [
+        {
+         "musicResponsiveListItemFixedColumnRenderer": {
+          "text": {
+           "runs": [
+            {
+             "text": "3:19"
+            }
+           ],
+           "accessibility": {
+            "accessibilityData": {
+             "label": "3 minutes, 19 seconds"
+            }
+           }
+          },
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH",
+          "size": "MUSIC_RESPONSIVE_LIST_ITEM_FIXED_COLUMN_SIZE_SMALL"
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

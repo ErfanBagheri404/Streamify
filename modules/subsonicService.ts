@@ -256,6 +256,44 @@ export const subsonicService = {
     return (res as any)?.albumList2?.album || [];
   },
 
+  /** Playlists on the configured server (getPlaylistList.view). */
+  async getPlaylistList(): Promise<Array<{ id: string; name: string }>> {
+    const config = await this.loadConfig();
+    if (!config) {
+      return [];
+    }
+    const res = await request(config, "getPlaylistList");
+    const playlists = (res as any)?.playlists?.playlist || [];
+    return (Array.isArray(playlists) ? playlists : []).map((p: any) => ({
+      id: String(p.id),
+      name: p.name || String(p.id),
+    }));
+  },
+
+  /**
+   * One playlist with its entries (getPlaylist.view). Entries can be songs or
+   * nested dirs; only songs carry a stream id, so dirs are dropped here.
+   */
+  async getPlaylist(
+    playlistId: string,
+  ): Promise<{ name: string; coverArtUrl: string | null; tracks: SubsonicTrack[] }> {
+    const config = await this.loadConfig();
+    if (!config) {
+      return { name: "", coverArtUrl: null, tracks: [] };
+    }
+    const res = await request(config, "getPlaylist", { id: playlistId });
+    const playlist = (res as any)?.playlist || {};
+    const entries = Array.isArray(playlist.entry) ? playlist.entry : [];
+    const tracks = normalizeSongs(entries);
+    return {
+      name: playlist.name || playlistId,
+      coverArtUrl: tracks[0]?.coverArtId
+        ? this.getCoverArtUrl(tracks[0].coverArtId)
+        : null,
+      tracks,
+    };
+  },
+
   /** Cover art URL (returns null until configured). */
   getCoverArtUrl(coverArtId?: string): string | null {
     const config = cachedConfig;
