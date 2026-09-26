@@ -394,19 +394,24 @@ function EqualizerBands({ colors }: { colors: ReturnType<typeof useTheme>["color
           <MutedText style={styles.settingDescription}>
             {hz >= 1000 ? `${hz / 1000}k` : hz}
           </MutedText>
-          <Slider
-            value={levels[index] ?? 0}
-            minimumValue={info.minMillibel}
-            maximumValue={Math.max(info.maxMillibel, info.minMillibel)}
-            minimumTrackTintColor={colors.accent}
-            maximumTrackTintColor={colors.borderSubtle}
-            thumbTintColor={colors.accent}
-            onValueChange={(value) => {
-              setLevels((prev) => prev.map((v, i) => (i === index ? value : v)));
-              void setEqualizerBandLevel(index, value);
-            }}
+          <View
+            accessible
+            accessibilityRole="adjustable"
             accessibilityLabel={`${hz} Hz`}
-          />
+          >
+            <Slider
+              value={levels[index] ?? 0}
+              minimumValue={info.minMillibel}
+              maximumValue={Math.max(info.maxMillibel, info.minMillibel)}
+              minimumTrackTintColor={colors.accent}
+              maximumTrackTintColor={colors.borderSubtle}
+              thumbTintColor={colors.accent}
+              onValueChange={(value) => {
+                setLevels((prev) => prev.map((v, i) => (i === index ? value : v)));
+                void setEqualizerBandLevel(index, value);
+              }}
+            />
+          </View>
         </View>
       ))}
     </View>

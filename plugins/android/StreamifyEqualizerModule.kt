@@ -6,6 +6,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.WritableMap
 
 /**
  * Hardware equalizer (issue #28) on [AudioEffect.EFFECT_TYPE_EQUALIZER].
@@ -54,7 +55,7 @@ class StreamifyEqualizerModule(reactContext: ReactApplicationContext) :
     return min to max
   }
 
-  private fun unsupportedInfo(): com.facebook.react.bridge.WritableMap {
+  private fun unsupportedInfo(): WritableMap {
     val info = Arguments.createMap()
     info.putBoolean("supported", false)
     info.putInt("numberOfBands", 0)
@@ -85,7 +86,7 @@ class StreamifyEqualizerModule(reactContext: ReactApplicationContext) :
     // Center frequencies label the bands in the UI; harmless when unsupported.
     val freqs = Arguments.createArray()
     for (band in 0 until bands) {
-      freqs.pushInt(eq.getCenterFreq(band.toShort()) / 1000)
+      freqs.pushInt(eq.getCenterFreq(band.toShort()))
       if (range != null) {
         val millibel = eq.getBandLevel(band.toShort()).toInt()
         levels.pushDouble(millibel.coerceIn(range.first, range.second).toDouble())
