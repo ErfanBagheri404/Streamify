@@ -30,6 +30,8 @@ const internal = {
   trackGain: 1,
   /** ReplayGain master toggle. */
   gainEnabled: false,
+  /** Wake-radio ramp: wall-clock volume climb, independent of crossfade. */
+  ramp: null as { startAt: number; durationMs: number } | null,
 };
 
 /** Effective reference level: user volume × track gain (when enabled). */
@@ -75,6 +77,8 @@ export const fadeService = {
 
   setBaseVolume(volume: number): void {
     internal.baseVolume = Math.max(0, Math.min(1, volume));
+    // A manual volume change is the user taking control — drop the ramp.
+    internal.ramp = null;
     // Outside a fade the base volume is what should be audible right now.
     if (!internal.enabled) {
       void applyVolume(refLevel());
@@ -96,6 +100,23 @@ export const fadeService = {
    * position/duration in seconds.
    */
   onProgress(position: number, duration: number): void {
+    // Wake-radio ramp wins over crossfade while active: the alarm's 1-3
+    // minute climb is a wall-clock ramp, not a track-position ramp, and it
+    // must survive track changes (position resets) and the crossfade-off
+    // fast path.
+    const rampFraction = internal.ramp ? fadeService.rampFraction() : null;
+    if (rampFraction !== null) {
+      const target = refLevel() * rampFraction;
+      if (rampFraction === 1) {
+        // Ramp just completed: hand back to normal fade logic from the
+        // next tick; this tick settles on full level.
+        void applyVolume(target);
+        return;
+      }
+      void applyVolume(target);
+      return;
+    }
+
     if (!internal.enabled) {
       if (internal.lastApplied !== round2(refLevel())) {
         void applyVolume(refLevel());
@@ -146,5 +167,43 @@ export const fadeService = {
       return;
     }
     void applyVolume(refLevel());
+  },
+
+  /**
+   * Start a wake-radio ramp: the volume climbs from the floor to the user's
+   * level over `durationMs` of wall-clock time, regardless of track
+   * position. Crossfade stays untouched — this is for alarms, not for
+   * track transitions. Any explicit setBaseVolume call (user touched the
+   * slider) cancels the ramp: manual control always wins over automation.
+   */
+  startRamp(durationMs: number): void {
+    internal.ramp = {
+      startAt: Date.now(),
+      durationMs: Math.max(30_000, Math.min(180_000, durationMs || 120_000)),
+    };
+    void applyVolume(refLevel() * FADE_FLOOR);
+  },
+
+  /** True while a ramp is still climbing. */
+  isRamping(): boolean {
+    return internal.ramp !== null;
+  },
+
+  /**
+   * Ramp fraction [0,1] applied inside onProgress. Null when no ramp is
+   * active — callers treat that as full volume.
+   */
+  rampFraction(now: number = Date.now()): number | null {
+    const ramp = internal.ramp;
+    if (!ramp) {
+      return null;
+    }
+    const elapsed = now - ramp.startAt;
+    if (elapsed >= ramp.durationMs) {
+      internal.ramp = null;
+      return 1;
+    }
+    // Elapsed can go negative when the clock jumps backwards; clamp.
+    return Math.max(FADE_FLOOR, elapsed / ramp.durationMs);
   },
 };
