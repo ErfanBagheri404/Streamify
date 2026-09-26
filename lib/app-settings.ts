@@ -88,6 +88,8 @@ export interface AppSettings {
   waveformSeekBar: boolean;
   /** Enable ReplayGain normalization on local/cached tracks. */
   replayGainEnabled: boolean;
+  /** Enable the Android hardware equalizer on the output mix (issue #28). */
+  equalizerEnabled: boolean;
   collapsedSettingsSections: Partial<Record<SettingsSectionKey, boolean>>;
 }
 
@@ -171,6 +173,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   crossfadeSeconds: 4,
   waveformSeekBar: false,
   replayGainEnabled: false,
+  equalizerEnabled: false,
   collapsedSettingsSections: {},
 };
 
@@ -322,6 +325,10 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
       typeof record.replayGainEnabled === "boolean"
         ? record.replayGainEnabled
         : DEFAULT_APP_SETTINGS.replayGainEnabled,
+    equalizerEnabled:
+      typeof record.equalizerEnabled === "boolean"
+        ? record.equalizerEnabled
+        : DEFAULT_APP_SETTINGS.equalizerEnabled,
     waveformSeekBar:
       typeof record.waveformSeekBar === "boolean"
         ? record.waveformSeekBar
