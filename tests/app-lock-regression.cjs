@@ -58,6 +58,23 @@ function loadPureModule(rel) {
 const read = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
 const stripComments = (src) =>
   src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+/** Isolate one function body in a TS source, brace-matched from its start. */
+const extractFunctionBody = (src, signature, maxDepth = 4000) => {
+  const start = src.indexOf(signature);
+  if (start < 0) {
+    return "";
+  }
+  const braceStart = src.indexOf("{", start);
+  let depth = 0;
+  for (let i = braceStart; i < Math.min(src.length, braceStart + maxDepth); i++) {
+    if (src[i] === "{") depth += 1;
+    if (src[i] === "}") depth -= 1;
+    if (depth === 0) {
+      return src.slice(braceStart, i + 1);
+    }
+  }
+  return "";
+};
 
 const appLock = loadPureModule("modules/appLock.ts");
 const store = stripComments(read("modules/appLockStore.ts"));
@@ -194,6 +211,20 @@ const runtimeChecks = [
     },
   ],
   [
+    "an empty or absent credential never unlocks",
+    () => {
+      const stored = appLock.hashPin("4821");
+      assert.ok(!appLock.verifyPinHash("", stored), "an empty PIN matched a real hash");
+      assert.ok(!appLock.verifyPinHash("4821", ""), "an empty stored value unlocked");
+      assert.ok(!appLock.verifyPinHash("4821", null), "a null stored value unlocked");
+      assert.ok(!appLock.isValidPin(""), "an empty PIN is accepted at setup");
+      assert.ok(
+        !appLock.isValidPin(appLock.sanitizePin("abcd")),
+        "a non-numeric PIN is accepted at setup",
+      );
+    },
+  ],
+  [
     "the filter does not mutate its input",
     () => {
       const playlists = [
@@ -208,6 +239,57 @@ const runtimeChecks = [
 ];
 
 const wiringChecks = [
+  [
+    "the private flag survives the storage round trip",
+    () => {
+      // The flag is not a Playlist field: it lives in its own key, so no
+      // playlist normalizer can silently drop it.
+      const normalizeBody = extractFunctionBody(
+        stripComments(read("utils/storage.ts")),
+        "function normalizePlaylistSnapshot",
+      );
+      assert.ok(normalizeBody.length > 0, "normalizePlaylistSnapshot is absent");
+      assert.ok(
+        !/isPrivate|private\s*:/.test(normalizeBody),
+        "the private flag rides on Playlist, where the normalizer drops it",
+      );
+      assert.ok(
+        /AsyncStorage\.setItem\(PRIVATE_PLAYLISTS_KEY, JSON\.stringify\(next\)\)/.test(
+          store,
+        ),
+        "the private id list is not persisted as JSON",
+      );
+      assert.ok(
+        /JSON\.parse\(raw\)/.test(store) && /loadPrivatePlaylistIds\(\)/.test(vaultCtx),
+        "the vault does not read the persisted id list back",
+      );
+      assert.ok(
+        /loadPrivatePlaylistIds/.test(store),
+        "the private id list has no reader",
+      );
+    },
+  ],
+  [
+    "the gate sits outside settings hydration and the app shell",
+    () => {
+      const settingsIdx = app.indexOf("<SettingsProvider>");
+      const gateIdx = app.indexOf("<AppLockProvider>");
+      const shellIdx = app.indexOf("<AppShell");
+      assert.ok(settingsIdx > 0 && gateIdx > 0, "providers are not mounted");
+      assert.ok(
+        settingsIdx < gateIdx,
+        "AppLockProvider wraps SettingsProvider, so hydration runs behind the gate",
+      );
+      assert.ok(
+        gateIdx < shellIdx,
+        "the gate is mounted inside the shell",
+      );
+      assert.ok(
+        /isChecking/.test(lockCtx) && /setIsChecking\(false\)/.test(lockCtx),
+        "the gate never stops checking, so it would flash before auth settles",
+      );
+    },
+  ],
   [
     "the credential lives in SecureStore, not AppSettings",
     () => {
