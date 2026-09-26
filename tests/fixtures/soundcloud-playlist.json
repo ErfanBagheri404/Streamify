@@ -1,0 +1,62 @@
+{
+ "_fixture": "trimmed real beatseek.io /api/playlist?url=<soundcloud set> response (metadata + 3 tracks)",
+ "tracks": [
+  {
+   "id": 1277210038,
+   "title": "Cheerful Smile",
+   "url": "https://soundcloud.com/relaxcafemusic/cheerful-smile",
+   "artwork_url": "https://i1.sndcdn.com/artworks-TDoWp3vg0U6xZmw3-LIF7ZA-large.png",
+   "user": {
+    "username": "Relax Cafe Music BGM",
+    "permalink_url": "https://soundcloud.com/relaxcafemusic"
+   },
+   "genre": "Jazz & Blues",
+   "duration": 147319,
+   "likes_count": 778,
+   "reposts_count": 20,
+   "playback_count": 582587,
+   "created_at": "2022-05-29T08:24:30Z",
+   "downloadable": false,
+   "download_url": null
+  },
+  {
+   "id": 2170804959,
+   "title": "Favorite Home",
+   "url": "https://soundcloud.com/riu-gabriel-rossi/favorite-home",
+   "artwork_url": "https://i1.sndcdn.com/artworks-5pqamaGbKb9g-0-large.jpg",
+   "user": {
+    "username": "Riu Gabriel Rossi",
+    "permalink_url": "https://soundcloud.com/riu-gabriel-rossi"
+   },
+   "genre": "Jazz",
+   "duration": 154698,
+   "likes_count": 840,
+   "reposts_count": 22,
+   "playback_count": 272526,
+   "created_at": "2025-09-15T12:29:34Z",
+   "downloadable": false,
+   "download_url": null
+  },
+  {
+   "id": 2251988825,
+   "title": "My Favorite Day",
+   "url": "https://soundcloud.com/clavebruben/my-favorite-day",
+   "artwork_url": "https://i1.sndcdn.com/artworks-7lnLQanwxqAj-0-large.jpg",
+   "user": {
+    "username": "Clave Bruben",
+    "permalink_url": "https://soundcloud.com/clavebruben"
+   },
+   "genre": "Jazz",
+   "duration": 140910,
+   "likes_count": 333,
+   "reposts_count": 8,
+   "playback_count": 89097,
+   "created_at": "2026-01-22T12:41:55Z",
+   "downloadable": false,
+   "download_url": null
+  }
+ ],
+ "total": 432,
+ "playlistTitle": "Coffee Jazz",
+ "playlistUrl": "https://soundcloud.com/relaxcafemusic/sets/coffee-jazz"
+}

@@ -1,0 +1,583 @@
+{
+ "_fixture": "trimmed page 1 of a real music.youtube.com youtubei/v1/browse VLPL... response (header, 4 items, continuation); captured 2026-09-26",
+ "contents": {
+  "twoColumnBrowseResultsRenderer": {
+   "tabs": [
+    {
+     "tabRenderer": {
+      "content": {
+       "sectionListRenderer": {
+        "contents": [
+         {
+          "musicResponsiveHeaderRenderer": {
+           "title": {
+            "runs": [
+             {
+              "text": "Popular Music Videos"
+             }
+            ]
+           },
+           "subtitle": {
+            "runs": [
+             {
+              "text": "Playlist"
+             },
+             {
+              "text": " • "
+             },
+             {
+              "text": "2026"
+             }
+            ]
+           },
+           "secondSubtitle": {
+            "runs": [
+             {
+              "text": "1B views"
+             },
+             {
+              "text": " • "
+             },
+             {
+              "text": "183 tracks"
+             },
+             {
+              "text": " • "
+             },
+             {
+              "text": "13+ hours"
+             }
+            ]
+           },
+           "thumbnail": {
+            "musicThumbnailRenderer": {
+             "thumbnail": {
+              "thumbnails": [
+               {
+                "url": "https://yt3.googleusercontent.com/12Z2lesRDLk4t_Pd-lMs-TlvEJBFLIOv1Uh9mJUUneRqYVRRSjAkjcKkCNF7f3dejleGz77F7xN5=s192",
+                "width": 192,
+                "height": 192
+               },
+               {
+                "url": "https://yt3.googleusercontent.com/12Z2lesRDLk4t_Pd-lMs-TlvEJBFLIOv1Uh9mJUUneRqYVRRSjAkjcKkCNF7f3dejleGz77F7xN5=s576",
+                "width": 576,
+                "height": 576
+               },
+               {
+                "url": "https://yt3.googleusercontent.com/12Z2lesRDLk4t_Pd-lMs-TlvEJBFLIOv1Uh9mJUUneRqYVRRSjAkjcKkCNF7f3dejleGz77F7xN5=s1200",
+                "width": 1200,
+                "height": 1200
+               }
+              ]
+             },
+             "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+             "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_UNSPECIFIED",
+             "trackingParams": "CBoQhL8CIhMI-7Oq98aMlwMVFnV6BR0wOQCn"
+            }
+           }
+          }
+         },
+         {
+          "itemSectionRenderer": {
+           "contents": [
+            {
+             "musicResponsiveListItemRenderer": {
+              "thumbnail": {
+               "musicThumbnailRenderer": {
+                "thumbnail": {
+                 "thumbnails": [
+                  {
+                   "url": "https://i.ytimg.com/vi/fOT0BUpITw8/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3lQxUm6qlQgfTVJOZ69azKFd_rx-Q",
+                   "width": 400,
+                   "height": 225
+                  }
+                 ]
+                },
+                "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+                "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FIT",
+                "trackingParams": "CIQPEIS_AiITCPuzqvfGjJcDFRZ1egUdMDkApw=="
+               }
+              },
+              "flexColumns": [
+               {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                 "text": {
+                  "runs": [
+                   {
+                    "text": "BELLAKEO",
+                    "navigationEndpoint": {
+                     "clickTrackingParams": "CPMOEMn0AhgAIhMI-7Oq98aMlwMVFnV6BR0wOQCnygEElqQpEQ==",
+                     "watchEndpoint": {
+                      "videoId": "fOT0BUpITw8",
+                      "playlistId": "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
+                      "playerParams": "iAQB8AUB",
+                      "loggingContext": {
+                       "vssLoggingContext": {
+                        "serializedContextData": "GiJQTEZncXVMbkw1OWFsQ2xfMlRRdk9pRDVWZ20xaENhR1NJ"
+                       }
+                      },
+                      "watchEndpointMusicSupportedConfigs": {
+                       "watchEndpointMusicConfig": {
+                        "musicVideoType": "MUSIC_VIDEO_TYPE_OMV"
+                       }
+                      }
+                     }
+                    }
+                   }
+                  ]
+                 },
+                 "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+                }
+               },
+               {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                 "text": {
+                  "runs": [
+                   {
+                    "text": "Peso Pluma",
+                    "navigationEndpoint": {
+                     "clickTrackingParams": "CPMOEMn0AhgAIhMI-7Oq98aMlwMVFnV6BR0wOQCnygEElqQpEQ==",
+                     "browseEndpoint": {
+                      "browseId": "UCzmabbKsmXlWnI9N2kKQ4lA",
+                      "browseEndpointContextSupportedConfigs": {
+                       "browseEndpointContextMusicConfig": {
+                        "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                       }
+                      }
+                     }
+                    }
+                   },
+                   {
+                    "text": " & "
+                   },
+                   {
+                    "text": "Anitta",
+                    "navigationEndpoint": {
+                     "clickTrackingParams": "CPMOEMn0AhgAIhMI-7Oq98aMlwMVFnV6BR0wOQCnygEElqQpEQ==",
+                     "browseEndpoint": {
+                      "browseId": "UCI99G32byWj1aH13pbxnTEw",
+                      "browseEndpointContextSupportedConfigs": {
+                       "browseEndpointContextMusicConfig": {
+                        "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                       }
+                      }
+                     }
+                    }
+                   }
+                  ]
+                 },
+                 "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+                }
+               },
+               {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                 "text": {},
+                 "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_MEDIUM"
+                }
+               }
+              ],
+              "fixedColumns": [
+               {
+                "musicResponsiveListItemFixedColumnRenderer": {
+                 "text": {
+                  "runs": [
+                   {
+                    "text": "3:55"
+                   }
+                  ],
+                  "accessibility": {
+                   "accessibilityData": {
+                    "label": "3 minutes, 55 seconds"
+                   }
+                  }
+                 },
+                 "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH",
+                 "size": "MUSIC_RESPONSIVE_LIST_ITEM_FIXED_COLUMN_SIZE_SMALL"
+                }
+               }
+              ]
+             }
+            },
+            {
+             "musicResponsiveListItemRenderer": {
+              "thumbnail": {
+               "musicThumbnailRenderer": {
+                "thumbnail": {
+                 "thumbnails": [
+                  {
+                   "url": "https://i.ytimg.com/vi/NFvDHYMzj9U/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3kuggSz9AVzvMV1a33giFKuJMuCag",
+                   "width": 400,
+                   "height": 225
+                  }
+                 ]
+                },
+                "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+                "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FIT",
+                "trackingParams": "CPIOEIS_AiITCPuzqvfGjJcDFRZ1egUdMDkApw=="
+               }
+              },
+              "flexColumns": [
+               {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                 "text": {
+                  "runs": [
+                   {
+                    "text": "FN8",
+                    "navigationEndpoint": {
+                     "clickTrackingParams": "COEOEMn0AhgBIhMI-7Oq98aMlwMVFnV6BR0wOQCnygEElqQpEQ==",
+                     "watchEndpoint": {
+                      "videoId": "NFvDHYMzj9U",
+                      "playlistId": "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
+                      "playerParams": "iAQB8AUB",
+                      "loggingContext": {
+                       "vssLoggingContext": {
+                        "serializedContextData": "GiJQTEZncXVMbkw1OWFsQ2xfMlRRdk9pRDVWZ20xaENhR1NJ"
+                       }
+                      },
+                      "watchEndpointMusicSupportedConfigs": {
+                       "watchEndpointMusicConfig": {
+                        "musicVideoType": "MUSIC_VIDEO_TYPE_OMV"
+                       }
+                      }
+                     }
+                    }
+                   }
+                  ]
+                 },
+                 "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+                }
+               },
+               {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                 "text": {
+                  "runs": [
+                   {
+                    "text": "Arcangel",
+                    "navigationEndpoint": {
+                     "clickTrackingParams": "COEOEMn0AhgBIhMI-7Oq98aMlwMVFnV6BR0wOQCnygEElqQpEQ==",
+                     "browseEndpoint": {
+                      "browseId": "UCVcAt8IIKIeubRSigcYXgtA",
+                      "browseEndpointContextSupportedConfigs": {
+                       "browseEndpointContextMusicConfig": {
+                        "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                       }
+                      }
+                     }
+                    }
+                   }
+                  ]
+                 },
+                 "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+                }
+               },
+               {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                 "text": {},
+                 "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_MEDIUM"
+                }
+               }
+              ],
+              "fixedColumns": [
+               {
+                "musicResponsiveListItemFixedColumnRenderer": {
+                 "text": {
+                  "runs": [
+                   {
+                    "text": "10:50"
+                   }
+                  ],
+                  "accessibility": {
+                   "accessibilityData": {
+                    "label": "10 minutes, 50 seconds"
+                   }
+                  }
+                 },
+                 "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH",
+                 "size": "MUSIC_RESPONSIVE_LIST_ITEM_FIXED_COLUMN_SIZE_SMALL"
+                }
+               }
+              ]
+             }
+            },
+            {
+             "musicResponsiveListItemRenderer": {
+              "thumbnail": {
+               "musicThumbnailRenderer": {
+                "thumbnail": {
+                 "thumbnails": [
+                  {
+                   "url": "https://i.ytimg.com/vi/8c7KOGxeY3w/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3nwgXXKdJ7tLlHME5iLEVOJa3xiaA",
+                   "width": 400,
+                   "height": 225
+                  }
+                 ]
+                },
+                "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+                "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FIT",
+                "trackingParams": "COAOEIS_AiITCPuzqvfGjJcDFRZ1egUdMDkApw=="
+               }
+              },
+              "flexColumns": [
+               {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                 "text": {
+                  "runs": [
+                   {
+                    "text": "POR EL CONTRARIO with Leonardo Aguilar & Ángela Aguilar (Perf...",
+                    "navigationEndpoint": {
+                     "clickTrackingParams": "CM8OEMn0AhgCIhMI-7Oq98aMlwMVFnV6BR0wOQCnygEElqQpEQ==",
+                     "watchEndpoint": {
+                      "videoId": "8c7KOGxeY3w",
+                      "playlistId": "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
+                      "playerParams": "iAQB8AUB",
+                      "loggingContext": {
+                       "vssLoggingContext": {
+                        "serializedContextData": "GiJQTEZncXVMbkw1OWFsQ2xfMlRRdk9pRDVWZ20xaENhR1NJ"
+                       }
+                      },
+                      "watchEndpointMusicSupportedConfigs": {
+                       "watchEndpointMusicConfig": {
+                        "musicVideoType": "MUSIC_VIDEO_TYPE_OMV"
+                       }
+                      }
+                     }
+                    }
+                   }
+                  ]
+                 },
+                 "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+                }
+               },
+               {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                 "text": {
+                  "runs": [
+                   {
+                    "text": "Becky G",
+                    "navigationEndpoint": {
+                     "clickTrackingParams": "CM8OEMn0AhgCIhMI-7Oq98aMlwMVFnV6BR0wOQCnygEElqQpEQ==",
+                     "browseEndpoint": {
+                      "browseId": "UC3UkDuAQjoRvTH7OEWm3cHQ",
+                      "browseEndpointContextSupportedConfigs": {
+                       "browseEndpointContextMusicConfig": {
+                        "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                       }
+                      }
+                     }
+                    }
+                   },
+                   {
+                    "text": ", "
+                   },
+                   {
+                    "text": "Leonardo Aguilar",
+                    "navigationEndpoint": {
+                     "clickTrackingParams": "CM8OEMn0AhgCIhMI-7Oq98aMlwMVFnV6BR0wOQCnygEElqQpEQ==",
+                     "browseEndpoint": {
+                      "browseId": "UCaN-L38rGjcRJzNa1VeRg9Q",
+                      "browseEndpointContextSupportedConfigs": {
+                       "browseEndpointContextMusicConfig": {
+                        "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                       }
+                      }
+                     }
+                    }
+                   },
+                   {
+                    "text": " & "
+                   },
+                   {
+                    "text": "Ángela Aguilar",
+                    "navigationEndpoint": {
+                     "clickTrackingParams": "CM8OEMn0AhgCIhMI-7Oq98aMlwMVFnV6BR0wOQCnygEElqQpEQ==",
+                     "browseEndpoint": {
+                      "browseId": "UC4cu15Vfy2VLuqV-pQSXSug",
+                      "browseEndpointContextSupportedConfigs": {
+                       "browseEndpointContextMusicConfig": {
+                        "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                       }
+                      }
+                     }
+                    }
+                   }
+                  ]
+                 },
+                 "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+                }
+               },
+               {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                 "text": {},
+                 "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_MEDIUM"
+                }
+               }
+              ],
+              "fixedColumns": [
+               {
+                "musicResponsiveListItemFixedColumnRenderer": {
+                 "text": {
+                  "runs": [
+                   {
+                    "text": "3:55"
+                   }
+                  ],
+                  "accessibility": {
+                   "accessibilityData": {
+                    "label": "3 minutes, 55 seconds"
+                   }
+                  }
+                 },
+                 "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH",
+                 "size": "MUSIC_RESPONSIVE_LIST_ITEM_FIXED_COLUMN_SIZE_SMALL"
+                }
+               }
+              ]
+             }
+            },
+            {
+             "musicResponsiveListItemRenderer": {
+              "thumbnail": {
+               "musicThumbnailRenderer": {
+                "thumbnail": {
+                 "thumbnails": [
+                  {
+                   "url": "https://yt3.googleusercontent.com/BzZEgG-sZUmeydsq01nO98LSLlSnszhJJnvQFXNTgL8w0QKMj4spDdqfBgOR7zEG7HwVdiMP1a4PY-hAMA=w60-h60-l90-rj",
+                   "width": 60,
+                   "height": 60
+                  },
+                  {
+                   "url": "https://yt3.googleusercontent.com/BzZEgG-sZUmeydsq01nO98LSLlSnszhJJnvQFXNTgL8w0QKMj4spDdqfBgOR7zEG7HwVdiMP1a4PY-hAMA=w120-h120-l90-rj",
+                   "width": 120,
+                   "height": 120
+                  }
+                 ]
+                },
+                "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+                "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FIT",
+                "trackingParams": "CLwOEIS_AiITCPuzqvfGjJcDFRZ1egUdMDkApw=="
+               }
+              },
+              "flexColumns": [
+               {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                 "text": {
+                  "runs": [
+                   {
+                    "text": "La Diabla",
+                    "navigationEndpoint": {
+                     "clickTrackingParams": "CKcOEMn0AhgEIhMI-7Oq98aMlwMVFnV6BR0wOQCnygEElqQpEQ==",
+                     "watchEndpoint": {
+                      "videoId": "s6cdjJvGM2o",
+                      "playlistId": "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
+                      "playerParams": "iAQB8AUB",
+                      "loggingContext": {
+                       "vssLoggingContext": {
+                        "serializedContextData": "GiJQTEZncXVMbkw1OWFsQ2xfMlRRdk9pRDVWZ20xaENhR1NJ"
+                       }
+                      },
+                      "watchEndpointMusicSupportedConfigs": {
+                       "watchEndpointMusicConfig": {
+                        "musicVideoType": "MUSIC_VIDEO_TYPE_ATV"
+                       }
+                      }
+                     }
+                    }
+                   }
+                  ]
+                 },
+                 "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+                }
+               },
+               {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                 "text": {
+                  "runs": [
+                   {
+                    "text": "Xavi",
+                    "navigationEndpoint": {
+                     "clickTrackingParams": "CKcOEMn0AhgEIhMI-7Oq98aMlwMVFnV6BR0wOQCnygEElqQpEQ==",
+                     "browseEndpoint": {
+                      "browseId": "UCfmeXjlCXi37LGF7O2VT2zA",
+                      "browseEndpointContextSupportedConfigs": {
+                       "browseEndpointContextMusicConfig": {
+                        "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                       }
+                      }
+                     }
+                    }
+                   }
+                  ]
+                 },
+                 "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+                }
+               },
+               {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                 "text": {
+                  "runs": [
+                   {
+                    "text": "La Diabla",
+                    "navigationEndpoint": {
+                     "clickTrackingParams": "CKcOEMn0AhgEIhMI-7Oq98aMlwMVFnV6BR0wOQCnygEElqQpEQ==",
+                     "browseEndpoint": {
+                      "browseId": "MPREb_uxXohsgZ4gp",
+                      "browseEndpointContextSupportedConfigs": {
+                       "browseEndpointContextMusicConfig": {
+                        "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+                       }
+                      }
+                     }
+                    }
+                   }
+                  ]
+                 },
+                 "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_MEDIUM"
+                }
+               }
+              ],
+              "fixedColumns": [
+               {
+                "musicResponsiveListItemFixedColumnRenderer": {
+                 "text": {
+                  "runs": [
+                   {
+                    "text": "2:53"
+                   }
+                  ],
+                  "accessibility": {
+                   "accessibilityData": {
+                    "label": "2 minutes, 53 seconds"
+                   }
+                  }
+                 },
+                 "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH",
+                 "size": "MUSIC_RESPONSIVE_LIST_ITEM_FIXED_COLUMN_SIZE_SMALL"
+                }
+               }
+              ]
+             }
+            },
+            {
+             "continuationItemRenderer": {
+              "trigger": "CONTINUATION_TRIGGER_ON_ITEM_PRESCAN_VISIBLE",
+              "continuationEndpoint": {
+               "clickTrackingParams": "CB0Q9-MCGAAiEwj7s6r3xoyXAxUWdXoFHTA5AKfKAQSWpCkR",
+               "continuationCommand": {
+                "token": "4qmFsgKHARIkVkxQTEZncXVMbkw1OWFsQ2xfMlRRdk9pRDVWZ20xaENhR1NJGjplaDVRVkRwRFIxRnBSVVJOTlU1cWFFVlJhMDAwVDBSQmVrMUZUWGRSYTBXU0FRTUl1Z1R3QVFBJTNEmgIiUExGZ3F1TG5MNTlhbENsXzJUUXZPaUQ1VmdtMWhDYUdTSQ%3D%3D",
+                "request": "CONTINUATION_REQUEST_TYPE_BROWSE"
+               }
+              }
+             }
+            }
+           ]
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  }
+ }
+}

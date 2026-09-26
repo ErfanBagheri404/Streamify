@@ -35,6 +35,7 @@ import { useAppLanguage } from "../../hooks/useAppLanguage";
 import { isLocalMediaSupported } from "../../modules/localMedia";
 import { useTheme, withOpacity } from "../../hooks/useTheme";
 import { PlaylistCreateModal } from "../PlaylistCreateModal";
+import { PlaylistImportSheet } from "../PlaylistImportSheet";
 import { sanitizeImageUrl } from "../core/image";
 import { getAppFontFamily, getTextDirectionStyle } from "../../utils/fonts";
 import { useAuth } from "../../hooks/useAuth";
@@ -380,6 +381,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   const [viewMode, setViewMode] = useState<LibraryViewMode>("grid");
   const [playlists, setPlaylists] = React.useState<Playlist[]>([]);
   const [showCreatePlaylistModal, setShowCreatePlaylistModal] =
+    React.useState(false);
+  const [showImportPlaylistSheet, setShowImportPlaylistSheet] =
     React.useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
   const [newPlaylistDescription, setNewPlaylistDescription] = useState("");
@@ -1481,6 +1484,19 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
               </HeaderIconText>
             </HeaderIconButton>
             <HeaderIconButton
+              onPress={() => setShowImportPlaylistSheet(true)}
+              accessibilityLabel={t("library.importPlaylist")}
+              style={{ marginStart: 6, marginEnd: 6 }}
+            >
+              <HeaderIconText>
+                <Ionicons
+                  name="download-outline"
+                  size={20}
+                  color={colors.foreground}
+                />
+              </HeaderIconText>
+            </HeaderIconButton>
+            <HeaderIconButton
               onPress={() => setShowCreatePlaylistModal(true)}
               style={{ marginStart: 6, marginEnd: 8 }}
             >
@@ -1936,6 +1952,14 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             )}
           </Animated.View>
         </Grid>
+
+        <PlaylistImportSheet
+          visible={showImportPlaylistSheet}
+          onClose={() => setShowImportPlaylistSheet(false)}
+          onImported={() => {
+            void loadPlaylists();
+          }}
+        />
 
         <PlaylistCreateModal
           visible={showCreatePlaylistModal}
