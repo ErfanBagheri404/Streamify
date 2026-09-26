@@ -1127,5 +1127,31 @@
     "saved": "Connected. Subsonic now appears in search sources.",
     "cleared": "Server disconnected.",
     "connectFailed": "Could not connect. Check the URL, username, and password."
+  },
+  "appLock": {
+    "title": "Unlock Streamify",
+    "subtitle": "Enter your PIN to continue",
+    "hiddenTrack": "Playing (locked)",
+    "setPin": "Set PIN",
+    "changePin": "Change or remove",
+    "createPinHint": "Choose a 4-6 digit PIN",
+    "confirmPin": "Enter the same PIN again",
+    "pinMismatch": "PINs did not match. Start again",
+    "pinTooShort": "Enter at least 4 digits",
+    "pinWrong": "Wrong PIN",
+    "tooManyAttempts": "Too many wrong attempts. Wait a moment",
+    "waitSeconds": "Too many wrong attempts. Try again in {wait}",
+    "saveFailed": "Could not save the PIN. Hardware-backed storage may be unavailable",
+    "removeTitle": "Remove app lock",
+    "disableHint": "Enter your current PIN to remove the lock",
+    "requirePin": "Require a PIN to open Streamify",
+    "requirePinDescription": "Locks the app when it opens and every time it returns to the foreground. Playback keeps running while locked",
+    "hideMetadata": "Hide track name while locked",
+    "hideMetadataDescription": "The mini player shows 'Playing (locked)' instead of the title and artist",
+    "privacyTitle": "Privacy",
+    "privacyDescription": "Hide the app and your playlists behind a PIN",
+    "vault": "Private playlists",
+    "vaultDescription": "Playlists you marked as locked. Open the vault from the library with your PIN",
+    "vaultTitle": "Private playlists"
   }
 }

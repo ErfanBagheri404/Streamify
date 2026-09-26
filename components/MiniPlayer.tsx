@@ -14,6 +14,7 @@ import { usePlayer, usePlaybackProgress } from "../contexts/PlayerContext";
 import { useTheme, withOpacity } from "../hooks/useTheme";
 import { useAppLanguage } from "../hooks/useAppLanguage";
 import { useAppSettings } from "../hooks/useAppSettings";
+import { useAppLock } from "../contexts/AppLockContext";
 import { getAppFontFamily } from "../utils/fonts";
 import SourceIcon from "./ui/SourceIcon";
 import { sanitizeImageUrl, normalizeYouTubeThumbnailUrl } from "./core/image";
@@ -163,6 +164,13 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
   const { language, isRtl, t } = useAppLanguage();
   const { settings } = useAppSettings();
   const insets = useSafeAreaInsets();
+  const { isUnlocked } = useAppLock();
+
+  // A lock that leaks through the always-on mini player is not a lock: the
+  // title and artist blank out whenever the gate is up. Only the app lock
+  // gates this — the vault hides playlists, and the mini player is about what
+  // is playing, not which list it came from.
+  const hideMetadata = settings.hideMetadataWhileLocked && !isUnlocked;
 
   // Keep the compact player closer to the content on immersive detail screens.
   const compactPlayerScreens = [
@@ -368,10 +376,10 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
                 flex: 1,
               }}
             >
-              {currentTrack.title}
+              {hideMetadata ? t("appLock.hiddenTrack") : currentTrack.title}
             </TrackTitle>
           </View>
-          {(statusText || currentTrack.artist) && (
+          {(statusText || currentTrack.artist) && !hideMetadata && (
             <TrackArtist
               numberOfLines={1}
               style={{
