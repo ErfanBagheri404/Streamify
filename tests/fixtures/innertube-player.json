@@ -1,0 +1,277 @@
+{
+ "fixtureNote": "sanitized-shape-fixture",
+ "playabilityStatus": {
+  "status": "OK"
+ },
+ "streamingData": {
+  "expiresInSeconds": "21540",
+  "formats": [
+   {
+    "itag": 18,
+    "url": "https://fixture.invalid/videoplayback?itag=18",
+    "mimeType": "video/mp4; codecs=\"avc1.42001E, mp4a.40.2\"",
+    "bitrate": 666320,
+    "width": 640,
+    "height": 360,
+    "quality": "medium",
+    "fps": 24,
+    "qualityLabel": "360p",
+    "audioQuality": "AUDIO_QUALITY_LOW"
+   }
+  ],
+  "adaptiveFormats": [
+   {
+    "itag": 137,
+    "url": "https://fixture.invalid/videoplayback?itag=137",
+    "mimeType": "video/mp4; codecs=\"avc1.640028\"",
+    "bitrate": 4334969,
+    "width": 1920,
+    "height": 1080,
+    "quality": "hd1080",
+    "fps": 24,
+    "qualityLabel": "1080p"
+   },
+   {
+    "itag": 399,
+    "url": "https://fixture.invalid/videoplayback?itag=399",
+    "mimeType": "video/mp4; codecs=\"av01.0.08M.08\"",
+    "bitrate": 2402343,
+    "width": 1920,
+    "height": 1080,
+    "quality": "hd1080",
+    "fps": 24,
+    "qualityLabel": "1080p"
+   },
+   {
+    "itag": 136,
+    "url": "https://fixture.invalid/videoplayback?itag=136",
+    "mimeType": "video/mp4; codecs=\"avc1.4d401f\"",
+    "bitrate": 2316974,
+    "width": 1280,
+    "height": 720,
+    "quality": "hd720",
+    "fps": 24,
+    "qualityLabel": "720p"
+   },
+   {
+    "itag": 247,
+    "url": "https://fixture.invalid/videoplayback?itag=247",
+    "mimeType": "video/webm; codecs=\"vp9\"",
+    "bitrate": 1834881,
+    "width": 1280,
+    "height": 720,
+    "quality": "hd720",
+    "fps": 24,
+    "qualityLabel": "720p"
+   },
+   {
+    "itag": 398,
+    "url": "https://fixture.invalid/videoplayback?itag=398",
+    "mimeType": "video/mp4; codecs=\"av01.0.05M.08\"",
+    "bitrate": 1352877,
+    "width": 1280,
+    "height": 720,
+    "quality": "hd720",
+    "fps": 24,
+    "qualityLabel": "720p"
+   },
+   {
+    "itag": 779,
+    "url": "https://fixture.invalid/videoplayback?itag=779",
+    "mimeType": "video/webm; codecs=\"vp9\"",
+    "bitrate": 809177,
+    "width": 1080,
+    "height": 608,
+    "quality": "large",
+    "fps": 24,
+    "qualityLabel": "480p"
+   },
+   {
+    "itag": 780,
+    "url": "https://fixture.invalid/videoplayback?itag=780",
+    "mimeType": "video/webm; codecs=\"vp9\"",
+    "bitrate": 1063968,
+    "width": 1080,
+    "height": 608,
+    "quality": "large",
+    "fps": 24,
+    "qualityLabel": "480p"
+   },
+   {
+    "itag": 788,
+    "url": "https://fixture.invalid/videoplayback?itag=788",
+    "mimeType": "video/mp4; codecs=\"av01.0.04M.08\"",
+    "bitrate": 813862,
+    "width": 1080,
+    "height": 608,
+    "quality": "large",
+    "fps": 24,
+    "qualityLabel": "480p"
+   },
+   {
+    "itag": 135,
+    "url": "https://fixture.invalid/videoplayback?itag=135",
+    "mimeType": "video/mp4; codecs=\"avc1.4d401e\"",
+    "bitrate": 1160020,
+    "width": 854,
+    "height": 480,
+    "quality": "large",
+    "fps": 24,
+    "qualityLabel": "480p"
+   },
+   {
+    "itag": 244,
+    "url": "https://fixture.invalid/videoplayback?itag=244",
+    "mimeType": "video/webm; codecs=\"vp9\"",
+    "bitrate": 889153,
+    "width": 854,
+    "height": 480,
+    "quality": "large",
+    "fps": 24,
+    "qualityLabel": "480p"
+   },
+   {
+    "itag": 397,
+    "url": "https://fixture.invalid/videoplayback?itag=397",
+    "mimeType": "video/mp4; codecs=\"av01.0.04M.08\"",
+    "bitrate": 722903,
+    "width": 854,
+    "height": 480,
+    "quality": "large",
+    "fps": 24,
+    "qualityLabel": "480p"
+   },
+   {
+    "itag": 134,
+    "url": "https://fixture.invalid/videoplayback?itag=134",
+    "mimeType": "video/mp4; codecs=\"avc1.4d401e\"",
+    "bitrate": 635573,
+    "width": 640,
+    "height": 360,
+    "quality": "medium",
+    "fps": 24,
+    "qualityLabel": "360p"
+   },
+   {
+    "itag": 243,
+    "url": "https://fixture.invalid/videoplayback?itag=243",
+    "mimeType": "video/webm; codecs=\"vp9\"",
+    "bitrate": 347061,
+    "width": 640,
+    "height": 360,
+    "quality": "medium",
+    "fps": 24,
+    "qualityLabel": "360p"
+   },
+   {
+    "itag": 396,
+    "url": "https://fixture.invalid/videoplayback?itag=396",
+    "mimeType": "video/mp4; codecs=\"av01.0.01M.08\"",
+    "bitrate": 372339,
+    "width": 640,
+    "height": 360,
+    "quality": "medium",
+    "fps": 24,
+    "qualityLabel": "360p"
+   },
+   {
+    "itag": 133,
+    "url": "https://fixture.invalid/videoplayback?itag=133",
+    "mimeType": "video/mp4; codecs=\"avc1.4d4015\"",
+    "bitrate": 248184,
+    "width": 426,
+    "height": 240,
+    "quality": "small",
+    "fps": 24,
+    "qualityLabel": "240p"
+   },
+   {
+    "itag": 242,
+    "url": "https://fixture.invalid/videoplayback?itag=242",
+    "mimeType": "video/webm; codecs=\"vp9\"",
+    "bitrate": 142896,
+    "width": 426,
+    "height": 240,
+    "quality": "small",
+    "fps": 24,
+    "qualityLabel": "240p"
+   },
+   {
+    "itag": 395,
+    "url": "https://fixture.invalid/videoplayback?itag=395",
+    "mimeType": "video/mp4; codecs=\"av01.0.00M.08\"",
+    "bitrate": 125299,
+    "width": 426,
+    "height": 240,
+    "quality": "small",
+    "fps": 24,
+    "qualityLabel": "240p"
+   },
+   {
+    "itag": 160,
+    "url": "https://fixture.invalid/videoplayback?itag=160",
+    "mimeType": "video/mp4; codecs=\"avc1.4d400c\"",
+    "bitrate": 114341,
+    "width": 256,
+    "height": 144,
+    "quality": "tiny",
+    "fps": 24,
+    "qualityLabel": "144p"
+   },
+   {
+    "itag": 278,
+    "url": "https://fixture.invalid/videoplayback?itag=278",
+    "mimeType": "video/webm; codecs=\"vp9\"",
+    "bitrate": 97781,
+    "width": 256,
+    "height": 144,
+    "quality": "tiny",
+    "fps": 24,
+    "qualityLabel": "144p"
+   },
+   {
+    "itag": 394,
+    "url": "https://fixture.invalid/videoplayback?itag=394",
+    "mimeType": "video/mp4; codecs=\"av01.0.00M.08\"",
+    "bitrate": 90667,
+    "width": 256,
+    "height": 144,
+    "quality": "tiny",
+    "fps": 24,
+    "qualityLabel": "144p"
+   },
+   {
+    "itag": 139,
+    "url": "https://fixture.invalid/videoplayback?itag=139",
+    "mimeType": "audio/mp4; codecs=\"mp4a.40.5\"",
+    "bitrate": 50139,
+    "quality": "tiny",
+    "audioQuality": "AUDIO_QUALITY_LOW"
+   },
+   {
+    "itag": 140,
+    "url": "https://fixture.invalid/videoplayback?itag=140",
+    "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"",
+    "bitrate": 130587,
+    "quality": "tiny",
+    "audioQuality": "AUDIO_QUALITY_MEDIUM"
+   },
+   {
+    "itag": 249,
+    "url": "https://fixture.invalid/videoplayback?itag=249",
+    "mimeType": "audio/webm; codecs=\"opus\"",
+    "bitrate": 63273,
+    "quality": "tiny",
+    "audioQuality": "AUDIO_QUALITY_LOW"
+   },
+   {
+    "itag": 251,
+    "url": "https://fixture.invalid/videoplayback?itag=251",
+    "mimeType": "audio/webm; codecs=\"opus\"",
+    "bitrate": 148041,
+    "quality": "tiny",
+    "audioQuality": "AUDIO_QUALITY_MEDIUM"
+   }
+  ]
+ }
+}
