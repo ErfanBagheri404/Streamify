@@ -86,6 +86,11 @@ export function SongIdentifySheet({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const keepRef = useRef(false);
   keepRef.current = keepSnippet;
+  // Set when the sheet is dismissed while a snippet is still being captured.
+  // recordSnippet() blocks for the full window, so without this the in-flight
+  // recording would keep running, get submitted, and leave its file behind
+  // after the user already closed the sheet.
+  const abandonedRef = useRef(false);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -104,6 +109,7 @@ export function SongIdentifySheet({
     setClipUri(null);
     setClipOutcome(null);
     setSecondsLeft(Math.ceil(MAX_SNIPPET_MS / 1000));
+    abandonedRef.current = false;
     setState(isRecognitionConfigured() ? "idle" : "not_configured");
   }, [visible, clearTimer]);
 
@@ -133,14 +139,21 @@ export function SongIdentifySheet({
     const recorded = await recordSnippet();
     clearTimer();
     if (!recorded.ok) {
-      setState(failureState(recorded.reason));
+      setState(failureState((recorded as { reason: RecognizeFailureReason }).reason));
+      return;
+    }
+    // Closed while the snippet was still being captured: delete it and never
+    // submit — the user already left the sheet, so there is no one to show a
+    // result to and no consent to upload.
+    if (abandonedRef.current) {
+      await discardSnippet(recorded.uri);
       return;
     }
     setClipUri(recorded.uri);
     setState("submitting");
     const result = await recognize(recorded.uri);
     if (!result.ok) {
-      setState(failureState(result.reason));
+      setState(failureState((result as { reason: RecognizeFailureReason }).reason));
       return;
     }
     setMatch(result.match);
@@ -149,6 +162,7 @@ export function SongIdentifySheet({
 
   const close = useCallback(() => {
     clearTimer();
+    abandonedRef.current = true;
     onClose();
   }, [clearTimer, onClose]);
 
@@ -245,10 +259,7 @@ export function SongIdentifySheet({
                   <ActivityIndicator color={colors.accent} />
                   <Text style={[styles.bodyText, { color: colors.foreground }]}>
                     {t("songIdentify.recording")}{" "}
-                    {t("songIdentify.secondsLeft").replace(
-                      "{{seconds}}",
-                      String(secondsLeft),
-                    )}
+                    {t("songIdentify.secondsLeft", { seconds: secondsLeft })}
                   </Text>
                 </View>
                 <View
