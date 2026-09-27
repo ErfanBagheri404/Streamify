@@ -1127,5 +1127,26 @@
     "saved": "Connected. Subsonic now appears in search sources.",
     "cleared": "Server disconnected.",
     "connectFailed": "Could not connect. Check the URL, username, and password."
+  },
+  "songIdentify": {
+    "title": "What's this song?",
+    "subtitle": "Hold your phone near the music for a few seconds.",
+    "close": "Close",
+    "start": "Listen for 8 seconds",
+    "recording": "Listening…",
+    "secondsLeft": "{seconds}s left",
+    "recordingHint": "The recording stops by itself. Nothing is kept unless you tick the box below.",
+    "submitting": "Recognizing…",
+    "notConfiguredBody": "Song recognition is not configured yet. Add an AudD API token to app config (expo.extra.auddToken) to enable it.",
+    "noMatchBody": "Couldn't recognize that. Try again closer to the speakers or in a quieter spot.",
+    "permissionDeniedBody": "Microphone access is needed to recognize a song. Allow it in Android settings and try again.",
+    "networkBody": "Could not reach the recognition service. Check your connection and try again.",
+    "searchInApp": "Search this song in Streamify",
+    "addToQueue": "Add to queue and start radio",
+    "keepSnippet": "Keep the recording on this device",
+    "snippetDiscarded": "Recording deleted from this device.",
+    "snippetSaved": "Recording kept on this device.",
+    "tryAgain": "Try again",
+    "noSearchResults": "No playable result matched the recognized song."
   }
 }

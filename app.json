@@ -46,7 +46,8 @@
     "extra": {
       "eas": {
         "projectId": "f2a4600c-e6c6-46c1-ad8b-311d9c30d9d9"
-      }
+      },
+      "auddToken": ""
     },
     "splash": {
       "image": "./assets/StreamifyLogo.png",
