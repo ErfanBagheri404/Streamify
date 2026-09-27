@@ -105,6 +105,11 @@ export async function recordSnippet(): Promise<RecordResult> {
       250,
     );
     recorder = created.recording;
+    // Record for real. The status callback above fires on an interval, not
+    // synchronously, so there is nothing to poll for here: give the bounded
+    // window (or the hard stop) to elapse, then stop and read the final
+    // status. Stopping immediately would yield a ~0ms clip.
+    await new Promise((resolve) => setTimeout(resolve, MAX_SNIPPET_MS));
     const status = await stop();
     const uri = status?.uri || created.status?.uri;
     if (!uri) return { ok: false, reason: "bad_response" };

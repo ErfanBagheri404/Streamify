@@ -45,6 +45,9 @@ import { PlaybackSpeedSheet } from "./PlaybackSpeedSheet";
 import { LyricsSearchSheet } from "./LyricsSearchSheet";
 import { buildRadioQueue } from "../modules/radioService";
 import { buildSmartQueue, loadPlayCounts } from "../modules/aiPlaylistService";
+import { SongIdentifySheet } from "./SongIdentifySheet";
+import { searchAPI } from "../modules/searchAPI";
+import type { SongMatch } from "../modules/songRecognition";
 import { StorageService, Playlist } from "../utils/storage";
 import { useAppSettings } from "../hooks/useAppSettings";
 import { useAppLanguage } from "../hooks/useAppLanguage";
@@ -694,6 +697,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [showSleepTimerSheet, setShowSleepTimerSheet] = useState(false);
   const [showSpeedSheet, setShowSpeedSheet] = useState(false);
   const [showLyricsSearchSheet, setShowLyricsSearchSheet] = useState(false);
+  const [showIdentifySheet, setShowIdentifySheet] = useState(false);
   // Latest rendered track id — used by async lyrics callbacks instead of the
   // stale closure value, so a late result cannot overwrite a newer track.
   // Updated in an effect (post-commit) rather than during render.
@@ -920,6 +924,11 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
             ? "صف پخش هوشمند از کتابخانه"
             : "Smart queue from library",
         icon: "sparkles-outline",
+      },
+      {
+        key: "Identify this song",
+        label: language === "fa" ? "شناسایی این آهنگ" : "Identify this song",
+        icon: "mic-outline",
       },
       {
         key: "Go to song radio",
@@ -1316,6 +1325,11 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       return;
     }
 
+    if (option === "Identify this song") {
+      setShowIdentifySheet(true);
+      return;
+    }
+
     if (option === "Smart queue from library") {
       const seedTrack = currentTrack;
       if (!seedTrack) {
@@ -1373,6 +1387,86 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       ].filter(Boolean);
       Alert.alert(t("player.songCredits") || "Song credits", lines.join("\n"));
       return;
+    }
+  };
+
+  // Issue #36: turn a recognition match into a playable seed track and run
+  // it through the exact same search+play paths the Search screen uses.
+  const handleRecognizeSearch = async (match: SongMatch) => {
+    const query = [match.artist, match.title].filter(Boolean).join(" ").trim();
+    if (!query) {
+      return;
+    }
+    setShowIdentifySheet(false);
+    try {
+      const results = await searchAPI.searchMixed(query, "songs", 1, 20);
+      const playable = (results || [])
+        .filter(
+          (item: any) =>
+            item?.type === "song" ||
+            item?.type === "video" ||
+            item?.type === "stream" ||
+            (!item?.type && Boolean(item?.duration)),
+        )
+        .map((item: any) => ({
+          id: String(item.id),
+          title: item.title,
+          artist: item.author,
+          artistId: item.artistId,
+          artistImage: item.artistImage || item.thumbnailUrl || item.img,
+          artistSource:
+            item.artistSource || item.playbackSource || item.source || "youtube",
+          duration: parseInt(item.duration) || 0,
+          thumbnail: item.thumbnailUrl || item.img,
+          audioUrl:
+            item.source === "local" || item.source === "subsonic"
+              ? item.href
+              : (item.streamUrl ?? undefined),
+          url: item.href,
+          source: item.playbackSource || item.source || "youtube",
+          providerHint: item.providerHint,
+          _isSoundCloud: item.source === "soundcloud",
+          _isJioSaavn:
+            item.playbackSource === "jiosaavn" || item.source === "jiosaavn",
+          _isLocal: item.source === "local",
+          _isSubsonic: item.source === "subsonic",
+        }));
+      if (playable.length === 0) {
+        Alert.alert(t("songIdentify.title"), t("songIdentify.noSearchResults"));
+        return;
+      }
+      await playTrack(playable[0], playable, 0);
+    } catch (error) {
+      console.log("[FullPlayerModal] Recognition search failed:", error);
+    }
+  };
+
+  // Same seeded buildSmartQueue path as "Smart queue from library" —
+  // never call it bare, or it returns [].
+  const handleRecognizeQueue = async (match: SongMatch) => {
+    const seedTrack: Track = {
+      id: `recognized:${match.artist || ""}|${match.title}`,
+      title: match.title,
+      artist: match.artist,
+      thumbnail: match.artwork,
+    };
+    setShowIdentifySheet(false);
+    try {
+      const playCounts = await loadPlayCounts();
+      const smartQueue = buildSmartQueue({
+        seed: seedTrack,
+        library: likedSongs,
+        size: 20,
+        playCounts,
+      });
+      if (smartQueue.length > 0) {
+        await playTrack(seedTrack, [seedTrack, ...smartQueue], 0);
+        return;
+      }
+      const radioQueue = await buildRadioQueue(seedTrack);
+      await playTrack(seedTrack, radioQueue, 0);
+    } catch (error) {
+      console.log("[FullPlayerModal] Recognition queue failed:", error);
     }
   };
 
@@ -2972,6 +3066,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 setLyricsError(copy.manualSearchFailed);
               });
           }}
+        />
+        <SongIdentifySheet
+          visible={showIdentifySheet}
+          onClose={() => setShowIdentifySheet(false)}
+          onSearchInApp={handleRecognizeSearch}
+          onAddToQueue={handleRecognizeQueue}
         />
       </ModalContainer>
     </Modal>
