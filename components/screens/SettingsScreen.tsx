@@ -11,6 +11,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import {
   APP_THEME_OPTIONS,
+  HEARING_CEILING_OPTIONS,
+  HEARING_DEVICE_PROFILES,
   SEEK_STEP_OPTIONS,
   type AppLanguage,
   type AppTheme,
@@ -1148,6 +1150,62 @@ export default function SettingsScreen({
                       updateSettings({ replayGainEnabled: value })
                     }
                   />
+                }
+              />
+              <SettingRow
+                label={t("settings.hearingLimiter")}
+                description={t("settings.hearingLimiterDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.hearingLimiter")}
+                    accessibilityHint={t("settings.hearingLimiterDescription")}
+                    value={settings.hearingLimiterEnabled}
+                    onValueChange={(value) =>
+                      updateSettings({ hearingLimiterEnabled: value })
+                    }
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.hearingCeiling")}
+                description={t("settings.hearingCeilingDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.choiceWrap}>
+                    {HEARING_CEILING_OPTIONS.map((ceiling) => (
+                      <ChoiceChip
+                        key={ceiling}
+                        label={`${ceiling}`}
+                        selected={settings.hearingCeiling === ceiling}
+                        onPress={() =>
+                          updateSettings({ hearingCeiling: ceiling })
+                        }
+                        colors={colors}
+                      />
+                    ))}
+                  </View>
+                }
+              />
+              <SettingRow
+                label={t("settings.hearingDeviceProfile")}
+                description={t("settings.hearingDeviceProfileDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.choiceWrap}>
+                    {HEARING_DEVICE_PROFILES.map((profile) => (
+                      <ChoiceChip
+                        key={profile.id}
+                        label={t(`settings.hearingProfile_${profile.id}`)}
+                        selected={settings.hearingDeviceProfile === profile.id}
+                        onPress={() =>
+                          updateSettings({ hearingDeviceProfile: profile.id })
+                        }
+                        colors={colors}
+                      />
+                    ))}
+                  </View>
                 }
               />
             </Section>

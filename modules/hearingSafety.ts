@@ -23,14 +23,15 @@ import {
   WHO_WEEKLY_BUDGET_DB_HOURS,
 } from "../lib/app-settings";
 
-const native = (NativeModules as Record<string, unknown>)
-  .StreamifyHearingLimitModule as
+const native = (NativeModules as any).StreamifyHearingLimitModule as
   | {
       getState(): Promise<HearingNativeState>;
       isSupported(): Promise<boolean>;
       getCeiling(): Promise<number>;
       setCeiling(ceiling: number): Promise<number>;
       setEnabled(enabled: boolean): Promise<boolean>;
+      /** System media volume 0..1; 0 means muted. */
+      getOutputVolume(): Promise<number>;
     }
   | undefined;
 
@@ -106,6 +107,22 @@ export async function setHearingLimiterEnabled(enabled: boolean): Promise<boolea
     return await requireNative().setEnabled(enabled);
   } catch {
     return false;
+  }
+}
+
+/**
+ * System media volume 0..1, or null when it cannot be read. 0 means muted:
+ * the caller must treat that as "not listening" and stop accumulating.
+ */
+export async function getOutputVolume(): Promise<number | null> {
+  if (!HEARING_NATIVE_AVAILABLE) {
+    return null;
+  }
+  try {
+    const value = await requireNative().getOutputVolume();
+    return Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
   }
 }
 
@@ -260,7 +277,7 @@ export function summarizeExposure(
   // Weekly = the last 7 calendar days including today. The list is pruned on
   // write, so summing it never under-counts a display cap.
   const weeklyDbHours = live
-    .filter((entry) => entry.day > shiftDay(today, -6))
+    .filter((entry) => entry.day >= shiftDay(today, -6))
     .reduce((total, entry) => total + entry.dbHours, 0);
   return {
     todayDbHours: todayEntry?.dbHours ?? 0,

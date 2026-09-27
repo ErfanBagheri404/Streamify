@@ -60,7 +60,7 @@ export type SettingsSectionKey =
 
 /** Per-device max-SPL table for hearing-safety estimates.
  * `maxDbA` is the estimated output with the volume at full scale. */
-export type HearingDeviceProfile = "unknown" | "phone" | "budget" | "flagship" | "tablet" | "bt-headphones" | "bt-earbuds" | "wired-earbuds";
+export type HearingDeviceProfile = "unknown" | "phone" | "flagship" | "wired-earbuds" | "bt-headphones" | "bt-earbuds";
 
 export interface HearingProfileEntry {
   id: HearingDeviceProfile;
@@ -70,17 +70,18 @@ export interface HearingProfileEntry {
 export const HEARING_DEVICE_PROFILES: HearingProfileEntry[] = [
   { id: "unknown", maxDbA: 0 },
   { id: "phone", maxDbA: 100 },
-  { id: "budget", maxDbA: 95 },
   { id: "flagship", maxDbA: 103 },
-  { id: "tablet", maxDbA: 92 },
+  { id: "wired-earbuds", maxDbA: 102 },
   { id: "bt-headphones", maxDbA: 100 },
   { id: "bt-earbuds", maxDbA: 98 },
-  { id: "wired-earbuds", maxDbA: 102 },
 ];
 
 /** Limiter ceiling window (estimated dB(A)). WHO flags risk above 80 dB(A). */
 export const HEARING_CEILING_RANGE = { min: 60, max: 100 } as const;
 export const HEARING_CEILING_DEFAULT = 85;
+
+/** Stepper choices offered in Settings; all inside HEARING_CEILING_RANGE. */
+export const HEARING_CEILING_OPTIONS = [70, 80, 85, 90] as const;
 
 /** Weekly safe-listening budget in dB-hours (WHO 80 dB(A) guidance). */
 export const WHO_WEEKLY_BUDGET_DB_HOURS = 40;

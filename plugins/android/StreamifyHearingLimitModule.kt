@@ -1,5 +1,7 @@
 package com.erfanbagheri.streamifymobile
 
+import android.content.Context
+import android.media.AudioManager
 import android.media.audiofx.DynamicsProcessing
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
@@ -142,6 +144,27 @@ class StreamifyHearingLimitModule(reactContext: ReactApplicationContext) :
     limiterEnabled = enabled
     applyLimiter()
     promise.resolve(limiterEnabled)
+  }
+
+  /**
+   * System media volume, 0..1. This is the only volume the app can observe —
+   * TrackPlayer's own volume is a fade multiplier, not the user's level — and
+   * 0 means the user muted the stream, so the exposure meter stops.
+   */
+  @ReactMethod
+  fun getOutputVolume(promise: Promise) {
+    promise.resolve(readOutputVolume())
+  }
+
+  private fun readOutputVolume(): Double {
+    return try {
+      val audio = reactApplicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+      val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+      val current = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+      if (max <= 0) 0.0 else current.toDouble() / max.toDouble()
+    } catch (_: Exception) {
+      0.0
+    }
   }
 
   /** One bridge call for support flag, ceiling window and live values. */

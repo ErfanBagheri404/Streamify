@@ -43,6 +43,8 @@ import { AppUpdateProvider } from "./contexts/AppUpdateContext";
 import { SettingsProvider, useSettings } from "./contexts/SettingsContext";
 import { ThemeProvider, useTheme, withOpacity } from "./contexts/ThemeContext";
 import { usePlayer } from "./contexts/PlayerContext";
+import { useHearingSafety } from "./hooks/useHearingSafety";
+import { useAppSettings } from "./hooks/useAppSettings";
 import { AuthProvider } from "./contexts/AuthContext";
 
 // API
@@ -657,6 +659,20 @@ function AppShell() {
   );
 }
 
+/**
+ * Mounts the hearing-safety hook next to the player: pushes the saved
+ * limiter state to the native module and drives the exposure meter.
+ */
+function HearingSafetyBridge() {
+  const { isPlaying } = usePlayer();
+  const { settings } = useAppSettings();
+  useHearingSafety({
+    isPlaying,
+    deviceProfile: settings.hearingDeviceProfile,
+  });
+  return null;
+}
+
 function AppContent() {
   return (
     <DebugStartupBoundary>
@@ -666,6 +682,7 @@ function AppContent() {
             <AuthProvider>
               <AppUpdateProvider>
                 <PlayerProvider>
+                  <HearingSafetyBridge />
                   <CloudLibraryBridge />
                   <PlaybackPreferenceBridge />
                   <GlobalTextDefaultsBridge />
