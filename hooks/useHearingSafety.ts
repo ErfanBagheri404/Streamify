@@ -79,11 +79,11 @@ export function useHearingSafety({
       const today = dayStamp();
       const days = await readExposureDays();
       if (days.length === 0) return;
+      // isExposureDayStale(entry, today) IS entry.day !== today, so the old
+      // nested re-check was the same predicate twice — and `if (stale)` was
+      // always true once the outer guard passed.
       if (days.some((entry) => isExposureDayStale(entry, today))) {
-        const stale = days.some((entry) => entry.day !== today);
-        if (stale) {
-          await writeExposureDays(days.filter((entry) => entry.day === today));
-        }
+        await writeExposureDays(days.filter((entry) => entry.day === today));
       }
     };
 

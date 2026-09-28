@@ -83,10 +83,6 @@ export async function isHearingLimiterSupported(): Promise<boolean> {
   return (await getHearingLimiterState()).supported;
 }
 
-export async function getHearingDeviceMax(): Promise<number> {
-  return (await getHearingLimiterState()).deviceMax;
-}
-
 /** Resolves the clamped ceiling the device actually applied. */
 export async function setHearingCeiling(ceiling: number): Promise<number> {
   if (!HEARING_NATIVE_AVAILABLE) {
