@@ -1032,7 +1032,10 @@
   "onboarding.skip": "Skip",
   "playerActions": {
     "sleepTimer": "Sleep timer",
-    "playbackSpeed": "Playback speed"
+    "playbackSpeed": "Playback speed",
+    "watchVideo": "Watch video",
+    "watchVideoUnavailable": "No playable video for this track",
+    "videoUnavailable": "Video is unavailable right now"
   },
   "sleepTimer": {
     "off": "Off",

@@ -53,6 +53,7 @@ import { getAppFontFamily, getTextDirectionStyle } from "../utils/fonts";
 import { Haptic, playHaptic } from "../utils/haptics";
 import { usePlaybackSpeedStore } from "../services/PlaybackSpeedService";
 import { isLocalPlaybackTrack } from "../modules/localPlayback";
+import MusicVideoPlayer from "./MusicVideoPlayer";
 
 const { Animated, PanResponder } = require("react-native");
 const LYRICS_MANUAL_SCROLL_HOLD_MS = 1500;
@@ -694,6 +695,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   const [showSleepTimerSheet, setShowSleepTimerSheet] = useState(false);
   const [showSpeedSheet, setShowSpeedSheet] = useState(false);
   const [showLyricsSearchSheet, setShowLyricsSearchSheet] = useState(false);
+  const [showMusicVideo, setShowMusicVideo] = useState(false);
   // Latest rendered track id — used by async lyrics callbacks instead of the
   // stale closure value, so a late result cannot overwrite a newer track.
   // Updated in an effect (post-commit) rather than during render.
@@ -927,12 +929,17 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
         icon: "radio-outline",
       },
       {
+        key: "Watch video",
+        label: t("playerActions.watchVideo") || (language === "fa" ? "تماشای ویدیو" : "Watch video"),
+        icon: "videocam-outline",
+      },
+      {
         key: "View song credits",
         label: language === "fa" ? "مشاهده عوامل آهنگ" : "View song credits",
         icon: "information-circle-outline",
       },
     ],
-    [language],
+    [language, t],
   );
 
   // Device files / Subsonic: no queue-from-library or remote radio.
@@ -1357,6 +1364,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       } catch (radioError) {
         console.log("[FullPlayerModal] Radio build failed:", radioError);
       }
+      return;
+    }
+
+    if (option === "Watch video") {
+      closeOptions();
+      setShowMusicVideo(true);
       return;
     }
 
@@ -2823,6 +2836,23 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
           options={playerSheetOptions}
           onOptionPress={handleOptionPress}
         />
+
+        {/* Music video overlay (issue #27): video plays over the modal. End or
+            close -> the queue continues as audio; teardown touches this view
+            only, never the audio session. */}
+        {showMusicVideo && currentTrack && (
+          <MusicVideoPlayer
+            track={currentTrack}
+            onEnded={() => {
+              // Queue-aware hand-off: drop the video, advance the queue. The
+              // next track goes through the normal TrackPlayer audio path —
+              // the video view's teardown never touched that session.
+              setShowMusicVideo(false);
+              void nextTrack();
+            }}
+            onClose={() => setShowMusicVideo(false)}
+          />
+        )}
 
         {/* Playlist Selection Modal */}
         <PlaylistSelectionModal

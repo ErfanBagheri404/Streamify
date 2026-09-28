@@ -1031,7 +1031,10 @@
   "onboarding.skip": "رد شدن",
   "playerActions": {
     "sleepTimer": "تایمر خواب",
-    "playbackSpeed": "سرعت پخش"
+    "playbackSpeed": "سرعت پخش",
+    "watchVideo": "تماشای ویدیو",
+    "watchVideoUnavailable": "ویدیوی قابل پخشی برای این آهنگ پیدا نشد",
+    "videoUnavailable": "ویدیو هم‌اکنون در دسترس نیست"
   },
   "sleepTimer": {
     "off": "خاموش",

@@ -30,6 +30,7 @@
         }
       ],
       "react-native-video",
+      "./plugins/withVideoPip",
       "expo-secure-store"
     ],
     "android": {

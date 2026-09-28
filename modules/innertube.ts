@@ -163,6 +163,8 @@ export interface InnertubeStream {
   itag: number;
   bitrate: number;
   mimeType: string;
+  /** Pixel height of the picked format. 0 for audio-only streams. */
+  height: number;
   clientName: string;
   visitorDataUsed: boolean;
   /** Headers the *media* fetch must carry (mediaHeaders rule). */
@@ -175,6 +177,7 @@ async function tryClient(
   c: ClientCfg,
   videoId: string,
   visitorData: string | null,
+  pickFormats?: (formats: any[]) => any[],
 ): Promise<InnertubeStream | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PLAYER_TIMEOUT_MS);
@@ -216,19 +219,26 @@ async function tryClient(
       );
       return null;
     }
-    const formats: any[] = data?.streamingData?.adaptiveFormats ?? [];
-    const audio = formats.filter((f) =>
-      (f.mimeType ?? "").startsWith("audio/"),
-    );
-    if (!audio.length) {
-      console.log(`[Innertube] ${c.name}: OK but no audio formats`);
+    // Adaptive (audio-only / video-only) plus muxed progressive: the muxed
+    // video+audio formats live in `formats`, not `adaptiveFormats`.
+    const allFormats = [
+      ...(data?.streamingData?.adaptiveFormats ?? []),
+      ...(data?.streamingData?.formats ?? []),
+    ];
+    // Default = audio only (the player path). A format picker can widen this
+    // to muxed video+audio for the music-video path.
+    const candidates = pickFormats
+      ? pickFormats(allFormats)
+      : allFormats.filter((f) => (f.mimeType ?? "").startsWith("audio/"));
+    if (!candidates.length) {
+      console.log(`[Innertube] ${c.name}: OK but no usable formats`);
       return null;
     }
     // Only plain-URL formats are usable without the signature solver.
-    const withUrl = audio.filter((f) => typeof f.url === "string" && f.url);
+    const withUrl = candidates.filter((f) => typeof f.url === "string" && f.url);
     if (!withUrl.length) {
       console.log(
-        `[Innertube] ${c.name}: ${audio.length} audio formats, none with plain URL (ciphered/po-gated)`,
+        `[Innertube] ${c.name}: ${candidates.length} formats, none with plain URL (ciphered/po-gated)`,
       );
       return null;
     }
@@ -253,6 +263,10 @@ async function tryClient(
       itag: best.itag,
       bitrate: best.bitrate ?? 0,
       mimeType: best.mimeType ?? "",
+      // The muxed format's pixel height. Audio-only formats have none, so
+      // this stays 0 there — the music-video path reads it to size the
+      // surface, and a 0 placeholder made every video render as audio-only.
+      height: typeof best.height === "number" ? best.height : 0,
       clientName: c.name,
       visitorDataUsed: Boolean(visitorData),
       mediaHeaders,
@@ -320,5 +334,33 @@ export async function resolveInnertubeStream(
     }
   }
   console.log(`[Innertube] no client yielded a usable stream for ${videoId}`);
+  return null;
+}
+
+/**
+ * Resolve a YouTube videoId to a MUXED (video+audio) progressive stream.
+ * Same client walk and one-shot rule as resolveInnertubeStream — only the
+ * format selection differs, which is why this takes a picker rather than
+ * re-implementing the walk.
+ */
+export async function resolveInnertubeVideo(
+  videoId: string,
+  pickFormat: (formats: any[]) => any[],
+): Promise<InnertubeStream | null> {
+  if (!videoId || !pickFormat) return null;
+  const visitorData = await ensureVisitorData();
+  if (!visitorData) {
+    console.log("[Innertube] no visitor id — YouTube unreachable, skipping walk");
+    return null;
+  }
+  for (const c of CLIENTS) {
+    const stream = await tryClient(c, videoId, visitorData, pickFormat);
+    if (!stream) continue;
+    console.log(
+      `[Innertube] resolved video ${videoId} via ${stream.clientName} itag=${stream.itag} (${stream.bitrate}bps)`,
+    );
+    return stream;
+  }
+  console.log(`[Innertube] no client yielded a usable video for ${videoId}`);
   return null;
 }
