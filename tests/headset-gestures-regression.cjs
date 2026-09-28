@@ -90,7 +90,9 @@ check("triple tap triggers immediately without waiting out the full window", asy
   );
 
   detector.recordTap();
+  await new Promise((r) => setTimeout(r, 20));
   detector.recordTap();
+  await new Promise((r) => setTimeout(r, 20));
   detector.recordTap();
 
   assert.deepStrictEqual(
@@ -146,6 +148,7 @@ check("updateConfig re-targets actions without recreation", async () => {
 
   detector.updateConfig({ doubleTapAction: "sleepTimer" });
   detector.recordTap();
+  await new Promise((r) => setTimeout(r, 20));
   detector.recordTap();
 
   await new Promise((r) => setTimeout(r, 60));
@@ -316,6 +319,56 @@ check("all headset settings and action keys exist in en and fa", () => {
     assert.ok(en.settings.headsetAction[a], `en missing action ${a}`);
     assert.ok(fa.settings.headsetAction[a], `fa missing action ${a}`);
   }
+});
+
+// --- Runtime: double-fire guard ---------------------------------------------
+// RNTP broadcasts each remote event to every registered listener, and both
+// TrackPlayerService.setupEventListeners and the headless playbackService
+// register for RemotePlay/RemotePause. One physical press therefore reaches
+// recordTap() twice in the same tick. Without the guard, tapCount hits 2 and
+// a single tap dispatches doubleTapAction instead of playPause.
+
+check("a double-fired press counts as one tap, not two", async () => {
+  const dispatched = [];
+  const detector = new HeadsetGestureDetector(
+    (action) => dispatched.push(action),
+    { windowMs: 60, doubleTapAction: "skipNext" },
+  );
+
+  // Both listener sets fire in the same tick — no await between them.
+  detector.recordTap();
+  detector.recordTap();
+
+  await new Promise((r) => setTimeout(r, 80));
+  assert.deepStrictEqual(
+    dispatched,
+    ["playPause"],
+    "a double-fired single press must dispatch playPause, not doubleTapAction",
+  );
+  detector.reset();
+});
+
+check("a 4th tap inside the window does not start a phantom sequence", async () => {
+  const dispatched = [];
+  const detector = new HeadsetGestureDetector(
+    (action) => dispatched.push(action),
+    { windowMs: 200, tripleTapAction: "likeCurrent" },
+  );
+
+  detector.recordTap();
+  await new Promise((r) => setTimeout(r, 20));
+  detector.recordTap();
+  await new Promise((r) => setTimeout(r, 20));
+  detector.recordTap(); // triple — flushes immediately
+  detector.recordTap(); // 4th, inside the old window — must be ignored
+
+  await new Promise((r) => setTimeout(r, 250));
+  assert.deepStrictEqual(
+    dispatched,
+    ["likeCurrent"],
+    "a 4th tap must not dispatch a phantom playPause after the window",
+  );
+  detector.reset();
 });
 
 // --- Report -----------------------------------------------------------------
