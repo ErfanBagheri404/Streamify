@@ -126,8 +126,10 @@ export function planCacheEviction(
   return {
     keep,
     evict,
+    // Downloading entries are already counted in protectedBytes; filtering
+    // only pinned here would double-count them and overstate the plan.
     projectedBytes: protectedBytes + keep
-      .filter((entry) => !pinned.has(entry.trackId))
+      .filter((entry) => !pinned.has(entry.trackId) && !entry.isDownloading)
       .reduce((s, e) => s + usableBytes(e), 0),
     overBudget: true,
   };

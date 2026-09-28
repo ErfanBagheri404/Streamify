@@ -147,6 +147,18 @@ check("in-flight downloads are never evicted", () => {
   assert(plan.evict[0].trackId === "idle", "the active download must be protected");
 });
 
+check("projectedBytes counts the in-flight download exactly once", () => {
+  const plan = planCacheEviction(
+    [entry("active", 400, T0, { isDownloading: true }), entry("idle", 400, T0 + 1)],
+    500,
+  );
+  // 400MB downloading (protected) + 400MB idle, cap 500: idle goes, 400MB remains.
+  assert(
+    plan.projectedBytes === toBytes(400),
+    `downloading entry double-counted: got ${plan.projectedBytes}`,
+  );
+});
+
 check("eviction is deterministic on identical timestamps", () => {
   const a = planCacheEviction([entry("b", 300, T0), entry("a", 300, T0)], 500);
   const b = planCacheEviction([entry("a", 300, T0), entry("b", 300, T0)], 500);
