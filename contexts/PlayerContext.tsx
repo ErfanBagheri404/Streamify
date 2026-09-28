@@ -53,6 +53,7 @@ import { useAppSettings } from "../hooks/useAppSettings";
 import { CacheToast } from "../components/ui/CacheToast";
 import { QueueConflictModal } from "../components/ui/QueueConflictModal";
 import { hasPlaceholderTrackMetadata } from "../lib/cloud-library-sync";
+import { buildSmartQueue, loadPlayCounts } from "../modules/aiPlaylistService";
 import { normalizeYouTubeThumbnailUrl } from "../components/core/image";
 import DrmAudioPlayer, {
   DrmAudioPlayerRef,
@@ -3427,6 +3428,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     previous: async () => {},
     likeCurrent: () => {},
     shuffle: () => {},
+    smartQueue: async () => {},
   });
 
   const dispatchHeadsetAction = useCallback(async (action: HeadsetAction) => {
@@ -3444,7 +3446,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         headsetActionsRef.current.likeCurrent();
         break;
       case "smartQueue":
-        headsetActionsRef.current.shuffle();
+        await headsetActionsRef.current.smartQueue();
         break;
       case "sleepTimer": {
         const store = useSleepTimerStore.getState();
@@ -3471,7 +3473,31 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     };
     headsetActionsRef.current.shuffle = toggleShuffle;
-  }, [playPause, nextTrack, previousTrack, toggleLikeSong, toggleShuffle, currentTrack]);
+    // A smart queue is not a shuffle: it scores the library against the
+    // current track and plays the result. Shuffling here made the gesture
+    // indistinguishable from toggleShuffle.
+    headsetActionsRef.current.smartQueue = async () => {
+      if (!currentTrack) return;
+      try {
+        const playCounts = await loadPlayCounts();
+        const queue = buildSmartQueue({
+          seed: currentTrack,
+          library: likedSongsRef.current,
+          size: 20,
+          playCounts,
+        });
+        if (queue.length === 0) {
+          // Library too small to score — fall back to a plain shuffle so
+          // the gesture still does something audible.
+          toggleShuffle();
+          return;
+        }
+        await playTrack(currentTrack, [currentTrack, ...queue], 0);
+      } catch (error) {
+        console.warn("[PlayerContext] Smart queue failed:", error);
+      }
+    };
+  }, [playPause, nextTrack, previousTrack, toggleLikeSong, toggleShuffle, playTrack, currentTrack]);
 
   useEffect(() => {
     if (!settings.headsetGesturesEnabled) {

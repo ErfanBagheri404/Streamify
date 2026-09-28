@@ -230,9 +230,40 @@ check("PlayerContext instantiates HeadsetGestureDetector and drives player actio
   );
 });
 
+check("smartQueue builds a real queue instead of aliasing shuffle", () => {
+  assert.ok(
+    playerCtx.includes("headsetActionsRef.current.smartQueue"),
+    "the smart queue action must exist on the action ref",
+  );
+  assert.ok(
+    playerCtx.includes("buildSmartQueue("),
+    "smartQueue must score the library, not shuffle it",
+  );
+  const start = playerCtx.indexOf("const dispatchHeadsetAction");
+  const dispatch = playerCtx.slice(start, start + 2000);
+  assert.ok(
+    /case "smartQueue":[\s\S]{0,120}smartQueue\(\)/.test(dispatch),
+    "the smartQueue case must call smartQueue(), not shuffle()",
+  );
+});
+
+check("no dead long-press action is promised by the settings", () => {
+  assert.ok(
+    !appSettings.includes("headsetLongPressAction:"),
+    "the hardware path only delivers taps; a stored long-press action is dead",
+  );
+});
+
 // --- SettingsScreen UI contract ---------------------------------------------
 
 const settingsScreen = read("components", "screens", "SettingsScreen.tsx");
+
+check("the long-press action is not offered in settings UI either", () => {
+  assert.ok(
+    !settingsScreen.includes("headsetLongPressAction"),
+    "the selector must not exist for an action the detector cannot fire",
+  );
+});
 
 check("SettingsScreen includes the headset gestures switch and chip selectors", () => {
   assert.ok(

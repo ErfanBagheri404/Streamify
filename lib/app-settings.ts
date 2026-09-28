@@ -96,8 +96,10 @@ export interface AppSettings {
   headsetDoubleTapAction: HeadsetAction;
   /** Action for a headset triple-tap within the gesture window. */
   headsetTripleTapAction: HeadsetAction;
-  /** Action for a headset long-press (hold). */
-  headsetLongPressAction: HeadsetAction;
+  // No long-press action on purpose: the hardware path (`onRemoteMediaButton`
+  // -> `recordTap`) only delivers tap events, never holds. A stored
+  // long-press mapping would be a dead setting that promises a gesture the
+  // detector cannot see.
   collapsedSettingsSections: Partial<Record<SettingsSectionKey, boolean>>;
 }
 
@@ -184,7 +186,6 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   headsetGesturesEnabled: false,
   headsetDoubleTapAction: "skipNext",
   headsetTripleTapAction: "likeCurrent",
-  headsetLongPressAction: "sleepTimer",
   collapsedSettingsSections: {},
 };
 
@@ -367,9 +368,8 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
     headsetTripleTapAction: isHeadsetAction(record.headsetTripleTapAction)
       ? record.headsetTripleTapAction
       : DEFAULT_APP_SETTINGS.headsetTripleTapAction,
-    headsetLongPressAction: isHeadsetAction(record.headsetLongPressAction)
-      ? record.headsetLongPressAction
-      : DEFAULT_APP_SETTINGS.headsetLongPressAction,
+    // (A legacy headsetLongPressAction in old records is dropped: it was
+    // never read by the detector.)
 
     collapsedSettingsSections: sanitizeCollapsedSettingsSections(
       record.collapsedSettingsSections,
