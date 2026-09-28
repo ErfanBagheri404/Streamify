@@ -40,11 +40,20 @@ import {
 
 import { StorageService, subscribeToLibraryUpdates } from "../utils/storage";
 import { trackPlayerService } from "../services/TrackPlayerService";
+import {
+  HeadsetGestureDetector,
+  type HeadsetAction,
+} from "../modules/headsetGestures";
+import {
+  sleepTimerService,
+  useSleepTimerStore,
+} from "../services/SleepTimerService";
 import { t } from "../utils/localization";
 import { useAppSettings } from "../hooks/useAppSettings";
 import { CacheToast } from "../components/ui/CacheToast";
 import { QueueConflictModal } from "../components/ui/QueueConflictModal";
 import { hasPlaceholderTrackMetadata } from "../lib/cloud-library-sync";
+import { buildSmartQueue, loadPlayCounts } from "../modules/aiPlaylistService";
 import { normalizeYouTubeThumbnailUrl } from "../components/core/image";
 import DrmAudioPlayer, {
   DrmAudioPlayerRef,
@@ -3407,6 +3416,118 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       processLikedSongsCacheQueue,
     ],
   );
+
+  // ── Headset multi-tap gestures (issue #45) ────────────────────────
+  // Hook headset play/pause presses into a multi-tap detector and route
+  // resolved actions to our player operations. Disabled by default:
+  // standard OS play/pause behavior runs with zero delay.
+  const headsetDetectorRef = useRef<HeadsetGestureDetector | null>(null);
+  const headsetActionsRef = useRef({
+    playPause: async () => {},
+    next: async () => {},
+    previous: async () => {},
+    likeCurrent: () => {},
+    shuffle: () => {},
+    smartQueue: async () => {},
+  });
+
+  const dispatchHeadsetAction = useCallback(async (action: HeadsetAction) => {
+    switch (action) {
+      case "playPause":
+        await headsetActionsRef.current.playPause();
+        break;
+      case "skipNext":
+        await headsetActionsRef.current.next();
+        break;
+      case "skipPrevious":
+        await headsetActionsRef.current.previous();
+        break;
+      case "likeCurrent":
+        headsetActionsRef.current.likeCurrent();
+        break;
+      case "smartQueue":
+        await headsetActionsRef.current.smartQueue();
+        break;
+      case "sleepTimer": {
+        const store = useSleepTimerStore.getState();
+        if (store.active) {
+          sleepTimerService.clear();
+        } else {
+          sleepTimerService.startMinutes(30);
+        }
+        break;
+      }
+      case "toggleShuffle":
+        headsetActionsRef.current.shuffle();
+        break;
+    }
+  }, []);
+
+  useEffect(() => {
+    headsetActionsRef.current.playPause = playPause;
+    headsetActionsRef.current.next = nextTrack;
+    headsetActionsRef.current.previous = previousTrack;
+    headsetActionsRef.current.likeCurrent = () => {
+      if (currentTrack?.id) {
+        void toggleLikeSong(currentTrack);
+      }
+    };
+    headsetActionsRef.current.shuffle = toggleShuffle;
+    // A smart queue is not a shuffle: it scores the library against the
+    // current track and plays the result. Shuffling here made the gesture
+    // indistinguishable from toggleShuffle.
+    headsetActionsRef.current.smartQueue = async () => {
+      if (!currentTrack) return;
+      try {
+        const playCounts = await loadPlayCounts();
+        const queue = buildSmartQueue({
+          seed: currentTrack,
+          library: likedSongsRef.current,
+          size: 20,
+          playCounts,
+        });
+        if (queue.length === 0) {
+          // Library too small to score — fall back to a plain shuffle so
+          // the gesture still does something audible.
+          toggleShuffle();
+          return;
+        }
+        await playTrack(currentTrack, [currentTrack, ...queue], 0);
+      } catch (error) {
+        console.warn("[PlayerContext] Smart queue failed:", error);
+      }
+    };
+  }, [playPause, nextTrack, previousTrack, toggleLikeSong, toggleShuffle, playTrack, currentTrack]);
+
+  useEffect(() => {
+    if (!settings.headsetGesturesEnabled) {
+      trackPlayerService.onRemoteMediaButton = undefined;
+      headsetDetectorRef.current?.reset();
+      headsetDetectorRef.current = null;
+      return;
+    }
+    if (!headsetDetectorRef.current) {
+      headsetDetectorRef.current = new HeadsetGestureDetector((action) =>
+        dispatchHeadsetAction(action),
+      );
+    }
+    headsetDetectorRef.current.updateConfig({
+      enabled: true,
+      doubleTapAction: settings.headsetDoubleTapAction,
+      tripleTapAction: settings.headsetTripleTapAction,
+    });
+    trackPlayerService.onRemoteMediaButton = () => {
+      headsetDetectorRef.current?.recordTap();
+    };
+    return () => {
+      trackPlayerService.onRemoteMediaButton = undefined;
+    };
+  }, [
+    settings.headsetGesturesEnabled,
+    settings.headsetDoubleTapAction,
+    settings.headsetTripleTapAction,
+    dispatchHeadsetAction,
+  ]);
 
   const isSongLiked = useCallback(
     (trackId: string) => {

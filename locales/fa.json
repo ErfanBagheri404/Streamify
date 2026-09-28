@@ -220,7 +220,22 @@
     "lastfm_scrobbling_desc": "پخش‌هایت را به Last.fm بفرست — با حساب last.fm خود متصل شو.",
     "subsonic": "سرور سابسونیک",
     "subsonic_desc": "پخش موسیقی از سرور شخصی سابسونیک یا ناویدروم شما.",
-    "configure": "تنظیم"
+    "configure": "تنظیم",
+    "headsetGestures": "ژست‌های دکمه هندزفری",
+    "headsetGesturesDescription": "شخصی‌سازی دو یا سه بار کلیک روی هدفون یا هندزفری",
+    "headsetDoubleTap": "عملکرد دو بار کلیک",
+    "headsetDoubleTapDescription": "انتخاب رفتار هنگام دو بار کلیک سریع",
+    "headsetTripleTap": "عملکرد سه بار کلیک",
+    "headsetTripleTapDescription": "انتخاب رفتار هنگام سه بار کلیک سریع",
+    "headsetAction": {
+      "playPause": "پخش / توقف",
+      "skipNext": "آهنگ بعدی",
+      "skipPrevious": "آهنگ قبلی",
+      "likeCurrent": "پسندیدن / نپسندیدن",
+      "smartQueue": "صف هوشمند",
+      "sleepTimer": "تایمر خواب (۳۰ دقیقه)",
+      "toggleShuffle": "پخش تصادفی"
+    }
   },
   "piped": {
     "enter_auth": "آدرس API نمونه احراز هویت پایپد را وارد کنید:",

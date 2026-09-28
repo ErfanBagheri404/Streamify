@@ -9,6 +9,18 @@ import { trackPlayerService } from "./TrackPlayerService";
 module.exports = async function () {
   // Remote control event handlers
   TrackPlayer.addEventListener(Event.RemotePlay, () => {
+    if (trackPlayerService.onRemoteMediaButton) {
+      Promise.resolve(trackPlayerService.onRemoteMediaButton()).catch(
+        (error) => {
+          console.error(
+            "[PlaybackService] Media-button handler failed:",
+            error,
+          );
+          TrackPlayer.play();
+        },
+      );
+      return;
+    }
     if (trackPlayerService.onRemotePlay) {
       Promise.resolve(trackPlayerService.onRemotePlay()).catch((error) => {
         console.error("[PlaybackService] Remote play handler failed:", error);
@@ -20,6 +32,18 @@ module.exports = async function () {
   });
 
   TrackPlayer.addEventListener(Event.RemotePause, () => {
+    if (trackPlayerService.onRemoteMediaButton) {
+      Promise.resolve(trackPlayerService.onRemoteMediaButton()).catch(
+        (error) => {
+          console.error(
+            "[PlaybackService] Media-button handler failed:",
+            error,
+          );
+          TrackPlayer.pause();
+        },
+      );
+      return;
+    }
     if (trackPlayerService.onRemotePause) {
       Promise.resolve(trackPlayerService.onRemotePause()).catch((error) => {
         console.error("[PlaybackService] Remote pause handler failed:", error);

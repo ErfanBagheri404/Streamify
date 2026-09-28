@@ -1,5 +1,7 @@
 "use client";
 
+import type { HeadsetAction } from "../modules/headsetGestures";
+
 export type PreferredSearchSource =
   | "mixed"
   | "itunes"
@@ -88,6 +90,16 @@ export interface AppSettings {
   waveformSeekBar: boolean;
   /** Enable ReplayGain normalization on local/cached tracks. */
   replayGainEnabled: boolean;
+  /** Map headset/media-button multi-taps to custom actions. Default OS behavior kept when off. */
+  headsetGesturesEnabled: boolean;
+  /** Action for a headset double-tap within the gesture window. */
+  headsetDoubleTapAction: HeadsetAction;
+  /** Action for a headset triple-tap within the gesture window. */
+  headsetTripleTapAction: HeadsetAction;
+  // No long-press action on purpose: the hardware path (`onRemoteMediaButton`
+  // -> `recordTap`) only delivers tap events, never holds. A stored
+  // long-press mapping would be a dead setting that promises a gesture the
+  // detector cannot see.
   collapsedSettingsSections: Partial<Record<SettingsSectionKey, boolean>>;
 }
 
@@ -171,8 +183,28 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   crossfadeSeconds: 4,
   waveformSeekBar: false,
   replayGainEnabled: false,
+  headsetGesturesEnabled: false,
+  headsetDoubleTapAction: "skipNext",
+  headsetTripleTapAction: "likeCurrent",
   collapsedSettingsSections: {},
 };
+
+export const HEADSET_GESTURE_ACTIONS: HeadsetAction[] = [
+  "playPause",
+  "skipNext",
+  "skipPrevious",
+  "likeCurrent",
+  "smartQueue",
+  "sleepTimer",
+  "toggleShuffle",
+];
+
+export function isHeadsetAction(value: unknown): value is HeadsetAction {
+  return (
+    typeof value === "string" &&
+    (HEADSET_GESTURE_ACTIONS as string[]).includes(value)
+  );
+}
 
 function sanitizeCollapsedSettingsSections(
   value: unknown,
@@ -326,6 +358,18 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
       typeof record.waveformSeekBar === "boolean"
         ? record.waveformSeekBar
         : DEFAULT_APP_SETTINGS.waveformSeekBar,
+    headsetGesturesEnabled:
+      typeof record.headsetGesturesEnabled === "boolean"
+        ? record.headsetGesturesEnabled
+        : DEFAULT_APP_SETTINGS.headsetGesturesEnabled,
+    headsetDoubleTapAction: isHeadsetAction(record.headsetDoubleTapAction)
+      ? record.headsetDoubleTapAction
+      : DEFAULT_APP_SETTINGS.headsetDoubleTapAction,
+    headsetTripleTapAction: isHeadsetAction(record.headsetTripleTapAction)
+      ? record.headsetTripleTapAction
+      : DEFAULT_APP_SETTINGS.headsetTripleTapAction,
+    // (A legacy headsetLongPressAction in old records is dropped: it was
+    // never read by the detector.)
 
     collapsedSettingsSections: sanitizeCollapsedSettingsSections(
       record.collapsedSettingsSections,

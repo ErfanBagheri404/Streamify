@@ -206,6 +206,8 @@ export class TrackPlayerService {
   private _originalIndexToQueueIndex: Map<number, number> = new Map();
   public onRemotePlay?: () => Promise<void> | void;
   public onRemotePause?: () => Promise<void> | void;
+  /** Hook for custom headset gesture interpretation (issue #45). */
+  public onRemoteMediaButton?: () => Promise<void> | void;
 
   static getInstance(): TrackPlayerService {
     if (!TrackPlayerService.instance) {
@@ -508,6 +510,15 @@ export class TrackPlayerService {
     TrackPlayer.addEventListener(
       getSafeEvent("RemotePlay" as keyof typeof Event),
       () => {
+        if (this.onRemoteMediaButton) {
+          Promise.resolve(this.onRemoteMediaButton()).catch((error) => {
+            console.error(
+              "[TrackPlayerService] Remote media-button handler failed:",
+              error,
+            );
+          });
+          return;
+        }
         if (this.onRemotePlay) {
           Promise.resolve(this.onRemotePlay()).catch((error) => {
             console.error(
@@ -525,6 +536,15 @@ export class TrackPlayerService {
     TrackPlayer.addEventListener(
       getSafeEvent("RemotePause" as keyof typeof Event),
       () => {
+        if (this.onRemoteMediaButton) {
+          Promise.resolve(this.onRemoteMediaButton()).catch((error) => {
+            console.error(
+              "[TrackPlayerService] Remote media-button handler failed:",
+              error,
+            );
+          });
+          return;
+        }
         if (this.onRemotePause) {
           Promise.resolve(this.onRemotePause()).catch((error) => {
             console.error(
