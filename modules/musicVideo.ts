@@ -18,7 +18,7 @@
  * and JioSaavn's video endpoint is undocumented and geo-fenced, so JioSaavn
  * video is out of scope (issue #27).
  */
-import { resolveInnertubeStream } from "./innertube";
+import { resolveInnertubeVideo } from "./innertube";
 
 export interface MusicVideoSource {
   videoId: string;
@@ -82,12 +82,19 @@ export function formatHeight(f: any): number {
 }
 
 /**
- * Choose the muxed video format to play. Pure, no I/O — runtime-tested.
- * Highest bitrate wins (YouTube muxed progressive is typically itag 18, 360p);
- * a taller variant wins on equal bitrate.
+ * Muxed video+audio candidates for the innertube resolver. Returns the whole
+ * playable SET, not one winner: tryClient filters for plain URLs and takes
+ * the max bitrate, which has to happen after ciphered formats are dropped.
  */
-export function pickVideoFormat(formats: any[]): any | null {
-  const usable = (formats ?? []).filter(isPlayable);
+export function pickVideoFormat(formats: any[]): any[] {
+  return (formats ?? []).filter(isPlayable);
+}
+
+/**
+ * The winner among playable formats, used by the offline fixture tests.
+ */
+export function pickBestVideoFormat(formats: any[]): any | null {
+  const usable = pickVideoFormat(formats);
   if (!usable.length) return null;
   return usable.sort((a, b) => {
     const h = formatHeight(b) - formatHeight(a);
@@ -108,7 +115,7 @@ export async function resolveMusicVideo(track: {
   const videoId = extractYouTubeVideoId(track);
   if (!videoId) return { ok: false, reason: "unsupported-track" };
 
-  const stream = await resolveInnertubeStream(videoId);
+  const stream = await resolveInnertubeVideo(videoId, pickVideoFormat);
   if (!stream) return { ok: false, reason: "unavailable" };
 
   console.log(
@@ -125,7 +132,9 @@ export async function resolveMusicVideo(track: {
       },
       headers: stream.mediaHeaders,
       videoUrl: stream.url,
-      height: 0,
+      // The real muxed height, not a placeholder: the player uses this to
+      // size the surface, and 0 made every video render as audio-only.
+      height: formatHeight(stream),
       bitrate: stream.bitrate,
       itag: stream.itag,
     },

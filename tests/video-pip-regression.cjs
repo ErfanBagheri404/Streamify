@@ -129,7 +129,12 @@ const quiet = async (fn) => {
     assert.equal(videoOnly.length, 20, 'fixture must still hold 20 video-only adaptive formats');
     assert.equal(audioOnly.length, 4);
 
-    const picked = mv.pickVideoFormat(formats);
+    // pickVideoFormat returns the playable SET (tryClient filters for plain
+    // URLs and takes the max bitrate afterwards); pickBestVideoFormat is the
+    // single-winner view the player sizing uses.
+    const playable = mv.pickVideoFormat(formats);
+    assert.equal(playable.length, 1, 'muxed progressive must be playable');
+    const picked = mv.pickBestVideoFormat(formats);
     assert.ok(picked, 'muxed progressive must be playable');
     assert.equal(picked.itag, 18);
     assert.equal(mv.formatHeight(picked), 360);
@@ -137,18 +142,22 @@ const quiet = async (fn) => {
 
     // react-native-video v6 takes ONE source map: video-only cannot be paired
     // with an audio track, so the whole adaptive list is unusable.
-    assert.equal(mv.pickVideoFormat(adaptiveFormats), null, 'adaptive list must be rejected');
-    assert.equal(mv.pickVideoFormat(videoOnly), null, 'video-only formats rejected');
-    assert.equal(mv.pickVideoFormat(audioOnly), null, 'audio-only formats rejected');
-    assert.equal(mv.pickVideoFormat([]), null);
+    assert.equal(mv.pickVideoFormat(adaptiveFormats).length, 0, 'adaptive list must be rejected');
+    assert.equal(mv.pickVideoFormat(videoOnly).length, 0, 'video-only formats rejected');
+    assert.equal(mv.pickVideoFormat(audioOnly).length, 0, 'audio-only formats rejected');
+    assert.equal(mv.pickVideoFormat([]).length, 0);
+    assert.equal(mv.pickBestVideoFormat(adaptiveFormats), null);
+    assert.equal(mv.pickBestVideoFormat(videoOnly), null);
+    assert.equal(mv.pickBestVideoFormat(audioOnly), null);
+    assert.equal(mv.pickBestVideoFormat([]), null);
 
     // The muxed pick needs a declared audioQuality (muxed-only field in the
     // player response); ciphered (no plain url) is rejected.
     const muxed = 'video/mp4; codecs="avc1.42001E, mp4a.40.2"';
-    assert.equal(mv.pickVideoFormat([{ itag: 18, mimeType: muxed, audioQuality: 'AUDIO_QUALITY_NONE' }]), null, 'silent mux rejected');
-    assert.equal(mv.pickVideoFormat([{ itag: 18, mimeType: muxed, audioQuality: 'AUDIO_QUALITY_LOW' }]), null, 'ciphered (no plain url) rejected');
-    assert.equal(mv.pickVideoFormat([{ itag: 18, mimeType: muxed, url: 'u' }]), null, 'missing audioQuality (video-only shape) rejected');
-    assert.equal(mv.pickVideoFormat([{ itag: 18, mimeType: 'audio/mp4; codecs="mp4a.40.2"', url: 'u' }]), null, 'audio rejected');
+    assert.equal(mv.pickVideoFormat([{ itag: 18, mimeType: muxed, audioQuality: 'AUDIO_QUALITY_NONE' }]).length, 0, 'silent mux rejected');
+    assert.equal(mv.pickVideoFormat([{ itag: 18, mimeType: muxed, audioQuality: 'AUDIO_QUALITY_LOW' }]).length, 0, 'ciphered (no plain url) rejected');
+    assert.equal(mv.pickVideoFormat([{ itag: 18, mimeType: muxed, url: 'u' }]).length, 0, 'missing audioQuality (video-only shape) rejected');
+    assert.equal(mv.pickVideoFormat([{ itag: 18, mimeType: 'audio/mp4; codecs="mp4a.40.2"', url: 'u' }]).length, 0, 'audio rejected');
   });
 
   await check('extractYouTubeVideoId: bare id, watch?v=, youtu.be/, /shorts/', () => {
@@ -164,11 +173,11 @@ const quiet = async (fn) => {
     assert.equal(mv.extractYouTubeVideoId({}), null);
   });
 
-  await check('live path goes through resolveInnertubeStream and never fetches a resolved URL', async () => {
+  await check('live path goes through resolveInnertubeVideo and never fetches a resolved URL', async () => {
     const resolved = [];
     const stream = {
       videoId: 'dQw4w9WgXcQ', url: 'https://rr4.googlevideo.com/videoplayback?itag=18&sig=one-shot',
-      itag: 18, bitrate: 1000000, mimeType: 'video/mp4; codecs="avc1.42001E, mp4a.40.2"',
+      itag: 18, bitrate: 1000000, mimeType: 'video/mp4; codecs="avc1.42001E, mp4a.40.2"', height: 360,
       clientName: 'ANDROID_VR', visitorDataUsed: true, mediaHeaders: { 'User-Agent': 'vr-ua' },
     };
     const fetches = [];
@@ -179,11 +188,18 @@ const quiet = async (fn) => {
     };
     try {
       const mv = loadModule('modules/musicVideo.ts', {
-        './innertube': { resolveInnertubeStream: async (id) => { resolved.push(id); return stream; } },
+        './innertube': { resolveInnertubeVideo: async (id, pick) => { resolved.push([id, pick]); return stream; } },
       });
       const res = await quiet(() => mv.resolveMusicVideo({ id: 'dQw4w9WgXcQ' }));
       assert.equal(res.ok, true);
-      assert.deepEqual(resolved, ['dQw4w9WgXcQ'], 'exactly one resolution, no client walk here');
+      assert.equal(resolved.length, 1, 'exactly one resolution, no client walk here');
+      assert.equal(resolved[0][0], 'dQw4w9WgXcQ');
+      // The picker must be the module's own playable-set selector, not the
+      // audio-only walk: passing the wrong one is what made this play audio
+      // with no video track.
+      assert.equal(resolved[0][1], mv.pickVideoFormat, 'the playable video set must be selected here');
+      // A video track must report a real height, not a 0 placeholder.
+      assert.ok(res.video.height > 0, `height must be the muxed height, got ${res.video.height}`);
       assert.equal(res.video.source.uri, stream.url, 'resolved URL handed straight to the player');
       assert.equal(res.video.source.type, 'mp4');
       assert.deepEqual(res.video.source.headers, { 'User-Agent': 'vr-ua' }, 'media headers carried over');
@@ -197,7 +213,7 @@ const quiet = async (fn) => {
       assert.deepEqual(fetches, []);
 
       const none = loadModule('modules/musicVideo.ts', {
-        './innertube': { resolveInnertubeStream: async () => null },
+        './innertube': { resolveInnertubeVideo: async () => null },
       });
       assert.deepEqual(await quiet(() => none.resolveMusicVideo({ id: 'dQw4w9WgXcQ' })), { ok: false, reason: 'unavailable' });
       assert.deepEqual(await quiet(() => none.resolveMusicVideo({ id: 'saavn:1', url: 'https://saavn/x' })), { ok: false, reason: 'unsupported-track' });
