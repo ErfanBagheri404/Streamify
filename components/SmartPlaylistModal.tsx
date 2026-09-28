@@ -65,6 +65,23 @@ function defaultValueFor(
   return "";
 }
 
+/**
+ * The JSX type a rule's value is edited as. Two fields that share a type can
+ * swap without losing what the user typed (30 days -> 30 plays is meaningful,
+ * "rock" -> "jazz" is meaningful, 30 plays -> "rock" is not).
+ */
+function valueKind(field: SmartRuleField): "boolean" | "number" | "text" {
+  if (field === "isLiked") return "boolean";
+  if (
+    field === "plays" ||
+    field === "lastPlayedDaysAgo" ||
+    field === "addedDaysAgo"
+  ) {
+    return "number";
+  }
+  return "text";
+}
+
 export function SmartPlaylistModal({
   visible,
   definition,
@@ -119,10 +136,15 @@ export function SmartPlaylistModal({
     const operator = supported.includes(definition.rules[index].operator)
       ? definition.rules[index].operator
       : supported[0];
+    // Only reset the value when it is meaningless for the new field; wiping
+    // "rock" because the user picked "artist" over "title" loses their input.
+    const current = definition.rules[index].value;
+    const keepCurrent =
+      valueKind(field) === valueKind(definition.rules[index].field);
     patchRule(index, {
       field,
       operator,
-      value: defaultValueFor(field, operator),
+      value: keepCurrent ? current : defaultValueFor(field, operator),
     });
   };
 

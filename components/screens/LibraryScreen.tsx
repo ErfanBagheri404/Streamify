@@ -2051,6 +2051,16 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             setNewPlaylistDescription("");
           }}
           onSubmit={handleCreatePlaylist}
+          onSmartPress={() => {
+            setShowCreatePlaylistModal(false);
+            setSmartDraft({
+              id: `smart-${Date.now()}`,
+              name: "",
+              rules: [{ field: "plays", operator: "gte", value: 3 }],
+              chain: "and",
+              limit: 50,
+            });
+          }}
           title={copy.createPlaylist}
           subtitle={copy.createPlaylistDescription}
           submitLabel={t("common.create")}

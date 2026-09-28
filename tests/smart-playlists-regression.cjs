@@ -351,6 +351,57 @@ check("the smart builder is reachable and its modal is rendered", () => {
   );
 });
 
+check("changing a field keeps a value that is still meaningful", () => {
+  const modal = readFile("components/SmartPlaylistModal.tsx");
+  assert.ok(
+    modal.includes("valueKind(field) === valueKind(definition.rules[index].field)"),
+    "switching field must not wipe a value the new field can still use",
+  );
+});
+
+check("the smart builder is reachable without a hidden long-press", () => {
+  const modal = readFile("components/PlaylistCreateModal.tsx");
+  const screen = readFile("components/screens/LibraryScreen.tsx");
+  assert.ok(
+    modal.includes("onSmartPress") && modal.includes("library.smartPlaylistAction"),
+    "the create modal needs a visible smart-playlist action",
+  );
+  assert.ok(
+    screen.includes("onSmartPress={() => {"),
+    "the library screen must wire that action to the rule builder",
+  );
+});
+
+check("the smart-playlist action label exists in en AND fa", () => {
+  const en = JSON.parse(readFile("locales/en.json"));
+  const fa = JSON.parse(readFile("locales/fa.json"));
+  assert.ok(
+    en["library.smartPlaylistAction"]?.trim(),
+    "en missing library.smartPlaylistAction",
+  );
+  assert.ok(
+    fa["library.smartPlaylistAction"]?.trim(),
+    "fa missing library.smartPlaylistAction",
+  );
+  assert.notStrictEqual(
+    fa["library.smartPlaylistAction"],
+    en["library.smartPlaylistAction"],
+    "fa is an English copy",
+  );
+});
+
+check("ranked entries resolve through their storage key, not the bare id", () => {
+  const resolver = readFile("modules/smartPlaylistResolver.ts");
+  assert.ok(
+    resolver.includes("trackByKey.get(entry.storageKey)"),
+    "the pool dedupes by source:id, so the lookup must use the same key",
+  );
+  assert.ok(
+    !resolver.includes("trackById.get(entry.id)"),
+    "a bare-id lookup can resolve to the wrong source's track",
+  );
+});
+
 check("the builder cannot save without a name and at least one rule", () => {
   const modal = readFile("components/SmartPlaylistModal.tsx");
   assert.ok(

@@ -74,6 +74,8 @@ export const SMART_PLAYLIST_PRESETS: SmartPlaylistDefinition[] = [
 /** Attribute view of one track for matching. Missing data fails closed. */
 export interface MatchableTrack {
   id: string;
+  /** Storage identity (`source:id`) this entry was deduped under. */
+  storageKey: string;
   title: string;
   artist?: string;
   source?: string;

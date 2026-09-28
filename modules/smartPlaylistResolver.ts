@@ -58,6 +58,7 @@ export async function buildSmartPool(): Promise<MatchableTrack[]> {
     const stats = playStats.get(track.id);
     const entry: MatchableTrack = {
       id: track.id,
+      storageKey: key,
       title: track.title || "",
       artist: track.artist,
       source: track.source,
@@ -130,15 +131,18 @@ export async function resolveSmartPlaylistTracks(
     matchRules(entry, definition.rules, definition.chain),
   ).length;
 
-  const trackById = new Map<string, Track>();
+  const trackByKey = new Map<string, Track>();
   // Liked last so it wins, matching the pool's identity rule.
   for (const track of [...knownTracks, ...history, ...likedSongs]) {
-    if (track?.id) trackById.set(track.id, track);
+    const storageKey = track?.id ? getTrackStorageKey(track) : "";
+    if (storageKey && storageKey !== ":") trackByKey.set(storageKey, track);
   }
 
   const tracks: Track[] = [];
   for (const entry of ranked) {
-    const track = trackById.get(entry.id);
+    // Entries are deduped by storage key (source + id): resolve through the
+    // same key instead of the bare id, so the full track is always found.
+    const track = trackByKey.get(entry.storageKey);
     if (track) tracks.push(track);
   }
 
