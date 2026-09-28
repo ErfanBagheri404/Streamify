@@ -28,6 +28,13 @@ import {
   type ReplayPeriod,
   type ReplaySummary,
 } from "../../utils/listeningStats";
+import {
+  readExposureDays,
+  summarizeExposure,
+  type ExposureSummary,
+} from "../../modules/hearingSafety";
+import { useAppSettings } from "../../hooks/useAppSettings";
+import { WHO_WEEKLY_BUDGET_DB_HOURS } from "../../lib/app-settings";
 import { playHaptic, Haptic } from "../../utils/haptics";
 import { usePlayer } from "../../contexts/PlayerContext";
 
@@ -181,6 +188,22 @@ export const ReplayScreen: React.FC = () => {
   const [period, setPeriod] = useState<ReplayPeriod>("month");
   const [summary, setSummary] = useState<ReplaySummary | null>(null);
   const [loading, setLoading] = useState(true);
+  // Daily exposure, read from the uncapped hearing store — never from
+  // loadReplaySummary, whose lists are capped at 25 for display.
+  const [exposure, setExposure] = useState<ExposureSummary | null>(null);
+  const { settings: hearingSettings } = useAppSettings();
+
+  useEffect(() => {
+    let active = true;
+    void readExposureDays().then((days) => {
+      if (active) {
+        setExposure(summarizeExposure(days));
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [period]);
 
   const load = useCallback(async (p: ReplayPeriod) => {
     setLoading(true);
@@ -342,6 +365,30 @@ export const ReplayScreen: React.FC = () => {
                 <ClockLabel theme={colors}>18</ClockLabel>
                 <ClockLabel theme={colors}>23</ClockLabel>
               </ClockLabels>
+              <SectionTitle theme={colors}>{t("replay.hearingExposure")}</SectionTitle>
+              <StatCard theme={colors}>
+                <StatBig theme={colors}>
+                  {exposure ? exposure.todayDbHours.toFixed(1) : "0.0"}
+                </StatBig>
+                <StatSub theme={colors}>
+                  {t("replay.hearingExposureToday", {
+                    budget: WHO_WEEKLY_BUDGET_DB_HOURS,
+                  })}
+                </StatSub>
+                <StatSub theme={colors}>
+                  {t("replay.hearingExposureWeekly", {
+                    weekly: exposure ? exposure.weeklyDbHours.toFixed(1) : "0.0",
+                    budget: WHO_WEEKLY_BUDGET_DB_HOURS,
+                  })}
+                </StatSub>
+                <StatSub theme={colors}>
+                  {t("replay.hearingExposureEstimate", {
+                    profile: t(
+                      `settings.hearingProfile_${hearingSettings.hearingDeviceProfile}`,
+                    ),
+                  })}
+                </StatSub>
+              </StatCard>
 
               <SectionTitle theme={colors}>{t("replay.topArtists")}</SectionTitle>
               {(summary?.topArtists ?? []).slice(0, 10).map((a, i) => (
