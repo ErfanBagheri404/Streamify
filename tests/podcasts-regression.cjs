@@ -186,6 +186,37 @@ check("enclosure url is the playback url", () => {
   );
 });
 
+check("an unplayable enclosure type is rejected whatever the length says", () => {
+  const bad = `<?xml version="1.0"?><rss version="2.0"><channel>
+    <title>Bad Types</title><link>https://example.com</link>
+    <item><title>Video episode</title><guid>vid-1</guid>
+      <enclosure url="https://cdn.example.com/ep.mp4" length="999" type="video/mp4"/>
+    </item>
+    <item><title>Video ogg episode</title><guid>vid-2</guid>
+      <enclosure url="https://cdn.example.com/ep.ogv" length="999" type="video/ogg"/>
+    </item>
+    <item><title>Garbage type</title><guid>vid-3</guid>
+      <enclosure url="https://cdn.example.com/ep.bin" length="999" type="application/pdf"/>
+    </item>
+    <item><title>Subtype we don't enumerate</title><guid>ok-1</guid>
+      <enclosure url="https://cdn.example.com/ep.webm" length="999" type="audio/webm"/>
+    </item>
+  </channel></rss>`;
+  const out = feed.parsePodcastFeed("https://example.com/bad.xml", bad);
+  assert(out.episodes.length === 1, `expected only audio/webm playable, got ${out.episodes.length}`);
+  assert(out.episodes[0].audioUrl === "https://cdn.example.com/ep.webm", "audio/ subtype kept");
+  assert(out.skippedItems === 3, `expected 3 skipped, got ${out.skippedItems}`);
+});
+
+check("episode artwork is never the audio file", () => {
+  for (const ep of parsed.episodes) {
+    assert(
+      ep.artworkUrl === undefined || !ep.artworkUrl.endsWith(".mp3"),
+      `${ep.title}: artwork ${ep.artworkUrl}`,
+    );
+  }
+});
+
 check("publishedAt is a real timestamp", () => {
   const t = parsed.episodes[0].publishedAt;
   assert(typeof t === "number" && Number.isFinite(t), `got ${t}`);

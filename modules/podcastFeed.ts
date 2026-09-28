@@ -96,7 +96,8 @@ export function parseDuration(value: unknown): number | undefined {
 }
 
 const MIME_EXTENSIONS: Array<[RegExp, string]> = [
-  [/\bmp3\b/i, "mp3"],
+  [/\bmpe?g\b/i, "mp3"],
+  [/\bmp[34a]\b/i, "mp3"],
   [/\bm4a\b/i, "m4a"],
   [/\baac\b/i, "aac"],
   [/\bogg|opus\b/i, "ogg"],
@@ -110,11 +111,17 @@ function enclosureUrl(item: Record<string, unknown>): string | undefined {
     const record = (enclosure ?? {}) as Record<string, unknown>;
     const url = attrOf(record, "url");
     const type = attrOf(record, "type") || "";
-    const length = Number(attrOf(record, "length") || 0);
     if (!url) continue;
-    // A zero/absent length is normal; a type we cannot play is not.
-    if (type && !MIME_EXTENSIONS.some(([pattern]) => pattern.test(type)) && length === 0) {
-      continue;
+    // Video enclosures are not playable (there is no video podcast player),
+    // and neither is a type we don't recognise. A declared audio/ subtype is
+    // trusted as-is — feeds ship webm/caf/x-m4a variants we don't enumerate.
+    // Neither rule may depend on length: real feeds ship video enclosures
+    // with a non-zero length.
+    if (type) {
+      if (type.startsWith("video/")) continue;
+      if (!type.startsWith("audio/") && !MIME_EXTENSIONS.some(([pattern]) => pattern.test(type))) {
+        continue;
+      }
     }
     return url;
   }
@@ -206,10 +213,9 @@ export function parsePodcastFeed(feedUrl: string, xml: string): ParsedFeed {
       publishedAt: Number.isFinite(parsedTime) ? parsedTime : undefined,
       durationSeconds:
         parseDuration(item["itunes:duration"]) ?? parseDuration(item.duration),
-      artworkUrl:
-        attrOf(item["itunes:image"], "href") ??
-        attrOf(asArray(item.enclosure as unknown)[0], "url") ??
-        undefined,
+      // Never fall back to the enclosure URL: it is the audio file, and
+      // feeding an .mp3 to the image renderer yields a broken cover.
+      artworkUrl: attrOf(item["itunes:image"], "href") ?? undefined,
       description: textOf(item.description as unknown) ?? textOf(item.summary as unknown),
     });
   }
