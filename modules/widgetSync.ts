@@ -125,11 +125,14 @@ export function startWidgetSync(getSnapshot: () => {
     Event.PlaybackProgressUpdated,
     (event: any) => {
       const { track, isPlaying } = getSnapshot();
+      // RNTP reports progress in seconds; the widget store works in ms
+      // (same as the snapshot path above). Pushing raw seconds freezes the
+      // widget progress bar near zero.
       pushWidgetState(
         track,
         isPlaying,
-        Math.max(0, Math.round(event?.position ?? 0)),
-        Math.max(0, Math.round(event?.duration ?? 0)),
+        Math.max(0, Math.round((event?.position ?? 0) * 1000)),
+        Math.max(0, Math.round((event?.duration ?? 0) * 1000)),
       );
     },
   );

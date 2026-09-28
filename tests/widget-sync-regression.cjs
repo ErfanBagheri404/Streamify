@@ -106,6 +106,23 @@ check("PlayerContext converts RNTP seconds to widget milliseconds", () => {
   assert.ok(playerContext.includes("durationRef.current * 1000"));
 });
 
+check("heartbeat progress events convert RNTP seconds to widget milliseconds", () => {
+  // RNTP PlaybackProgressUpdated carries seconds; pushing them raw freezes
+  // the widget bar near zero. The conversion must live in the heartbeat, not
+  // just in the snapshot path.
+  const start = widgetSync.indexOf("PlaybackProgressUpdated");
+  assert.ok(start >= 0, "heartbeat listener missing");
+  const block = widgetSync.slice(start, start + 900);
+  assert.ok(
+    /event\?\.position[\s\S]{0,40}\*\s*1000/.test(block),
+    "position must be multiplied by 1000",
+  );
+  assert.ok(
+    /event\?\.duration[\s\S]{0,40}\*\s*1000/.test(block),
+    "duration must be multiplied by 1000",
+  );
+});
+
 checkNative("RN package registers the widget module", () => {
   assert.ok(mainApp.includes("StreamifyWidgetPackage()"));
 });
