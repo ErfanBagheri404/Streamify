@@ -57,7 +57,6 @@ const internal = {
   flushTimer: null as ReturnType<typeof setInterval> | null,
   pending: [] as ScrobbleEntry[],
   active: null as ScrobbleEntry | null,
-  activeStartedAt: 0,
   activeElapsedMs: 0,
   activeDurationMs: 0,
   initialized: false,

@@ -124,6 +124,11 @@ check("discardActive resets the scrobbler internals", () => {
   ]) {
     assert.ok(body.includes(field), `discardActive must run ${field}`);
   }
+  // activeStartedAt was declared but never read or written — dead state.
+  assert.ok(
+    !scrobbler.includes("activeStartedAt"),
+    "activeStartedAt is dead state and must not come back",
+  );
   // It must not flush: discarding is a drop, not a submit.
   const fn = body.slice(0, body.indexOf("},"));
   assert.ok(!fn.includes("flush"), "discardActive must not flush pending");
