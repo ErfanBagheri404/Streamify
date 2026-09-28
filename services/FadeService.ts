@@ -77,7 +77,8 @@ export const fadeService = {
 
   setBaseVolume(volume: number): void {
     internal.baseVolume = Math.max(0, Math.min(1, volume));
-    // A manual volume change is the user taking control — drop the ramp.
+    // A manual volume change is the user taking control — drop the ramp, so
+    // there is no ramp left to protect and the re-assert below is correct.
     internal.ramp = null;
     // Outside a fade the base volume is what should be audible right now.
     if (!internal.enabled) {
@@ -89,8 +90,11 @@ export const fadeService = {
   setTrackGain(gain: number, enabled: boolean): void {
     internal.trackGain = Math.max(0.1, Math.min(3.16, gain || 1));
     internal.gainEnabled = enabled;
-    // Re-assert immediately so the change is audible without waiting for a tick.
-    if (!internal.enabled) {
+    // Re-assert immediately so the change is audible without waiting for a
+    // tick — but only when no ramp is climbing. During an alarm ramp the
+    // level is refLevel() * rampFraction, and re-applying the full refLevel()
+    // here would jump straight to full volume mid-ramp.
+    if (!internal.enabled && !internal.ramp) {
       void applyVolume(refLevel());
     }
   },

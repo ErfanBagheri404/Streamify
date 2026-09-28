@@ -38,7 +38,9 @@ export interface WakeAlarm {
   weekdays: number[];
   hour: number;
   minute: number;
-  /** null = queue a smart mix; otherwise play this playlist. */
+  /** "mix" = smart mix from history, "liked" = the liked library. */
+  source: "mix" | "liked";
+  /** null = queue from source; otherwise play this playlist (overrides source). */
   playlistId: string | null;
   /** Denormalised so a notification raised hours later still has a title. */
   playlistName: string;
@@ -54,6 +56,16 @@ function notificationId(alarmId: string, weekday: number): string {
 /** expo-notifications WeeklyTriggerInput: 1 = Sunday … 7 = Saturday. */
 function toTriggerWeekday(jsWeekday: number): number {
   return jsWeekday + 1;
+}
+
+/** Fisher-Yates copy; the stored alarm must never see a mutated array. */
+function shuffleCopy<T>(items: T[]): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
 }
 
 /** WakeAlarm.weekdays: 0 = Sunday … 6 = Saturday. */
@@ -92,6 +104,13 @@ export function validateAlarm(alarm: WakeAlarm): void {
   ) {
     throw new Error(`alarm fade out of range: ${alarm.fadeMinutes}`);
   }
+  if (
+    alarm.source !== undefined &&
+    alarm.source !== "mix" &&
+    alarm.source !== "liked"
+  ) {
+    throw new Error(`alarm has no music source: ${String(alarm.source)}`);
+  }
 }
 
 function isWakeAlarm(value: unknown): value is WakeAlarm {
@@ -99,13 +118,21 @@ function isWakeAlarm(value: unknown): value is WakeAlarm {
     return false;
   }
   const a = value as Partial<WakeAlarm>;
-  return (
-    typeof a.id === "string" &&
-    a.id.length > 0 &&
-    Array.isArray(a.weekdays) &&
-    Number.isInteger(a.hour) &&
-    Number.isInteger(a.minute)
-  );
+  if (
+    typeof a.id !== "string" ||
+    a.id.length === 0 ||
+    !Array.isArray(a.weekdays) ||
+    !Number.isInteger(a.hour) ||
+    !Number.isInteger(a.minute)
+  ) {
+    return false;
+  }
+  // Alarms stored before the source selector existed have no `source`; they
+  // were always a smart mix, so normalize rather than drop them.
+  if ((a as WakeAlarm).source === undefined) {
+    (value as WakeAlarm).source = "mix";
+  }
+  return true;
 }
 
 /** Pad + format as H:MM for the notification body. */
@@ -187,7 +214,12 @@ export const alarmService = {
 
   /** Cancel every notification belonging to this alarm, enabled or not. */
   async cancel(alarm: WakeAlarm): Promise<void> {
-    const ids = alarm.weekdays.map((day) => notificationId(alarm.id, day));
+    // All seven weekdays, not just the current set: after an edit the alarm
+    // no longer lists the days it used to fire on, and cancelling only the
+    // new set would leave the old days scheduled as orphans.
+    const ids = Array.from({ length: 7 }, (_, day) =>
+      notificationId(alarm.id, day),
+    );
     await Promise.all(
       ids.map((id) =>
         Notifications.cancelScheduledNotificationAsync(id).catch(() => {}),
@@ -308,13 +340,19 @@ export const alarmService = {
     await TrackPlayer.play();
   },
 
-  /** The alarm's music: a stored playlist, or a smart mix from history. */
+  /** The alarm's music: a stored playlist, the liked library, or a smart mix. */
   async resolveTracks(alarm: WakeAlarm): Promise<Track[]> {
+    const { StorageService } = await import("../utils/storage");
     if (alarm.playlistId) {
-      const { StorageService } = await import("../utils/storage");
       const playlists = await StorageService.loadPlaylists();
       const playlist = playlists.find((p) => p.id === alarm.playlistId);
       return playlist?.tracks ?? [];
+    }
+    if (alarm.source === "liked") {
+      // The liked library, shuffled so the wake-up is not the same song
+      // every morning. Silence when empty — a mix would lie about the source.
+      const liked = await StorageService.loadLikedSongs();
+      return shuffleCopy(liked);
     }
     // Smart mix: buildSmartQueue scores a *seed* against a candidate
     // library, so it needs both. Seed = most recently played track (the
@@ -325,7 +363,6 @@ export const alarmService = {
     const { buildSmartQueue, loadPlayCounts } = await import(
       "../modules/aiPlaylistService"
     );
-    const { StorageService } = await import("../utils/storage");
     const [liked, recent, playCounts] = await Promise.all([
       StorageService.loadLikedSongs(),
       StorageService.loadPreviouslyPlayedSongs(),

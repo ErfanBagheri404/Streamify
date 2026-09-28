@@ -20,6 +20,8 @@ import { t } from "../utils/localization";
 import {
   ALARM_FADE_MINUTES,
   alarmService,
+  hasNotificationPermission,
+  requestNotificationPermission,
   validateAlarm,
   type WakeAlarm,
 } from "../services/AlarmService";
@@ -194,7 +196,7 @@ export const AlarmEditorSheet: React.FC<AlarmEditorSheetProps> = ({
     setMinute(alarm?.minute ?? 0);
     setWeekdays(alarm?.weekdays ?? [1, 2, 3, 4, 5]);
     setFadeMinutes(alarm?.fadeMinutes ?? ALARM_FADE_MINUTES.default);
-    setSource(alarm?.playlistId ? "liked" : "mix");
+    setSource(alarm?.playlistId ? "liked" : (alarm?.source ?? "mix"));
     setError(null);
   }
 
@@ -233,8 +235,9 @@ export const AlarmEditorSheet: React.FC<AlarmEditorSheetProps> = ({
       hour,
       minute,
       weekdays,
-      // A playlist-backed alarm is not modelled yet: the two sources on
-      // offer are a smart mix and the liked library.
+      // A real playlist is not offered yet; these two sources are, and
+      // resolveTracks() honours the discriminator rather than only the name.
+      source,
       playlistId: null,
       playlistName:
         source === "liked"
@@ -257,6 +260,11 @@ export const AlarmEditorSheet: React.FC<AlarmEditorSheetProps> = ({
     }
     setSaving(true);
     try {
+      // Ask before saving: without notification permission the alarm is
+      // stored but never fires, and the user has no way to tell.
+      if (!(await hasNotificationPermission())) {
+        await requestNotificationPermission();
+      }
       const alarms = await alarmService.save(candidate);
       onSaved(alarms);
       onClose();

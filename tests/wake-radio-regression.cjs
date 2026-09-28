@@ -112,13 +112,15 @@ const fakeFadeService = {
   },
 };
 
+const likedSongs = Array.from({ length: 6 }, (_, i) => ({ id: `l${i}` }));
+
 const fakeStorage = {
   __esModule: true,
   StorageService: {
     loadPlaylists: async () => [
       { id: "pl-1", name: "Morning", tracks: [{ id: "t1" }, { id: "t2" }] },
     ],
-    loadLikedSongs: async () => Array.from({ length: 6 }, (_, i) => ({ id: `l${i}` })),
+    loadLikedSongs: async () => [...likedSongs],
     loadPreviouslyPlayedSongs: async () => [{ id: "recent1" }, { id: "recent2" }],
   },
 };
@@ -326,8 +328,9 @@ async function runSchedulingChecks() {
       lastCancel < firstSchedule,
       `cancel must precede schedule; order=${ops.join(",")}`,
     );
-    // 3 cancels (old ids) then 3 schedules (new ids).
-    assert.strictEqual(ops.filter((o) => o === "cancel").length, 3);
+    // All 7 weekdays are cancelled, not just the current 3: after an edit
+    // the days dropped from the set would otherwise keep firing.
+    assert.strictEqual(ops.filter((o) => o === "cancel").length, 7);
     assert.strictEqual(ops.filter((o) => o === "schedule").length, 3);
   });
 
@@ -335,7 +338,7 @@ async function runSchedulingChecks() {
     notifLog.length = 0;
     await svc.save(baseAlarm({ id: "a2", enabled: false }));
     assert.strictEqual(notifLog.filter((e) => e.op === "schedule").length, 0);
-    assert.strictEqual(notifLog.filter((e) => e.op === "cancel").length, 3);
+    assert.strictEqual(notifLog.filter((e) => e.op === "cancel").length, 7);
   });
 
   await check("permission denied: stores the alarm but schedules nothing", async () => {
@@ -363,7 +366,7 @@ async function runSchedulingChecks() {
     notifLog.length = 0;
     const after = await svc.remove("gone");
     assert.strictEqual(after.length, 0);
-    assert.strictEqual(notifLog.filter((e) => e.op === "cancel").length, 3);
+    assert.strictEqual(notifLog.filter((e) => e.op === "cancel").length, 7);
     const stored = await svc.load();
     assert.strictEqual(stored.length, 0);
   });
@@ -395,6 +398,82 @@ async function runSchedulingChecks() {
     await svc.start(baseAlarm({ playlistId: "does-not-exist" }));
     assert.deepStrictEqual(fakeTrackPlayerCalls, []);
     assert.deepStrictEqual(fakeRampLog, []);
+  });
+
+  await check("cancel() clears all 7 weekdays, not just the enabled set", async () => {
+    notifLog.length = 0;
+    await svc.cancel(baseAlarm({ id: "edit", weekdays: [1, 2, 3] }));
+    const cancelled = notifLog.filter((e) => e.op === "cancel").map((e) => e.id);
+    assert.strictEqual(cancelled.length, 7, "every weekday id must be cancelled");
+    assert.deepStrictEqual(
+      [...cancelled].sort(),
+      [0, 1, 2, 3, 4, 5, 6].map((d) => `edit:${d}`).sort(),
+    );
+  });
+
+  await check("resolveTracks() honours source=liked over the smart mix", async () => {
+    const tracks = await svc.resolveTracks(
+      baseAlarm({ id: "liked", source: "liked", playlistId: null }),
+    );
+    // Shuffled, so compare the set, not the order.
+    assert.deepStrictEqual(
+      tracks.map((t) => t.id).sort(),
+      ["l0", "l1", "l2", "l3", "l4", "l5"],
+    );
+    assert.ok(
+      !tracks.some((t) => String(t.id).startsWith("smart:")),
+      "liked source must not fall through to the smart mix",
+    );
+  });
+
+  await check("resolveTracks() with source=liked and no liked songs stays silent", async () => {
+    likedSongs.length = 0;
+    try {
+      const tracks = await svc.resolveTracks(
+        baseAlarm({ id: "empty", source: "liked", playlistId: null }),
+      );
+      assert.deepStrictEqual(tracks, []);
+    } finally {
+      likedSongs.length = 6;
+      for (let i = 0; i < 6; i += 1) likedSongs[i] = { id: `l${i}` };
+    }
+  });
+
+  await check("resolveTracks() still builds a smart mix for source=mix", async () => {
+    const tracks = await svc.resolveTracks(
+      baseAlarm({ id: "mix", source: "mix", playlistId: null }),
+    );
+    assert.deepStrictEqual(tracks.map((t) => t.id), ["smart:recent1"]);
+  });
+
+  await check("load() normalises alarms stored before source existed", async () => {
+    memoryStore.set(
+      "@wake_radio_alarms",
+      JSON.stringify([{ ...baseAlarm({ id: "legacy" }), source: undefined }]),
+    );
+    const alarms = await svc.load();
+    assert.strictEqual(alarms.length, 1);
+    assert.strictEqual(alarms[0].source, "mix");
+  });
+
+  await check("validateAlarm() rejects an unknown source", async () => {
+    const bad = baseAlarm({ id: "bad" });
+    bad.source = "radio";
+    assert.throws(() => validateAlarm(bad), /no music source/);
+  });
+
+  await check("setTrackGain() does not jump volume mid-ramp", async () => {
+    const { fadeService } = loadFadeService();
+    fadeService.configure(false, 4);
+    fadeService.startRamp(120_000);
+    fakeClock.advance(30_000);
+    volumeLog.length = 0;
+    fadeService.setTrackGain(1.4, true);
+    assert.strictEqual(
+      volumeLog.length,
+      0,
+      "gain change must not re-assert volume while a ramp owns the level",
+    );
   });
 
   await check("start() falls back to the smart mix when no playlist", async () => {
