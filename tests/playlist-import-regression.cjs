@@ -213,6 +213,23 @@ async function main() {
     for (const item of page.items) assert.match(item.videoId, /^[A-Za-z0-9_-]{11}$/);
   });
 
+  await check('thumbnailUrlOf: the largest variant is used, not the first', () => {
+    const page = IMPORT.parseYoutubeBrowseResponse(ytmPage1);
+    // The fixture header carries s192/s576/s1200 variants of the same image.
+    // The old code took thumbnails[0] (s192); the largest (s1200) is the one
+    // that survives on a real screen.
+    assert.ok(page.thumbnail.includes('s1200'), `header artwork should be the largest variant, got ${page.thumbnail}`);
+  });
+
+  await check('postYoutubeBrowse: browseId/continuation sit beside context, not inside it', () => {
+    // The fetcher is not exported, so assert the wire shape at the source:
+    // spreading the browse params into `context` sends context.browseId,
+    // which Innertube ignores — every call returns the home feed.
+    const source = readRepoFile('modules/playlistImport.ts');
+    assert.ok(!/\.\.\.body,\s*\n\s*\},/.test(source), 'browse params must not be spread into context');
+    assert.match(source, /\.\.\.body,\s*\n\s*\}\),/);
+  });
+
   await check('parseClockDuration: only clock strings convert, live stays 0', () => {
     assert.equal(IMPORT.parseClockDuration('3:55'), 235);
     assert.equal(IMPORT.parseClockDuration('1:02:03'), 3723);
@@ -379,6 +396,19 @@ async function main() {
     assert.match(source, /request\(config, "getPlaylist", \{ id: playlistId \}\)/);
     assert.match(source, /async getPlaylistList\(/);
     assert.match(source, /request\(config, "getPlaylistList"\)/);
+  });
+
+  await check('Subsonic: a single-element collection is wrapped, not dropped', () => {
+    // Subsonic's JSON conversion collapses one-element arrays to a bare
+    // object, so Array.isArray(x) ? x : [] silently reported "no playlists"
+    // and "empty playlist" for a server that had exactly one of each.
+    const source = readRepoFile('modules/subsonicService.ts');
+    assert.ok(
+      !/Array\.isArray\(playlists\) \? playlists : \[\]/.test(source),
+      'getPlaylistList must wrap a single object rather than drop it',
+    );
+    assert.match(source, /Array\.isArray\(playlists\) \? playlists : \[playlists\]/);
+    assert.match(source, /Array\.isArray\(rawEntries\)[\s\S]{0,120}: \[\]\s*;/);
   });
 
   await check('the import sheet is mounted from the Library screen with a refresh callback', () => {

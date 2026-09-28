@@ -243,8 +243,10 @@ function runsToText(runs: unknown): string {
 function thumbnailUrlOf(thumbnail: unknown): string {
   const thumbs = findFirst(thumbnail, "thumbnails");
   if (!Array.isArray(thumbs) || !thumbs.length) return "";
-  const first = thumbs[0] as Record<string, unknown>;
-  return typeof first?.url === "string" ? first.url : "";
+  // YouTube serves ascending sizes, so the last entry is the sharpest.
+  // Anything earlier is a smaller variant of the same image, not a fallback.
+  const last = thumbs[thumbs.length - 1] as Record<string, unknown>;
+  return typeof last?.url === "string" ? last.url : "";
 }
 
 /** "3:55" -> 235. Returns 0 for live/unknown entries. */
@@ -460,6 +462,9 @@ async function postYoutubeBrowse(
           Referer: `${client.origin}/`,
         },
         body: JSON.stringify({
+          // Innertube reads browseId/continuation as siblings of `context`,
+          // not members of it. Spreading them into context silently makes
+          // every browse call return the home feed instead of the playlist.
           context: {
             client: {
               clientName: client.name,
@@ -467,8 +472,8 @@ async function postYoutubeBrowse(
               hl: "en",
               gl: "US",
             },
-            ...body,
           },
+          ...body,
         }),
         signal: controller.signal,
       },

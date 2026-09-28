@@ -264,7 +264,11 @@ export const subsonicService = {
     }
     const res = await request(config, "getPlaylistList");
     const playlists = (res as any)?.playlists?.playlist || [];
-    return (Array.isArray(playlists) ? playlists : []).map((p: any) => ({
+    // Subsonic's JSON conversion collapses a single-element array to a bare
+    // object, so a server with exactly one playlist would otherwise report
+    // none at all.
+    const list = Array.isArray(playlists) ? playlists : [playlists];
+    return list.map((p: any) => ({
       id: String(p.id),
       name: p.name || String(p.id),
     }));
@@ -283,7 +287,14 @@ export const subsonicService = {
     }
     const res = await request(config, "getPlaylist", { id: playlistId });
     const playlist = (res as any)?.playlist || {};
-    const entries = Array.isArray(playlist.entry) ? playlist.entry : [];
+    // Same single-element collapse as getPlaylistList: a one-track playlist
+    // arrives as a bare object and would otherwise read as empty.
+    const rawEntries = playlist.entry;
+    const entries = Array.isArray(rawEntries)
+      ? rawEntries
+      : rawEntries
+        ? [rawEntries]
+        : [];
     const tracks = normalizeSongs(entries);
     return {
       name: playlist.name || playlistId,
