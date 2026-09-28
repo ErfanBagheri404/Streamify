@@ -1040,6 +1040,16 @@
     "endOfTrackActive": "توقف پس از این آهنگ",
     "cancel": "لغو"
   },
+  "alarm": {
+    "newTitle": "زنگ جدید",
+    "editTitle": "ویرایش زنگ",
+    "add": "افزودن زنگ",
+    "repeat": "تکرار",
+    "source": "موسیقی",
+    "sourceMix": "میکس از تاریخچه",
+    "sourceLiked": "آهنگ‌های پسندیده",
+    "fadeIn": "افزایش تدریجی صدا"
+  },
   "lyricsSearch": {
     "title": "جستجوی متن آهنگ",
     "placeholder": "نام خواننده و آهنگ",

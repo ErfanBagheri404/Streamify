@@ -1041,6 +1041,16 @@
     "endOfTrackActive": "Pausing after this track",
     "cancel": "Cancel"
   },
+  "alarm": {
+    "newTitle": "New alarm",
+    "editTitle": "Edit alarm",
+    "add": "Add alarm",
+    "repeat": "Repeat",
+    "source": "Music",
+    "sourceMix": "Mix from history",
+    "sourceLiked": "Liked songs",
+    "fadeIn": "Volume ramp"
+  },
   "lyricsSearch": {
     "title": "Search lyrics",
     "placeholder": "Artist and song name",
