@@ -225,6 +225,20 @@ check("locale keys exist in both languages", () => {
 
 // --- report -----------------------------------------------------------------
 
+check("a stream with no published bitrate is priced at the cap, not zero", () => {
+  const ctx = read("contexts", "PlayerContext.tsx");
+  // Only two resolvers call notePickedBitrate; every other path (invidious,
+  // piped, omada…) would otherwise price a playing stream at zero bytes.
+  assert.ok(
+    ctx.includes("picked > 0") && ctx.includes("currentCapKbps()"),
+    "an unpublished bitrate must fall back to the enforced cap",
+  );
+  assert.ok(
+    ctx.includes('statsTrack.audioUrl?.startsWith("file://")'),
+    "fully cached/local files must stay free of data accounting",
+  );
+});
+
 const failed = results.filter((r) => r.startsWith("FAIL"));
 for (const line of results) {
   console.log(line);

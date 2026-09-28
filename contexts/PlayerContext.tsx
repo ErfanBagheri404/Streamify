@@ -46,7 +46,7 @@ import { CacheToast } from "../components/ui/CacheToast";
 import { QueueConflictModal } from "../components/ui/QueueConflictModal";
 import { hasPlaceholderTrackMetadata } from "../lib/cloud-library-sync";
 import { normalizeYouTubeThumbnailUrl } from "../components/core/image";
-import { pickedBitrateFor, getCachedNetwork } from "../modules/audioQualityPolicy";
+import { pickedBitrateFor, currentCapKbps, getCachedNetwork } from "../modules/audioQualityPolicy";
 import { recordDataUsage } from "../modules/dataUsageStore";
 import DrmAudioPlayer, {
   DrmAudioPlayerRef,
@@ -2443,9 +2443,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 // paused/buffering time can never inflate a scrobble.
                 scrobblerService.recordProgress(deltaMs);
                 // #35: price the bytes at the bitrate this track's stream
-                // actually resolved to. 0 for local/cached tracks, which
-                // consume no mobile data.
-                const kbps = pickedBitrateFor(statsTrack.id);
+                // actually resolved to. When no resolver published one (the
+                // innertube and jiosaavn paths do; invidious/piped/omada and
+                // friends do not), fall back to the enforced cap instead of
+                // silently counting zero — a playing stream is never free.
+                // Fully cached/local files stay free: they consume no data.
+                const picked = pickedBitrateFor(statsTrack.id);
+                const isLocalFile = statsTrack.audioUrl?.startsWith("file://");
+                const kbps = picked > 0
+                  ? picked
+                  : isLocalFile
+                    ? 0
+                    : (currentCapKbps() ?? 0);
                 if (kbps > 0) {
                   void recordDataUsage(
                     (statsTrack as any).source ?? "unknown",
