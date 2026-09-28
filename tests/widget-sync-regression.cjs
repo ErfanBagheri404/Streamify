@@ -24,21 +24,47 @@ function check(name, fn) {
   }
 }
 
+/**
+ * `android/` is gitignored (Expo prebuild output): reads throw ENOENT on a
+ * fresh clone or CI. Native assertions skip instead of crashing there; the
+ * JS-side contract below always runs.
+ */
+const tryRead = (...parts) => {
+  try {
+    return fs.readFileSync(path.join(root, ...parts), "utf8");
+  } catch {
+    return null;
+  }
+};
 const widgetSync = read("modules", "widgetSync.ts");
 const playerContext = read("contexts", "PlayerContext.tsx");
-const manifest = read("android", "app", "src", "main", "AndroidManifest.xml");
-const mainApp = read(
+const manifest = tryRead("android", "app", "src", "main", "AndroidManifest.xml");
+const mainApp = tryRead(
   "android", "app", "src", "main", "java", "com", "erfanbagheri", "streamifymobile",
   "MainApplication.kt",
 );
-const provider = read(
+const provider = tryRead(
   "android", "app", "src", "main", "java", "com", "erfanbagheri", "streamifymobile",
   "StreamifyWidgetProvider.kt",
 );
-const actions = read(
+const actions = tryRead(
   "android", "app", "src", "main", "java", "com", "erfanbagheri", "streamifymobile",
   "StreamifyWidgetActions.kt",
 );
+const hasPrebuild = Boolean(manifest && mainApp && provider && actions);
+
+/**
+ * Native-side checks run only when `android/` exists (local prebuild). On a
+ * fresh clone or CI they SKIP instead of crashing on ENOENT or asserting
+ * against null — the JS contract above always runs either way.
+ */
+function checkNative(name, fn) {
+  if (!hasPrebuild) {
+    results.push(`SKIP ${name} (no android/ prebuild on this machine)`);
+    return;
+  }
+  check(name, fn);
+}
 
 check("widgetSync is Android-only", () => {
   assert.ok(widgetSync.includes('Platform.OS === "android"'));
@@ -80,11 +106,11 @@ check("PlayerContext converts RNTP seconds to widget milliseconds", () => {
   assert.ok(playerContext.includes("durationRef.current * 1000"));
 });
 
-check("RN package registers the widget module", () => {
+checkNative("RN package registers the widget module", () => {
   assert.ok(mainApp.includes("StreamifyWidgetPackage()"));
 });
 
-check("manifest declares provider and action receiver, not exported", () => {
+checkNative("manifest declares provider and action receiver, not exported", () => {
   assert.ok(manifest.includes('android:name=".StreamifyWidgetProvider"'));
   assert.ok(manifest.includes('android:name=".StreamifyWidgetActions"'));
   assert.ok(manifest.includes('@xml/widget_player_info'));
@@ -96,19 +122,19 @@ check("manifest declares provider and action receiver, not exported", () => {
   );
 });
 
-check("provider refreshes on widget update and on resize", () => {
+checkNative("provider refreshes on widget update and on resize", () => {
   assert.ok(provider.includes("override fun onUpdate("));
   assert.ok(provider.includes("override fun onAppWidgetOptionsChanged("));
 });
 
-check("provider sizes layouts from the reported widget width", () => {
+checkNative("provider sizes layouts from the reported widget width", () => {
   assert.ok(provider.includes("OPTION_APPWIDGET_MIN_WIDTH"));
   assert.ok(provider.includes("widget_player_small"));
   assert.ok(provider.includes("widget_player_medium"));
   assert.ok(provider.includes("widget_player_large"));
 });
 
-check("transport only fires media keys while our session is alive", () => {
+checkNative("transport only fires media keys while our session is alive", () => {
   assert.ok(actions.includes("KEY_ALIVE_WALL"));
   assert.ok(actions.includes("HEARTBEAT_MAX_AGE_MS"));
   assert.ok(actions.includes("dispatchMediaKeyEvent"));
@@ -120,6 +146,10 @@ check("transport only fires media keys while our session is alive", () => {
 });
 
 const failures = results.filter((r) => r.startsWith("FAIL"));
+const skips = results.filter((r) => r.startsWith("SKIP"));
 console.log(results.join("\n"));
-console.log(`\n${results.length - failures.length}/${results.length} passed`);
+console.log(
+  `\n${results.length - failures.length - skips.length}/${results.length - skips.length} passed` +
+    (skips.length ? `, ${skips.length} skipped (no android/ prebuild)` : ""),
+);
 process.exit(failures.length > 0 ? 1 : 0);
