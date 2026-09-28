@@ -93,7 +93,12 @@
     "clean": "Clean Library",
     "clean_prompt": "Are you sure you want to clear $ items from the library?",
     "import_prompt": "This will merge your current library with the imported library, continue?",
-    "imported": "Library has been imported successfully"
+    "imported": "Library has been imported successfully",
+    "emptyPlaylistTitle": "Empty playlist",
+    "emptyPlaylistBody": "This playlist has no tracks yet.",
+    "importedPlaylist": "Playlist imported",
+    "importFailed": "Could not import this playlist.",
+    "exportFailed": "Could not export this playlist."
   },
   "lists": {
     "play": "Play All",
@@ -1127,5 +1132,8 @@
     "saved": "Connected. Subsonic now appears in search sources.",
     "cleared": "Server disconnected.",
     "connectFailed": "Could not connect. Check the URL, username, and password."
+  },
+  "common": {
+    "error": "Error"
   }
 }

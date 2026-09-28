@@ -39,6 +39,11 @@ import { sanitizeImageUrl } from "../core/image";
 import { getAppFontFamily, getTextDirectionStyle } from "../../utils/fonts";
 import { useAuth } from "../../hooks/useAuth";
 import { syncCloudLibrarySnapshot } from "../../lib/cloud-library-sync";
+import {
+  pickAndParsePlaylist,
+  createPlaylistFromEntries,
+} from "../../modules/playlistTransferIO";
+import { Alert } from "react-native";
 import { ImageWithSkeleton } from "../ui/ImageWithSkeleton";
 
 const LibraryShell = styled.View`
@@ -545,6 +550,33 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       setPlaylists(loadedPlaylists);
     } catch (error) {
       console.error("Error loading playlists:", error);
+    }
+  };
+
+  const handleImportPlaylist = async () => {
+    try {
+      const picked = await pickAndParsePlaylist();
+      if (!picked) return; // user cancelled
+
+      if (picked.entries.length === 0) {
+        Alert.alert(
+          t("library.emptyPlaylistTitle"),
+          t("library.emptyPlaylistBody"),
+        );
+        return;
+      }
+
+      const created = await createPlaylistFromEntries(picked.name, picked.entries);
+      setPlaylists((current) => [...current, created]);
+      Alert.alert(
+        t("library.importedPlaylist"),
+        `${created.name}\n${created.tracks.length} ${
+          created.tracks.length === 1 ? "track" : "tracks"
+        }`,
+      );
+    } catch (error) {
+      console.warn("Playlist import failed:", error);
+      Alert.alert(t("common.error"), t("library.importFailed"));
     }
   };
 
@@ -1486,6 +1518,19 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             >
               <HeaderIconText>
                 <FontAwesome6 name="add" size={20} color={colors.foreground} />
+              </HeaderIconText>
+            </HeaderIconButton>
+            <HeaderIconButton
+              onPress={handleImportPlaylist}
+              style={{ marginStart: 6, marginEnd: 8 }}
+              accessibilityLabel="Import playlist"
+            >
+              <HeaderIconText>
+                <Ionicons
+                  name="folder-open-outline"
+                  size={20}
+                  color={colors.foreground}
+                />
               </HeaderIconText>
             </HeaderIconButton>
             <HeaderIconButton
