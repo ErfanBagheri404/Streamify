@@ -113,6 +113,39 @@ check("offset storage round-trips, clears, clamps and survives corruption", asyn
   assert.strictEqual(await off.getLyricsOffset("t1"), 0);
   storageStub.__store.delete("@lyrics_sync_offsets");
   off.__resetLyricsOffsetCache();
+
+  // An overfull table must still keep the nudge the user just made. This is
+  // reachable: a table written before the cap existed can already hold more
+  // than 500 entries, and eviction deletes from the front of insertion order —
+  // which is exactly where a re-nudged older track sits.
+  const full = {};
+  for (let i = 0; i < 501; i += 1) full[`old-${i}`] = 1.5;
+  storageStub.__store.set("@lyrics_sync_offsets", JSON.stringify(full));
+  off.__resetLyricsOffsetCache();
+  assert.strictEqual(await off.setLyricsOffset("old-0", 3), 3);
+  assert.strictEqual(
+    await off.getLyricsOffset("old-0"),
+    3,
+    "the just-written offset was evicted",
+  );
+  storageStub.__store.delete("@lyrics_sync_offsets");
+  off.__resetLyricsOffsetCache();
+});
+
+check("applyLyricsOffset never returns a negative position or NaN", () => {
+  assert.strictEqual(off.applyLyricsOffset(1, -5), 0);
+  assert.strictEqual(off.applyLyricsOffset(0, -10), 0);
+  assert.strictEqual(off.applyLyricsOffset(Number.NaN, 2), 0);
+  assert.strictEqual(off.applyLyricsOffset(5, Number.NaN), 5);
+  assert.strictEqual(off.applyLyricsOffset(10, 2), 12);
+});
+
+check("common.save exists in en AND fa (the nudge sheet's apply button)", () => {
+  const en = JSON.parse(read("locales", "en.json"));
+  const fa = JSON.parse(read("locales", "fa.json"));
+  assert.ok(en["common.save"] && en["common.save"].trim(), "en missing common.save");
+  assert.ok(fa["common.save"] && fa["common.save"].trim(), "fa missing common.save");
+  assert.notStrictEqual(fa["common.save"], en["common.save"], "fa is an English copy");
 });
 
 // --- applyLyricsOffset -------------------------------------------------------

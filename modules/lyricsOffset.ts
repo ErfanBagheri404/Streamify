@@ -85,11 +85,17 @@ export async function setLyricsOffset(
   }
 
   // Bound the map: an unbounded per-track table is a slow leak on a phone.
-  const keys = Object.keys(map);
-  if (keys.length > MAX_TRACKED_OFFSETS) {
-    keys
-      .slice(0, keys.length - MAX_TRACKED_OFFSETS)
-      .forEach((key) => delete map[key]);
+  // Never evict the key just written — deleting it would silently drop the
+  // user's latest nudge.
+  const overflow = Object.keys(map).length - MAX_TRACKED_OFFSETS;
+  if (overflow > 0) {
+    let removed = 0;
+    for (const key of Object.keys(map)) {
+      if (removed >= overflow) break;
+      if (key === trackId) continue;
+      delete map[key];
+      removed += 1;
+    }
   }
 
   cache = map;
@@ -111,7 +117,12 @@ export function applyLyricsOffset(
   positionSeconds: number,
   offsetSeconds: number,
 ): number {
-  return positionSeconds + offsetSeconds;
+  // A shifted position is still a position: never negative, never NaN.
+  // An unbounded addition would seek the lyric lookup off the rails.
+  if (!Number.isFinite(positionSeconds) || !Number.isFinite(offsetSeconds)) {
+    return Number.isFinite(positionSeconds) ? Math.max(0, positionSeconds) : 0;
+  }
+  return Math.max(0, positionSeconds + offsetSeconds);
 }
 
 /** Test seam: drops the in-memory cache so a fresh read hits storage. */
