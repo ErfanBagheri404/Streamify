@@ -361,7 +361,7 @@ export default function SettingsScreen({
   navigation: any;
   route: any;
 }) {
-  const { colors, isLight } = useTheme();
+  const { colors, isLight, artworkSeed } = useTheme();
   const { t } = useAppLanguage();
   const { settings, updateSettings, hasHydratedSettings } = useAppSettings();
   const { availableUpdateInfo, isCheckingForUpdates, reopenUpdateModal } =
@@ -938,6 +938,29 @@ export default function SettingsScreen({
                       />
                     ))}
                   </View>
+                }
+              />
+              <SettingRow
+                label={t("settings.useArtworkTheme")}
+                // Live status: while on, the row reports whether artwork is
+                // actually tinting the UI right now, so a failed sample reads
+                // as a fallback rather than a silent no-op.
+                description={
+                  settings.useArtworkTheme && artworkSeed
+                    ? t("settings.artworkThemeActive")
+                    : t("settings.useArtworkThemeDescription")
+                }
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.useArtworkTheme")}
+                    accessibilityHint={t("settings.useArtworkThemeDescription")}
+                    value={settings.useArtworkTheme}
+                    onValueChange={(value) =>
+                      updateSettings({ useArtworkTheme: value })
+                    }
+                  />
                 }
               />
               <SettingRow
