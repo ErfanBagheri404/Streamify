@@ -26,6 +26,16 @@ function check(name, fn) {
   }
 }
 
+/** `android/` is gitignored (Expo prebuild output): ENOENT on a fresh clone. */
+const tryRead = (...parts) => {
+  try {
+    return fs.readFileSync(path.join(root, ...parts), "utf8");
+  } catch {
+    return null;
+  }
+};
+const hasPrebuild = () => Boolean(tryRead("android", "app", "src", "main", "AndroidManifest.xml"));
+
 const deepLink = read("modules", "deepLink.ts");
 const seededQueue = read("modules", "seededQueue.ts");
 const app = read("App.tsx");
@@ -37,7 +47,7 @@ const launcherShortcuts = read(
   "plugins", "android", "StreamifyLauncherShortcuts.kt",
 );
 const module_ = read("plugins", "android", "StreamifyWidgetModule.kt");
-const manifest = read("android", "app", "src", "main", "AndroidManifest.xml");
+const manifest = tryRead("android", "app", "src", "main", "AndroidManifest.xml");
 
 const SCHEME = "streamify://";
 
@@ -158,6 +168,14 @@ check("quick-settings tile is registered with the QS intent filter", () => {
     plugin.includes("android.permission.BIND_QUICK_SETTINGS_TILE"),
     "tile must require BIND_QUICK_SETTINGS_TILE",
   );
+  if (!manifest) {
+    // android/ is gitignored prebuild output; the plugin-side assertions
+    // above still prove the tile is registered with the config plugin.
+    results.push(
+      `SKIP tile service is declared in the prebuilt manifest (no android/ on this machine)`,
+    );
+    return;
+  }
   assert.ok(manifest.includes(".StreamifyPlaybackTileService"), "service not in manifest");
 });
 
@@ -202,6 +220,10 @@ check("the native module exposes the shortcut bridge to JS", () => {
 });
 
 const failures = results.filter((r) => r.startsWith("FAIL"));
+const skips = results.filter((r) => r.startsWith("SKIP"));
 console.log(results.join("\n"));
-console.log(`\n${results.length - failures.length}/${results.length} passed`);
+console.log(
+  `\n${results.length - failures.length - skips.length}/${results.length - skips.length} passed` +
+    (skips.length ? `, ${skips.length} skipped (no android/ prebuild)` : ""),
+);
 process.exit(failures.length > 0 ? 1 : 0);
