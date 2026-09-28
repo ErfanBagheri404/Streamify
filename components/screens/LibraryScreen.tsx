@@ -560,9 +560,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
       if (picked.entries.length === 0) {
         Alert.alert(
-          t("library.emptyPlaylistTitle") || "Empty playlist",
-          t("library.emptyPlaylistBody") ||
-            "That file contained no track entries.",
+          t("library.emptyPlaylistTitle"),
+          t("library.emptyPlaylistBody"),
         );
         return;
       }
@@ -570,18 +569,14 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       const created = await createPlaylistFromEntries(picked.name, picked.entries);
       setPlaylists((current) => [...current, created]);
       Alert.alert(
-        t("library.importedPlaylist") || "Playlist imported",
+        t("library.importedPlaylist"),
         `${created.name}\n${created.tracks.length} ${
           created.tracks.length === 1 ? "track" : "tracks"
         }`,
       );
     } catch (error) {
       console.warn("Playlist import failed:", error);
-      Alert.alert(
-        t("common.error") || "Error",
-        t("library.importFailed") ||
-          "Could not read that file. Is it a valid M3U or PLS?",
-      );
+      Alert.alert(t("common.error"), t("library.importFailed"));
     }
   };
 

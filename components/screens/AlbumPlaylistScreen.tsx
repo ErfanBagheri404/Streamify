@@ -211,10 +211,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           );
         } catch (error) {
           console.warn("Export failed:", error);
-          Alert.alert(
-            t("common.error") || "Error",
-            t("library.exportFailed") || "Could not export this playlist.",
-          );
+          Alert.alert(t("common.error"), t("library.exportFailed"));
         }
         return;
       }

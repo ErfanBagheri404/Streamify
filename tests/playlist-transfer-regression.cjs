@@ -277,6 +277,29 @@ check("the transfer IO layer routes export through the share sheet", () => {
   );
 });
 
+// --- locale parity ---------------------------------------------------------
+
+check("every locale key the import/export UI reads exists in en AND fa", () => {
+  const en = JSON.parse(read("locales", "en.json"));
+  const fa = JSON.parse(read("locales", "fa.json"));
+  const keys = [
+    "common.error",
+    "library.emptyPlaylistTitle",
+    "library.emptyPlaylistBody",
+    "library.importedPlaylist",
+    "library.importFailed",
+    "library.exportFailed",
+  ];
+  const get = (doc, path) => path.split(".").reduce((o, k) => o?.[k], doc);
+  for (const key of keys) {
+    const enVal = get(en, key);
+    const faVal = get(fa, key);
+    assert.ok(typeof enVal === "string" && enVal.trim(), `en missing ${key}`);
+    assert.ok(typeof faVal === "string" && faVal.trim(), `fa missing ${key}`);
+    assert.notStrictEqual(faVal, enVal, `fa ${key} is an English copy`);
+  }
+});
+
 // --- report -----------------------------------------------------------------
 
 const failed = results.filter((r) => r.startsWith("FAIL"));
