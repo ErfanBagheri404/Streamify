@@ -8237,3 +8237,74 @@ export async function clearAudioCacheForTrack(trackId: string): Promise<void> {
     await saveAudioCacheIndex(index);
   }
 }
+
+/**
+ * Cache inventory for the storage budget (#31), read straight from the
+ * index the download loop already maintains. A corrupt entry is treated as
+ * absent rather than poisoning the total.
+ */
+export async function listCacheEntriesForBudget(): Promise<
+  Array<{
+    trackId: string;
+    sizeBytes: number;
+    lastUsedAt: number;
+    isFullyCached: boolean;
+    isDownloading: boolean;
+  }>
+> {
+  const index = await loadAudioCacheIndex();
+  return Object.values(index.entries)
+    .filter((entry) => entry && typeof entry.trackId === "string")
+    .map((entry) => ({
+      trackId: entry.trackId,
+      sizeBytes: Math.max(0, entry.sizeBytes || 0),
+      lastUsedAt: entry.lastUsedAt || entry.updatedAt || 0,
+      isFullyCached: !!entry.isFullyCached,
+      isDownloading: !!entry.isDownloading,
+    }));
+}
+
+/**
+ * Current cache usage in bytes. Recomputed from entries rather than trusting
+ * `index.totalBytes`, which drifts whenever a download is interrupted
+ * mid-write.
+ */
+export async function getAudioCacheUsageBytes(): Promise<number> {
+  const entries = await listCacheEntriesForBudget();
+  return entries.reduce((sum, entry) => sum + entry.sizeBytes, 0);
+}
+
+/**
+ * Enforces the storage cap: evicts LRU entries until the cache fits, skipping
+ * pinned ids and in-flight downloads. Returns the ids it actually removed.
+ *
+ * Call after a download completes, not on a timer — a scheduled sweep would
+ * delete files while the queue is still filling the cache it just measured.
+ */
+export async function enforceAudioCacheBudget(
+  capMb: number,
+  pinnedTrackIds: Iterable<string> = [],
+): Promise<string[]> {
+  const { planCacheEviction } = await import("./cacheBudget");
+
+  const entries = await listCacheEntriesForBudget();
+  const plan = planCacheEviction(entries, capMb, pinnedTrackIds);
+  if (!plan.overBudget || plan.evict.length === 0) {
+    return [];
+  }
+
+  const evicted: string[] = [];
+  for (const entry of plan.evict) {
+    try {
+      await clearAudioCacheForTrack(entry.trackId);
+      evicted.push(entry.trackId);
+    } catch (error) {
+      // One undeletable file must not abort the sweep; the next pass retries.
+      console.warn(
+        `[Audio] Cache eviction skipped for ${entry.trackId}:`,
+        error,
+      );
+    }
+  }
+  return evicted;
+}

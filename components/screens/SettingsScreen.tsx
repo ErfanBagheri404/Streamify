@@ -24,6 +24,15 @@ import { SubsonicSheet } from "../SubsonicSheet";
 import { BodyText, MutedText, TitleText } from "../ui/Text";
 import { AccentButton } from "../ui/Button";
 import { SettingsSwitch } from "../ui/SettingsSwitch";
+import { Chip } from "../ui/Chip";
+import {
+  CACHE_CAP_OPTIONS_MB,
+  toMegabytes,
+} from "../../modules/cacheBudget";
+import {
+  enforceAudioCacheBudget,
+  getAudioCacheUsageBytes,
+} from "../../modules/audioStreaming";
 import { useAppLanguage } from "../../hooks/useAppLanguage";
 import {
   CURRENT_APP_VERSION,
@@ -381,6 +390,7 @@ export default function SettingsScreen({
   const [scrobbleProvider, setScrobbleProvider] = useState<
     "listenbrainz" | "lastfm"
   >("listenbrainz");
+  const [cacheUsedMb, setCacheUsedMb] = useState(0);
 
   const { autoVisible: communityAutoVisible, closeAuto: closeCommunityAuto } =
     useCommunityModalAutoShow();
@@ -539,6 +549,21 @@ export default function SettingsScreen({
   // ---- Category tabs (settings rework) ----
   // Remember last selected tab; default to Account on first launch.
   const [activeTab, setActiveTab] = useState<SettingsTabKey>("account");
+
+  // Real cache usage for the storage row; refreshed on tab entry and after
+  // any cap change (enforceAudioCacheBudget mutates the cache it measures).
+  useEffect(() => {
+    if (activeTab !== "playback") return;
+    let alive = true;
+    const refresh = () =>
+      void getAudioCacheUsageBytes().then((bytes) => {
+        if (alive) setCacheUsedMb(Math.round(toMegabytes(bytes)));
+      });
+    refresh();
+    return () => {
+      alive = false;
+    };
+  }, [activeTab, settings.audioCacheCapMb]);
   const SETTINGS_TAB_KEY = "settings_active_tab";
 
   useEffect(() => {
@@ -1080,6 +1105,29 @@ export default function SettingsScreen({
                       updateSettings({ autoCacheLikedSongs: value })
                     }
                   />
+                }
+              />
+              <SettingRow
+                label={t("settings.audioCacheCap")}
+                description={`${t("settings.audioCacheCapDescription")} · ${cacheUsedMb} MB`}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <View style={styles.cacheCapChips}>
+                    {CACHE_CAP_OPTIONS_MB.map((cap) => (
+                      <Chip
+                        key={cap}
+                        label={cap >= 1000 ? `${cap / 1000} GB` : `${cap} MB`}
+                        selected={settings.audioCacheCapMb === cap}
+                        onPress={() => {
+                          updateSettings({ audioCacheCapMb: cap });
+                          // Lowering the cap has to act now, not at the next
+                          // completed download.
+                          void enforceAudioCacheBudget(cap, []);
+                        }}
+                      />
+                    ))}
+                  </View>
                 }
               />
               <SettingRow
@@ -1652,5 +1700,9 @@ const styles = StyleSheet.create({
   syncFeedbackText: {
     fontSize: 13,
     lineHeight: 18,
+  },
+  cacheCapChips: {
+    flexDirection: "row",
+    gap: 6,
   },
 });
