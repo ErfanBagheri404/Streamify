@@ -1,6 +1,7 @@
 import "react-native-gesture-handler";
 import React, { useEffect, useRef } from "react";
 import { NavigationContainer } from "@react-navigation/native";
+import * as Linking from "expo-linking";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { enableScreens } from "react-native-screens";
@@ -58,6 +59,10 @@ import {
   hasCompletedOnboarding,
   markOnboardingCompleted,
 } from "./utils/storage";
+import { setShareMomentHandler, routeShareMomentUrl, type ShareMoment } from "./modules/shareMoment";
+
+/** t= carries seconds; beyond sane bounds is treated as "from the start". */
+const MAX_SHARE_SEEK_SECONDS = 6 * 3600;
 
 // Screens
 import HomeScreen from "./components/screens/HomeScreen";
@@ -408,6 +413,86 @@ function StartupLoadingScreen() {
   );
 }
 
+/**
+ * Share-moment bridge (issue #33).
+ *
+ * Lives inside PlayerProvider so it can use the real playback context, and
+ * hands the handler over only once settings have hydrated — a share link can
+ * arrive as a cold start, before the library is loaded, and acting on an
+ * empty liked-songs list would resolve the track as remote when it is local.
+ */
+function ShareMomentBridge() {
+  const { hasHydratedSettings } = useSettings();
+  const { likedSongs, playTrack, seekTo } = usePlayer();
+
+  /**
+   * Local ids resolve instantly; remote sources need the stream resolver, which
+   * works from a bare `{id, source}` track — no search pass required, the URL
+   * shares the id the player already keys on. The shared title/artist are
+   * metadata-only: the truth stays in the library.
+   */
+  const playSharedMoment = React.useCallback(
+    async (moment: ShareMoment) => {
+      const local = likedSongs.find((song) => song.id === moment.id);
+      const track = local ?? {
+        id: moment.id,
+        title: moment.title ?? moment.id,
+        artist: moment.artist,
+        source: moment.source,
+        _isJioSaavn: moment.source === "jiosaavn",
+        _isSoundCloud: moment.source === "soundcloud",
+      };
+
+      await playTrack(
+        track as any,
+        local ? likedSongs : [track as any],
+        local ? likedSongs.indexOf(local) : 0,
+      );
+
+      const seconds = Math.floor(moment.seconds);
+      if (seconds > 0 && seconds <= MAX_SHARE_SEEK_SECONDS) {
+        // The resolver loads the stream asynchronously, so seeking
+        // immediately would be clobbered. Wait for the track to finish
+        // loading, then land on the timestamp.
+        //
+        // seekTo resolves even when the player is not ready yet (it warns
+        // and returns), so success is detected by reading the position
+        // back — a landing within tolerance of the target means the seek
+        // stuck.
+        for (let attempt = 0; attempt < 60; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          try {
+            await seekTo(seconds);
+            const landed = await TrackPlayer.getPosition();
+            if (Math.abs(landed - seconds) < 5) return;
+          } catch {
+            // Not loaded yet; keep waiting.
+          }
+        }
+      }
+    },
+    [likedSongs, playTrack, seekTo],
+  );
+
+  React.useEffect(() => {
+    if (!hasHydratedSettings) return;
+    setShareMomentHandler(playSharedMoment);
+
+    // A share link can arrive as a cold start (getInitialURL) or while the app
+    // is already open (addEventListener). Both route through the same handler.
+    let subscription: { remove: () => void } | null = null;
+    Linking.getInitialURL().then((url) => {
+      if (url) routeShareMomentUrl(url);
+    });
+    subscription = Linking.addEventListener("url", ({ url }) => {
+      routeShareMomentUrl(url);
+    });
+    return () => subscription?.remove();
+  }, [hasHydratedSettings, playSharedMoment]);
+
+  return null;
+}
+
 function AppStartupGate({ children }: { children: React.ReactNode }) {
   const { hasHydratedSettings } = useSettings();
 
@@ -669,6 +754,7 @@ function AppContent() {
                   <CloudLibraryBridge />
                   <PlaybackPreferenceBridge />
                   <GlobalTextDefaultsBridge />
+                  <ShareMomentBridge />
                   <AppShell />
                 </PlayerProvider>
               </AppUpdateProvider>
