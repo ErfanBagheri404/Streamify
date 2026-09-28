@@ -4,8 +4,9 @@
  * Everything here is pure: no React Native imports, no storage, no network.
  * That is deliberate — a parser that only runs on-device can never be tested
  * here, so the format handling lives in one file the regression suite can
- * transpile and drive directly.
+ * transpile and drive directly. CSV import lives beside it in `./playlistCsv`.
  */
+import { looksLikeCsv, parseCsv } from "./playlistCsv";
 
 export type ParsedEntry = {
   /** Title as written. Doubles as the match key. */
@@ -27,6 +28,24 @@ function secondsOrNull(raw: string): number | undefined {
   const value = Number(raw);
   if (!Number.isFinite(value) || value < 0) return undefined;
   return Math.floor(value);
+}
+
+/**
+ * A malformed percent-escape must not abort a whole playlist: one bad
+ * filename (`.../100%.mp3`) must not discard every valid line around it.
+ */
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+/** Last path segment with its extension removed — the usual display name. */
+function titleFromUri(uri: string): string {
+  const lastSegment = uri.split("/").pop() ?? uri;
+  return safeDecode(lastSegment).replace(/\.[a-z0-9]{1,5}$/i, "");
 }
 
 /**
@@ -97,8 +116,7 @@ export function parseM3u(text: string): ParsedEntry[] {
         // A bare URL with no #EXTINF carries no title — fall back to the last
         // path segment minus its extension, which is what most files use as
         // their filename ("My Song.mp3" -> "My Song").
-        const lastSegment = line.split("/").pop() ?? line;
-        entry.title = decodeURIComponent(lastSegment).replace(/\.[a-z0-9]{1,5}$/i, "");
+        entry.title = titleFromUri(line);
       }
     }
 
@@ -143,13 +161,14 @@ export function parsePls(text: string): ParsedEntry[] {
 
   const entries: ParsedEntry[] = [];
   for (const [index, uri] of [...files.entries()].sort((a, b) => a[0] - b[0])) {
-    const title = titles.get(index);
-    const entry: ParsedEntry = { title: title ?? uri };
-    if (title) entry.uri = uri;
-    else entry.uri = uri;
+    // A present-but-empty Title1= means "no title" — fall back to the URI.
+    // An absent Title1= key means the same thing. Both take the URI path.
+    const hasTitle = titles.has(index);
+    const title = hasTitle ? titles.get(index)!.trim() : "";
+    const entry: ParsedEntry = { title: title || titleFromUri(uri) };
+    entry.uri = uri;
     const length = lengths.get(index);
     if (length !== undefined && length >= 0) entry.durationSeconds = length;
-    if (!title) entry.title = decodeURIComponent(uri.split("/").pop() ?? uri);
     entries.push(entry);
   }
   return entries;
@@ -157,10 +176,17 @@ export function parsePls(text: string): ParsedEntry[] {
 
 /** Dispatch on content, not extension — users paste raw text. */
 export function parsePlaylistText(text: string): ParsedEntry[] {
-  const trimmed = text.trim();
+  // Strip the BOM toCsv writes so every parser sees clean text.
+  const trimmed = text.replace(/^\uFEFF/, "").trim();
   if (!trimmed) return [];
 
-  if (/^\[playlist\]/i.test(trimmed) || /\bfile\d+=/i.test(trimmed)) {
+  // CSV first: a CSV row can contain "file2=" inside a URL, and the PLS
+  // signature below would otherwise hijack a perfectly valid CSV import.
+  if (looksLikeCsv(trimmed)) return parseCsv(trimmed);
+
+  // Line-anchored PLS signature, so a query string like "?file2=1" on a URL
+  // inside an M3U cannot reroute the whole file to the PLS parser.
+  if (/^\[playlist\]\s*$/im.test(trimmed) || /^file\d+\s*=/im.test(trimmed)) {
     return parsePls(trimmed);
   }
   return parseM3u(trimmed);

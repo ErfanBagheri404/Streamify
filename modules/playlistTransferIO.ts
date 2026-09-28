@@ -136,18 +136,27 @@ export async function createPlaylistFromEntries(
   name: string,
   entries: ParsedEntry[],
 ): Promise<Playlist> {
+  // One base for the whole batch: two imports finishing in the same
+  // millisecond would otherwise produce colliding playlist ids, and
+  // addPlaylist does not dedupe — the pair becomes unaddressable.
+  const batch = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
   const tracks = entries.map((entry, idx) => ({
-    id: `import-${Date.now()}-${idx}`,
+    id: `import-${batch}-${idx}`,
     title: entry.title,
     artist: entry.artist || "Unknown Artist",
     url: entry.uri || "",
     duration: entry.durationSeconds || 0,
     thumbnail: "",
+    // An imported entry's URL is authoritative, exactly as a Subsonic track's
+    // is: the file is already resolved, and handing it to a remote resolver
+    // would fail (resolveTrackSource maps anything unknown to "youtube").
+    _isSubsonic: !!entry.uri,
     source: "imported",
   }));
 
   const playlist: Playlist = {
-    id: Date.now().toString(),
+    id: batch,
     name: name.trim() || "Imported Playlist",
     description: `Imported with ${entries.length} ${
       entries.length === 1 ? "track" : "tracks"

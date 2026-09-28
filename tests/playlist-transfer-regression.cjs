@@ -32,8 +32,21 @@ const js = ts.transpileModule(src, {
 }).outputText;
 const mod = new module.constructor();
 mod.paths = module.paths;
+// playlistTransfer imports ./playlistCsv — load the real transpiled copy.
+const csvJs = ts.transpileModule(read("modules", "playlistCsv.ts"), {
+  compilerOptions: {
+    module: ts.ModuleKind.CommonJS,
+    target: ts.ScriptTarget.ES2020,
+  },
+}).outputText;
+const csvMod = new module.constructor();
+csvMod.paths = module.paths;
+csvMod._compile(csvJs, path.join(root, "modules", "playlistCsv.js"));
+mod.require = (request) =>
+  request === "./playlistCsv" ? csvMod.exports : require(request);
 mod._compile(js, path.join(root, "modules", "playlistTransfer.js"));
 const pt = mod.exports;
+const csv = csvMod.exports;
 
 const libraryScreen = read("components", "screens", "LibraryScreen.tsx");
 const albumPlaylist = read("components", "screens", "AlbumPlaylistScreen.tsx");
@@ -298,6 +311,74 @@ check("every locale key the import/export UI reads exists in en AND fa", () => {
     assert.ok(typeof faVal === "string" && faVal.trim(), `fa missing ${key}`);
     assert.notStrictEqual(faVal, enVal, `fa ${key} is an English copy`);
   }
+});
+
+// --- CSV import (issue #40) -------------------------------------------------
+// The export writes quoted fields and embedded newlines; without a matching
+// parser, re-importing the app's own CSV produced one garbage track per line.
+
+check("CSV round-trips: the export re-imports as the same tracks", () => {
+  const rows = [
+    { title: "Plain Song", artist: "Some Artist", album: "Album" },
+    { title: 'Quoted "Title"', artist: "A, B", album: "" },
+    { title: "Embedded\nNewline", artist: "Artist", album: "" },
+  ];
+  const entries = pt.parsePlaylistText(pt.toCsv(rows));
+  assert.strictEqual(entries.length, 3, "header must not become a track");
+  assert.strictEqual(entries[0].title, "Plain Song");
+  assert.strictEqual(entries[0].artist, "Some Artist");
+  assert.strictEqual(entries[1].title, 'Quoted "Title"');
+  assert.strictEqual(entries[1].artist, "A, B", "a quoted comma must survive");
+  assert.strictEqual(entries[2].title, "Embedded\nNewline", "newline must survive");
+});
+
+check("a CSV header row is not imported as a track", () => {
+  const entries = pt.parsePlaylistText("Title,Artist,Album\r\nSong,A,B\r\n");
+  assert.deepStrictEqual(entries.map((e) => e.title), ["Song"]);
+});
+
+check("a headerless CSV imports every row as data", () => {
+  // A headerless CSV is indistinguishable from a two-line M3U of bare titles,
+  // so the M3U path is the correct answer here — the CSV parser only runs
+  // once a real header has been seen.
+  const entries = pt.parsePlaylistText("Song One\nSong Two\n");
+  assert.deepStrictEqual(entries.map((e) => e.title), ["Song One", "Song Two"]);
+});
+
+check("the BOM the export writes does not corrupt the first title", () => {
+  const entries = pt.parsePlaylistText(pt.toCsv([{ title: "First" }]));
+  assert.strictEqual(entries[0].title, "First");
+});
+
+check("a URL with query commas is not mistaken for CSV", () => {
+  // Field-count heuristics rerouted these to the CSV parser; the header check
+  // must not.
+  const m3u = "#EXTM3U\nhttp://h/a.mp3?a=1,b=2\nhttp://h/b.mp3?c=3,d=4\n";
+  const entries = pt.parsePlaylistText(m3u);
+  assert.strictEqual(entries.length, 2, "must stay on the M3U path");
+  assert.strictEqual(entries[0].uri, "http://h/a.mp3?a=1,b=2");
+});
+
+// --- parser robustness ------------------------------------------------------
+
+check("a malformed percent-escape does not abort the whole playlist", () => {
+  // One bad filename must not discard every valid line around it.
+  const m3u = "#EXTM3U\nhttp://h/good.mp3\nhttp://h/100%.mp3\nhttp://h/fine.mp3\n";
+  const entries = pt.parsePlaylistText(m3u);
+  assert.strictEqual(entries.length, 3, "the throw must not lose the playlist");
+});
+
+check("PLS titles strip the file extension like M3U does", () => {
+  const pls = "[playlist]\nFile1=http://h/song.mp3\nTitle1=\n";
+  const entries = pt.parsePlaylistText(pls);
+  assert.strictEqual(entries.length, 1);
+  assert.strictEqual(entries[0].title, "song", "extension must be stripped");
+});
+
+check("a URL containing file2= does not reroute an M3U to the PLS parser", () => {
+  const m3u = "#EXTM3U\nhttp://h/x.mp3?file2=1\nhttp://h/y.mp3\n";
+  const entries = pt.parsePlaylistText(m3u);
+  assert.strictEqual(entries.length, 2, "must stay on the M3U path");
 });
 
 // --- report -----------------------------------------------------------------
