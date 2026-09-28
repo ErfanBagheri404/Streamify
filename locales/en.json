@@ -31,7 +31,10 @@
     "songCredits": "Song credits",
     "noTrackLoaded": "No track loaded",
     "noTrackSelected": "No track selected",
-    "selectToStart": "Select a track to start playing"
+    "selectToStart": "Select a track to start playing",
+    "aiMixTitle": "AI Mix",
+    "aiMixReady": "Your AI Mix is pinned in Library. Tap it to replay.",
+    "aiMixEmpty": "Not enough listening history yet — play a few songs first."
   },
   "upcoming": {
     "clear": "Clear Queue",
