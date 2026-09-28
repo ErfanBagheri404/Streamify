@@ -7,7 +7,7 @@
 //
 // Pure stdlib + @expo/config-plugins (already an Expo dependency). No new
 // package.
-const { withDangerousMod, withMainApplication } = require("@expo/config-plugins");
+const { withDangerousMod, withMainApplication, withAndroidManifest } = require("@expo/config-plugins");
 
 const fs = require("fs");
 const path = require("path");
@@ -34,6 +34,23 @@ function assertSourcesPresent() {
 const withEqualizer = (config) => {
   assertSourcesPresent();
 
+  // MODIFY_AUDIO_SETTINGS is needed to attach the effect to the output mix;
+  // without it AudioEffect init fails on device.
+  config = withAndroidManifest(config, (cfg) => {
+    const manifest = cfg.modResults.manifest;
+    manifest["uses-permission"] = manifest["uses-permission"] || [];
+    const has = manifest["uses-permission"].some(
+      (entry) =>
+        entry.$?.["android:name"] === "android.permission.MODIFY_AUDIO_SETTINGS",
+    );
+    if (!has) {
+      manifest["uses-permission"].push({
+        $: { "android:name": "android.permission.MODIFY_AUDIO_SETTINGS" },
+      });
+    }
+    return cfg;
+  });
+
   config = withDangerousMod(config, [
     "android",
     (cfg) => {
@@ -52,14 +69,28 @@ const withEqualizer = (config) => {
   // vanilla android/ tree.
   config = withMainApplication(config, (cfg) => {
     const src = cfg.modResults.contents;
-    if (src.includes("StreamifyEqualizerPackage()")) return cfg;
+    const importLine = `import ${PACKAGE}.StreamifyEqualizerPackage`;
+    if (!src.includes(importLine)) {
+      const packageAnchor = `package ${PACKAGE}`;
+      if (!src.includes(packageAnchor)) {
+        throw new Error(
+          "withEqualizer: MainApplication template changed; cannot find package anchor.",
+        );
+      }
+      cfg.modResults.contents = cfg.modResults.contents.replace(
+        packageAnchor,
+        `${packageAnchor}\n${importLine}`,
+      );
+    }
+    const updated = cfg.modResults.contents;
+    if (updated.includes("StreamifyEqualizerPackage()")) return cfg;
     const anchor = "PackageList(this).packages.apply {";
-    if (!src.includes(anchor)) {
+    if (!updated.includes(anchor)) {
       throw new Error(
         "withEqualizer: MainApplication template changed; cannot find getPackages anchor.",
       );
     }
-    cfg.modResults.contents = src.replace(
+    cfg.modResults.contents = updated.replace(
       anchor,
       `${anchor}\n              add(StreamifyEqualizerPackage())`,
     );

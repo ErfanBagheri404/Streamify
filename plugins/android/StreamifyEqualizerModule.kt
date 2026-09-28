@@ -62,6 +62,9 @@ class StreamifyEqualizerModule(reactContext: ReactApplicationContext) :
     info.putInt("minMillibel", 0)
     info.putInt("maxMillibel", 0)
     info.putArray("levels", Arguments.createArray())
+    // The JS contract always reads centerFreqHz: keep the key present even
+    // when there are no bands to report.
+    info.putArray("centerFreqHz", Arguments.createArray())
     return info
   }
 
@@ -86,7 +89,9 @@ class StreamifyEqualizerModule(reactContext: ReactApplicationContext) :
     // Center frequencies label the bands in the UI; harmless when unsupported.
     val freqs = Arguments.createArray()
     for (band in 0 until bands) {
-      freqs.pushInt(eq.getCenterFreq(band.toShort()))
+      // getCenterFreq returns milliHz; the JS contract is plain Hz, so the
+      // labels would otherwise read 1000x high (60000 instead of 60).
+      freqs.pushInt((eq.getCenterFreq(band.toShort()) / 1000).coerceAtLeast(0))
       if (range != null) {
         val millibel = eq.getBandLevel(band.toShort()).toInt()
         levels.pushDouble(millibel.coerceIn(range.first, range.second).toDouble())

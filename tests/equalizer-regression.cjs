@@ -192,6 +192,7 @@ function loadPlugin() {
         return {
           withDangerousMod: record("withDangerousMod"),
           withMainApplication: record("withMainApplication"),
+          withAndroidManifest: record("withAndroidManifest"),
         };
       }
       // Real builtins: the plugin copies files with fs.
@@ -225,10 +226,10 @@ check("plugin copies both Kotlin sources into the generated android tree", async
   fs.rmSync(fakeAndroid, { recursive: true, force: true });
 });
 
-check("plugin registers the package in the withMainApplication output", async () => {
+check("plugin registers the package with its import (no unresolved add())", async () => {
   const { mods } = loadPlugin();
-  assert.ok(mods.withMainApplication, "plugin mods MainApplication");
   const template = [
+    "package com.erfanbagheri.streamifymobile",
     "class MainApplication : Application() {",
     "  override fun getPackages(): List<ReactPackage> {",
     "    return PackageList(this).packages.apply {",
@@ -238,11 +239,60 @@ check("plugin registers the package in the withMainApplication output", async ()
   ].join("\n");
   const out = mods.withMainApplication({ modResults: { contents: template } });
   assert.match(out.modResults.contents, /add\(StreamifyEqualizerPackage\(\)\)/);
+  assert.ok(
+    out.modResults.contents.includes(
+      "import com.erfanbagheri.streamifymobile.StreamifyEqualizerPackage",
+    ),
+    "an add() with no import does not compile — stale test needs updating",
+  );
   // Idempotent: a second prebuild pass must not double-register.
   const twice = mods.withMainApplication({ modResults: { contents: out.modResults.contents } });
   assert.equal(
     twice.modResults.contents.match(/add\(StreamifyEqualizerPackage\(\)\)/g).length,
     1,
+  );
+  assert.equal(
+    twice.modResults.contents.match(
+      /import com\.erfanbagheri\.streamifymobile\.StreamifyEqualizerPackage/g,
+    ).length,
+    1,
+  );
+});
+
+check("plugin requests MODIFY_AUDIO_SETTINGS (AudioEffect init fails without it)", async () => {
+  const { mods } = loadPlugin();
+  assert.ok(mods.withAndroidManifest, "plugin must touch the manifest");
+  const cfg = mods.withAndroidManifest({ modResults: { manifest: {} } });
+  const names = (cfg.modResults.manifest["uses-permission"] || []).map(
+    (entry) => entry.$?.["android:name"],
+  );
+  assert.ok(
+    names.includes("android.permission.MODIFY_AUDIO_SETTINGS"),
+    "AudioEffect init fails on device without this permission",
+  );
+});
+
+check("native reports center frequencies in Hz, not milliHz", async () => {
+  assert.ok(
+    kt.includes("getCenterFreq(band.toShort()) / 1000"),
+    "getCenterFreq returns milliHz; the UI would label bands 1000x high",
+  );
+});
+
+check("unsupportedInfo honors the full EqualizerInfo contract", async () => {
+  const body = kt.slice(kt.indexOf("private fun unsupportedInfo()"));
+  const fn = body.slice(0, body.indexOf("  }"));
+  assert.ok(
+    fn.includes('putArray("centerFreqHz"'),
+    "JS reads centerFreqHz unconditionally — the key must exist",
+  );
+  const { rn } = rnFake({ modules: {} });
+  const onAndroid = { "react-native": { ...rn, Platform: { OS: "android" } } };
+  const eq = loadModule("modules/audioEqualizer.ts", onAndroid);
+  const info = await eq.getEqualizerInfo();
+  assert.ok(
+    Array.isArray(info.centerFreqHz),
+    "the unsupported surface must carry centerFreqHz",
   );
 });
 
