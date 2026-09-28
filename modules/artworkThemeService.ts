@@ -109,7 +109,10 @@ export async function deriveSeedFromArtwork({
   }
   const now = Date.now();
   pruneCache(now);
-  const cached = seedCache.get(uri);
+  // The seed depends on isLightTheme as well as the pixels, so a theme flip
+  // must not reuse the seed derived for the other mode.
+  const cacheKey = `${isLightTheme ? "light" : "dark"}:${uri}`;
+  const cached = seedCache.get(cacheKey);
   if (cached) {
     return cached.seed;
   }
@@ -135,7 +138,7 @@ export async function deriveSeedFromArtwork({
       return null;
     }
     const seed = deriveArtworkSeed(extractDominantColor(pixels), isLightTheme);
-    seedCache.set(uri, { seed, expiresAt: now + CACHE_TTL_MS });
+    seedCache.set(cacheKey, { seed, expiresAt: now + CACHE_TTL_MS });
     return seed;
   } catch (error) {
     // A failed theme is never worth breaking playback over: the caller falls

@@ -217,6 +217,7 @@ export function deriveArtworkSeed(
   isLightTheme: boolean,
 ): ArtworkThemeSeed {
   if (!dominant) {
+    // No pixels to judge, so the caller's mode is the best available answer.
     return { accent: "#1ed760", accentContrast: "#04110a", preferLight: isLightTheme };
   }
 
@@ -266,6 +267,12 @@ export function deriveArtworkSeed(
   return {
     accent: rgbToHex(adjusted),
     accentContrast,
-    preferLight: isLightTheme,
+    // Advisory: whether the artwork itself is bright enough that text drawn
+    // on it reads light. Derived from the cover's luminance, not the current
+    // mode — the caller asked for a seed tuned to `isLightTheme`, but this
+    // flag describes the artwork. No in-repo consumer flips the theme on it;
+    // it exists so artwork-aware surfaces (e.g. a full-bleed player) can pick
+    // a readable foreground without re-sampling the pixels.
+    preferLight: relativeLuminance(dominant) > 0.45,
   };
 }
