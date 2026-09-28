@@ -1127,5 +1127,6 @@
     "saved": "Connected. Subsonic now appears in search sources.",
     "cleared": "Server disconnected.",
     "connectFailed": "Could not connect. Check the URL, username, and password."
-  }
+  },
+  "common.save": "Save"
 }
