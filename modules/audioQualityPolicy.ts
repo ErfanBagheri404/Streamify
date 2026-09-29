@@ -219,14 +219,27 @@ export function currentCapKbps(): QualityCap | null {
  * that pick a stream (they are the only places that know the real number).
  * Keyed by id so a later local/file track — which consumes no data — can never
  * inherit the previous stream's bitrate and be counted against it.
+ *
+ * Bounded: a session resolving thousands of distinct ids would otherwise grow
+ * this map forever, and an entry is only read once, when that track's stats
+ * are flushed. The oldest id is dropped past the cap.
  */
+const PICKED_BITRATE_LIMIT = 200;
 const pickedBitrateById = new Map<string, number>();
 
 export function notePickedBitrate(trackId: string, kbps: number): void {
   if (!trackId || !Number.isFinite(kbps) || kbps <= 0) {
     return;
   }
+  // Re-insert so the key moves to the end of insertion order; the first key
+  // is then the least recently noted.
+  pickedBitrateById.delete(trackId);
   pickedBitrateById.set(trackId, Math.round(kbps));
+  while (pickedBitrateById.size > PICKED_BITRATE_LIMIT) {
+    const oldest = pickedBitrateById.keys().next();
+    if (oldest.done) break;
+    pickedBitrateById.delete(oldest.value);
+  }
 }
 
 /** 0 when this track never resolved to a network stream (local, uncached). */

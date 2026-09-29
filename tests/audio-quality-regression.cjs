@@ -195,6 +195,33 @@ check("usage is actually recorded, not just stored", () => {
 
 // --- data usage accounting --------------------------------------------------
 
+check("the picked-bitrate map does not grow without bound", () => {
+  // Every resolved track id adds an entry, read only once when that track's
+  // stats flush. Unbounded, a long session leaks one entry per track.
+  for (let i = 0; i < 5000; i += 1) {
+    policy.notePickedBitrate(`track-${i}`, 128);
+  }
+  assert.strictEqual(
+    policy.pickedBitrateFor("track-4999"),
+    128,
+    "the most recent id must still be readable",
+  );
+  assert.strictEqual(
+    policy.pickedBitrateFor("track-0"),
+    0,
+    "the oldest ids must have been evicted",
+  );
+});
+
+check("a re-noted id stays readable and is not evicted early", () => {
+  policy.notePickedBitrate("hot", 320);
+  for (let i = 0; i < 300; i += 1) {
+    policy.notePickedBitrate(`filler-${i}`, 96);
+    policy.notePickedBitrate("hot", 320);
+  }
+  assert.strictEqual(policy.pickedBitrateFor("hot"), 320, "re-noting must keep it live");
+});
+
 check("usage store counts bytes per source per month", () => {
   assert.ok(store.includes("recordDataUsage"));
   assert.ok(store.includes("getMonthlyUsage"));
