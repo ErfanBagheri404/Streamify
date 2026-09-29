@@ -54,6 +54,7 @@ import { resolveJioSaavnFallback } from "../lib/backend-api";
 import {
   getDirectPlayUri,
   isDirectPlayTrack,
+  isPodcastTrack,
   normalizeLocalPlaybackTrack,
 } from "../modules/localPlayback";
 
@@ -76,6 +77,10 @@ export interface Track {
   _isLocal?: boolean;
   /** Self-hosted Subsonic/Navidrome server track; stream URL is authoritative. */
   _isSubsonic?: boolean;
+  /** Podcast episode: the RSS enclosure URL is authoritative. */
+  _isPodcast?: boolean;
+  /** Resume point in seconds for a podcast episode (#30). */
+  _resumeAtSeconds?: number;
   // DRM playback metadata (returned by backend for SoundCloud Widevine tracks)
   audioType?: string;
   drmLicenseUrl?: string;
@@ -358,6 +363,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const manualDownloadRef = useRef(false);
   const canceledTrackIdsRef = useRef(new Set<string>());
   const cacheQueueAbortControllerRef = useRef<AbortController | null>(null);
+  /** Last time a podcast resume checkpoint was written (throttle). */
+  const podcastCheckpointRef = useRef(0);
   const activeCacheTrackIdRef = useRef<string | null>(null);
   const lastAppliedCachedUrlRef = useRef<string | null>(null);
   const activeQueueLength =
@@ -1901,13 +1908,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsInPlaylistContext(effectivePlaylist.length > 1);
 
         // Add to previously played songs (only if it's from SoundCloud, YouTube, JioSaavn, or has identifying properties)
+        // Podcast episodes are excluded: this list is the music history shown
+        // as a shelf, and a two-hour episode does not belong in it.
         if (
-          track.source === "soundcloud" ||
-          track.source === "youtube" ||
-          track.source === "jiosaavn" ||
-          track._isSoundCloud ||
-          track._isJioSaavn ||
-          (track.id && track.title) // Include library tracks that have basic identifying info
+          !isPodcastTrack(track) &&
+          (track.source === "soundcloud" ||
+            track.source === "youtube" ||
+            track.source === "jiosaavn" ||
+            track._isSoundCloud ||
+            track._isJioSaavn ||
+            (track.id && track.title)) // Include library tracks that have basic identifying info
         ) {
           setPreviouslyPlayedSongs((prev) => {
             const updatedPreviouslyPlayed = [
@@ -2214,6 +2224,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               console.log(
                 `[PlayerContext] Playback started for track: ${track.title}`,
               );
+              // Podcast resume (#30). Seeking only makes sense once the
+              // native player has a real duration, and a position at or past
+              // the end is a finished episode, not a resume point.
+              const resumeAt = track._resumeAtSeconds;
+              if (resumeAt && resumeAt > 0) {
+                const duration = track.duration ?? 0;
+                if (!duration || resumeAt < duration - 5) {
+                  void trackPlayerService
+                    .seekTo(resumeAt)
+                    .catch(() => {});
+                }
+              }
             }
 
             // Background pre-resolve of the next few tracks — never blocks the
@@ -2367,6 +2389,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         const isPlayedTrackLiked = likedSongs.some(
           (song) => song.id === playedTrackId,
         );
+        // Podcast episodes are not liked songs, so they need their own flag
+        // for the resume checkpoint below.
+        const isPlayedTrackPodcast = isPodcastTrack(track);
         const shouldTrackCacheProgress = () => {
           if (!playedTrackId || !isPlayedTrackLiked || !baseStreamUrl) {
             return false;
@@ -2442,6 +2467,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             statsLastPositionRef.current = position;
             // ── end sampler ──
 
+            // ── Podcast resume checkpoint (#30) ──
+            // Throttled to every 15s: writing storage on every 250ms tick
+            // would put ~4 writes/minute on AsyncStorage for no benefit.
+            if (playedTrackId && isPlayedTrackPodcast) {
+              const now = Date.now();
+              if (now - podcastCheckpointRef.current >= 15_000) {
+                podcastCheckpointRef.current = now;
+                void import("../utils/storage")
+                  .then((storage) =>
+                    storage.savePodcastEpisodePosition(
+                      playedTrackId,
+                      Math.floor(position),
+                    ),
+                  )
+                  .catch(() => {});
+              }
+            }
+
             // ── Fade / crossfade-lite ──
             // Derived purely from this already-delivered tick; adds no
             // subscription or timer. Cheap integer/float math per 250ms.
@@ -2508,6 +2551,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           Event.PlaybackQueueEnded,
           async (event) => {
             setIsPlaying(false);
+
+            // Final podcast checkpoint: the throttle above can leave up to
+            // 15s unsaved, and a finished episode must not be re-resumed.
+            if (playedTrackId && isPlayedTrackPodcast) {
+              podcastCheckpointRef.current = 0;
+              void import("../utils/storage")
+                .then((storage) =>
+                  storage.markPodcastEpisodeFinished(playedTrackId),
+                )
+                .catch(() => {});
+            }
 
             if (playedTrackId && isPlayedTrackLiked) {
               await markAudioCacheComplete(playedTrackId);

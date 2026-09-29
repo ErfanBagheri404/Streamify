@@ -50,6 +50,7 @@
     "expo-splash-screen": "^0.29.12",
     "expo-status-bar": "~3.0.9",
     "expo-task-manager": "^14.0.9",
+    "fast-xml-parser": "^4.5.3",
     "hls.js": "^1.6.15",
     "patch-package": "^6.5.1",
     "react": "19.1.0",

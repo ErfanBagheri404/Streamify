@@ -23,6 +23,9 @@ import {
   StorageService,
   Playlist,
   subscribeToLibraryUpdates,
+  loadPodcastShows,
+  loadPodcastEpisodes,
+  subscribeToPodcast,
 } from "../../utils/storage";
 import { SliderSheet } from "../SliderSheet";
 import { Track } from "../../contexts/PlayerContext";
@@ -35,6 +38,9 @@ import { useAppLanguage } from "../../hooks/useAppLanguage";
 import { isLocalMediaSupported } from "../../modules/localMedia";
 import { useTheme, withOpacity } from "../../hooks/useTheme";
 import { PlaylistCreateModal } from "../PlaylistCreateModal";
+import { PodcastSubscribeModal } from "../PodcastSubscribeModal";
+import { fetchPodcastFeed } from "../../modules/podcastService";
+import type { PodcastShow } from "../../modules/podcastFeed";
 import { sanitizeImageUrl } from "../core/image";
 import { getAppFontFamily, getTextDirectionStyle } from "../../utils/fonts";
 import { useAuth } from "../../hooks/useAuth";
@@ -251,7 +257,12 @@ const PinDot = styled.Text`
   line-height: 12px;
 `;
 
-type LibrarySection = "Playlists" | "Artists" | "Downloaded" | "Downloading";
+type LibrarySection =
+  | "Playlists"
+  | "Artists"
+  | "Downloaded"
+  | "Downloading"
+  | "Podcasts";
 type LibrarySortMode = "recents" | "alphabetical" | "creator";
 type LibraryViewMode = "grid" | "list";
 type LibraryArtworkKind =
@@ -262,7 +273,8 @@ type LibraryArtworkKind =
   | "playlist"
   | "image"
   | "artist"
-  | "local";
+  | "local"
+  | "podcast";
 
 type LibraryDisplayItem = {
   id: string;
@@ -289,6 +301,7 @@ type LibraryDisplayItem = {
 const sections: LibrarySection[] = [
   "Playlists",
   "Artists",
+  "Podcasts",
   "Downloaded",
   "Downloading",
 ];
@@ -396,6 +409,13 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     { track: Track; percentage: number; status: "caching" | "queued" }[]
   >([]);
   const [downloadedTracks, setDownloadedTracks] = React.useState<Track[]>([]);
+
+  // Podcast subscriptions (#30)
+  const [podcastShows, setPodcastShows] = React.useState<PodcastShow[]>([]);
+  const [showSubscribeModal, setShowSubscribeModal] = useState(false);
+  const [feedUrl, setFeedUrl] = useState("");
+  const [isSubscribing, setIsSubscribing] = useState(false);
+  const [subscribeError, setSubscribeError] = useState<string | null>(null);
 
   const [showSongActionSheet, setShowSongActionSheet] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
@@ -548,6 +568,57 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     }
   };
 
+  // Podcast subscriptions (#30). The unplayed count is derived here rather
+  // than trusted from the stored show, so finishing an episode updates the
+  // badge on the next focus.
+  const loadPodcastSubscriptions = React.useCallback(async () => {
+    try {
+      const [shows, episodes] = await Promise.all([
+        loadPodcastShows(),
+        loadPodcastEpisodes(),
+      ]);
+      setPodcastShows(
+        shows
+          .map((show) => ({
+            ...show,
+            unplayedCount: episodes.filter(
+              (episode) => episode.showId === show.id && !episode.played,
+            ).length,
+          }))
+          .sort((a, b) => (b.lastFetchedAt ?? 0) - (a.lastFetchedAt ?? 0)),
+      );
+    } catch (error) {
+      console.error("Error loading podcast subscriptions:", error);
+    }
+  }, []);
+
+  const handleSubscribe = async () => {
+    const url = feedUrl.trim();
+    if (!url || isSubscribing) return;
+    setIsSubscribing(true);
+    setSubscribeError(null);
+    try {
+      const result = await fetchPodcastFeed(url);
+      if (result.ok !== true) {
+        setSubscribeError(result.error);
+        return;
+      }
+      await subscribeToPodcast(result);
+      setFeedUrl("");
+      setShowSubscribeModal(false);
+      await loadPodcastSubscriptions();
+    } catch (error) {
+      setSubscribeError("Could not subscribe to that feed");
+    } finally {
+      setIsSubscribing(false);
+    }
+  };
+
+  const handleOpenSubscribeModal = () => {
+    setSubscribeError(null);
+    setShowSubscribeModal(true);
+  };
+
   const handleCreatePlaylist = async () => {
     if (!newPlaylistName.trim()) {
       console.warn("Please enter a playlist name");
@@ -577,17 +648,20 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
 
   React.useEffect(() => {
     loadPlaylists();
+    void loadPodcastSubscriptions();
     const unsubscribe = navigation.addListener("focus", () => {
       loadPlaylists();
+      void loadPodcastSubscriptions();
     });
     const unsubscribeLibraryUpdates = subscribeToLibraryUpdates(() => {
       void loadPlaylists();
+      void loadPodcastSubscriptions();
     });
     return () => {
       unsubscribe();
       unsubscribeLibraryUpdates();
     };
-  }, [navigation]);
+  }, [navigation, loadPodcastSubscriptions]);
 
   const loadDownloadingTracks = React.useCallback(async () => {
     if (!likedSongs) return;
@@ -798,6 +872,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       ({
         Playlists: t("screens.library.sections.playlists"),
         Artists: t("library.artists"),
+        Podcasts: t("podcasts.title"),
         Downloaded: t("screens.library.sections.downloaded"),
         Downloading: language === "fa" ? "در حال دانلود" : "Downloading",
       }) as Record<LibrarySection, string>,
@@ -883,6 +958,47 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     });
     return statusById;
   }, [downloadingTracks]);
+
+  const podcastItems = React.useMemo<LibraryDisplayItem[]>(() => {
+    const subscribeItem: LibraryDisplayItem = {
+      id: "podcast-subscribe",
+      title: t("podcasts.subscribeTitle"),
+      subtitle: t("podcasts.subscribeDescription"),
+      meta: "",
+      itemType: "collection",
+      imageShape: "rounded",
+      pinOrder: 0,
+      searchText: [t("podcasts.subscribeTitle"), "rss", "feed"]
+        .join(" ")
+        .toLowerCase(),
+      artworkKind: "podcast",
+      onPress: handleOpenSubscribeModal,
+    };
+
+    const showItems = podcastShows.map<LibraryDisplayItem>((show) => ({
+      id: `podcast-${show.id}`,
+      title: show.title,
+      subtitle: show.author || t("podcasts.title"),
+      meta: show.unplayedCount
+        ? t("podcasts.unplayedCount", { count: show.unplayedCount })
+        : t("podcasts.allCaughtUp"),
+      itemType: "collection",
+      imageShape: "rounded",
+      pinOrder: 1,
+      imageUri: show.artworkUrl
+        ? sanitizeImageUrl(show.artworkUrl)
+        : undefined,
+      searchText: [show.title, show.author ?? "", "podcast", "rss"]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+      artworkKind: "podcast",
+      onPress: () =>
+        navigation.navigate("PodcastShow" as never, { showId: show.id }),
+    }));
+
+    return [subscribeItem, ...showItems];
+  }, [navigation, podcastShows, t]);
 
   const topArtistItems = React.useMemo<LibraryDisplayItem[]>(() => {
     const artistMap = new Map<string, LibraryDisplayItem>();
@@ -1176,6 +1292,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       ];
     }
     if (activeSection === "Artists") return topArtistItems;
+    if (activeSection === "Podcasts") return podcastItems;
     if (activeSection === "Downloaded") return downloadedItems;
     if (activeSection === "Downloading") {
       const VISIBLE = 6;
@@ -1206,6 +1323,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     downloadingItems,
     mixedLibraryItems,
     playlistItems,
+    podcastItems,
     topArtistItems,
   ]);
 
@@ -1274,6 +1392,12 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         : `${activeItems.length} artists`;
     }
 
+    if (activeSection === "Podcasts") {
+      return language === "fa"
+        ? `${podcastShows.length} پادکست`
+        : `${podcastShows.length} podcasts`;
+    }
+
     return `${activeItems.length} ${copy.items}`;
   }, [
     activeItems.length,
@@ -1286,6 +1410,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     libraryQuery,
     likedSongs.length,
     playlists.length,
+    podcastShows.length,
   ]);
 
   const renderArtwork = React.useCallback(
@@ -1315,7 +1440,9 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                 ? ["#f43f5e", "#a21caf", "#4f46e5"]
                 : item.artworkKind === "local"
                   ? ["#059669", "#10b981", "#34d399"]
-                  : item.artworkKind === "artist"
+                  : item.artworkKind === "podcast"
+                    ? ["#7c3aed", "#a855f7", "#c084fc"]
+                    : item.artworkKind === "artist"
                     ? [colors.surface1, colors.surface2, colors.surface3]
                     : item.artworkKind === "playlist"
                       ? [colors.accent, colors.heroMid, colors.heroEnd]
@@ -1342,6 +1469,12 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
               name="albums-outline"
               size={iconSize}
               color={colors.foreground}
+            />
+          ) : item.artworkKind === "podcast" ? (
+            <Ionicons
+              name="mic-outline"
+              size={iconSize}
+              color={colors.accentContrast}
             />
           ) : item.artworkKind === "artist" ? (
             <Ionicons
@@ -1952,6 +2085,19 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           title={copy.createPlaylist}
           subtitle={copy.createPlaylistDescription}
           submitLabel={t("common.create")}
+        />
+
+        <PodcastSubscribeModal
+          visible={showSubscribeModal}
+          feedUrl={feedUrl}
+          onFeedUrlChange={setFeedUrl}
+          onClose={() => {
+            setShowSubscribeModal(false);
+            setSubscribeError(null);
+          }}
+          onSubmit={() => void handleSubscribe()}
+          isSubmitting={isSubscribing}
+          error={subscribeError}
         />
 
         <SliderSheet
