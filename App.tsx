@@ -41,6 +41,8 @@ console.error = (...args: any[]) => {
 import { PlayerProvider } from "./contexts/PlayerContext";
 import { AppUpdateProvider } from "./contexts/AppUpdateContext";
 import { SettingsProvider, useSettings } from "./contexts/SettingsContext";
+import { AppLockProvider } from "./contexts/AppLockContext";
+import { VaultProvider } from "./contexts/VaultContext";
 import { ThemeProvider, useTheme, withOpacity } from "./contexts/ThemeContext";
 import { usePlayer } from "./contexts/PlayerContext";
 import { AuthProvider } from "./contexts/AuthContext";
@@ -663,16 +665,20 @@ function AppContent() {
       <SettingsProvider>
         <AppStartupGate>
           <ThemeProvider>
-            <AuthProvider>
-              <AppUpdateProvider>
-                <PlayerProvider>
-                  <CloudLibraryBridge />
-                  <PlaybackPreferenceBridge />
-                  <GlobalTextDefaultsBridge />
-                  <AppShell />
-                </PlayerProvider>
-              </AppUpdateProvider>
-            </AuthProvider>
+            <AppLockProvider>
+              <VaultProvider>
+                <AuthProvider>
+                  <AppUpdateProvider>
+                    <PlayerProvider>
+                      <CloudLibraryBridge />
+                      <PlaybackPreferenceBridge />
+                      <GlobalTextDefaultsBridge />
+                      <AppShell />
+                    </PlayerProvider>
+                  </AppUpdateProvider>
+                </AuthProvider>
+              </VaultProvider>
+            </AppLockProvider>
           </ThemeProvider>
         </AppStartupGate>
       </SettingsProvider>
