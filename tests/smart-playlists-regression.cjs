@@ -234,6 +234,36 @@ check("an operator the field does not support drops the rule", () => {
   assert.strictEqual(out, null);
 });
 
+check("a value of the wrong kind for its field drops the rule", () => {
+  // {plays, gte, "5"} claims a threshold it can never match (matchRule fails
+  // closed on a string): keeping it would lie about the list contents.
+  const stringNumber = sp.sanitizeSmartPlaylist(
+    {
+      name: "Mixed",
+      rules: [
+        { field: "plays", operator: "gte", value: "5" },
+        { field: "plays", operator: "gte", value: 5 },
+      ],
+    },
+    "fallback",
+  );
+  assert.ok(stringNumber);
+  assert.strictEqual(stringNumber.rules.length, 1);
+  assert.strictEqual(stringNumber.rules[0].value, 5);
+
+  const boolText = sp.sanitizeSmartPlaylist(
+    { name: "Bad", rules: [{ field: "isLiked", operator: "equals", value: "true" }] },
+    "fallback",
+  );
+  assert.strictEqual(boolText, null);
+
+  const nanNumber = sp.sanitizeSmartPlaylist(
+    { name: "Bad", rules: [{ field: "plays", operator: "gte", value: NaN }] },
+    "fallback",
+  );
+  assert.strictEqual(nanNumber, null);
+});
+
 check("a definition with no usable rules is null, not match-all", () => {
   assert.strictEqual(sp.sanitizeSmartPlaylist({ rules: [] }, "f"), null);
   assert.strictEqual(sp.sanitizeSmartPlaylist(null, "f"), null);

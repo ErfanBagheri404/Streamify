@@ -238,10 +238,23 @@ export const SMART_FIELDS: SmartRuleField[] = [
  * Rebuild a definition from stored JSON, or null when unusable.
  *
  * Stored definitions are user data that may predate a field rename, so every
- * part is validated rather than trusted: an unknown field or an operator the
- * field does not support drops that rule. Dropping every rule yields null, and
+ * part is validated rather than trusted: an unknown field, an operator the
+ * field does not support, or a value of the wrong kind for the field drops
+ * that rule. Dropping every rule yields null, and
  * the caller renders "no rules" rather than an accidental match-all.
  */
+/** Value type each field matches on: a rule storing the wrong kind can never
+ * match, so the sanitizer drops it rather than keeping a dead rule. */
+const SMART_FIELD_VALUE_KIND: Record<SmartRuleField, "number" | "string" | "boolean"> = {
+  plays: "number",
+  lastPlayedDaysAgo: "number",
+  addedDaysAgo: "number",
+  isLiked: "boolean",
+  source: "string",
+  artist: "string",
+  title: "string",
+};
+
 export function sanitizeSmartPlaylist(
   raw: unknown,
   fallbackId: string,
@@ -254,11 +267,12 @@ export function sanitizeSmartPlaylist(
         const { field, operator, value } = rule as SmartRule;
         if (!SMART_FIELDS.includes(field)) return false;
         if (!SMART_FIELD_OPERATORS[field].includes(operator)) return false;
-        return (
-          typeof value === "number" ||
-          typeof value === "string" ||
-          typeof value === "boolean"
-        );
+        // A value of the wrong kind matches nothing at matchRule time, so a
+        // kept dead rule would lie to the user about what the list contains.
+        if (typeof value !== SMART_FIELD_VALUE_KIND[field]) return false;
+        // NaN is a number by typeof check but matches nothing; drop it too.
+        if (typeof value === "number" && !Number.isFinite(value)) return false;
+        return true;
       })
     : [];
   if (rules.length === 0) return null;
