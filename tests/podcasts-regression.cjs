@@ -378,6 +378,35 @@ const storageChecks = [
     },
   ],
   [
+    "a short resume point does not mark an episode played",
+    async () => {
+      // Episode Two is 1:02:05 = 3725s. Pausing 10s in is not finishing it.
+      const episodeId = episodesFixture[0].id;
+      await storage.savePodcastEpisodePosition(episodeId, 10);
+      const shows = await storage.subscribeToPodcast({
+        show: showFixture,
+        episodes: episodesFixture,
+      });
+      const episodes = await storage.loadPodcastEpisodes();
+      const found = episodes.find((e) => e.id === episodeId);
+      assert(found.played === false, "a 10s pause must not count as played");
+      assert(found.positionSeconds === 10, "resume point must survive the re-subscribe");
+      assert(shows[0].unplayedCount === 2, `badge should be 2, got ${shows[0].unplayedCount}`);
+    },
+  ],
+  [
+    "the unplayed badge counts only episodes not yet played",
+    async () => {
+      const episodeId = episodesFixture[0].id;
+      await storage.savePodcastEpisodePosition(episodeId, 3600); // past 95% of 3725s
+      const shows = await storage.subscribeToPodcast({
+        show: showFixture,
+        episodes: episodesFixture,
+      });
+      assert(shows[0].unplayedCount === 1, `badge should be 1, got ${shows[0].unplayedCount}`);
+    },
+  ],
+  [
     "a corrupt store degrades to empty instead of throwing",
     async () => {
       const stub = require(path.join(__dirname, "helpers", "asyncStorageStub.js"));

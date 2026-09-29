@@ -934,17 +934,33 @@ export async function subscribeToPodcast(
   // Drop old episodes of this show, but carry their resume points forward:
   // a re-fetch that re-lists an episode must not lose where the user stopped.
   const kept = episodes.filter((episode) => episode.showId !== nextShow.id);
+  const previousById = new Map(episodes.map((episode) => [episode.id, episode]));
   const nextEpisodes = [
     ...kept,
     ...feed.episodes.map((episode) => {
       const positionSeconds = positions[episode.id] ?? episode.positionSeconds;
+      const duration = durationOf(episode);
+      // Resuming is not finishing. Only the same 95% rule
+      // savePodcastEpisodePosition applies can mark an episode played, plus a
+      // previously-recorded "finished" flag; a 10-second pause must not
+      // silently retire an episode from the unplayed badge.
+      const played =
+        (duration > 0 && positionSeconds !== undefined && positionSeconds >= duration * 0.95) ||
+        episode.played === true ||
+        previousById.get(episode.id)?.played === true;
       return {
         ...episode,
         positionSeconds,
-        played: positionSeconds !== undefined,
+        played,
       };
     }),
   ];
+
+  // The badge is the count the user still has to get to, so it must come from
+  // the merged episode list, not from the raw feed length.
+  nextShow.unplayedCount = nextEpisodes.filter(
+    (episode) => episode.showId === nextShow.id && !episode.played,
+  ).length;
 
   const nextPositions: Record<string, number> = {};
   for (const episode of nextEpisodes) {
