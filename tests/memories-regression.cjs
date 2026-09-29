@@ -272,6 +272,40 @@ check("yearsAgoLabel singular/plural and both languages", () => {
 
 // --- DST / date arithmetic --------------------------------------------------
 
+check("a memory across a year boundary reports full years, not the year difference", () => {
+  // A 2023-12-31 memory seen on 2025-01-01 is one year old; the raw year
+  // difference says two, which both mislabels it and collides with the real
+  // two-year entry in the per-year "best" map, dropping one of the two.
+  const memories = m.findYearlyMemories(
+    [bucket("2023-12", 31, 3_600_000)],
+    new Date(2025, 0, 1),
+  );
+  assert.strictEqual(memories.length, 1);
+  assert.strictEqual(memories[0].yearsAgo, 1);
+});
+
+check("one and two-year memories both survive a New Year's Eve snapshot", () => {
+  const memories = m
+    .findYearlyMemories(
+      [bucket("2023-12", 31, 1_000_000), bucket("2024-12", 31, 5_000_000)],
+      new Date(2025, 11, 31),
+    )
+    .sort((a, b) => a.yearsAgo - b.yearsAgo);
+  assert.strictEqual(memories.length, 2);
+  assert.deepStrictEqual(memories.map((x) => x.yearsAgo), [1, 2]);
+});
+
+check("a bucket with no per-track totals still yields a memory", () => {
+  // Older buckets predate `tracks`; the exact day total alone is a memory.
+  const memories = m.findYearlyMemories(
+    [{ month: "2024-06", days: { 15: 3_600_000 } }],
+    new Date(2025, 5, 15),
+  );
+  assert.strictEqual(memories.length, 1);
+  assert.deepStrictEqual(memories[0].tracks, []);
+  assert.strictEqual(memories[0].listenedMs, 3_600_000);
+});
+
 check("a leap day anniversary still resolves", () => {
   const memories = m.findYearlyMemories(
     [bucket("2024-02", 29, 3_600_000)],

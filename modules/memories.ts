@@ -109,14 +109,15 @@ function dayNumber(iso: string): number {
  * apart — a New Year's memory must not be missed because the year number
  * changed between the historic date and today.
  */
+/** Day-of-year for an `MM-DD` key, on a leap-year reference so 02-29 exists. */
+function monthDayNumber(mmdd: string): number {
+  const ref = Date.UTC(2024, Number(mmdd.slice(0, 2)) - 1, Number(mmdd.slice(3, 5)));
+  return Math.floor((ref - Date.UTC(2024, 0, 1)) / DAY_MS);
+}
+
 function monthDayDistance(a: string, b: string): number {
-  const dayOfYear = (mmdd: string): number => {
-    // A leap year makes every month-day reachable, including 02-29.
-    const ref = Date.UTC(2024, Number(mmdd.slice(0, 2)) - 1, Number(mmdd.slice(3, 5)));
-    return Math.floor((ref - Date.UTC(2024, 0, 1)) / DAY_MS);
-  };
-  const span = dayOfYear("12-31") + 1;
-  const diff = Math.abs(dayOfYear(a) - dayOfYear(b));
+  const span = monthDayNumber("12-31") + 1;
+  const diff = Math.abs(monthDayNumber(a) - monthDayNumber(b));
   return Math.min(diff, span - diff);
 }
 
@@ -161,7 +162,19 @@ export function findYearlyMemories(
       // an exact anniversary can be one day short of 365.25.
       if (diffDays < 365 - windowDays) continue;
 
-      const yearsAgo = today.getFullYear() - Number(iso.slice(0, 4));
+      // Full years elapsed, not a calendar-year difference: a 2023-12-31
+      // memory seen on 2025-01-01 is one year old, and calling it two both
+      // mislabels it and collides with the real two-year entry in `best`,
+      // silently dropping one of the two memories.
+      let yearsAgo = today.getFullYear() - Number(iso.slice(0, 4));
+      // Leap-day memories have no anniversary in a common year; Feb 28 is
+      // observed as the anniversary, so it must not floor down to zero.
+      if (
+        iso.slice(5, 10) !== "02-29" &&
+        monthDayNumber(todayIso.slice(5, 10)) < monthDayNumber(iso.slice(5, 10))
+      ) {
+        yearsAgo -= 1;
+      }
       if (yearsAgo < 1) continue;
 
       // Proximity to THIS year's anniversary, by month/day. A lower bound on
@@ -173,7 +186,9 @@ export function findYearlyMemories(
       );
       if (anniversaryGap > windowDays) continue;
 
-      const tracks = [...bucket.tracks]
+      // A bucket written before per-track totals existed has no `tracks`; the
+      // day total is still a memory worth showing.
+      const tracks = [...(bucket.tracks ?? [])]
         .filter((track) => track && typeof track.ms === "number" && track.ms > 0)
         .sort((a, b) => b.ms - a.ms || b.plays - a.plays || a.id.localeCompare(b.id))
         .slice(0, MEMORY_TRACK_LIMIT)
