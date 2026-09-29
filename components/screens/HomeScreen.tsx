@@ -34,6 +34,13 @@ import {
   sanitizeImageUrl,
 } from "../core/image";
 import { SkeletonLoader } from "../SkeletonLoader";
+import { loadMemoryMonths } from "../../utils/listeningStats";
+import {
+  findYearlyMemories,
+  historySpansAYear,
+  yearsAgoLabel,
+  type YearlyMemory,
+} from "../../modules/memories";
 
 interface SuggestedTrack {
   id: string;
@@ -753,10 +760,12 @@ function AccountPillButton({
 
 export default function HomeScreen({ navigation }: any) {
   const { colors, isLight } = useTheme();
-  const { isRtl, dir, t } = useAppLanguage();
+  const { isRtl, dir, t, language } = useAppLanguage();
   const { playTrack } = usePlayer();
   const { user, isLoading: isAuthLoading } = useAuth();
   const [currentHour, setCurrentHour] = useState(() => new Date().getHours());
+  /** Yearly throwbacks; empty when history is younger than a year. */
+  const [homeMemories, setHomeMemories] = useState<YearlyMemory[]>([]);
   const [historyTracks, setHistoryTracks] = useState<Track[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [playedArtists, setPlayedArtists] = useState<PlayedArtistSummary[]>([]);
@@ -793,6 +802,25 @@ export default function HomeScreen({ navigation }: any) {
       appStateSubscription.remove();
     };
   }, []);
+
+  // Yearly throwbacks, refreshed whenever the home tab regains focus so a
+  // memory that has aged into "one year ago" appears without an app restart.
+  const loadMemories = useCallback(async () => {
+    try {
+      const months = await loadMemoryMonths();
+      const today = new Date();
+      setHomeMemories(
+        historySpansAYear(months, today) ? findYearlyMemories(months, today) : [],
+      );
+    } catch (error) {
+      console.warn("[HomeScreen] memories unavailable:", error);
+      setHomeMemories([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadMemories();
+  }, [loadMemories]);
 
   const greeting = useMemo(() => {
     if (currentHour < 12) {
@@ -1435,6 +1463,47 @@ export default function HomeScreen({ navigation }: any) {
           />
         </View>
 
+        {homeMemories.length > 0 && homeMemories[0].tracks.length > 0 ? (
+          <View style={styles.section}>
+            <UiSectionHeader
+              title={t("home.onThisDay")}
+              style={styles.sectionHeader}
+            />
+            <TouchableOpacity
+              onPress={() => {
+                const playable = homeMemories[0].tracks.map((entry) => ({
+                  id: entry.id,
+                  title: entry.title,
+                  artist: entry.artist,
+                  thumbnail: entry.thumbnail,
+                }));
+                void playQueue(playable, playable[0]);
+              }}
+              style={[
+                styles.memoryCard,
+                {
+                  backgroundColor: colors.surface1,
+                  borderColor: colors.borderSubtle,
+                },
+              ]}
+            >
+              <Ionicons name="calendar-outline" size={22} color={colors.accent} />
+              <View style={{ flex: 1 }}>
+                <TitleText numberOfLines={1} style={{ fontSize: 15 }}>
+                  {yearsAgoLabel(homeMemories[0].yearsAgo, language)}
+                </TitleText>
+                <MutedText numberOfLines={1} style={{ fontSize: 13 }}>
+                  {homeMemories[0].tracks[0].title}
+                  {homeMemories[0].tracks[0].artist
+                    ? ` — ${homeMemories[0].tracks[0].artist}`
+                    : ""}
+                </MutedText>
+              </View>
+              <Ionicons name="play" size={18} color={colors.foreground} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <View style={styles.section}>
           <UiSectionHeader
             title={t("home.recentlyPlayed")}
@@ -1866,5 +1935,14 @@ const styles = StyleSheet.create({
   },
   emptyStateText: {
     textAlign: "center",
+  },
+  memoryCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginHorizontal: 16,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
   },
 });
