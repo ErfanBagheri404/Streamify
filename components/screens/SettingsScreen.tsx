@@ -40,6 +40,19 @@ import {
   buildCurrentLocalLibrarySyncSource,
   pushCloudLibrarySnapshot,
 } from "../../lib/cloud-library-sync";
+import {
+  QUALITY_CAP_OPTIONS,
+  QUALITY_MODE_OPTIONS,
+  refreshNetworkKind,
+  type QualityCap,
+  type QualityMode,
+} from "../../modules/audioQualityPolicy";
+import {
+  formatBytes,
+  getMonthlyUsage,
+  resetMonthlyUsage,
+  type MonthlyUsage,
+} from "../../modules/dataUsageStore";
 
 const SEARCH_SOURCES: PreferredSearchSource[] = [
   "mixed",
@@ -381,6 +394,40 @@ export default function SettingsScreen({
   const [scrobbleProvider, setScrobbleProvider] = useState<
     "listenbrainz" | "lastfm"
   >("listenbrainz");
+  const [monthlyDataUsage, setMonthlyDataUsage] =
+    useState<MonthlyUsage | null>(null);
+
+  // #35: the policy itself is pushed by App's NetworkQualityBridge for the
+  // app's lifetime; the settings screen only refreshes the network snapshot
+  // so the gauge is current when the row renders.
+  useEffect(() => {
+    let cancelled = false;
+    void refreshNetworkKind().finally(() => {
+      if (!cancelled) {
+        void getMonthlyUsage().then((usage) => {
+          if (!cancelled) setMonthlyDataUsage(usage);
+        });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const updateAudioQuality = useCallback(
+    (mode: QualityMode) => updateSettings({ audioQualityMode: mode }),
+    [updateSettings],
+  );
+
+  const updateAudioQualityCap = useCallback(
+    (cap: QualityCap | null) => updateSettings({ cellularCapKbps: cap }),
+    [updateSettings],
+  );
+
+  const resetUsage = useCallback(async () => {
+    await resetMonthlyUsage();
+    setMonthlyDataUsage(await getMonthlyUsage());
+  }, []);
 
   const { autoVisible: communityAutoVisible, closeAuto: closeCommunityAuto } =
     useCommunityModalAutoShow();
@@ -436,6 +483,15 @@ export default function SettingsScreen({
       ask: t("settings.askMe"),
       always: t("settings.alwaysRetry"),
       never: t("settings.neverRetry"),
+    }),
+    [t],
+  );
+
+  const qualityModeLabels: Record<QualityMode, string> = useMemo(
+    () => ({
+      alwaysBest: t("settings.alwaysBest"),
+      networkAware: t("settings.networkAware"),
+      alwaysLow: t("settings.alwaysLow"),
     }),
     [t],
   );
@@ -1008,6 +1064,67 @@ export default function SettingsScreen({
                   </View>
                 }
               />
+              <SettingRow
+                label={t("settings.audioQuality")}
+                description={t("settings.audioQualityDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.choiceWrap}>
+                    {QUALITY_MODE_OPTIONS.map((mode) => (
+                      <ChoiceChip
+                        key={mode}
+                        label={qualityModeLabels[mode]}
+                        selected={settings.audioQualityMode === mode}
+                        onPress={() => updateAudioQuality(mode)}
+                        colors={colors}
+                      />
+                    ))}
+                  </View>
+                }
+              />
+              {settings.audioQualityMode !== "alwaysBest" ? (
+                <SettingRow
+                  label={t("settings.cellularQualityCap")}
+                  description={t("settings.cellularQualityCapDescription")}
+                  colors={colors}
+                  control={
+                    <View style={styles.choiceWrap}>
+                      <ChoiceChip
+                        label={t("settings.qualityCapBest")}
+                        selected={settings.cellularCapKbps === null}
+                        onPress={() => updateAudioQualityCap(null)}
+                        colors={colors}
+                      />
+                      {QUALITY_CAP_OPTIONS.map((cap) => (
+                        <ChoiceChip
+                          key={cap}
+                          label={`${cap} kbps`}
+                          selected={settings.cellularCapKbps === cap}
+                          onPress={() => updateAudioQualityCap(cap)}
+                          colors={colors}
+                        />
+                      ))}
+                    </View>
+                  }
+                />
+              ) : null}
+              {monthlyDataUsage ? (
+                <SettingRow
+                  label={t("settings.monthlyDataUsage")}
+                  description={`${formatBytes(monthlyDataUsage.totalBytes)} · ${t("settings.dataUsageNote")}`}
+                  colors={colors}
+                  control={
+                    <View style={styles.choiceWrap}>
+                      <ChoiceChip
+                        label={t("settings.resetDataUsage")}
+                        selected={false}
+                        onPress={() => void resetUsage()}
+                        colors={colors}
+                      />
+                    </View>
+                  }
+                />
+              ) : null}
               <SettingRow
                 label={t("settings.autoplayRecommendedTracks")}
                 description={t("settings.autoplayRecommendedTracksDescription")}

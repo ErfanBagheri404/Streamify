@@ -46,6 +46,8 @@ import { CacheToast } from "../components/ui/CacheToast";
 import { QueueConflictModal } from "../components/ui/QueueConflictModal";
 import { hasPlaceholderTrackMetadata } from "../lib/cloud-library-sync";
 import { normalizeYouTubeThumbnailUrl } from "../components/core/image";
+import { pickedBitrateFor, currentCapKbps, getCachedNetwork } from "../modules/audioQualityPolicy";
+import { recordDataUsage } from "../modules/dataUsageStore";
 import DrmAudioPlayer, {
   DrmAudioPlayerRef,
 } from "../components/DrmAudioPlayer";
@@ -1240,6 +1242,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           }
         }
 
+        // #35: never spend metered data on background auto-caching. A manual
+        // download tap still works — that is an explicit opt-in.
+        if (!manualDownloadRef.current) {
+          const net = getCachedNetwork();
+          if (net === "cellular" || net === "unknown") {
+            return;
+          }
+        }
+
         // Enforce batch cooldown: after processing CACHE_BATCH_SIZE songs,
         // pause before starting the next batch to reduce API pressure.
         if (songsInBatch >= CACHE_BATCH_SIZE) {
@@ -2431,6 +2442,26 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 // Feed the same verified-played delta to the scrobbler so
                 // paused/buffering time can never inflate a scrobble.
                 scrobblerService.recordProgress(deltaMs);
+                // #35: price the bytes at the bitrate this track's stream
+                // actually resolved to. When no resolver published one (the
+                // innertube and jiosaavn paths do; invidious/piped/omada and
+                // friends do not), fall back to the enforced cap instead of
+                // silently counting zero — a playing stream is never free.
+                // Fully cached/local files stay free: they consume no data.
+                const picked = pickedBitrateFor(statsTrack.id);
+                const isLocalFile = statsTrack.audioUrl?.startsWith("file://");
+                const kbps = picked > 0
+                  ? picked
+                  : isLocalFile
+                    ? 0
+                    : (currentCapKbps() ?? 0);
+                if (kbps > 0) {
+                  void recordDataUsage(
+                    (statsTrack as any).source ?? "unknown",
+                    kbps,
+                    deltaMs,
+                  );
+                }
                 if (shouldCountPlay)
                   statsPlayCountedRef.current = statsTrack.id;
               } else if (deltaMs <= 0) {

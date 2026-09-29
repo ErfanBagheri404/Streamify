@@ -8,6 +8,13 @@
  * All requests run on the device network (OkHttp under RN fetch).
  */
 
+import {
+  bpsToKbps,
+  currentCapKbps,
+  notePickedBitrate,
+  pickCandidateByCap,
+} from "./audioQualityPolicy";
+
 const WEB_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -232,9 +239,20 @@ async function tryClient(
       );
       return null;
     }
-    const best = withUrl.reduce((a: any, b: any) =>
-      (b.bitrate ?? 0) > (a.bitrate ?? 0) ? b : a,
-    );
+    // #35: honor the per-network cap here (inside the per-client pick), so a
+    // lower-bitrate format wins when the cap is on. With no cap this is the
+    // same "highest bitrate" reduce as before.
+    const capped = withUrl.map((f: any) => ({
+      format: f,
+      bitrateKbps: bpsToKbps(f.bitrate),
+    }));
+    const best = pickCandidateByCap(capped, currentCapKbps())?.format;
+    if (!best) {
+      return null;
+    }
+    // #35: publish the bitrate actually chosen so the byte counter can price
+    // this stream instead of guessing from the cap.
+    notePickedBitrate(videoId, bpsToKbps(best.bitrate));
     // Media headers the player must repeat for a URL this client minted —
     // googlevideo bakes the client into the URL and compares it with the
     // headers of the request that comes back for the bytes.

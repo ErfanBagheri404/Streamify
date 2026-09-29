@@ -25,7 +25,17 @@ import {
   getProviderEndpoints,
 } from "../lib/provider-endpoints";
 import { getRuntimeServiceConfig } from "../lib/runtime-services";
-import { fetchBackendRoute, getBackendBaseUrls } from "../lib/backend-api";
+import {
+  fetchBackendRoute,
+  getBackendBaseUrls,
+} from "../lib/backend-api";
+import {
+  bpsToKbps,
+  currentCapKbps,
+  notePickedBitrate,
+  parseJioSaavnQualityKbps,
+  pickCandidateByCap,
+} from "./audioQualityPolicy";
 import { resolveInnertubeStream, type InnertubeStream } from "./innertube";
 
 /**
@@ -471,6 +481,8 @@ export class AudioStreamManager {
   // Track information for better SoundCloud searching
   private currentTrackTitle?: string;
   private currentTrackArtist?: string;
+  /** #35: the id whose stream we are resolving — keys the byte counter. */
+  private currentTrackId?: string;
 
   // SoundCloud stream cache (1MB pre-buffering)
   private soundCloudCache: Map<string, string> = new Map();
@@ -4811,6 +4823,7 @@ export class AudioStreamManager {
     // Store track information for better SoundCloud searching
     this.currentTrackTitle = trackTitle;
     this.currentTrackArtist = trackArtist;
+    this.currentTrackId = videoId;
 
     console.log("[AudioStreamManager] getAudioUrl called with:", {
       videoId,
@@ -5478,6 +5491,7 @@ export class AudioStreamManager {
 
   private extractJioSaavnAudioUrl(payload: unknown): string | null {
     const records = this.getJioSaavnRecords(payload);
+    const id = this.currentTrackId;
 
     for (const record of records) {
       const downloadCandidates = [
@@ -5489,36 +5503,35 @@ export class AudioStreamManager {
       ].find((value) => Array.isArray(value));
 
       if (Array.isArray(downloadCandidates)) {
-        const best = [...downloadCandidates]
+        // #35: score every entry, then pick through the shared cap-aware
+        // picker instead of "sort descending, take first". With no cap this
+        // is identical to the old behavior.
+        const scored = downloadCandidates
           .map((entry) => (entry && typeof entry === "object" ? entry : {}))
-          .sort((a: any, b: any) => {
-            const score = (value: unknown) => {
-              if (typeof value === "number" && Number.isFinite(value)) {
-                return value;
-              }
-              if (typeof value === "string") {
-                const match = value.match(/(\d+)/);
-                if (match) return Number(match[1]);
-              }
-              return 0;
-            };
-
-            return (
-              score(b.quality || b.bitrate || b.kbps) -
-              score(a.quality || a.bitrate || a.kbps)
-            );
-          })
-          .map(
-            (entry: any) =>
+          .map((entry: any) => {
+            const raw =
+              entry.quality || entry.bitrate || entry.kbps;
+            const bitrateKbps =
+              typeof raw === "number"
+                ? raw
+                : parseJioSaavnQualityKbps(raw);
+            const url =
               entry.url ||
               entry.link ||
               entry.downloadUrl ||
-              entry.download_url,
-          )
-          .find(Boolean);
+              entry.download_url;
+            return { entry, bitrateKbps, url };
+          })
+          .filter((candidate) => Boolean(candidate.url));
 
-        if (best) {
-          return String(best).replace("http:", "https:");
+        const picked = pickCandidateByCap(scored, currentCapKbps());
+
+        if (picked) {
+          // #35: publish the bitrate actually chosen for the byte counter.
+          if (id) {
+            notePickedBitrate(id, picked.bitrateKbps);
+          }
+          return String(picked.url).replace("http:", "https:");
         }
       }
 
