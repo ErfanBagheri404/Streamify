@@ -26,6 +26,11 @@ interface PlaylistCreateModalProps {
   onDescriptionChange: (value: string) => void;
   onClose: () => void;
   onSubmit: () => void;
+  /**
+   * Opens the rule builder. Omitted where smart playlists are unavailable;
+   * the button is then hidden rather than shown dead.
+   */
+  onSmartPress?: () => void;
   title?: string;
   subtitle?: string;
   submitLabel?: string;
@@ -39,6 +44,7 @@ export function PlaylistCreateModal({
   onDescriptionChange,
   onClose,
   onSubmit,
+  onSmartPress,
   title,
   subtitle,
   submitLabel,
@@ -222,6 +228,23 @@ export function PlaylistCreateModal({
                     : { flexDirection: "row" },
                 ]}
               >
+                {onSmartPress ? (
+                  <TouchableOpacity
+                    onPress={onSmartPress}
+                    style={styles.smartButton}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("library.smartPlaylistAction")}
+                  >
+                    <Ionicons
+                      name="sparkles-outline"
+                      size={16}
+                      color={colors.accent}
+                    />
+                    <BodyText style={{ color: colors.accent }}>
+                      {t("library.smartPlaylistAction")}
+                    </BodyText>
+                  </TouchableOpacity>
+                ) : null}
                 <TouchableOpacity onPress={onClose} style={styles.cancelButton}>
                   <BodyText style={{ color: colors.muted }}>
                     {t("common.cancel")}
@@ -376,6 +399,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     alignItems: "center",
+  },
+  smartButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginEnd: "auto",
   },
   submitButtonWrap: {
     minWidth: 132,
