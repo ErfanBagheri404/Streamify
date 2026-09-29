@@ -15,6 +15,7 @@ import {
   PLAY_COUNT_THRESHOLD_MS,
 } from "../utils/listeningStats";
 import { scrobblerService } from "../services/ScrobblerService";
+import { subscribeIncognitoAutoExit } from "../modules/incognitoAutoExit";
 import { fadeService } from "../services/FadeService";
 import {
   computeTrackGainFactor,
@@ -56,6 +57,7 @@ import {
   isDirectPlayTrack,
   normalizeLocalPlaybackTrack,
 } from "../modules/localPlayback";
+import { startWidgetSync, pushRecentShortcuts } from "../modules/widgetSync";
 
 export interface Track {
   id: string;
@@ -234,7 +236,11 @@ const PlaybackProgressContext = createContext<PlaybackProgressContextType>({
 export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { settings } = useAppSettings();
+  const { settings, updateSettings } = useAppSettings();
+  // Mirrored into a ref so the playback-sampler effect (which runs on long
+  // intervals and must not be re-subscribed on every settings change) can
+  // read the live incognito state without a stale closure.
+  const incognitoRef = useRef(settings.incognitoMode);
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [playlist, setPlaylist] = useState<Track[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -345,6 +351,41 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const statsLastPositionRef = useRef(0);
   const statsAccumulatedMsRef = useRef(0);
   const statsPlayCountedRef = useRef<string | null>(null);
+
+  // Toggle edge: turning incognito ON mid-track discards whatever the
+  // scrobbler had already accumulated for the in-progress track — without
+  // this, the very next track change would flush a pre-toggle scrobble.
+  useEffect(() => {
+    const wasIncognito = incognitoRef.current;
+    incognitoRef.current = settings.incognitoMode;
+
+    if (settings.incognitoMode && !wasIncognito) {
+      statsAccumulatedMsRef.current = 0;
+      statsPlayCountedRef.current = null;
+      void scrobblerService.discardActive().catch(() => {});
+    }
+  }, [settings.incognitoMode]);
+
+  // Private Listening auto-exit (#44): run the queue/day-end subscriptions
+  // whenever the mode or the enabled state changes.
+  useEffect(() => {
+    if (!settings.incognitoMode) {
+      return undefined;
+    }
+
+    return subscribeIncognitoAutoExit({
+      mode: settings.incognitoAutoExit,
+      disable: () => {
+        updateSettings({ incognitoMode: false, incognitoDayEnd: null });
+      },
+      dayBoundary: settings.incognitoDayEnd,
+    });
+  }, [
+    settings.incognitoMode,
+    settings.incognitoAutoExit,
+    settings.incognitoDayEnd,
+    updateSettings,
+  ]);
   /** Always points at the active track; drives the telemetry sampler. */
   const activeTrackRef = useRef<Track | null>(null);
   const playRequestIdRef = useRef(0);
@@ -883,7 +924,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           statsLastPositionRef.current = 0;
           // Scrobbler: finalize the outgoing track, start the incoming one.
           // Fire-and-forget on purpose — never blocks the player sync below.
-          if (nextTrack?.title) {
+          // Incognito (#44) suppresses scrobbles for the whole session.
+          if (nextTrack?.title && !incognitoRef.current) {
             void scrobblerService
               .onTrackChange({
                 id: String(nextTrack.id ?? ""),
@@ -1448,6 +1490,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
 
+  // Mirror playback into the home-screen widget (issue #29). Reads refs, not
+  // state, so it subscribes once and never re-binds on track/progress changes.
+  // RNTP reports position/duration in seconds; the widget store works in ms.
+  useEffect(() => {
+    return startWidgetSync(() => ({
+      track: activeTrackRef.current,
+      isPlaying: isPlayingRef.current,
+      positionMs: Math.round(positionRef.current * 1000),
+      durationMs: Math.round(durationRef.current * 1000),
+    }));
+  }, []);
+
   useEffect(() => {
     if (!settings.autoCacheLikedSongs) {
       return;
@@ -1901,20 +1955,25 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsInPlaylistContext(effectivePlaylist.length > 1);
 
         // Add to previously played songs (only if it's from SoundCloud, YouTube, JioSaavn, or has identifying properties)
-        if (
+        // Incognito (#44) suppresses this history write as well.
+        if (!incognitoRef.current && (
           track.source === "soundcloud" ||
           track.source === "youtube" ||
           track.source === "jiosaavn" ||
           track._isSoundCloud ||
           track._isJioSaavn ||
           (track.id && track.title) // Include library tracks that have basic identifying info
-        ) {
+        )) {
           setPreviouslyPlayedSongs((prev) => {
             const updatedPreviouslyPlayed = [
               track,
               ...prev.filter((t) => t.id !== track.id),
             ].slice(0, 100);
             StorageService.savePreviouslyPlayedSongs(updatedPreviouslyPlayed);
+            // Dynamic launcher shortcuts mirror the newest tracks (issue #34).
+            // Publishing from inside the updater reads the current list rather
+            // than this callback's stale `previouslyPlayedSongs` snapshot.
+            pushRecentShortcuts(updatedPreviouslyPlayed);
             return updatedPreviouslyPlayed;
           });
         }
@@ -2413,26 +2472,30 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 const shouldCountPlay =
                   statsPlayCountedRef.current !== statsTrack.id &&
                   accumulated >= PLAY_COUNT_THRESHOLD_MS;
-                void recordListening(
-                  {
-                    id: statsTrack.id,
-                    title: statsTrack.title,
-                    artist: statsTrack.artist,
-                    albumName:
-                      (statsTrack as any).albumName ??
-                      (statsTrack as any).album,
-                    thumbnail: statsTrack.thumbnail,
-                    artistId: statsTrack.artistId,
-                    albumId: (statsTrack as any).albumId,
-                  },
-                  deltaMs,
-                  shouldCountPlay,
-                );
-                // Feed the same verified-played delta to the scrobbler so
-                // paused/buffering time can never inflate a scrobble.
-                scrobblerService.recordProgress(deltaMs);
-                if (shouldCountPlay)
-                  statsPlayCountedRef.current = statsTrack.id;
+                // Incognito (#44): nothing about this session may reach the
+                // Replay stats store, the scrobbler, or the play counter.
+                if (!incognitoRef.current) {
+                  void recordListening(
+                    {
+                      id: statsTrack.id,
+                      title: statsTrack.title,
+                      artist: statsTrack.artist,
+                      albumName:
+                        (statsTrack as any).albumName ??
+                        (statsTrack as any).album,
+                      thumbnail: statsTrack.thumbnail,
+                      artistId: statsTrack.artistId,
+                      albumId: (statsTrack as any).albumId,
+                    },
+                    deltaMs,
+                    shouldCountPlay,
+                  );
+                  // Feed the same verified-played delta to the scrobbler so
+                  // paused/buffering time can never inflate a scrobble.
+                  scrobblerService.recordProgress(deltaMs);
+                  if (shouldCountPlay)
+                    statsPlayCountedRef.current = statsTrack.id;
+                }
               } else if (deltaMs <= 0) {
                 // Track restarted / seeked backwards: reset accumulation.
                 statsAccumulatedMsRef.current = 0;

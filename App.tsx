@@ -58,6 +58,8 @@ import {
   hasCompletedOnboarding,
   markOnboardingCompleted,
 } from "./utils/storage";
+import { setDeepLinkHandlers, type DeepLinkAction } from "./modules/deepLink";
+import { buildSeededQueue, shuffleTracks } from "./modules/seededQueue";
 
 // Screens
 import HomeScreen from "./components/screens/HomeScreen";
@@ -172,8 +174,10 @@ const TabBarIcon: React.FC<IconProps> = ({ name, color, size, focused }) => {
 /* ---------- Custom Tab Bar ---------- */
 function CustomTabBar({ state, descriptors, navigation }: any) {
   const { colors, isLight } = useTheme();
-  const { dir, isRtl } = useAppLanguage();
+  const { dir, isRtl, t } = useAppLanguage();
+  const { settings } = useSettings();
   const insets = useSafeAreaInsets();
+  const incognito = settings.incognitoMode;
 
   return (
     <LinearGradient
@@ -194,6 +198,46 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
         paddingTop: 6,
       }}
     >
+      {/* Private Listening indicator (#44): sits above the tab row on every
+          screen. pointerEvents="none" so it never swallows a tab tap. */}
+      {incognito ? (
+        <View
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{
+            position: "absolute",
+            top: 0,
+            alignSelf: "center",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 4,
+            paddingHorizontal: 8,
+            paddingVertical: 2,
+            borderRadius: 999,
+            backgroundColor: withOpacity(colors.foreground, 0.12),
+            borderWidth: 1,
+            borderColor: withOpacity(colors.foreground, 0.24),
+          }}
+        >
+          <Ionicons
+            name="eye-off"
+            size={11}
+            color={isLight ? colors.background : colors.foreground}
+          />
+          <Text
+            style={{
+              color: isLight ? colors.background : colors.foreground,
+              fontSize: 10,
+              lineHeight: 13,
+              fontFamily: getAppFontFamily(isRtl, "medium"),
+              writingDirection: dir,
+            }}
+          >
+            {t("settings.incognito")}
+          </Text>
+        </View>
+      ) : null}
       <View
         style={{
           flexDirection: isRtl ? "row-reverse" : "row",
@@ -408,6 +452,59 @@ function StartupLoadingScreen() {
   );
 }
 
+/**
+ * Module-scope so DeepLinkBridge (rendered outside the navigator, before it is
+ * ready) can still navigate — the standard React Navigation pattern.
+ */
+const navigationRef = React.createRef<any>();
+
+/**
+ * Launcher shortcuts (issue #34). Lives inside PlayerProvider so each action
+ * can use the real playback context, and hands the actions to the bridge only
+ * once settings have hydrated — a cold-start shortcut fires before the library
+ * is loaded, and acting on an empty liked-songs list would be wrong.
+ */
+function DeepLinkBridge() {
+  const { hasHydratedSettings } = useSettings();
+  const { likedSongs, playTrack, currentTrack, setShowFullPlayer } = usePlayer();
+
+  React.useEffect(() => {
+    if (!hasHydratedSettings) return;
+
+    const actions: Record<DeepLinkAction, () => void | Promise<void>> = {
+      // "Resume" = reopen the app and show the player. Replaying the track
+      // would restart it from 0 when it is already loaded.
+      resume: () => {
+        if (currentTrack) setShowFullPlayer(true);
+      },
+
+      "shuffle-liked": async () => {
+        if (likedSongs.length === 0) return;
+        const first = likedSongs[0];
+        const rest = shuffleTracks(likedSongs.slice(1));
+        await playTrack(first, [first, ...rest], 0);
+      },
+
+      "smart-queue": async () => {
+        const seed = currentTrack ?? likedSongs[0];
+        if (!seed) return;
+        const queue = await buildSeededQueue(seed, likedSongs);
+        await playTrack(seed, queue, 0);
+      },
+
+      search: () => {
+        // HomeTabs is the first stack screen; navigate("Home", { screen: "Search" })
+        // lands on the search tab.
+        navigationRef.current?.navigate?.("Home", { screen: "Search" });
+      },
+    };
+
+    setDeepLinkHandlers(actions);
+  }, [hasHydratedSettings, likedSongs, playTrack, currentTrack, setShowFullPlayer]);
+
+  return null;
+}
+
 function AppStartupGate({ children }: { children: React.ReactNode }) {
   const { hasHydratedSettings } = useSettings();
 
@@ -423,7 +520,6 @@ function AppShell() {
   const { colors, isLight } = useTheme();
   const { dir, isRtl } = useAppLanguage();
   const { showFullPlayer, setShowFullPlayer } = usePlayer();
-  const navigationRef = React.useRef<any>(null);
   const handlePlaylistUpdated = () => {
     console.log("[App] Playlist updated, triggering refresh");
     // This will be handled by the focus listener in LibraryScreen
@@ -667,6 +763,7 @@ function AppContent() {
               <AppUpdateProvider>
                 <PlayerProvider>
                   <CloudLibraryBridge />
+                  <DeepLinkBridge />
                   <PlaybackPreferenceBridge />
                   <GlobalTextDefaultsBridge />
                   <AppShell />
