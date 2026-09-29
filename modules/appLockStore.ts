@@ -216,6 +216,10 @@ export async function verifyAppLockPin(
 }
 
 export async function markAppUnlockedViaBiometrics(): Promise<void> {
+  // A successful unlock resets the failed-attempt counter, exactly as the PIN
+  // path does: otherwise 4 wrong PINs plus a fingerprint leaves the counter at
+  // 4, and the next wrong PIN locks the user out a full attempt early.
+  await clearAppLockAttempts();
   await setLaunchFlag(APP_LOCK_UNLOCKED_KEY);
   DeviceEventEmitter.emit(APP_LOCK_EVENT);
 }

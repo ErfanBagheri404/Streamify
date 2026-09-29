@@ -311,6 +311,18 @@ const wiringChecks = [
     },
   ],
   [
+    "a successful biometric unlock clears the failed-attempt backoff",
+    () => {
+      const mark = store.slice(store.indexOf("export async function markAppUnlockedViaBiometrics"));
+      const body = mark.slice(0, mark.indexOf("\n}", mark.indexOf("export async function markAppUnlockedViaBiometrics")));
+      assert.ok(
+        /clearAppLockAttempts\(\)/.test(body),
+        "a biometric unlock must clear the backoff, not only the PIN path — " +
+          "otherwise 4 wrong PINs plus a fingerprint leaves the counter at 4",
+      );
+    },
+  ],
+  [
     "a wrong PIN is recorded and a correct one clears the backoff",
     () => {
       assert.ok(
