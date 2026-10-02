@@ -233,6 +233,24 @@ test('queue reads locale from a live ref, not a captured settings object', () =>
   assert.match(pc, /cacheNotifyLanguageRef\.current = settings\.language/);
 });
 
+test('the run announces itself before the first track finishes', () => {
+  // A batch takes a while; if the only post lands after track 1 completes the
+  // user sees nothing for the whole first batch.
+  const start = pc.indexOf('const processLikedSongsCacheQueue');
+  const end = pc.indexOf('}, [resolveTrackStreamUrl', start);
+  const body = pc.slice(start, end);
+  const seed = body.indexOf('if (!cacheRunSeededRef.current) {');
+  assert.ok(seed > -1, 'seed block missing');
+  // Scope to the seed block: the cooldown-exit post also passes force=true, so
+  // a plain indexOf would find that one and report a false pass.
+  const seedEnd = body.indexOf('\n    }', seed);
+  const seedBlock = body.slice(seed, seedEnd > -1 ? seedEnd : body.length);
+  const post = seedBlock.indexOf('postCacheNotification(0, true);');
+  assert.ok(post > -1, 'no forced post inside the seed block (run never announces itself)');
+  const progressPost = body.indexOf('postCacheNotification(0, false);');
+  assert.ok(progressPost > seedEnd, 'entry post must come before the per-track post');
+});
+
 test('counters are seeded once per run, then reset on exit', () => {
   const idx = pc.indexOf('const processLikedSongsCacheQueue');
   const end = pc.indexOf('}, [resolveTrackStreamUrl', idx);

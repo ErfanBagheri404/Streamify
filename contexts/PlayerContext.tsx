@@ -1292,6 +1292,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         // Counting is best-effort; a failure just means the notification
         // starts from "everything remaining".
       }
+      // Announce the run before the first track finishes. A batch can take a
+      // while, and the user has to be able to see the work from the moment it
+      // starts - not only once something has already been cached.
+      postCacheNotification(0, true);
     }
 
     try {
