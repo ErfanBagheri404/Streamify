@@ -32,11 +32,17 @@ import {
   monitorAndResumeCache,
   AudioStreamManager,
   subscribeToAudioCacheProgress,
+  getAllTrackCacheStatus,
 } from "../modules/audioStreaming";
 import {
   cacheTrackThumbnail,
   getCachedThumbnailPath,
 } from "../utils/thumbnailCache";
+import { cacheQueueCounters } from "../modules/cacheQueueNotify";
+import {
+  dismissCacheNotification,
+  updateCacheNotification,
+} from "../modules/cacheQueueNotifier";
 
 import { StorageService, subscribeToLibraryUpdates } from "../utils/storage";
 import { trackPlayerService } from "../services/TrackPlayerService";
@@ -322,6 +328,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }>({ visible: false, trackTitle: "" });
   const [cacheQueueVersion, setCacheQueueVersion] = useState(0);
   const [cacheCooldownSeconds, setCacheCooldownSeconds] = useState(0);
+  // Cache-run counters backing the system notification (issue #94).
+  // finishedInRun grows once per cached track; alreadyCachedBeforeRun seeds
+  // it on a resumed run so the first post does not claim everything is due.
+  const cacheRunFinishedRef = useRef(0);
+  const cacheRunSeededRef = useRef(false);
   const queueConflictResolverRef = useRef<
     ((_choice: "cancel" | "play") => void) | null
   >(null);
@@ -1048,7 +1059,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   useEffect(() => {
     likedSongsRef.current = likedSongs;
-  }, [likedSongs]);
+      }, [likedSongs]);
+
+  // The cache queue is a long-lived callback whose dependency list does not
+  // include settings, so it cannot read settings.language directly without
+  // capturing a stale locale. Mirror the value into a ref for the
+  // notification copy (issue #94).
+  const cacheNotifyLanguageRef = useRef(settings.language);
+  useEffect(() => {
+    cacheNotifyLanguageRef.current = settings.language;
+  }, [settings.language]);
 
   // Update color theme immediately when track changes (before loading completes)
   useEffect(() => {
@@ -1208,6 +1228,40 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [publishCacheInfo],
   );
 
+  /**
+   * Single entry point for every cache-queue notification, so the counters,
+   * the locale, and the "is auto-caching still on?" gate live in one place.
+   *
+   * The gate matters: toggling the setting off dismisses the notification,
+   * and without this check the next finished track would immediately repost
+   * a notification for work the user just switched off.
+   *
+   * @param cooldownSeconds batch cooldown length, or 0 while downloading
+   * @param force            bypass the time throttle (state transitions only)
+   */
+  const postCacheNotification = useCallback(
+    (cooldownSeconds: number, force: boolean) => {
+      if (!settings.autoCacheLikedSongs) {
+        return;
+      }
+      const { total, remaining } = cacheQueueCounters({
+        total: likedSongsRef.current.length,
+        finishedInRun: cacheRunFinishedRef.current,
+        alreadyCachedBeforeRun: 0,
+      });
+      void updateCacheNotification(
+        {
+          total,
+          remaining,
+          cooldownSeconds,
+          language: cacheNotifyLanguageRef.current,
+        },
+        { force },
+      );
+    },
+    [settings.autoCacheLikedSongs],
+  );
+
   const processLikedSongsCacheQueue = useCallback(async () => {
     if (isCacheQueueProcessingRef.current) {
       return;
@@ -1216,6 +1270,29 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     isCacheQueueProcessingRef.current = true;
     const attemptedTrackIds = new Set<string>();
     let songsInBatch = 0;
+
+    // Seed the notification counters once per run. The queue scans liked
+    // songs in batches of 10, so the first scan pass tells us how many are
+    // already cached; that number seeds the "remaining" count so the first
+    // notification does not claim the whole library is outstanding.
+    if (!cacheRunSeededRef.current) {
+      cacheRunSeededRef.current = true;
+      cacheRunFinishedRef.current = 0;
+      try {
+        const liked = likedSongsRef.current;
+        const status = await getAllTrackCacheStatus();
+        let cached = 0;
+        for (const t of liked) {
+          if (t?.id && status.get(t.id)?.isFullyCached) {
+            cached += 1;
+          }
+        }
+        cacheRunFinishedRef.current = cached;
+      } catch {
+        // Counting is best-effort; a failure just means the notification
+        // starts from "everything remaining".
+      }
+    }
 
     try {
       while (true) {
@@ -1246,6 +1323,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           songsInBatch = 0;
           // Use setInterval so React state updates aren't batched by concurrent mode
           const totalSec = Math.ceil(CACHE_BATCH_COOLDOWN_MS / 1000);
+          // Notification: announce the pause once, with the full cooldown
+          // duration. The countdown itself ticks through React state only,
+          // so the shade shows a stable line instead of a per-second churn.
+          // Forced: entering a cooldown sits ~8s after the previous track's
+          // post, inside the throttle window, so the pause would never land.
+          postCacheNotification(totalSec, true);
           await new Promise<void>((resolve) => {
             let remaining = totalSec;
             setCacheCooldownSeconds(remaining);
@@ -1260,6 +1343,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               }
             }, 1000);
           });
+          // Cooldown over: replace the "resuming in" line immediately.
+          // Without this the shade keeps promising a countdown that already
+          // elapsed until the next track finishes downloading.
+          postCacheNotification(0, true);
         }
 
         // ── Find the next track to cache ──────────────────────────
@@ -1414,6 +1501,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             message: `${nextTrackToCache.title} cached`,
           });
           setCacheQueueVersion((v) => v + 1);
+          cacheRunFinishedRef.current += 1;
+          // Notification: one post per finished track, throttled by the
+          // notifier so a fast run does not spam the shade.
+          postCacheNotification(0, false);
         } else if (
           !latestInfo.isDownloading &&
           !!streamUrl &&
@@ -1439,8 +1530,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       activeCacheTrackIdRef.current = null;
       isCacheQueueProcessingRef.current = false;
       manualDownloadRef.current = false;
+      // Drain or abort: nothing is being cached any more, so the "caching"
+      // notification must go. Leaving it behind is a notification describing
+      // work that has stopped.
+      cacheRunSeededRef.current = false;
+      void dismissCacheNotification();
     }
-  }, [resolveTrackStreamUrl, publishCacheInfo]);
+  }, [resolveTrackStreamUrl, publishCacheInfo, postCacheNotification]);
 
   // Sync isPlayingRef so the cache queue can check it without depending
   // on the isPlaying state (which would re-create the callback).
@@ -1450,6 +1546,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   useEffect(() => {
     if (!settings.autoCacheLikedSongs) {
+      // Toggled off mid-run: the queue's own loop keeps draining, but the
+      // user just asked for auto-caching to stop — the system notification
+      // must not keep advertising work they switched off. (The remaining
+      // drains keep their toast/section feedback in Library.)
+      void dismissCacheNotification();
       return;
     }
 

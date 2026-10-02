@@ -390,7 +390,6 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     getCacheInfo,
     cacheProgress,
     stopCachingAndUnlike,
-    startCacheQueue,
   } = usePlayer();
   const [downloadingTracks, setDownloadingTracks] = React.useState<
     { track: Track; percentage: number; status: "caching" | "queued" }[]
@@ -1461,25 +1460,6 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                 </HeaderIconText>
               </HeaderIconButton>
             ) : null}
-            <HeaderIconButton
-              disabled={!likedSongs.length}
-              onPress={() => {
-                startCacheQueue();
-              }}
-              style={{
-                marginStart: 6,
-                marginEnd: 6,
-                opacity: likedSongs.length === 0 ? 0.4 : 1,
-              }}
-            >
-              <HeaderIconText>
-                <Ionicons
-                  name="cloud-download-outline"
-                  size={20}
-                  color={colors.foreground}
-                />
-              </HeaderIconText>
-            </HeaderIconButton>
             <HeaderIconButton
               onPress={() => setShowCreatePlaylistModal(true)}
               style={{ marginStart: 6, marginEnd: 8 }}

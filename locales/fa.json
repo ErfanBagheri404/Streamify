@@ -838,7 +838,7 @@
   "settings.openNowPlayingAutomatically": "باز کردن خودکار Now Playing",
   "settings.openNowPlayingAutomaticallyDescription": "هر زمان آهنگی از جستجو، خانه یا کتابخانه شروع شد، مستقیم به پلیر تمام صفحه برو.",
   "settings.autoCacheLikedSongs": "ذخیره خودکار آهنگ‌های لایک‌شده",
-  "settings.autoCacheLikedSongsDescription": "به طور خودکار آهنگ‌های لایک‌شده را در پس‌زمینه ذخیره کن. وقتی غیرفعال است، ذخیره‌سازی فقط زمانی انجام می‌شود که به صورت دستی از صفحه کتابخانه آغاز کنی.",
+  "settings.autoCacheLikedSongsDescription": "به طور خودکار آهنگ‌های لایک‌شده را در پس‌زمینه ذخیره کن. با خاموش کردن این گزینه، ذخیره‌سازی کاملاً متوقف می‌شود.",
   "settings.discovery": "کشف",
   "settings.searchPreferences": "ترجیحات جستجو",
   "settings.searchPreferencesDescription": "مشخص کن وقتی جستجو را بدون کوئری ذخیره شده یا پارامتر مستقیم باز می کنی، استریمیفای اول کدام منبع را ترجیح دهد.",
