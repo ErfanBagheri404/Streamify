@@ -163,7 +163,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   rememberLastSearch: true,
   preferredSearchSource: "mixed",
   seekStepSeconds: 10,
-  autoCacheLikedSongs: false,
+  // Auto-caching on by default: the queue runs by itself and the Library no
+  // longer carries a manual download button (issue #94). The toggle is the
+  // only control, so "off" means no caching at all.
+  autoCacheLikedSongs: true,
   autoSyncLibrary: true,
   autoQueueConflictAutoRemove: false,
   hapticsEnabled: true,
