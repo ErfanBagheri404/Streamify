@@ -51,9 +51,10 @@ export interface SearchResult {
     | "jiosaavn"
     | "youtubemusic"
     | "itunes"
-    | "deezer";
+    | "deezer"
+    | "spotify";
   playbackSource?: "youtube" | "soundcloud" | "jiosaavn" | "youtubemusic";
-  providerHint?: "itunes" | "deezer";
+  providerHint?: "itunes" | "deezer" | "spotify";
   type?: "song" | "album" | "artist" | "playlist" | "unknown";
   albumId?: string | null;
   albumName?: string | null;
@@ -77,7 +78,8 @@ type BackendSearchSource =
   | "soundcloud"
   | "jiosaavn"
   | "itunes"
-  | "deezer";
+  | "deezer"
+  | "spotify";
 
 type BackendSearchResponse = {
   items: any[];
@@ -560,11 +562,15 @@ function normalizeBackendCatalogItem(
   requestedSource: BackendSearchSource,
 ): SearchResult | null {
   const providerHint =
-    item.providerHint === "itunes" || item.providerHint === "deezer"
+    item.providerHint === "itunes" ||
+    item.providerHint === "deezer" ||
+    item.providerHint === "spotify"
       ? item.providerHint
       : undefined;
   const displaySource =
-    requestedSource === "itunes" || requestedSource === "deezer"
+    requestedSource === "itunes" ||
+    requestedSource === "deezer" ||
+    requestedSource === "spotify"
       ? requestedSource
       : providerHint || "jiosaavn";
   const imageUrl =
@@ -655,7 +661,9 @@ function normalizeBackendSearchResults(
       const source =
         typeof item.source === "string" ? item.source : requestedSource;
       const providerHint =
-        item.providerHint === "itunes" || item.providerHint === "deezer"
+        item.providerHint === "itunes" ||
+        item.providerHint === "deezer" ||
+        item.providerHint === "spotify"
           ? item.providerHint
           : undefined;
 
@@ -664,6 +672,7 @@ function normalizeBackendSearchResults(
         requestedSource === "jiosaavn" ||
         requestedSource === "itunes" ||
         requestedSource === "deezer" ||
+        requestedSource === "spotify" ||
         providerHint
       ) {
         return normalizeBackendCatalogItem(item, requestedSource);
@@ -1143,6 +1152,19 @@ export const searchAPI = {
     return backendResult
       ? normalizeBackendSearchResults(backendResult.items, "deezer")
       : [];
+  },
+
+  // "Spotify" search without Spotify API: JioSaavn search re-labeled as
+  // Spotify (no client creds/premium needed; resolved to playable audio via  // Spotify search runs on the backend (keyless web-player GraphQL path in
+  // streamifyapi); /video resolves each hit to playable audio.
+  searchWithSpotify: async (query: string, page?: number, limit?: number) => {
+    const backendResult = await searchViaBackend({
+      query,
+      source: "spotify",
+      page,
+      limit,
+    });
+    return normalizeBackendSearchResults(backendResult.items, "spotify");
   },
 
   // COMMENTED OUT: JioSaavn song details disabled to focus on YouTube

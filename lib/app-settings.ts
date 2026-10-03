@@ -2,11 +2,12 @@
 
 export type PreferredSearchSource =
   | "mixed"
+  | "youtube"
+  | "spotify"
+  | "soundcloud"
+  | "youtubemusic"
   | "itunes"
   | "deezer"
-  | "youtube"
-  | "youtubemusic"
-  | "soundcloud"
   | "jiosaavn";
 
 export type AppTheme =

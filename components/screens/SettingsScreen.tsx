@@ -43,11 +43,12 @@ import {
 
 const SEARCH_SOURCES: PreferredSearchSource[] = [
   "mixed",
+  "youtube",
+  "spotify",
+  "soundcloud",
+  "youtubemusic",
   "itunes",
   "deezer",
-  "youtube",
-  "youtubemusic",
-  "soundcloud",
   "jiosaavn",
 ];
 
@@ -421,11 +422,12 @@ export default function SettingsScreen({
   const sourceLabels: Record<PreferredSearchSource, string> = useMemo(
     () => ({
       mixed: t("search.all"),
+      youtube: t("source.youtube"),
+      spotify: t("source.spotify"),
+      soundcloud: t("source.soundcloud"),
+      youtubemusic: t("source.youtubemusic"),
       itunes: t("source.itunes"),
       deezer: t("source.deezer"),
-      youtube: t("source.youtube"),
-      youtubemusic: t("source.youtubemusic"),
-      soundcloud: t("source.soundcloud"),
       jiosaavn: t("source.jiosaavn"),
     }),
     [t],

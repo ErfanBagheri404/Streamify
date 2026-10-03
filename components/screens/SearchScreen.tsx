@@ -357,6 +357,7 @@ type SourceType =
   | "mixed"
   | "itunes"
   | "deezer"
+  | "spotify"
   | "youtube"
   | "youtubemusic"
   | "soundcloud"
@@ -397,13 +398,14 @@ interface SearchResult {
 
 const SEARCH_SOURCE_OPTIONS: SearchSourceOption[] = [
   { id: "mixed", labelKey: "source.mixed", color: "#1ed760" },
-  { id: "local", labelKey: "source.local", color: "#5e9eff" },
+  { id: "youtube", labelKey: "source.youtube", color: "#ff0000" },
+  { id: "spotify", labelKey: "source.spotify", color: "#1db954" },
+  { id: "soundcloud", labelKey: "source.soundcloud", color: "#ff7700" },
+  { id: "youtubemusic", labelKey: "source.youtubemusic", color: "#ff0000" },
   { id: "itunes", labelKey: "source.itunes", color: "#fa243c" },
   { id: "deezer", labelKey: "source.deezer", color: "#a238ff" },
-  { id: "youtube", labelKey: "source.youtube", color: "#ff0000" },
-  { id: "youtubemusic", labelKey: "source.youtubemusic", color: "#ff0000" },
-  { id: "soundcloud", labelKey: "source.soundcloud", color: "#ff7700" },
   { id: "jiosaavn", labelKey: "source.jiosaavn", color: "#1fa18a" },
+  { id: "local", labelKey: "source.local", color: "#5e9eff" },
   { id: "subsonic", labelKey: "source.subsonic", color: "#0188d1" },
 ];
 
@@ -1097,6 +1099,12 @@ export default function SearchScreen({ navigation }: any) {
           );
         } else if (requestSource === "deezer") {
           results = await searchAPI.searchWithDeezer(
+            trimmedQuery,
+            paginationRef.current.page,
+            20,
+          );
+        } else if (requestSource === "spotify") {
+          results = await searchAPI.searchWithSpotify(
             trimmedQuery,
             paginationRef.current.page,
             20,
