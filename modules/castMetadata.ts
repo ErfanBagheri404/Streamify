@@ -107,13 +107,16 @@ export function buildCastQueue(
 ): CastQueue {
   const list = Array.isArray(tracks) ? tracks : [];
   const items: CastQueueItem[] = [];
-  const indexById = new Map<string, number>();
+  // Where each incoming row landed in `items`, keyed by its position in
+  // `list` — not by track id, which is not unique (a queue can hold the
+  // same track twice) and so would start the receiver on the wrong copy.
+  const itemIndexByPosition = new Map<number, number>();
 
   list.forEach((track, position) => {
     if (!track || typeof track.id !== "string" || !track.id) return;
     const streamUrl = castStreamUrl(track);
     if (!streamUrl) return;
-    indexById.set(track.id, items.length);
+    itemIndexByPosition.set(position, items.length);
     items.push({
       mediaId: track.id,
       title: clean(track.title, "Unknown Title"),
@@ -128,7 +131,9 @@ export function buildCastQueue(
     Number.isInteger(currentIndex) && currentIndex >= 0 && currentIndex < list.length
       ? currentIndex
       : 0;
-  const startIndex = indexById.get(list[safeIndex]?.id ?? "") ?? 0;
+  // An uncastable current track (or an out-of-range index) falls back to the
+  // first item rather than pointing past the end of the queue.
+  const startIndex = itemIndexByPosition.get(safeIndex) ?? 0;
 
   return { items, startIndex };
 }

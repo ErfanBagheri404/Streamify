@@ -158,6 +158,14 @@ async function main() {
     assert.equal(q.startIndex, 0);
   });
 
+  await check('queue: a track listed twice starts on the copy that is playing', () => {
+    // mediaId is the track id and is not unique, so the start index must come
+    // from the row's position, not from a lookup by id.
+    const tracks = [track({ id: 'same' }), track({ id: 'same' })];
+    assert.equal(m.buildCastQueue(tracks, 0).startIndex, 0);
+    assert.equal(m.buildCastQueue(tracks, 1).startIndex, 1);
+  });
+
   await check('queue: startIndex follows the playing track after drops', () => {
     const tracks = [
       track({ id: 'a', audioUrl: undefined }),
