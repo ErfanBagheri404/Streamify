@@ -31,10 +31,10 @@ async function pickSeed(liked: Track[], recent: Track[]): Promise<Track | null> 
  * pool has to be broader than the liked list: everything the user has
  * touched gives the discovery slice something to reach for.
  */
-function candidatePool(liked: Track[], recent: Track[], topTracks: Track[]): Track[] {
+function candidatePool(liked: Track[], recent: Track[]): Track[] {
   const seen = new Set<string>();
   const pool: Track[] = [];
-  for (const track of [...liked, ...recent, ...topTracks]) {
+  for (const track of [...liked, ...recent]) {
     if (!track?.id || seen.has(track.id)) {
       continue;
     }
@@ -59,25 +59,16 @@ export async function generateAiMixPlaylist(
     loadPlayCounts(),
   ]);
 
-  // Most-played tracks from the replay summary, resolved back to Track
-  // objects. The summary stores ids, so match them against the pools we have.
-  const topIds = [...playCounts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([id]) => id);
-  const byId = new Map<string, Track>();
-  for (const track of [...liked, ...recent]) {
-    byId.set(track.id, track);
-  }
-  const topTracks = topIds
-    .map((id) => byId.get(id))
-    .filter((t): t is Track => Boolean(t));
-
+  // Most-played tracks are not a separate source: playCounts only holds ids
+  // that came from liked/recent history, so resolving them back to Track
+  // objects would only re-add entries the pool already contains. The counts
+  // themselves are still passed to buildSmartQueue for scoring.
   const seed = await pickSeed(liked, recent);
   if (!seed) {
     return null;
   }
 
-  const pool = candidatePool(liked, recent, topTracks);
+  const pool = candidatePool(liked, recent);
   const tracks = buildSmartQueue({
     seed,
     library: pool,
@@ -89,9 +80,11 @@ export async function generateAiMixPlaylist(
   }
 
   const now = new Date().toISOString();
-  const existing = (await StorageService.loadPlaylists()).find(
-    (p) => p.id === AI_MIX_ID,
-  );
+  // Read once, write once. addPlaylist re-reads the list internally, so
+  // going through it here would race another writer's change; and reading
+  // twice (once for `existing`, once for `rest`) lets the two disagree.
+  const stored = await StorageService.loadPlaylists();
+  const existing = stored.find((p) => p.id === AI_MIX_ID);
   const playlist: Playlist = {
     id: AI_MIX_ID,
     name: aiMixName(language),
@@ -104,13 +97,9 @@ export async function generateAiMixPlaylist(
     thumbnail: tracks[0]?.thumbnail,
   };
 
-  if (existing) {
-    const rest = (await StorageService.loadPlaylists()).filter(
-      (p) => p.id !== AI_MIX_ID,
-    );
-    await StorageService.savePlaylists([playlist, ...rest]);
-  } else {
-    await StorageService.addPlaylist(playlist);
-  }
+  // Replace in place, keep every other playlist, and put the mix first so
+  // it stays where the user expects it.
+  const rest = stored.filter((p) => p.id !== AI_MIX_ID);
+  await StorageService.savePlaylists([playlist, ...rest]);
   return playlist;
 }

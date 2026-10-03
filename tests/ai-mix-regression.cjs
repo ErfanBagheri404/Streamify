@@ -37,6 +37,7 @@ let liked = [];
 let recent = [];
 let playlists = [];
 let playCounts = new Map();
+let playlistWrites = [];
 
 const storageStub = {
   StorageService: {
@@ -44,9 +45,11 @@ const storageStub = {
     loadPreviouslyPlayedSongs: async () => recent.map((t) => ({ ...t })),
     loadPlaylists: async () => playlists.map((p) => ({ ...p })),
     savePlaylists: async (next) => {
+      playlistWrites.push({ kind: 'savePlaylists', next: next.map((p) => ({ ...p })) });
       playlists = next.map((p) => ({ ...p }));
     },
     addPlaylist: async (p) => {
+      playlistWrites.push({ kind: 'addPlaylist', next: [p] });
       playlists = [p, ...playlists];
     },
   },
@@ -115,6 +118,7 @@ function reset() {
     ['r1', 9],
   ]);
   lastQueueArgs = null;
+  playlistWrites = [];
 }
 
 const MIX = loadModule();
@@ -183,6 +187,52 @@ async function main() {
     await MIX.generateAiMixPlaylist('en');
     assert.ok(lastQueueArgs.playCounts instanceof Map);
     assert.equal(lastQueueArgs.playCounts.get('a1'), 40);
+  });
+
+  await check('playlists are read once and written once per generate', async () => {
+    // Two loadPlaylists() calls plus a re-reading addPlaylist means another
+    // writer's playlist can be dropped on the floor.
+    reset();
+    let loads = 0;
+    const realLoad = storageStub.StorageService.loadPlaylists;
+    storageStub.StorageService.loadPlaylists = async () => {
+      loads += 1;
+      return realLoad();
+    };
+    try {
+      await MIX.generateAiMixPlaylist('en');
+    } finally {
+      storageStub.StorageService.loadPlaylists = realLoad;
+    }
+    assert.equal(loads, 1, 'expected a single read of the stored playlists');
+    assert.equal(playlistWrites.length, 1, 'expected a single write');
+    assert.equal(playlistWrites[0].kind, 'savePlaylists',
+      'must not round-trip through addPlaylist, which re-reads the list');
+  });
+
+  await check('regenerating preserves playlists added after the first run', async () => {
+    reset();
+    await MIX.generateAiMixPlaylist('en');
+    // Someone creates a playlist between runs.
+    playlists = [{ id: 'user-made', name: 'Mine', tracks: [], createdAt: 'x', updatedAt: 'x' }, ...playlists];
+    await MIX.generateAiMixPlaylist('en');
+    const ids = playlists.map((p) => p.id).sort();
+    assert.deepEqual(ids, ['@ai_mix', 'user-made'],
+      'the user playlist must survive a regenerate');
+    assert.equal(playlists.filter((p) => p.id === '@ai_mix').length, 1,
+      'the mix must not be duplicated');
+  });
+
+  await check('the candidate pool is built without a redundant top-tracks list', async () => {
+    // playCounts holds ids that already live in liked/recent, so re-adding
+    // them as "top tracks" is a no-op the dedupe had to undo.
+    reset();
+    await MIX.generateAiMixPlaylist('en');
+    const poolIds = lastQueueArgs.library.map((t) => t.id);
+    assert.equal(new Set(poolIds).size, poolIds.length, 'pool must be deduplicated');
+    assert.equal(poolIds.length, new Set([...liked, ...recent].map((t) => t.id)).size);
+    assert.doesNotMatch(readRepoFile('modules/aiMixPlaylist.ts'), /topTracks/,
+      'the dead top-tracks resolution should not come back');
   });
 
   await check('the cover is the top track artwork', async () => {
