@@ -1663,6 +1663,30 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     }
   };
 
+  const [isGeneratingAiMix, setIsGeneratingAiMix] = React.useState(false);
+  const handleAiMix = React.useCallback(async () => {
+    if (isGeneratingAiMix) {
+      return;
+    }
+    setIsGeneratingAiMix(true);
+    try {
+      playHaptic(Haptic.ToggleOn);
+      // Dynamic import: aiMixPlaylist pulls storage + replay history, and the
+      // player modal should not pay that cost until the user asks for a mix.
+      const { generateAiMixPlaylist } = await import("../modules/aiMixPlaylist");
+      const mix = await generateAiMixPlaylist(language === "fa" ? "fa" : "en");
+      // null = not enough history to curate from. The icon stops spinning and
+      // the user is still looking at the player, so the alert carries the
+      // outcome — the same pattern the credits sheet already uses here.
+      Alert.alert(
+        t("player.aiMixTitle"),
+        t(mix ? "player.aiMixReady" : "player.aiMixEmpty"),
+      );
+    } finally {
+      setIsGeneratingAiMix(false);
+    }
+  }, [isGeneratingAiMix, language]);
+
   const runManualLyricsSearch = React.useCallback(async () => {
     if (!currentTrack) {
       return;
@@ -1953,6 +1977,22 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                     }
                     size={24}
                     color={iconColor}
+                  />
+                </LikeButton>
+
+                <LikeButton
+                  onPress={handleAiMix}
+                  disabled={isGeneratingAiMix}
+                  style={{
+                    marginLeft: 0,
+                    marginRight: 0,
+                    opacity: isGeneratingAiMix ? 0.4 : 1,
+                  }}
+                >
+                  <Ionicons
+                    name={isGeneratingAiMix ? "hourglass" : "sparkles"}
+                    size={24}
+                    color={activeAccentColor}
                   />
                 </LikeButton>
               </TrackRow>
