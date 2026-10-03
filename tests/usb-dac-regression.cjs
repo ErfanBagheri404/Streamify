@@ -173,6 +173,45 @@ async function main() {
     assert.match(plugin, /missing native source/);
   });
 
+  await check('the manifest mod puts usb.host in uses-feature, not manifest.$', () => {
+    // Writing these into manifest.$ produces attributes on <manifest> that
+    // Android ignores: uses-feature is an element, and usesCleartextTraffic
+    // belongs on <application>.
+    const plugin = read('plugins/withUsbDac.js');
+    assert.doesNotMatch(plugin, /manifest\.\$\s*=/,
+      'must not write attributes onto the manifest element at all');
+    assert.doesNotMatch(plugin, /permissions\["android:hardware\.usb\.host"\]/,
+      'the feature must not be an attribute on the manifest element');
+    // The feature has to be pushed, not just mentioned: a comment
+    // naming it satisfies a bare match.
+    assert.match(plugin, /features\.push\(/,
+      'the usb.host feature must be added to uses-feature');
+    assert.match(plugin, /manifest\["uses-feature"\]\s*=\s*features/,
+      'the uses-feature list must be written back to the manifest');
+    assert.match(plugin, /android\.hardware\.usb\.host/);
+    assert.match(plugin, /android:required/);
+    // The attribute must land on <application>, not on <manifest> or anywhere
+    // else: Android ignores it in the wrong place.
+    assert.match(plugin, /manifest\.application\?\.\[0\]/,
+      'the cleartext attribute must be read off the application element');
+    assert.match(plugin, /application\.\$\["android:usesCleartextTraffic"\]/);
+  });
+
+  await check('the Kotlin module reports the active output, not the first sink', () => {
+    const kt = read('plugins/android/StreamifyUsbAudioModule.kt');
+    // The call site must actually use the helper — a dead helper reads fine
+    // and changes nothing.
+    const body = kt.slice(kt.indexOf('fun getOutputInfo'), kt.indexOf('fun activeOutput'));
+    assert.match(body, /activeOutput\(devices\)/, 'getOutputInfo must call activeOutput');
+    assert.doesNotMatch(body, /firstOrNull \{ it\.isSink \}/,
+      'getOutputInfo must not pick the first sink directly');
+    assert.match(kt, /fun activeOutput\(devices: List<AudioDeviceInfo>\)/);
+    assert.match(kt, /it\.isSink && it\.isActive/);
+    // isActive is API 31+; the module must not call it unguarded.
+    assert.match(kt, /Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.S/);
+    assert.match(kt, /\?: devices\.firstOrNull \{ it\.isSink \}/);
+  });
+
   await check('the plugin is registered in app.json', () => {
     const app = JSON.parse(read('app.json'));
     const plugins = app.expo.plugins || [];

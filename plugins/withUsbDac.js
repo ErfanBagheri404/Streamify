@@ -38,17 +38,38 @@ function assertSourcesPresent() {
 const withUsbDac = (config) => {
   assertSourcesPresent();
 
+  // Two separate manifest homes, and getting them wrong means the entry is
+  // silently dropped from the generated manifest:
+  //
+  //   <uses-feature android:name="android.hardware.usb.host" .../>  is an
+  //   ELEMENT under <manifest>, and it is what keeps the app listed as a USB
+  //   host on Android 12+.
+  //
+  //   android:usesCleartextTraffic  is an ATTRIBUTE of <application>.
+  //
   // The native module reports the output path and sample rate, so the app
-  // needs no permission of its own. The USB permission belongs to the USB
-  // host side and is declared by the module's manifest merge, not here.
+  // needs no runtime permission of its own.
   config = withAndroidManifest(config, (cfg) => {
     const manifest = cfg.modResults.manifest;
-    const permissions = manifest.$ || {};
-    permissions["android:usesCleartextTraffic"] = "true";
-    // A DAC is an audio-class USB device; without this the app is filtered
-    // out of the USB host list on Android 12+.
-    permissions["android:hardware.usb.host"] = "true";
-    manifest.$ = permissions;
+
+    const features = manifest["uses-feature"] || [];
+    if (!features.some((f) => f?.$?.["android:name"] === "android.hardware.usb.host")) {
+      features.push({
+        $: {
+          "android:name": "android.hardware.usb.host",
+          // required=false: the app still runs on a phone with no USB host,
+          // it just hides the DAC row.
+          "android:required": "false",
+        },
+      });
+    }
+    manifest["uses-feature"] = features;
+
+    const application = manifest.application?.[0];
+    if (application) {
+      application.$ = application.$ || {};
+      application.$["android:usesCleartextTraffic"] = "true";
+    }
     return cfg;
   });
 

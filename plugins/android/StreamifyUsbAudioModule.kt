@@ -42,8 +42,10 @@ class StreamifyUsbAudioModule(reactContext: ReactApplicationContext) :
       val map: WritableMap = Arguments.createMap()
       val devices: List<AudioDeviceInfo> =
           audioManager().getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-      val current =
-          devices.firstOrNull { it.isSink }
+      // The active output, not the first sink: with a Bluetooth sink attached
+      // the DAC is the one the system is actually driving, and picking the
+      // first sink would report the wrong device entirely.
+      val current = activeOutput(devices)
       if (current == null) {
         map.putBoolean("available", false)
         promise.resolve(map)
@@ -66,6 +68,20 @@ class StreamifyUsbAudioModule(reactContext: ReactApplicationContext) :
       // shows "unavailable" rather than crashing.
       promise.resolve(Arguments.createMap().apply { putBoolean("available", false) })
     }
+  }
+
+  /**
+   * The output device the audio session is actually routed to, not merely the
+   * first sink in the list. `isActive` only exists on API 31+, so older
+   * platforms keep the first-sink behaviour and the caller degrades rather
+   * than guessing.
+   */
+  private fun activeOutput(devices: List<AudioDeviceInfo>): AudioDeviceInfo? {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      return devices.firstOrNull { it.isSink && it.isActive }
+          ?: devices.firstOrNull { it.isSink }
+    }
+    return devices.firstOrNull { it.isSink }
   }
 
   /** True when the device is a USB audio class device. */

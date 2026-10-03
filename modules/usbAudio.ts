@@ -38,7 +38,7 @@ interface StreamifyUsbAudioNative {
 
 const native: StreamifyUsbAudioNative | null =
   Platform.OS === "android"
-    ? ((NativeModules as Record<string, unknown>)
+    ? ((NativeModules as unknown as Record<string, unknown>)
         .StreamifyUsbAudio as StreamifyUsbAudioNative | undefined) ?? null
     : null;
 
