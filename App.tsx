@@ -58,6 +58,14 @@ import {
   hasCompletedOnboarding,
   markOnboardingCompleted,
 } from "./utils/storage";
+import {
+  setDeepLinkHandlers,
+  type DeepLinkAction,
+  type PlaylistOpenRequest,
+  type TrackOpenRequest,
+} from "./modules/deepLink";
+import { StorageService, type Playlist } from "./utils/storage";
+import { buildSeededQueue, shuffleTracks } from "./modules/seededQueue";
 
 // Screens
 import HomeScreen from "./components/screens/HomeScreen";
@@ -408,6 +416,108 @@ function StartupLoadingScreen() {
   );
 }
 
+/**
+ * Module-scope so DeepLinkBridge (rendered outside the navigator, before it is
+ * ready) can still navigate — the standard React Navigation pattern.
+ */
+const navigationRef = React.createRef<any>();
+
+/**
+ * Launcher shortcuts (issue #34). Lives inside PlayerProvider so each action
+ * can use the real playback context, and hands the actions to the bridge only
+ * once settings have hydrated — a cold-start shortcut fires before the library
+ * is loaded, and acting on an empty liked-songs list would be wrong.
+ */
+function DeepLinkBridge() {
+  const { hasHydratedSettings } = useSettings();
+  const { likedSongs, previouslyPlayedSongs, playTrack, currentTrack, setShowFullPlayer } =
+    usePlayer();
+
+  React.useEffect(() => {
+    if (!hasHydratedSettings) return;
+
+    const openPlaylist = async ({ playlistName }: PlaylistOpenRequest) => {
+      const playlists = await StorageService.loadPlaylists();
+      const playlist = playlists.find((p: Playlist) => p.name === playlistName);
+      if (!playlist) return;
+      navigationRef.current?.navigate?.("AlbumPlaylist", {
+        albumId: playlist.id,
+        albumName: playlist.name,
+        albumArtist: `${playlist.tracks.length} ${
+          playlist.tracks.length === 1 ? "song" : "songs"
+        }`,
+        source: "user-playlist",
+        tracks: playlist.tracks,
+      });
+    };
+
+    // A dynamic launcher shortcut names a recently-played track; the
+    // history is where it was published from, so that is where it is
+    // resolved. A track removed since publication is a no-op rather
+    // than an error.
+    const playFromShortcut = async ({ trackId }: TrackOpenRequest) => {
+      const track = previouslyPlayedSongs.find(
+        (t) => String(t.id) === trackId,
+      );
+      if (!track) return;
+      await playTrack(track, previouslyPlayedSongs, 0);
+    };
+
+    const actions: Record<
+      Exclude<DeepLinkAction, "open-playlist" | "track">,
+      () => void | Promise<void>
+    > & {
+      "open-playlist": typeof openPlaylist;
+      track: typeof playFromShortcut;
+    } = {
+      // "Resume" = reopen the app and show the player. Replaying the track
+      // would restart it from 0 when it is already loaded.
+      resume: () => {
+        if (currentTrack) setShowFullPlayer(true);
+      },
+
+      "shuffle-liked": async () => {
+        if (likedSongs.length === 0) return;
+        const first = likedSongs[0];
+        const rest = shuffleTracks(likedSongs.slice(1));
+        await playTrack(first, [first, ...rest], 0);
+      },
+
+      "smart-queue": async () => {
+        const seed = currentTrack ?? likedSongs[0];
+        if (!seed) return;
+        const queue = await buildSeededQueue(seed, likedSongs);
+        await playTrack(seed, queue, 0);
+      },
+
+      search: () => {
+        // HomeTabs is the first stack screen; navigate("Home", { screen: "Search" })
+        // lands on the search tab.
+        navigationRef.current?.navigate?.("Home", { screen: "Search" });
+      },
+
+      // A widget playlist slot opens the playlist it names. The widget
+      // store keeps names (that is what the tile shows), so the name is
+      // the identifier that arrives here.
+      "open-playlist": openPlaylist,
+
+      // A dynamic shortcut replays the recent it was published as.
+      "track": playFromShortcut,
+    };
+
+    setDeepLinkHandlers(actions);
+  }, [
+    hasHydratedSettings,
+    likedSongs,
+    previouslyPlayedSongs,
+    playTrack,
+    currentTrack,
+    setShowFullPlayer,
+  ]);
+
+  return null;
+}
+
 function AppStartupGate({ children }: { children: React.ReactNode }) {
   const { hasHydratedSettings } = useSettings();
 
@@ -423,7 +533,6 @@ function AppShell() {
   const { colors, isLight } = useTheme();
   const { dir, isRtl } = useAppLanguage();
   const { showFullPlayer, setShowFullPlayer } = usePlayer();
-  const navigationRef = React.useRef<any>(null);
   const handlePlaylistUpdated = () => {
     console.log("[App] Playlist updated, triggering refresh");
     // This will be handled by the focus listener in LibraryScreen
@@ -667,6 +776,7 @@ function AppContent() {
               <AppUpdateProvider>
                 <PlayerProvider>
                   <CloudLibraryBridge />
+                  <DeepLinkBridge />
                   <PlaybackPreferenceBridge />
                   <GlobalTextDefaultsBridge />
                   <AppShell />

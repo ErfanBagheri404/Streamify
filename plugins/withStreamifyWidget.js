@@ -1,4 +1,5 @@
-// Expo config plugin: native Android home-screen player widget (issue #29).
+// Expo config plugin: native Android home-screen player widget (issue #29)
+// and launcher shortcuts + Quick Settings tile (issue #34).
 //
 // The repo gitignores /android and CI runs `expo prebuild --clean`, so any
 // hand-written native file in the android/ tree is wiped before every build.
@@ -25,6 +26,11 @@ const KOTLIN_FILES = [
   "StreamifyWidgetProvider.kt",
   "StreamifyWidgetModule.kt",
   "StreamifyWidgetPackage.kt",
+  // Issue #34: QS tile + dynamic shortcuts. Both live here rather than in a
+  // second plugin because they read the same widget store and dispatch through
+  // the same heartbeat-gated action path.
+  "StreamifyPlaybackTileService.kt",
+  "StreamifyLauncherShortcuts.kt",
 ];
 
 const RESOURCE_FILES = [
@@ -39,6 +45,10 @@ const RESOURCE_FILES = [
   "drawable/ic_widget_next.xml",
   "drawable/ic_music_note.xml",
   "values/widget_styles.xml",
+  "xml/shortcuts.xml",
+  "drawable/ic_shortcut_resume.xml",
+  "drawable/ic_shortcut_shuffle.xml",
+  "drawable/ic_shortcut_search.xml",
 ];
 
 const WIDGET_STRINGS = [
@@ -51,6 +61,14 @@ const WIDGET_STRINGS = [
   ["widget_next", "Next track"],
   ["widget_recent_playlists", "Recent playlists"],
   ["widget_empty_slot", "—"],
+  // Issue #34: launcher shortcut labels + QS tile label.
+  ["shortcut_resume", "Resume"],
+  ["shortcut_shuffle_liked", "Shuffle liked"],
+  ["shortcut_smart_queue", "Smart queue"],
+  ["shortcut_search", "Search"],
+  ["tile_label", "Streamify playback"],
+  ["tile_play", "Play"],
+  ["tile_pause", "Pause"],
 ];
 
 const TEST_DEPENDENCIES = [
@@ -111,7 +129,8 @@ const withStreamifyWidget = (config) => {
     },
   ]);
 
-  // Manifest: register the provider + transport receiver.
+  // Manifest: register the provider, transport receiver, QS tile and the
+  // launcher-shortcuts metadata.
   config = withAndroidManifest(config, (cfg) => {
     const application = cfg.modResults.manifest.application[0];
     application.$ = application.$ || {};
@@ -138,6 +157,46 @@ const withStreamifyWidget = (config) => {
       },
       { $: { "android:name": ".StreamifyWidgetActions", "android:exported": "false" } },
     );
+
+    // Issue #34: static launcher shortcuts. The metadata sits on MainActivity
+    // (the launcher reads it from the activity that owns the icon).
+    const activities = application.activity || [];
+    const main = activities.find(
+      (a) => String((a.$ || {})["android:name"] || "") === ".MainActivity",
+    );
+    if (!main) {
+      throw new Error(
+        "withStreamifyWidget: MainActivity missing; cannot attach launcher shortcuts metadata.",
+      );
+    }
+    main["meta-data"] = (main["meta-data"] || []).filter(
+      (m) => (m.$ || {})["android:name"] !== "android.app.shortcuts",
+    );
+    main["meta-data"].push({
+      $: { "android:name": "android.app.shortcuts", "android:resource": "@xml/shortcuts" },
+    });
+
+    // Quick Settings tile. BIND_QUICK_SETTINGS_TILE is signature-level, so the
+    // service must be exported for the SystemUI host to bind it.
+    application.service = (application.service || []).filter(
+      (s) => (s.$ || {})["android:name"] !== ".StreamifyPlaybackTileService",
+    );
+    application.service.push({
+      $: {
+        "android:name": ".StreamifyPlaybackTileService",
+        "android:exported": "true",
+        "android:icon": "@drawable/ic_widget_play",
+        "android:label": "@string/tile_label",
+        "android:permission": "android.permission.BIND_QUICK_SETTINGS_TILE",
+      },
+      "intent-filter": [
+        {
+          $: {},
+          action: [{ $: { "android:name": "android.service.quicksettings.action.QS_TILE" } }],
+        },
+      ],
+    });
+
     return cfg;
   });
 

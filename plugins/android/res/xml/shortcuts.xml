@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Static launcher shortcuts (issue #34): long-press the app icon.
+  Intents use the streamify:// scheme that MainActivity already declares,
+  so no manifest intent-filter is needed — the launcher routes the
+  ACTION_VIEW deep link straight to singleTask MainActivity, and RN's
+  Linking (cold via getInitialURL, warm via emitNewIntentReceived) delivers
+  the URL. JS in modules/deepLink.ts executes each action.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+  <shortcut
+      android:shortcutId="resume"
+      android:enabled="true"
+      android:icon="@drawable/ic_shortcut_resume"
+      android:shortcutShortLabel="@string/shortcut_resume"
+      android:shortcutLongLabel="@string/shortcut_resume">
+    <intent
+        android:action="android.intent.action.VIEW"
+        android:targetClass="com.erfanbagheri.streamifymobile.MainActivity"
+        android:data="streamify://resume" />
+    <categories android:name="android.shortcut.conversation" />
+  </shortcut>
+  <shortcut
+      android:shortcutId="shuffle_liked"
+      android:enabled="true"
+      android:icon="@drawable/ic_shortcut_shuffle"
+      android:shortcutShortLabel="@string/shortcut_shuffle_liked"
+      android:shortcutLongLabel="@string/shortcut_shuffle_liked">
+    <intent
+        android:action="android.intent.action.VIEW"
+        android:targetClass="com.erfanbagheri.streamifymobile.MainActivity"
+        android:data="streamify://shuffle-liked" />
+    <categories android:name="android.shortcut.conversation" />
+  </shortcut>
+  <shortcut
+      android:shortcutId="smart_queue"
+      android:enabled="true"
+      android:icon="@drawable/ic_shortcut_shuffle"
+      android:shortcutShortLabel="@string/shortcut_smart_queue"
+      android:shortcutLongLabel="@string/shortcut_smart_queue">
+    <intent
+        android:action="android.intent.action.VIEW"
+        android:targetClass="com.erfanbagheri.streamifymobile.MainActivity"
+        android:data="streamify://smart-queue" />
+    <categories android:name="android.shortcut.conversation" />
+  </shortcut>
+  <shortcut
+      android:shortcutId="search"
+      android:enabled="true"
+      android:icon="@drawable/ic_shortcut_search"
+      android:shortcutShortLabel="@string/shortcut_search"
+      android:shortcutLongLabel="@string/shortcut_search">
+    <intent
+        android:action="android.intent.action.VIEW"
+        android:targetClass="com.erfanbagheri.streamifymobile.MainActivity"
+        android:data="streamify://search" />
+    <categories android:name="android.shortcut.conversation" />
+  </shortcut>
+</shortcuts>
