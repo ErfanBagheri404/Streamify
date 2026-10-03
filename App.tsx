@@ -58,7 +58,13 @@ import {
   hasCompletedOnboarding,
   markOnboardingCompleted,
 } from "./utils/storage";
-import { setDeepLinkHandlers, type DeepLinkAction } from "./modules/deepLink";
+import {
+  setDeepLinkHandlers,
+  type DeepLinkAction,
+  type PlaylistOpenRequest,
+  type TrackOpenRequest,
+} from "./modules/deepLink";
+import { StorageService, type Playlist } from "./utils/storage";
 import { buildSeededQueue, shuffleTracks } from "./modules/seededQueue";
 
 // Screens
@@ -424,12 +430,46 @@ const navigationRef = React.createRef<any>();
  */
 function DeepLinkBridge() {
   const { hasHydratedSettings } = useSettings();
-  const { likedSongs, playTrack, currentTrack, setShowFullPlayer } = usePlayer();
+  const { likedSongs, previouslyPlayedSongs, playTrack, currentTrack, setShowFullPlayer } =
+    usePlayer();
 
   React.useEffect(() => {
     if (!hasHydratedSettings) return;
 
-    const actions: Record<DeepLinkAction, () => void | Promise<void>> = {
+    const openPlaylist = async ({ playlistName }: PlaylistOpenRequest) => {
+      const playlists = await StorageService.loadPlaylists();
+      const playlist = playlists.find((p: Playlist) => p.name === playlistName);
+      if (!playlist) return;
+      navigationRef.current?.navigate?.("AlbumPlaylist", {
+        albumId: playlist.id,
+        albumName: playlist.name,
+        albumArtist: `${playlist.tracks.length} ${
+          playlist.tracks.length === 1 ? "song" : "songs"
+        }`,
+        source: "user-playlist",
+        tracks: playlist.tracks,
+      });
+    };
+
+    // A dynamic launcher shortcut names a recently-played track; the
+    // history is where it was published from, so that is where it is
+    // resolved. A track removed since publication is a no-op rather
+    // than an error.
+    const playFromShortcut = async ({ trackId }: TrackOpenRequest) => {
+      const track = previouslyPlayedSongs.find(
+        (t) => String(t.id) === trackId,
+      );
+      if (!track) return;
+      await playTrack(track, previouslyPlayedSongs, 0);
+    };
+
+    const actions: Record<
+      Exclude<DeepLinkAction, "open-playlist" | "track">,
+      () => void | Promise<void>
+    > & {
+      "open-playlist": typeof openPlaylist;
+      track: typeof playFromShortcut;
+    } = {
       // "Resume" = reopen the app and show the player. Replaying the track
       // would restart it from 0 when it is already loaded.
       resume: () => {
@@ -455,10 +495,25 @@ function DeepLinkBridge() {
         // lands on the search tab.
         navigationRef.current?.navigate?.("Home", { screen: "Search" });
       },
+
+      // A widget playlist slot opens the playlist it names. The widget
+      // store keeps names (that is what the tile shows), so the name is
+      // the identifier that arrives here.
+      "open-playlist": openPlaylist,
+
+      // A dynamic shortcut replays the recent it was published as.
+      "track": playFromShortcut,
     };
 
     setDeepLinkHandlers(actions);
-  }, [hasHydratedSettings, likedSongs, playTrack, currentTrack, setShowFullPlayer]);
+  }, [
+    hasHydratedSettings,
+    likedSongs,
+    previouslyPlayedSongs,
+    playTrack,
+    currentTrack,
+    setShowFullPlayer,
+  ]);
 
   return null;
 }

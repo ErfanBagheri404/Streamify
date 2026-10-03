@@ -10,6 +10,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Bundle
+import android.net.Uri
 import android.util.LruCache
 import android.view.KeyEvent
 import android.view.View
@@ -141,6 +142,11 @@ class StreamifyWidgetProvider : AppWidgetProvider() {
       )
     }
 
+    /**
+     * A playlist slot opens the playlist it names. The widget store keeps
+     * names (that is what the tile shows), so the name is the identifier
+     * that travels in the URL and JS resolves it to the playlist.
+     */
     private fun openAppIntent(context: Context, playlist: String?): PendingIntent {
       val launch =
           Intent(context, MainActivity::class.java).apply {
@@ -149,7 +155,8 @@ class StreamifyWidgetProvider : AppWidgetProvider() {
                     Intent.FLAG_ACTIVITY_SINGLE_TOP or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP)
             if (playlist != null) {
-              putExtra(StreamifyWidgetActions.EXTRA_OPEN_PLAYLIST, playlist)
+              action = Intent.ACTION_VIEW
+              data = Uri.parse("streamify://open-playlist/${Uri.encode(playlist)}")
             }
           }
       return PendingIntent.getActivity(

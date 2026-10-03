@@ -43,6 +43,7 @@ const playerContext = read("contexts", "PlayerContext.tsx");
 const shortcuts = read("plugins", "android", "res", "xml", "shortcuts.xml");
 const plugin = read("plugins", "withStreamifyWidget.js");
 const tile = read("plugins", "android", "StreamifyPlaybackTileService.kt");
+const widgetProvider = read("plugins", "android", "StreamifyWidgetProvider.kt");
 const launcherShortcuts = read(
   "plugins", "android", "StreamifyLauncherShortcuts.kt",
 );
@@ -85,11 +86,121 @@ check("static shortcuts declare no targetPackage (breaks the .local variant)", (
 });
 
 check("every parsed action has a handler registered in App.tsx", () => {
-  for (const action of ["resume", "shuffle-liked", "smart-queue", "search"]) {
+  for (const action of [
+    "resume",
+    "shuffle-liked",
+    "smart-queue",
+    "search",
+    "open-playlist",
+    "track",
+  ]) {
     const key = action.includes("-") ? `"${action}"` : action;
     assert.ok(app.includes(`${key}:`), `App.tsx has no handler for ${action}`);
   }
   assert.ok(app.includes("setDeepLinkHandlers(actions)"));
+  // Exact wiring: the payload-bearing actions must be the registered
+  // handler, not merely a same-named token somewhere in the file.
+  assert.ok(
+    app.includes('"open-playlist": openPlaylist'),
+    "open-playlist is not wired to its lookup handler",
+  );
+  assert.ok(app.includes('"track": playFromShortcut'), "track not wired to its handler");
+  assert.ok(app.includes("const openPlaylist ="), "openPlaylist handler missing");
+  assert.ok(app.includes("const playFromShortcut ="), "playFromShortcut missing");
+});
+
+check("no native-published streamify:// URL is left unhandled", () => {
+  // Static shortcuts live in XML; dynamic ones are built in Kotlin from
+  // `streamify://track/<id>`, and widget playlist slots open
+  // `streamify://open-playlist/<name>`. Every URL any native surface can
+  // publish must resolve to a parsed action AND a registered handler.
+  const published = new Set();
+  for (const src of [shortcuts, launcherShortcuts, widgetProvider]) {
+    for (const m of src.matchAll(/streamify:\/\/([a-z-]+)/g)) published.add(m[1]);
+  }
+  assert.ok(published.size > 0, "no native streamify:// URLs found to audit");
+  for (const action of published) {
+    assert.ok(
+      deepLink.includes(`"${action}"`),
+      `deepLink.ts does not parse the action "${action}" a native surface publishes`,
+    );
+    const key = action.includes("-") ? `"${action}"` : action;
+    assert.ok(app.includes(`${key}:`), `App.tsx has no handler for "${action}"`);
+  }
+});
+
+check("widget playlist slots deep-link to an action JS resolves", () => {
+  // The slot must not carry the name as an unhandled Intent extra: an
+  // extra never crosses into JS, so the tap opened the plain app.
+  assert.ok(
+    !widgetProvider.includes("EXTRA_OPEN_PLAYLIST"),
+    "widget slot still passes the playlist via an Intent extra",
+  );
+  assert.ok(
+    widgetProvider.includes('Uri.parse("streamify://open-playlist/'),
+    "widget slot must open the playlist through the streamify:// URL",
+  );
+  // And JS must actually resolve that name to a playlist and navigate.
+  assert.ok(app.includes("StorageService.loadPlaylists()"), "playlist lookup missing");
+  assert.ok(
+    app.includes("p.name === playlistName"),
+    "playlist lookup does not match the parsed name",
+  );
+  assert.ok(
+    app.includes('navigationRef.current?.navigate?.("AlbumPlaylist"'),
+    "open-playlist does not navigate to the playlist",
+  );
+  assert.ok(app.includes('source: "user-playlist"'));
+  assert.ok(app.includes("playlist.tracks.length"));
+});
+
+check("a dynamic track shortcut resolves to a track and plays it", () => {
+  // streamify://track/<id> is published by updateRecentTracks. Without a
+  // handler the launcher opens the app to the home screen.
+  // The Intent call itself, not the doc comment.
+  assert.ok(
+    launcherShortcuts.includes('Uri.parse("streamify://track/'),
+    "dynamic shortcuts no longer publish a track URL",
+  );
+  assert.ok(app.includes("previouslyPlayedSongs.find("), "track lookup missing");
+  assert.ok(
+    app.includes("await playTrack(track, previouslyPlayedSongs, 0)"),
+    "the resolved track is not played",
+  );
+});
+
+check("deep-link debounce keys on the target, not just the action", () => {
+  // Two playlist taps 100ms apart are two different requests; keying only
+  // on the action drops the second one.
+  assert.ok(deepLink.includes("lastCommand.key"), "debounce does not key on target");
+  assert.ok(/function isDuplicate\(action: string, key: string\)/.test(deepLink));
+  // The queued entry must be the whole URL: a reconstructed
+  // `streamify://<action>` would strip the name/id the action needs.
+  assert.ok(
+    deepLink.includes("pending.push({ url });"),
+    "pending must queue the full URL, so a queued open-playlist keeps its name",
+  );
+  assert.ok(
+    deepLink.includes("void handleDeepLink(entry.url)"),
+    "replay must hand back the queued URL verbatim",
+  );
+});
+
+check("open-playlist URL parsing rejects an empty or missing name", () => {
+  const parse = deepLink.slice(deepLink.indexOf("export function parseDeepLink"));
+  const body = parse.slice(0, parse.indexOf("\n}\n"));
+  assert.ok(body.includes('if (!name) return null;'), "empty playlist name accepted");
+  assert.ok(body.includes('if (!trackId) return null;'), "empty track id accepted");
+  // Percent-decoded: a name with a space must survive Uri.encode on the
+  // Kotlin side. Exact form, so swapping in the raw segment fails.
+  assert.ok(
+    body.includes('const name = decodeURIComponent(parts[1] ?? "").trim();'),
+    "playlist name is not percent-decoded",
+  );
+  assert.ok(
+    body.includes('const trackId = decodeURIComponent(parts[1] ?? "").trim();'),
+    "track id is not percent-decoded",
+  );
 });
 
 check("deep-link bridge registers exactly one Linking listener per process", () => {
@@ -110,6 +221,29 @@ check("handlers wait for settings hydration", () => {
     /if \(!hasHydratedSettings\) return;/.test(app),
     "DeepLinkBridge must not act before settings hydrate",
   );
+});
+
+check("the DeepLinkAction union covers every action the parser can return", () => {
+  // Type-level completeness: dropping an action from the union while the
+  // parser still returns it is a compile error, but this suite runs
+  // without tsc, so assert the union directly.
+  const union = deepLink.slice(
+    deepLink.indexOf("export type DeepLinkAction"),
+    deepLink.indexOf(";", deepLink.indexOf("export type DeepLinkAction")),
+  );
+  for (const action of [
+    "resume",
+    "shuffle-liked",
+    "smart-queue",
+    "search",
+    "open-playlist",
+    "track",
+  ]) {
+    assert.ok(
+      union.includes(`"${action}"`),
+      `DeepLinkAction is missing "${action}"`,
+    );
+  }
 });
 
 check("unknown schemes and actions are ignored, not dispatched", () => {

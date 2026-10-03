@@ -19,13 +19,34 @@ import * as Linking from "expo-linking";
 /** Shortest sensible gap between two identical deliveries of one intent. */
 const COMMAND_DEBOUNCE_MS = 1200;
 
+/**
+ * A widget playlist slot carries the playlist name in the URL. The
+ * name is the key the user sees (and the only identifier the widget
+ * store keeps), so matching is exact.
+ */
+export interface PlaylistOpenRequest {
+  playlistName: string;
+}
+
+export interface TrackOpenRequest {
+  trackId: string;
+}
+
 export type DeepLinkAction =
   | "resume"
   | "shuffle-liked"
   | "smart-queue"
-  | "search";
+  | "search"
+  | "open-playlist"
+  | "track";
 
-type Handlers = Record<DeepLinkAction, () => void | Promise<void>>;
+type Handlers = Record<
+  Exclude<DeepLinkAction, "open-playlist" | "track">,
+  () => void | Promise<void>
+> & {
+  "open-playlist": (request: PlaylistOpenRequest) => void | Promise<void>;
+  "track": (request: TrackOpenRequest) => void | Promise<void>;
+};
 
 /** No-op until the app registers real implementations. */
 const ACTIONS: Handlers = {
@@ -33,24 +54,27 @@ const ACTIONS: Handlers = {
   "shuffle-liked": () => {},
   "smart-queue": () => {},
   search: () => {},
+  "open-playlist": () => {},
+  track: () => {},
 };
 
 let installed = false;
 /** True once real handlers have been registered. */
 let ready = false;
 /** Commands that arrived before the app was ready to act on them. */
-let pending: DeepLinkAction[] = [];
+let pending: { url: string }[] = [];
 
 /**
  * A launcher intent that re-delivers the same URL (some launchers re-send the
  * same intent rather than a fresh one) must not replay the action. In-memory is
  * enough: both deliveries land in the same JS session.
  */
-let lastCommand: { action: string; at: number } | null = null;
+let lastCommand: { action: string; key: string; at: number } | null = null;
 
-function isDuplicate(action: string): boolean {
+function isDuplicate(action: string, key: string): boolean {
   return (
     lastCommand?.action === action &&
+    lastCommand.key === key &&
     Date.now() - lastCommand.at < COMMAND_DEBOUNCE_MS
   );
 }
@@ -60,28 +84,52 @@ function isDuplicate(action: string): boolean {
  * unrelated deep link (share targets, community links) is ignored rather than
  * misinterpreted.
  */
-export function parseDeepLink(url: string | null): DeepLinkAction | null {
+/**
+ * Parse a `streamify://<action>` URL. `open-playlist` and `track`
+ * additionally carry their target in the next path segment. Returns
+ * null for anything else so an unrelated deep link (share targets,
+ * community links) is ignored rather than misinterpreted.
+ */
+export function parseDeepLink(
+  url: string | null,
+): { action: DeepLinkAction; playlistName?: string; trackId?: string } | null {
   if (!url || !url.startsWith("streamify://")) return null;
-  const action = url.slice("streamify://".length).split(/[/?#]/)[0];
+  const parts = url.slice("streamify://".length).split(/[/?#]/);
+  const action = parts[0];
   if (
     action === "resume" ||
     action === "shuffle-liked" ||
     action === "smart-queue" ||
     action === "search"
   ) {
-    return action;
+    return { action };
+  }
+  if (action === "open-playlist") {
+    const name = decodeURIComponent(parts[1] ?? "").trim();
+    if (!name) return null;
+    return { action, playlistName: name };
+  }
+  if (action === "track") {
+    const trackId = decodeURIComponent(parts[1] ?? "").trim();
+    if (!trackId) return null;
+    return { action, trackId };
   }
   return null;
 }
 
 /** Run one action. Never throws into the caller. */
 export async function handleDeepLink(url: string | null): Promise<boolean> {
-  const action = parseDeepLink(url);
-  if (!action) return false;
-  if (isDuplicate(action)) return false;
-  lastCommand = { action, at: Date.now() };
+  const parsed = parseDeepLink(url);
+  if (!parsed) return false;
+  const { action, playlistName, trackId } = parsed;
+  const key = playlistName ?? trackId ?? "";
+  if (isDuplicate(action, key)) return false;
+  lastCommand = { action, key, at: Date.now() };
   try {
-    await ACTIONS[action]();
+    const handler = (ACTIONS as Record<string, (arg?: unknown) => void | Promise<void>>)[action];
+    if (playlistName) await handler({ playlistName });
+    else if (trackId) await handler({ trackId });
+    else await handler();
   } catch (error) {
     console.log("[deepLink] Shortcut action failed:", action, error);
   }
@@ -90,8 +138,8 @@ export async function handleDeepLink(url: string | null): Promise<boolean> {
 
 async function dispatch(url: string | null) {
   if (!ready) {
-    const action = parseDeepLink(url);
-    if (action) pending.push(action);
+    const parsed = parseDeepLink(url);
+    if (parsed) pending.push({ url });
     return;
   }
   await handleDeepLink(url);
@@ -121,8 +169,8 @@ export function setDeepLinkHandlers(handlers: Handlers) {
   ready = true;
   const queued = pending;
   pending = [];
-  for (const action of queued) {
-    void handleDeepLink(`streamify://${action}`);
+  for (const entry of queued) {
+    void handleDeepLink(entry.url);
   }
 }
 
@@ -140,5 +188,7 @@ export function __resetDeepLinkForTests() {
     "shuffle-liked": () => {},
     "smart-queue": () => {},
     search: () => {},
+    "open-playlist": () => {},
+    track: () => {},
   });
 }
