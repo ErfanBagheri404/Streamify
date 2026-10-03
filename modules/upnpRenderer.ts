@@ -32,6 +32,12 @@ export interface UpnpRenderer {
   renderingControlUrl: string;
   /** UPnP service type, e.g. urn:schemas-upnp-org:service:AVTransport:1. */
   serviceType: string;
+  /**
+   * RenderingControl's own service type, versioned independently of
+   * AVTransport: a device can expose AVTransport:2 over RenderingControl:1.
+   * Empty when the device exposes no RenderingControl.
+   */
+  renderingControlServiceType: string;
 }
 
 export interface UpnpTrack {
@@ -101,9 +107,9 @@ export function parseDeviceDescription(xml: string): {
     return m ? m[1].trim() : "";
   };
   const services: { serviceType: string; controlUrl: string }[] = [];
-  const serviceBlock = text.match(
-    /<service>[\s\S]*?<\/service>/gi,
-  );
+  // /g on match() returns every block, so all of the device's services land
+  // in the list, not just the first.
+  const serviceBlock = text.match(/<service>[\s\S]*?<\/service>/gi);
   if (serviceBlock) {
     for (const block of serviceBlock) {
       const serviceType = tag(block, "serviceType");
@@ -158,6 +164,7 @@ export function buildRenderer(
       ? absoluteControlUrl(reply.location, renderingControl.controlUrl)
       : "",
     serviceType: avTransport.serviceType,
+    renderingControlServiceType: renderingControl ? renderingControl.serviceType : "",
   };
 }
 
@@ -271,8 +278,29 @@ export function buildSoapEnvelope(action: SoapAction, body: string): string {
   );
 }
 
-export function soapActionHeader(action: SoapAction): string {
-  return `"${ACTION_URN[action]}"`;
+/**
+ * The SOAPACTION header. The device matches this against the service type it
+ * advertised, so a renderer exposing AVTransport:2 rejects an AVTransport:1
+ * action even though the body is identical. `serviceType` is the renderer's
+ * own, as read from its description; omit it for the v1 default.
+ */
+export function soapActionHeader(action: SoapAction, serviceType?: string): string {
+  return `"${actionUrn(action, serviceType)}"`;
+}
+
+/** Service URN for an action, taking the version from the device when known. */
+export function actionUrn(action: SoapAction, serviceType?: string): string {
+  const version = (serviceType || "").match(/:(\d+)$/)?.[1];
+  if (!version) return ACTION_URN[action];
+  const family = RENDERING_ACTIONS.includes(action) ? "RenderingControl" : "AVTransport";
+  return `urn:schemas-upnp-org:service:${family}:${version}#${action}`;
+}
+
+/** The device's own service type for the family an action belongs to. */
+export function serviceTypeFor(renderer: UpnpRenderer, action: SoapAction): string {
+  return RENDERING_ACTIONS.includes(action)
+    ? renderer.renderingControlServiceType
+    : renderer.serviceType;
 }
 
 /** SetAVTransportURI: point the renderer at a track. */

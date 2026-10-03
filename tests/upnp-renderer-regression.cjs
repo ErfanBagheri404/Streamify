@@ -206,6 +206,64 @@ async function main() {
     );
   });
 
+  await check('SOAPACTION carries the device own service version', () => {
+    // A renderer advertising AVTransport:2 matches the header against its own
+    // service type; a hardcoded :1 is rejected even though the body is right.
+    const r = UP.buildRenderer(UP.parseSsdpReply(SSDP_REPLY), DEVICE_XML.replace(
+      'urn:schemas-upnp-org:service:AVTransport:1',
+      'urn:schemas-upnp-org:service:AVTransport:2',
+    ));
+    assert.equal(r.serviceType, 'urn:schemas-upnp-org:service:AVTransport:2');
+    assert.equal(
+      UP.soapActionHeader('Play', UP.serviceTypeFor(r, 'Play')),
+      '"urn:schemas-upnp-org:service:AVTransport:2#Play"',
+    );
+    // No version known: keep the v1 default rather than emitting garbage.
+    assert.equal(
+      UP.soapActionHeader('Play'),
+      '"urn:schemas-upnp-org:service:AVTransport:1#Play"',
+    );
+    assert.equal(
+      UP.soapActionHeader('Play', ''),
+      '"urn:schemas-upnp-org:service:AVTransport:1#Play"',
+    );
+  });
+
+  await check('volume actions take RenderingControl own version, not AVTransport', () => {
+    // The two families version independently; AVTransport:2 + RenderingControl:1
+    // is a real configuration and must not become RenderingControl:2.
+    const xml = DEVICE_XML.replace(
+      'urn:schemas-upnp-org:service:AVTransport:1',
+      'urn:schemas-upnp-org:service:AVTransport:2',
+    );
+    const r = UP.buildRenderer(UP.parseSsdpReply(SSDP_REPLY), xml);
+    assert.equal(r.renderingControlServiceType, 'urn:schemas-upnp-org:service:RenderingControl:1');
+    assert.equal(
+      UP.soapActionHeader('SetVolume', UP.serviceTypeFor(r, 'SetVolume')),
+      '"urn:schemas-upnp-org:service:RenderingControl:1#SetVolume"',
+    );
+    assert.equal(
+      UP.soapActionHeader('GetVolume', UP.serviceTypeFor(r, 'GetVolume')),
+      '"urn:schemas-upnp-org:service:RenderingControl:1#GetVolume"',
+    );
+  });
+
+  await check('a renderer without RenderingControl still builds', () => {
+    const avtOnly = DEVICE_XML.replace(
+      /<service>[\s\S]*?<\/service>/gi,
+      '<service><serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>' +
+        '<controlURL>/avt/control</controlURL></service>',
+    );
+    const r = UP.buildRenderer(UP.parseSsdpReply(SSDP_REPLY), avtOnly);
+    assert.equal(r.renderingControlUrl, '');
+    assert.equal(r.renderingControlServiceType, '');
+    // Transport actions still work with no rendering service.
+    assert.equal(
+      UP.soapActionHeader('Pause', UP.serviceTypeFor(r, 'Pause')),
+      '"urn:schemas-upnp-org:service:AVTransport:1#Pause"',
+    );
+  });
+
   await check('controlUrlFor: volume goes to RenderingControl, transport to AVTransport', () => {
     const r = UP.buildRenderer(UP.parseSsdpReply(SSDP_REPLY), DEVICE_XML);
     assert.equal(UP.controlUrlFor(r, 'SetVolume'), r.renderingControlUrl);
