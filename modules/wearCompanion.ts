@@ -71,8 +71,9 @@ export function formatWearTime(value: number | undefined): string {
 }
 
 /**
- * Now-playing card for the wrist. `duration <= position` yields an empty
- * progress label rather than a negative or overshot percentage.
+ * Now-playing card for the wrist. The percentage is capped at 99 and an
+ * unknown duration yields an empty progress label, so the watch never
+ * renders a negative or overshot value.
  */
 export function buildWearNowPlaying(
   track: Track | null | undefined,
@@ -96,31 +97,33 @@ export function buildWearNowPlaying(
 }
 
 /**
- * Queue rows for wrist browsing. Tracks are listed in queue order, and the
- * playing index is resolved by identity — a queue that was rebuilt between
- * snapshots still marks the right row.
+ * Queue rows for wrist browsing. Tracks are listed in queue order and the row
+ * at `currentIndex` is the one marked as playing. The row keeps its position
+ * in the incoming list, so dropping an id-less row cannot shift the marker
+ * onto a neighbour — and a track listed twice marks exactly one row.
  */
 export function buildWearQueue(
   tracks: Track[] | null | undefined,
   currentIndex: number,
 ): WearQueueItem[] {
   const list = Array.isArray(tracks) ? tracks : [];
-  // Resolve the playing track by id, not by position: filter() below drops
-  // id-less rows, which would shift the marker onto the wrong one.
   const safeIndex =
     Number.isInteger(currentIndex) && currentIndex >= 0 && currentIndex < list.length
       ? currentIndex
       : -1;
-  const currentId = safeIndex >= 0 ? list[safeIndex]?.id : undefined;
 
   return list
-    .filter((track): track is Track => !!track && typeof track.id === "string" && !!track.id)
-    .map((track) => ({
+    .map((track, index) => ({ track, index }))
+    .filter(
+      (row): row is { track: Track; index: number } =>
+        !!row.track && typeof row.track.id === "string" && !!row.track.id,
+    )
+    .map(({ track, index }) => ({
       id: track.id,
       title: text(track.title, "Unknown Title"),
       artist: text(track.artist, UNKNOWN_ARTIST),
       artworkUrl: art(track.thumbnail),
-      isCurrent: track.id === currentId,
+      isCurrent: index === safeIndex,
     }));
 }
 

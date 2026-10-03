@@ -159,6 +159,12 @@ async function main() {
     assert.equal(rows[1].isCurrent, true, 'c is the playing track and row 1 after the drop');
   });
 
+  await check('queue: duplicate ids mark only the selected row', () => {
+    const tracks = [track({ id: 'same' }), track({ id: 'same' })];
+    const rows = m.buildWearQueue(tracks, 1);
+    assert.deepEqual(rows.map((row) => row.isCurrent), [false, true]);
+  });
+
   // ---- complication ------------------------------------------------------
 
   await check('complication: playing shows artist — title', () => {
