@@ -7,6 +7,39 @@ export const AI_MIX_ID = "@ai_mix";
 
 const MIX_SIZE = 30;
 
+/**
+ * Persist an already-built track list as the pinned AI Mix.
+ * Shared by the on-device generator and the discovery generator so
+ * both write through one write path and one stable id.
+ */
+export async function persistAiMix(
+  tracks: Track[],
+  language: "en" | "fa",
+): Promise<Playlist> {
+  const now = new Date().toISOString();
+  // Read once, write once. addPlaylist re-reads the list internally, so
+  // going through it here would race another writer's change; and reading
+  // twice (once for `existing`, once for `rest`) lets the two disagree.
+  const stored = await StorageService.loadPlaylists();
+  const existing = stored.find((p) => p.id === AI_MIX_ID);
+  const playlist: Playlist = {
+    id: AI_MIX_ID,
+    name: aiMixName(language),
+    description: language === "fa" ? "از تاریخچه پخش شما" : "Built from your listening history",
+    tracks,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    // The top track's art doubles as the cover: a real image beats a
+    // placeholder glyph, and it changes as the mix does.
+    thumbnail: tracks[0]?.thumbnail,
+  };
+  // Replace in place, keep every other playlist, and put the mix first so
+  // it stays where the user expects it.
+  const rest = stored.filter((p) => p.id !== AI_MIX_ID);
+  await StorageService.savePlaylists([playlist, ...rest]);
+  return playlist;
+}
+
 /** Playlist name in both languages; the id is what the code keys on. */
 export function aiMixName(language: "en" | "fa"): string {
   return language === "fa" ? "میکس هوش مصنوعی" : "AI Mix";
@@ -16,7 +49,7 @@ export function aiMixName(language: "en" | "fa"): string {
  * The seed: what the user actually listens to, not just what they liked.
  * Falls back to the most recent track when nothing has been played yet.
  */
-async function pickSeed(liked: Track[], recent: Track[]): Promise<Track | null> {
+export async function pickSeed(liked: Track[], recent: Track[]): Promise<Track | null> {
   if (recent.length) {
     return recent[0];
   }
@@ -79,27 +112,5 @@ export async function generateAiMixPlaylist(
     return null;
   }
 
-  const now = new Date().toISOString();
-  // Read once, write once. addPlaylist re-reads the list internally, so
-  // going through it here would race another writer's change; and reading
-  // twice (once for `existing`, once for `rest`) lets the two disagree.
-  const stored = await StorageService.loadPlaylists();
-  const existing = stored.find((p) => p.id === AI_MIX_ID);
-  const playlist: Playlist = {
-    id: AI_MIX_ID,
-    name: aiMixName(language),
-    description: language === "fa" ? "از تاریخچه پخش شما" : "Built from your listening history",
-    tracks,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-    // The top track's art doubles as the cover: a real image beats a
-    // placeholder glyph, and it changes as the mix does.
-    thumbnail: tracks[0]?.thumbnail,
-  };
-
-  // Replace in place, keep every other playlist, and put the mix first so
-  // it stays where the user expects it.
-  const rest = stored.filter((p) => p.id !== AI_MIX_ID);
-  await StorageService.savePlaylists([playlist, ...rest]);
-  return playlist;
-}
+  return persistAiMix(tracks, language);
+  }
