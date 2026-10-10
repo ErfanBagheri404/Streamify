@@ -24,6 +24,7 @@ import {
   Playlist,
   subscribeToLibraryUpdates,
 } from "../../utils/storage";
+import { pushWidgetPlaylistSlots } from "../../modules/widgetSync";
 import { SliderSheet } from "../SliderSheet";
 import { Track } from "../../contexts/PlayerContext";
 import { Screen as UiScreen } from "../ui/Screen";
@@ -543,6 +544,14 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     try {
       const loadedPlaylists = await StorageService.loadPlaylists();
       setPlaylists(loadedPlaylists);
+      // Mirror the most recent names into the large widget's shortcut slots.
+      // Best-effort: the widget works fine with stale slots if this fails.
+      pushWidgetPlaylistSlots(
+        [...loadedPlaylists]
+          .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
+          .slice(0, 4)
+          .map((p) => p.name),
+      );
     } catch (error) {
       console.error("Error loading playlists:", error);
     }
