@@ -14,11 +14,13 @@ import {
   SEEK_STEP_OPTIONS,
   type AppLanguage,
   type AppTheme,
+  type IncognitoAutoExit,
   type PlaybackRetryMode,
   type PreferredSearchSource,
   isLightAppTheme,
 } from "../../lib/app-settings";
 import { Screen } from "../ui/Screen";
+import { nextDayEndMillis } from "../../modules/incognitoAutoExit";
 import { ScrobbleSheet } from "../ScrobbleSheet";
 import { SubsonicSheet } from "../SubsonicSheet";
 import { BodyText, MutedText, TitleText } from "../ui/Text";
@@ -52,6 +54,12 @@ const SEARCH_SOURCES: PreferredSearchSource[] = [
 ];
 
 const RETRY_MODES: PlaybackRetryMode[] = ["ask", "always", "never"];
+
+const INCOGNITO_AUTO_EXITS: IncognitoAutoExit[] = [
+  "manual",
+  "queueEnd",
+  "dayEnd",
+];
 
 const THEME_PREVIEW_ACCENTS: Record<AppTheme, string> = {
   default: "#1ed760",
@@ -436,6 +444,15 @@ export default function SettingsScreen({
       ask: t("settings.askMe"),
       always: t("settings.alwaysRetry"),
       never: t("settings.neverRetry"),
+    }),
+    [t],
+  );
+
+  const incognitoExitLabels: Record<IncognitoAutoExit, string> = useMemo(
+    () => ({
+      manual: t("settings.incognitoExitManual"),
+      queueEnd: t("settings.incognitoExitQueueEnd"),
+      dayEnd: t("settings.incognitoExitDayEnd"),
     }),
     [t],
   );
@@ -988,6 +1005,49 @@ export default function SettingsScreen({
               title={t("settings.musicBehaves")}
               description={t("settings.musicBehavesDescription")}
             >
+              <SettingRow
+                label={t("settings.incognito")}
+                description={t("settings.incognitoDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("settings.incognito")}
+                    accessibilityHint={t("settings.incognitoDescription")}
+                    value={settings.incognitoMode}
+                    onValueChange={(value) =>
+                      updateSettings({
+                        incognitoMode: value,
+                        // "End of day" means the midnight after enabling —
+                        // captured here so reopening past it exits at once.
+                        incognitoDayEnd: value ? nextDayEndMillis() : null,
+                      })
+                    }
+                  />
+                }
+              />
+              {settings.incognitoMode ? (
+                <SettingRow
+                  label={t("settings.incognitoAutoExit")}
+                  description={t("settings.incognitoAutoExitDescription")}
+                  colors={colors}
+                  control={
+                    <View style={styles.choiceWrap}>
+                      {INCOGNITO_AUTO_EXITS.map((mode) => (
+                        <ChoiceChip
+                          key={mode}
+                          label={incognitoExitLabels[mode]}
+                          selected={settings.incognitoAutoExit === mode}
+                          onPress={() =>
+                            updateSettings({ incognitoAutoExit: mode })
+                          }
+                          colors={colors}
+                        />
+                      ))}
+                    </View>
+                  }
+                />
+              ) : null}
               <SettingRow
                 label={t("settings.autoRetryPlayback")}
                 description={t("settings.autoRetryPlaybackDescription")}

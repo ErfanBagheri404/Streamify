@@ -65,6 +65,7 @@ import {
   type TrackOpenRequest,
 } from "./modules/deepLink";
 import { StorageService, type Playlist } from "./utils/storage";
+import { setDeepLinkHandlers, type DeepLinkAction } from "./modules/deepLink";
 import { buildSeededQueue, shuffleTracks } from "./modules/seededQueue";
 
 // Screens
@@ -180,8 +181,10 @@ const TabBarIcon: React.FC<IconProps> = ({ name, color, size, focused }) => {
 /* ---------- Custom Tab Bar ---------- */
 function CustomTabBar({ state, descriptors, navigation }: any) {
   const { colors, isLight } = useTheme();
-  const { dir, isRtl } = useAppLanguage();
+  const { dir, isRtl, t } = useAppLanguage();
+  const { settings } = useSettings();
   const insets = useSafeAreaInsets();
+  const incognito = settings.incognitoMode;
 
   return (
     <LinearGradient
@@ -202,6 +205,46 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
         paddingTop: 6,
       }}
     >
+      {/* Private Listening indicator (#44): sits above the tab row on every
+          screen. pointerEvents="none" so it never swallows a tab tap. */}
+      {incognito ? (
+        <View
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{
+            position: "absolute",
+            top: 0,
+            alignSelf: "center",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 4,
+            paddingHorizontal: 8,
+            paddingVertical: 2,
+            borderRadius: 999,
+            backgroundColor: withOpacity(colors.foreground, 0.12),
+            borderWidth: 1,
+            borderColor: withOpacity(colors.foreground, 0.24),
+          }}
+        >
+          <Ionicons
+            name="eye-off"
+            size={11}
+            color={isLight ? colors.background : colors.foreground}
+          />
+          <Text
+            style={{
+              color: isLight ? colors.background : colors.foreground,
+              fontSize: 10,
+              lineHeight: 13,
+              fontFamily: getAppFontFamily(isRtl, "medium"),
+              writingDirection: dir,
+            }}
+          >
+            {t("settings.incognito")}
+          </Text>
+        </View>
+      ) : null}
       <View
         style={{
           flexDirection: isRtl ? "row-reverse" : "row",
@@ -432,6 +475,7 @@ function DeepLinkBridge() {
   const { hasHydratedSettings } = useSettings();
   const { likedSongs, previouslyPlayedSongs, playTrack, currentTrack, setShowFullPlayer } =
     usePlayer();
+  const { likedSongs, playTrack, currentTrack, setShowFullPlayer } = usePlayer();
 
   React.useEffect(() => {
     if (!hasHydratedSettings) return;
@@ -470,6 +514,7 @@ function DeepLinkBridge() {
       "open-playlist": typeof openPlaylist;
       track: typeof playFromShortcut;
     } = {
+    const actions: Record<DeepLinkAction, () => void | Promise<void>> = {
       // "Resume" = reopen the app and show the player. Replaying the track
       // would restart it from 0 when it is already loaded.
       resume: () => {
@@ -514,6 +559,10 @@ function DeepLinkBridge() {
     currentTrack,
     setShowFullPlayer,
   ]);
+    };
+
+    setDeepLinkHandlers(actions);
+  }, [hasHydratedSettings, likedSongs, playTrack, currentTrack, setShowFullPlayer]);
 
   return null;
 }

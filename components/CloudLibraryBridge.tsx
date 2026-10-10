@@ -21,6 +21,9 @@ export function CloudLibraryBridge() {
   const { user, isConfigured, isLoading } = useAuth();
   const { settings } = useSettings();
   const autoSync = settings.autoSyncLibrary;
+  // Incognito (#44) pauses ALL cloud traffic — push, foreground sync, and
+  // restore — and resumes it when turned off. Reads must still settle while
+  // restoring so `restoredUserIdsRef` reflects the newest pull decision.
   const restoredUserIdsRef = useRef<Set<string>>(new Set());
   const latestRestoreRequestRef = useRef(0);
   const autoPushInFlightRef = useRef(false);
@@ -113,8 +116,9 @@ export function CloudLibraryBridge() {
   }, [isConfigured, isLoading, user?.id]);
 
   // Background auto-push on local library changes (debounced).
+  // Incognito (#44): no pushes while on.
   useEffect(() => {
-    if (!autoSync || !isConfigured || !user?.id) {
+    if (!autoSync || !isConfigured || !user?.id || settings.incognitoMode) {
       return;
     }
 
@@ -137,11 +141,12 @@ export function CloudLibraryBridge() {
     return () => {
       unsubscribe();
     };
-  }, [autoSync, isConfigured, user?.id]);
+  }, [autoSync, isConfigured, user?.id, settings.incognitoMode]);
 
   // Full sync when the app returns to foreground.
+  // Incognito (#44): no pulls while on.
   useEffect(() => {
-    if (!autoSync || !isConfigured || !user?.id) {
+    if (!autoSync || !isConfigured || !user?.id || settings.incognitoMode) {
       return;
     }
 
@@ -154,7 +159,7 @@ export function CloudLibraryBridge() {
     return () => {
       subscription.remove();
     };
-  }, [autoSync, isConfigured, user?.id]);
+  }, [autoSync, isConfigured, user?.id, settings.incognitoMode]);
 
   return null;
 }

@@ -65,6 +65,21 @@ function checkNative(name, fn) {
   }
   check(name, fn);
 }
+const widgetSync = read("modules", "widgetSync.ts");
+const playerContext = read("contexts", "PlayerContext.tsx");
+const manifest = read("android", "app", "src", "main", "AndroidManifest.xml");
+const mainApp = read(
+  "android", "app", "src", "main", "java", "com", "erfanbagheri", "streamifymobile",
+  "MainApplication.kt",
+);
+const provider = read(
+  "android", "app", "src", "main", "java", "com", "erfanbagheri", "streamifymobile",
+  "StreamifyWidgetProvider.kt",
+);
+const actions = read(
+  "android", "app", "src", "main", "java", "com", "erfanbagheri", "streamifymobile",
+  "StreamifyWidgetActions.kt",
+);
 
 check("widgetSync is Android-only", () => {
   assert.ok(widgetSync.includes('Platform.OS === "android"'));
@@ -128,6 +143,11 @@ checkNative("RN package registers the widget module", () => {
 });
 
 checkNative("manifest declares provider and action receiver, not exported", () => {
+check("RN package registers the widget module", () => {
+  assert.ok(mainApp.includes("StreamifyWidgetPackage()"));
+});
+
+check("manifest declares provider and action receiver, not exported", () => {
   assert.ok(manifest.includes('android:name=".StreamifyWidgetProvider"'));
   assert.ok(manifest.includes('android:name=".StreamifyWidgetActions"'));
   assert.ok(manifest.includes('@xml/widget_player_info'));
@@ -140,11 +160,13 @@ checkNative("manifest declares provider and action receiver, not exported", () =
 });
 
 checkNative("provider refreshes on widget update and on resize", () => {
+check("provider refreshes on widget update and on resize", () => {
   assert.ok(provider.includes("override fun onUpdate("));
   assert.ok(provider.includes("override fun onAppWidgetOptionsChanged("));
 });
 
 checkNative("provider sizes layouts from the reported widget width", () => {
+check("provider sizes layouts from the reported widget width", () => {
   assert.ok(provider.includes("OPTION_APPWIDGET_MIN_WIDTH"));
   assert.ok(provider.includes("widget_player_small"));
   assert.ok(provider.includes("widget_player_medium"));
@@ -152,6 +174,7 @@ checkNative("provider sizes layouts from the reported widget width", () => {
 });
 
 checkNative("transport only fires media keys while our session is alive", () => {
+check("transport only fires media keys while our session is alive", () => {
   assert.ok(actions.includes("KEY_ALIVE_WALL"));
   assert.ok(actions.includes("HEARTBEAT_MAX_AGE_MS"));
   assert.ok(actions.includes("dispatchMediaKeyEvent"));
@@ -169,4 +192,6 @@ console.log(
   `\n${results.length - failures.length - skips.length}/${results.length - skips.length} passed` +
     (skips.length ? `, ${skips.length} skipped (no android/ prebuild)` : ""),
 );
+console.log(results.join("\n"));
+console.log(`\n${results.length - failures.length}/${results.length} passed`);
 process.exit(failures.length > 0 ? 1 : 0);
