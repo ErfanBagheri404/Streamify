@@ -28,13 +28,13 @@ import {
 
 /**
  * The keyless lane is rate-limited and returns HTTP 402 once an IP has used
- * its anonymous quota. Try a second model alias before giving up: they are
- * served by different upstreams, so one being throttled rarely throttles both.
+ * its anonymous quota. Try the canonical model id after the alias before
+ * giving up: an alias can be retired (404) while the id it points at lives on.
  * Anonymous only — no credentials are ever attached.
  */
 const ENDPOINTS = [
-  { url: "https://text.pollinations.ai/openai", model: "mistral" },
   { url: "https://text.pollinations.ai/openai", model: "openai" },
+  { url: "https://text.pollinations.ai/openai", model: "openai-fast" },
 ];
 const REQUEST_TIMEOUT_MS = 15000;
 const MAX_QUERIES = 6;

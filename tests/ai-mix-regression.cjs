@@ -172,7 +172,7 @@ const llmFetch = async (url, opts) => {
   assert.ok(!('Authorization' in opts.headers) && !('authorization' in opts.headers),
     'anonymous lane — any Authorization header earns HTTP 402 from Pollinations');
   const parsed = JSON.parse(opts.body);
-  assert.ok(['openai', 'mistral'].includes(parsed.model), `unexpected chain model ${parsed.model}`);
+  assert.ok(['openai', 'openai-fast'].includes(parsed.model), `unexpected chain model ${parsed.model}`);
   assert.ok(parsed.messages[0].content.includes('Top artists:'), 'prompt carries history');
   return { ok: llmStatus === 200, status: llmStatus, json: async () => ({ choices: [{ message: { content: llmContent } }] }) };
 };
@@ -469,7 +469,7 @@ async function main() {
       };
     };
     const mix = await GEN.generateAiMixWithDiscovery('en', { fetchImpl: chainFetch, search: discoverySearch });
-    assert.deepEqual(seenModels, ['mistral', 'openai'], 'chain walks mistral first, then openai');
+    assert.deepEqual(seenModels, ['openai', 'openai-fast'], 'chain walks the alias, then the canonical id');
     assert.ok(mix, 'fallback model must rescue the run');
     assert.ok(mix.tracks.every((t) => t.id.startsWith('d')), 'rescued run is still discovery');
   });
