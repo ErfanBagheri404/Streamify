@@ -92,6 +92,25 @@ declare module "expo-av" {
       shouldDuckAndroid?: boolean;
       playThroughEarpieceAndroid?: boolean;
     }): Promise<void>;
+
+    export interface RecordingStatus {
+      uri?: string | null;
+      durationMillis: number;
+    }
+
+    export function requestPermissionsAsync(): Promise<{ granted: boolean }>;
+
+    export const RecordingOptionsPresets: { LOW_QUALITY: any };
+
+    export class Recording {
+      static createAsync(
+        options?: any,
+        onStatusUpdate?: (status: RecordingStatus) => void,
+        intervalMillis?: number,
+      ): Promise<{ recording: Recording; status: RecordingStatus }>;
+      getStatusAsync(): Promise<RecordingStatus>;
+      stopAndUnloadAsync(): Promise<void>;
+    }
   }
 
   export enum InterruptionModeIOS {
