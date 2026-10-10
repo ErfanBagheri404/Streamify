@@ -1441,70 +1441,37 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           ]
         : activeSection === "Artists"
           ? topArtistItems
-          : activeSection === "Downloaded"
-            ? downloadedItems
-            : activeSection === "Downloading"
-          ? (() => {
-              const VISIBLE = 6;
-              const visible = downloadingItems.slice(0, VISIBLE);
-              const remaining = downloadingItems.length - VISIBLE;
-              if (remaining > 0) {
-                const next = downloadingItems[VISIBLE];
-                visible.push({
-                  id: "downloading-more-summary",
-                  trackId: next.trackId,
-                  title: next.title,
-                  subtitle: copy.downloadMoreQueued(remaining),
-                  meta: "",
-                  searchText: "",
-                  artworkKind: next.artworkKind,
-                  itemType: "collection",
-                  imageShape: "rounded",
-                  imageUri: next.imageUri,
-                });
-              }
-              return visible;
-            })()
-          : playlistItems;
+          : activeSection === "Podcasts"
+            ? podcastItems
+            : activeSection === "Downloaded"
+              ? downloadedItems
+              : activeSection === "Downloading"
+                ? (() => {
+                    const VISIBLE = 6;
+                    const visible = downloadingItems.slice(0, VISIBLE);
+                    const remaining = downloadingItems.length - VISIBLE;
+                    if (remaining > 0) {
+                      const next = downloadingItems[VISIBLE];
+                      visible.push({
+                        id: "downloading-more-summary",
+                        trackId: next.trackId,
+                        title: next.title,
+                        subtitle: copy.downloadMoreQueued(remaining),
+                        meta: "",
+                        searchText: "",
+                        artworkKind: next.artworkKind,
+                        itemType: "collection",
+                        imageShape: "rounded",
+                        imageUri: next.imageUri,
+                      });
+                    }
+                    return visible;
+                  })()
+                : playlistItems;
 
     if (vault.privateCount === 0 || vault.isVaultUnlocked) {
       return base;
     }
-    if (activeSection === "Artists") return topArtistItems;
-    if (activeSection === "Podcasts") return podcastItems;
-    if (activeSection === "Downloaded") return downloadedItems;
-    if (activeSection === "Downloading") {
-      const VISIBLE = 6;
-      const visible = downloadingItems.slice(0, VISIBLE);
-      const remaining = downloadingItems.length - VISIBLE;
-      if (remaining > 0) {
-        const next = downloadingItems[VISIBLE];
-        visible.push({
-          id: "downloading-more-summary",
-          trackId: next.trackId,
-          title: next.title,
-          subtitle: copy.downloadMoreQueued(remaining),
-          meta: "",
-          searchText: "",
-          artworkKind: next.artworkKind,
-          itemType: "collection",
-          imageShape: "rounded",
-          imageUri: next.imageUri,
-        });
-      }
-      return visible;
-    }
-    return playlistItems;
-  }, [
-    activeSection,
-    copy.downloadMoreQueued,
-    downloadedItems,
-    downloadingItems,
-    mixedLibraryItems,
-    playlistItems,
-    podcastItems,
-    topArtistItems,
-  ]);
     return [
       ...base,
       {
@@ -1522,7 +1489,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
         onPress: () => setShowVaultPrompt(true),
       },
     ];
-  }, [activeSection, copy.downloadMoreQueued, downloadingItems, mixedLibraryItems, playlistItems, topArtistItems, downloadedItems, vault.privateCount, vault.isVaultUnlocked, language]);
+  }, [activeSection, copy.downloadMoreQueued, downloadingItems, mixedLibraryItems, playlistItems, podcastItems, topArtistItems, downloadedItems, vault.privateCount, vault.isVaultUnlocked, language]);
 
   const displayedItems = React.useMemo(() => {
     const query = libraryQuery.trim().toLowerCase();
@@ -1791,25 +1758,6 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                 </HeaderIconText>
               </HeaderIconButton>
             ) : null}
-            <HeaderIconButton
-              disabled={!likedSongs.length}
-              onPress={() => {
-                startCacheQueue();
-              }}
-              style={{
-                marginStart: 6,
-                marginEnd: 6,
-                opacity: likedSongs.length === 0 ? 0.4 : 1,
-              }}
-            >
-              <HeaderIconText>
-                <Ionicons
-                  name="cloud-download-outline"
-                  size={20}
-                  color={colors.foreground}
-                />
-              </HeaderIconText>
-            </HeaderIconButton>
             <HeaderIconButton
               onPress={() => setShowImportPlaylistSheet(true)}
               accessibilityLabel={t("library.importPlaylist")}
@@ -2352,6 +2300,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           onDefinitionChange={setSmartDraft}
           onClose={() => setSmartDraft(null)}
           onSubmit={handleSaveSmartPlaylist}
+        />
+
         <PodcastSubscribeModal
           visible={showSubscribeModal}
           feedUrl={feedUrl}
@@ -2363,6 +2313,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           onSubmit={() => void handleSubscribe()}
           isSubmitting={isSubscribing}
           error={subscribeError}
+        />
+
         <VaultUnlockPrompt
           visible={showVaultPrompt}
           onDismiss={() => setShowVaultPrompt(false)}

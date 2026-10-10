@@ -157,7 +157,6 @@ class StreamifyWidgetProvider : AppWidgetProvider() {
             if (playlist != null) {
               action = Intent.ACTION_VIEW
               data = Uri.parse("streamify://open-playlist/${Uri.encode(playlist)}")
-              putExtra(StreamifyWidgetActions.EXTRA_OPEN_PLAYLIST, playlist)
             }
           }
       return PendingIntent.getActivity(

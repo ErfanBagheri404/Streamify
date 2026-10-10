@@ -247,7 +247,6 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   rememberLastSearch: true,
   preferredSearchSource: "mixed",
   seekStepSeconds: 10,
-  autoCacheLikedSongs: false,
   audioCacheCapMb: 500,
   // Auto-caching on by default: the queue runs by itself and the Library no
   // longer carries a manual download button (issue #94). The toggle is the
@@ -361,6 +360,7 @@ function isPlaybackRetryMode(value: unknown): value is PlaybackRetryMode {
 
 function isIncognitoAutoExit(value: unknown): value is IncognitoAutoExit {
   return value === "manual" || value === "queueEnd" || value === "dayEnd";
+}
 function isAudioQualityMode(value: unknown): value is QualityMode {
   return (
     value === "alwaysBest" || value === "networkAware" || value === "alwaysLow"

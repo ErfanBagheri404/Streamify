@@ -258,7 +258,7 @@
       "smartQueue": "Smart queue",
       "sleepTimer": "Sleep timer (30m)",
       "toggleShuffle": "Toggle shuffle"
-    }
+    },
     "useArtworkTheme": "Tint UI from album art",
     "useArtworkThemeDescription": "Re-colors the app accent from the current track's artwork. Falls back to the chosen palette when no artwork is available",
     "artworkThemeActive": "Tinted from album art"
@@ -912,7 +912,6 @@
   "settings.openNowPlayingAutomatically": "Open Now Playing Automatically",
   "settings.openNowPlayingAutomaticallyDescription": "Jump straight into the full-screen player whenever you start a track from search, home, or your library.",
   "settings.autoCacheLikedSongs": "Auto-Cache Liked Songs",
-  "settings.autoCacheLikedSongsDescription": "Automatically cache liked songs in the background. When disabled, caching only happens when you manually start it from the Library screen.",
   "settings.audioCacheCap": "Offline Storage Limit",
   "settings.audioCacheCapDescription": "Evicts least-recently-used cached tracks when the cache grows past this size",
   "settings.autoCacheLikedSongsDescription": "Automatically cache liked songs in the background while Streamify is open. Turn this off to stop caching entirely.",
@@ -1231,7 +1230,10 @@
     "connectFailed": "Could not connect. Check the URL, username, and password."
   },
   "common": {
-    "error": "Error"
+    "error": "Error",
+    "save": "Save",
+    "delete": "Delete"
+  },
   "appLock": {
     "title": "Unlock Streamify",
     "subtitle": "Enter your PIN to continue",
@@ -1257,9 +1259,11 @@
     "vault": "Private playlists",
     "vaultDescription": "Playlists you marked as locked. Open the vault from the library with your PIN",
     "vaultTitle": "Private playlists"
+  },
   "songIdentify": {
     "title": "What's this song?",
     "subtitle": "Hold your phone near the music for a few seconds.",
+    "idleBody": "Hold your phone near the music for a few seconds, then tap listen. Nothing is uploaded unless you keep the recording.",
     "close": "Close",
     "start": "Listen for 8 seconds",
     "recording": "Listening…",
@@ -1277,9 +1281,6 @@
     "snippetSaved": "Recording kept on this device.",
     "tryAgain": "Try again",
     "noSearchResults": "No playable result matched the recognized song."
-  }
+  },
   "library.smartPlaylistAction": "Smart playlist"
-}
-  "common.save": "Save"
-}
 }

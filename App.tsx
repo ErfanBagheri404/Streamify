@@ -52,8 +52,6 @@ import { AppLockProvider } from "./contexts/AppLockContext";
 import { VaultProvider } from "./contexts/VaultContext";
 import { ThemeProvider, useTheme, withOpacity } from "./contexts/ThemeContext";
 import { usePlayer } from "./contexts/PlayerContext";
-import { useHearingSafety } from "./hooks/useHearingSafety";
-import { useAppSettings } from "./hooks/useAppSettings";
 import { AuthProvider } from "./contexts/AuthContext";
 
 // API
@@ -77,7 +75,6 @@ import {
   type TrackOpenRequest,
 } from "./modules/deepLink";
 import { StorageService, type Playlist } from "./utils/storage";
-import { setDeepLinkHandlers, type DeepLinkAction } from "./modules/deepLink";
 import { buildSeededQueue, shuffleTracks } from "./modules/seededQueue";
 import { setShareMomentHandler, routeShareMomentUrl, type ShareMoment } from "./modules/shareMoment";
 
@@ -531,7 +528,6 @@ function DeepLinkBridge() {
   const { hasHydratedSettings } = useSettings();
   const { likedSongs, previouslyPlayedSongs, playTrack, currentTrack, setShowFullPlayer } =
     usePlayer();
-  const { likedSongs, playTrack, currentTrack, setShowFullPlayer } = usePlayer();
 
   React.useEffect(() => {
     if (!hasHydratedSettings) return;
@@ -570,7 +566,6 @@ function DeepLinkBridge() {
       "open-playlist": typeof openPlaylist;
       track: typeof playFromShortcut;
     } = {
-    const actions: Record<DeepLinkAction, () => void | Promise<void>> = {
       // "Resume" = reopen the app and show the player. Replaying the track
       // would restart it from 0 when it is already loaded.
       resume: () => {
@@ -615,10 +610,11 @@ function DeepLinkBridge() {
     currentTrack,
     setShowFullPlayer,
   ]);
-    };
 
-    setDeepLinkHandlers(actions);
-  }, [hasHydratedSettings, likedSongs, playTrack, currentTrack, setShowFullPlayer]);
+  return null;
+}
+
+/**
  * Share-moment bridge (issue #33).
  *
  * Lives inside PlayerProvider so it can use the real playback context, and
@@ -957,50 +953,25 @@ function AppShell() {
   );
 }
 
-/**
- * Mounts the hearing-safety hook next to the player: pushes the saved
- * limiter state to the native module and drives the exposure meter.
- */
-function HearingSafetyBridge() {
-  const { isPlaying } = usePlayer();
-  const { settings } = useAppSettings();
-  useHearingSafety({
-    isPlaying,
-    deviceProfile: settings.hearingDeviceProfile,
-  });
-  return null;
-}
-
 function AppContent() {
   return (
     <DebugStartupBoundary>
       <SettingsProvider>
         <AppStartupGate>
           <ThemeProvider>
-            <AuthProvider>
-              <AppUpdateProvider>
-                <PlayerProvider>
-                  <ArtworkThemeBridge />
-                  <HearingSafetyBridge />
-                  <CloudLibraryBridge />
-                  <DeepLinkBridge />
-                  <PlaybackPreferenceBridge />
-                  <NetworkQualityBridge />
-                  <GlobalTextDefaultsBridge />
-                  <ShareMomentBridge />
-                  <AlarmBridge />
-                  <AppShell />
-                </PlayerProvider>
-              </AppUpdateProvider>
-            </AuthProvider>
             <AppLockProvider>
               <VaultProvider>
                 <AuthProvider>
                   <AppUpdateProvider>
                     <PlayerProvider>
+                      <ArtworkThemeBridge />
                       <CloudLibraryBridge />
+                      <DeepLinkBridge />
                       <PlaybackPreferenceBridge />
+                      <NetworkQualityBridge />
                       <GlobalTextDefaultsBridge />
+                      <ShareMomentBridge />
+                      <AlarmBridge />
                       <AppShell />
                     </PlayerProvider>
                   </AppUpdateProvider>

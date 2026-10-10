@@ -49,7 +49,6 @@ const launcherShortcuts = read(
 );
 const module_ = read("plugins", "android", "StreamifyWidgetModule.kt");
 const manifest = tryRead("android", "app", "src", "main", "AndroidManifest.xml");
-const manifest = read("android", "app", "src", "main", "AndroidManifest.xml");
 
 const SCHEME = "streamify://";
 
@@ -95,7 +94,6 @@ check("every parsed action has a handler registered in App.tsx", () => {
     "open-playlist",
     "track",
   ]) {
-  for (const action of ["resume", "shuffle-liked", "smart-queue", "search"]) {
     const key = action.includes("-") ? `"${action}"` : action;
     assert.ok(app.includes(`${key}:`), `App.tsx has no handler for ${action}`);
   }
@@ -362,6 +360,4 @@ console.log(
   `\n${results.length - failures.length - skips.length}/${results.length - skips.length} passed` +
     (skips.length ? `, ${skips.length} skipped (no android/ prebuild)` : ""),
 );
-console.log(results.join("\n"));
-console.log(`\n${results.length - failures.length}/${results.length} passed`);
 process.exit(failures.length > 0 ? 1 : 0);

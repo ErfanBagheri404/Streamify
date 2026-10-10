@@ -521,6 +521,7 @@ export default function SettingsScreen({
     await resetMonthlyUsage();
     setMonthlyDataUsage(await getMonthlyUsage());
   }, []);
+
   const [cacheUsedMb, setCacheUsedMb] = useState(0);
 
   const { autoVisible: communityAutoVisible, closeAuto: closeCommunityAuto } =
@@ -586,6 +587,10 @@ export default function SettingsScreen({
       manual: t("settings.incognitoExitManual"),
       queueEnd: t("settings.incognitoExitQueueEnd"),
       dayEnd: t("settings.incognitoExitDayEnd"),
+    }),
+    [t],
+  );
+
   const qualityModeLabels: Record<QualityMode, string> = useMemo(
     () => ({
       alwaysBest: t("settings.alwaysBest"),
@@ -1540,10 +1545,6 @@ export default function SettingsScreen({
               <SettingRow
                 label={t("settings.headsetGestures")}
                 description={t("settings.headsetGesturesDescription")}
-                label={t("settings.equalizer")}
-                description={t("settings.equalizerDescription")}
-                label={t("settings.hearingLimiter")}
-                description={t("settings.hearingLimiterDescription")}
                 colors={colors}
                 controlPlacement="inline"
                 control={
@@ -1553,6 +1554,17 @@ export default function SettingsScreen({
                     value={settings.headsetGesturesEnabled}
                     onValueChange={(value) =>
                       updateSettings({ headsetGesturesEnabled: value })
+                    }
+                  />
+                }
+              />
+              <SettingRow
+                label={t("settings.hearingLimiter")}
+                description={t("settings.hearingLimiterDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
                     accessibilityLabel={t("settings.hearingLimiter")}
                     accessibilityHint={t("settings.hearingLimiterDescription")}
                     value={settings.hearingLimiterEnabled}
@@ -1605,6 +1617,14 @@ export default function SettingsScreen({
                     }
                   />
                 </>
+              ) : null}
+              <SettingRow
+                label={t("settings.equalizer")}
+                description={t("settings.equalizerDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
                     accessibilityLabel={t("settings.equalizer")}
                     accessibilityHint={t("settings.equalizerDescription")}
                     value={settings.equalizerEnabled}

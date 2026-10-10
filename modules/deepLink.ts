@@ -47,9 +47,6 @@ type Handlers = Record<
   "open-playlist": (request: PlaylistOpenRequest) => void | Promise<void>;
   "track": (request: TrackOpenRequest) => void | Promise<void>;
 };
-  | "search";
-
-type Handlers = Record<DeepLinkAction, () => void | Promise<void>>;
 
 /** No-op until the app registers real implementations. */
 const ACTIONS: Handlers = {
@@ -66,7 +63,6 @@ let installed = false;
 let ready = false;
 /** Commands that arrived before the app was ready to act on them. */
 let pending: { url: string }[] = [];
-let pending: DeepLinkAction[] = [];
 
 /**
  * A launcher intent that re-delivers the same URL (some launchers re-send the
@@ -79,20 +75,10 @@ function isDuplicate(action: string, key: string): boolean {
   return (
     lastCommand?.action === action &&
     lastCommand.key === key &&
-let lastCommand: { action: string; at: number } | null = null;
-
-function isDuplicate(action: string): boolean {
-  return (
-    lastCommand?.action === action &&
     Date.now() - lastCommand.at < COMMAND_DEBOUNCE_MS
   );
 }
 
-/**
- * Parse a `streamify://<action>` URL. Returns null for anything else so an
- * unrelated deep link (share targets, community links) is ignored rather than
- * misinterpreted.
- */
 /**
  * Parse a `streamify://<action>` URL. `open-playlist` and `track`
  * additionally carry their target in the next path segment. Returns
@@ -105,9 +91,6 @@ export function parseDeepLink(
   if (!url || !url.startsWith("streamify://")) return null;
   const parts = url.slice("streamify://".length).split(/[/?#]/);
   const action = parts[0];
-export function parseDeepLink(url: string | null): DeepLinkAction | null {
-  if (!url || !url.startsWith("streamify://")) return null;
-  const action = url.slice("streamify://".length).split(/[/?#]/)[0];
   if (
     action === "resume" ||
     action === "shuffle-liked" ||
@@ -125,7 +108,6 @@ export function parseDeepLink(url: string | null): DeepLinkAction | null {
     const trackId = decodeURIComponent(parts[1] ?? "").trim();
     if (!trackId) return null;
     return { action, trackId };
-    return action;
   }
   return null;
 }
@@ -143,12 +125,6 @@ export async function handleDeepLink(url: string | null): Promise<boolean> {
     if (playlistName) await handler({ playlistName });
     else if (trackId) await handler({ trackId });
     else await handler();
-  const action = parseDeepLink(url);
-  if (!action) return false;
-  if (isDuplicate(action)) return false;
-  lastCommand = { action, at: Date.now() };
-  try {
-    await ACTIONS[action]();
   } catch (error) {
     console.log("[deepLink] Shortcut action failed:", action, error);
   }
@@ -159,8 +135,6 @@ async function dispatch(url: string | null) {
   if (!ready) {
     const parsed = parseDeepLink(url);
     if (parsed) pending.push({ url });
-    const action = parseDeepLink(url);
-    if (action) pending.push(action);
     return;
   }
   await handleDeepLink(url);
@@ -192,8 +166,6 @@ export function setDeepLinkHandlers(handlers: Handlers) {
   pending = [];
   for (const entry of queued) {
     void handleDeepLink(entry.url);
-  for (const action of queued) {
-    void handleDeepLink(`streamify://${action}`);
   }
 }
 

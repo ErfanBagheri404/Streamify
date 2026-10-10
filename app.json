@@ -34,10 +34,9 @@
       ],
       "react-native-video",
       "expo-secure-store",
-      "./plugins/withEqualizer"
-      "./plugins/withHearingSafety"
+      "./plugins/withEqualizer",
+      "./plugins/withHearingSafety",
       "./plugins/withVideoPip",
-      "expo-secure-store"
       "expo-notifications"
     ],
     "android": {

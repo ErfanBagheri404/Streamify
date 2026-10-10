@@ -1895,10 +1895,6 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     setIsGeneratingAiMix(true);
     try {
       playHaptic(Haptic.ToggleOn);
-      // Dynamic import: aiMixPlaylist pulls storage + replay history, and the
-      // player modal should not pay that cost until the user asks for a mix.
-      const { generateAiMixPlaylist } = await import("../modules/aiMixPlaylist");
-      const mix = await generateAiMixPlaylist(language === "fa" ? "fa" : "en");
       // Dynamic import: aiMixGenerator pulls storage + replay history, and the
       // player modal should not pay that cost until the user asks for a mix.
       // Discovery-first: LLM writes search queries, the app's own search

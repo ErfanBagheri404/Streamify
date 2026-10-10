@@ -233,6 +233,9 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           console.warn("Export failed:", error);
           Alert.alert(t("common.error"), t("library.exportFailed"));
         }
+        return;
+      }
+
       if (option === playlistActions.toggleLock) {
         const next = !isPlaylistPrivate;
         closeSongActionSheet();

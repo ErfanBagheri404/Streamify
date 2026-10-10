@@ -49,7 +49,6 @@ export function aiMixName(language: "en" | "fa"): string {
  * The seed: what the user actually listens to, not just what they liked.
  * Falls back to the most recent track when nothing has been played yet.
  */
-async function pickSeed(liked: Track[], recent: Track[]): Promise<Track | null> {
 export async function pickSeed(liked: Track[], recent: Track[]): Promise<Track | null> {
   if (recent.length) {
     return recent[0];
@@ -137,5 +136,3 @@ export async function generateAiMixPlaylist(
   await StorageService.savePlaylists([playlist, ...rest]);
   return playlist;
 }
-  return persistAiMix(tracks, language);
-  }

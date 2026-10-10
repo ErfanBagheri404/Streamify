@@ -1626,8 +1626,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       cacheRunSeededRef.current = false;
       void dismissCacheNotification();
     }
-  }, [resolveTrackStreamUrl, publishCacheInfo, settings.audioCacheCapMb]);
-  }, [resolveTrackStreamUrl, publishCacheInfo, postCacheNotification]);
+  }, [
+    resolveTrackStreamUrl,
+    publishCacheInfo,
+    settings.audioCacheCapMb,
+    postCacheNotification,
+  ]);
 
   // Sync isPlayingRef so the cache queue can check it without depending
   // on the isPlaying state (which would re-create the callback).
@@ -2106,17 +2110,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
         // Add to previously played songs (only if it's from SoundCloud, YouTube, JioSaavn, or has identifying properties)
         // Incognito (#44) suppresses this history write as well.
-        if (!incognitoRef.current && (
-          track.source === "soundcloud" ||
-          track.source === "youtube" ||
-          track.source === "jiosaavn" ||
-          track._isSoundCloud ||
-          track._isJioSaavn ||
-          (track.id && track.title) // Include library tracks that have basic identifying info
-        )) {
         // Podcast episodes are excluded: this list is the music history shown
         // as a shelf, and a two-hour episode does not belong in it.
         if (
+          !incognitoRef.current &&
           !isPodcastTrack(track) &&
           (track.source === "soundcloud" ||
             track.source === "youtube" ||
@@ -2648,6 +2645,26 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 const shouldCountPlay =
                   statsPlayCountedRef.current !== statsTrack.id &&
                   accumulated >= PLAY_COUNT_THRESHOLD_MS;
+                // #35: price the bytes at the bitrate this track's stream
+                // actually resolved to. When no resolver published one (the
+                // innertube and jiosaavn paths do; invidious/piped/omada and
+                // friends do not), fall back to the enforced cap instead of
+                // silently counting zero — a playing stream is never free.
+                // Fully cached/local files stay free: they consume no data.
+                const picked = pickedBitrateFor(statsTrack.id);
+                const isLocalFile = statsTrack.audioUrl?.startsWith("file://");
+                const kbps = picked > 0
+                  ? picked
+                  : isLocalFile
+                    ? 0
+                    : (currentCapKbps() ?? 0);
+                if (kbps > 0) {
+                  void recordDataUsage(
+                    (statsTrack as any).source ?? "unknown",
+                    kbps,
+                    deltaMs,
+                  );
+                }
                 // Incognito (#44): nothing about this session may reach the
                 // Replay stats store, the scrobbler, or the play counter.
                 if (!incognitoRef.current) {
@@ -2672,46 +2689,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                   if (shouldCountPlay)
                     statsPlayCountedRef.current = statsTrack.id;
                 }
-                void recordListening(
-                  {
-                    id: statsTrack.id,
-                    title: statsTrack.title,
-                    artist: statsTrack.artist,
-                    albumName:
-                      (statsTrack as any).albumName ??
-                      (statsTrack as any).album,
-                    thumbnail: statsTrack.thumbnail,
-                    artistId: statsTrack.artistId,
-                    albumId: (statsTrack as any).albumId,
-                  },
-                  deltaMs,
-                  shouldCountPlay,
-                );
-                // Feed the same verified-played delta to the scrobbler so
-                // paused/buffering time can never inflate a scrobble.
-                scrobblerService.recordProgress(deltaMs);
-                // #35: price the bytes at the bitrate this track's stream
-                // actually resolved to. When no resolver published one (the
-                // innertube and jiosaavn paths do; invidious/piped/omada and
-                // friends do not), fall back to the enforced cap instead of
-                // silently counting zero — a playing stream is never free.
-                // Fully cached/local files stay free: they consume no data.
-                const picked = pickedBitrateFor(statsTrack.id);
-                const isLocalFile = statsTrack.audioUrl?.startsWith("file://");
-                const kbps = picked > 0
-                  ? picked
-                  : isLocalFile
-                    ? 0
-                    : (currentCapKbps() ?? 0);
-                if (kbps > 0) {
-                  void recordDataUsage(
-                    (statsTrack as any).source ?? "unknown",
-                    kbps,
-                    deltaMs,
-                  );
-                }
-                if (shouldCountPlay)
-                  statsPlayCountedRef.current = statsTrack.id;
               } else if (deltaMs <= 0) {
                 // Track restarted / seeked backwards: reset accumulation.
                 statsAccumulatedMsRef.current = 0;
