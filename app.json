@@ -16,6 +16,7 @@
       "expo-task-manager",
       "./plugins/withVideoCacheFlatDir",
       "./plugins/withStreamifyWidget",
+      "./plugins/withUsbDac",
       [
         "expo-build-properties",
         {
