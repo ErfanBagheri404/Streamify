@@ -52,7 +52,7 @@ export interface SearchResult {
     | "youtubemusic"
     | "itunes"
     | "deezer";
-  playbackSource?: "youtube" | "soundcloud" | "jiosaavn" | "youtubemusic";
+  playbackSource?: "youtube" | "soundcloud" | "jiosaavn" | "youtubemusic" | "spotify";
   providerHint?: "itunes" | "deezer";
   type?: "song" | "album" | "artist" | "playlist" | "unknown";
   albumId?: string | null;
@@ -595,7 +595,7 @@ function normalizeBackendCatalogItem(
     img: imageUrl,
     href: item.url || "",
     source: displaySource,
-    playbackSource: "jiosaavn",
+    playbackSource: requestedSource === "spotify" ? "spotify" : "jiosaavn",
     providerHint,
     type: inferBackendItemType(item),
     albumId: rawAlbum?.id || null,
