@@ -249,6 +249,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   seekStepSeconds: 10,
   autoCacheLikedSongs: false,
   audioCacheCapMb: 500,
+  // Auto-caching on by default: the queue runs by itself and the Library no
+  // longer carries a manual download button (issue #94). The toggle is the
+  // only control, so "off" means no caching at all.
+  autoCacheLikedSongs: true,
   autoSyncLibrary: true,
   audioQualityMode: "alwaysBest",
   wifiCapKbps: null,

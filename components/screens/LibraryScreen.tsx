@@ -432,7 +432,6 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     getCacheInfo,
     cacheProgress,
     stopCachingAndUnlike,
-    startCacheQueue,
   } = usePlayer();
   const [downloadingTracks, setDownloadingTracks] = React.useState<
     { track: Track; percentage: number; status: "caching" | "queued" }[]
