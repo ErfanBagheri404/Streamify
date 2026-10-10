@@ -124,6 +124,10 @@ export interface AppSettings {
    * MiniPlayer so the lock screen and over-the-shoulder glances leak nothing.
    * Defaults on — a lock that leaks is not a lock. */
   hideMetadataWhileLocked: boolean;
+  /** When true, the UI accent is re-tinted from the current track's artwork.
+   * Falls back to `theme` whenever the artwork cannot be sampled; no extra
+   * palette entry is needed. */
+  useArtworkTheme: boolean;
   collapsedSettingsSections: Partial<Record<SettingsSectionKey, boolean>>;
 }
 
@@ -220,6 +224,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   headsetDoubleTapAction: "skipNext",
   headsetTripleTapAction: "likeCurrent",
   hideMetadataWhileLocked: true,
+  useArtworkTheme: false,
   collapsedSettingsSections: {},
 };
 
@@ -412,6 +417,10 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
       record.crossfadeSeconds <= 12
         ? Math.round(record.crossfadeSeconds)
         : DEFAULT_APP_SETTINGS.crossfadeSeconds,
+    useArtworkTheme:
+      typeof record.useArtworkTheme === "boolean"
+        ? record.useArtworkTheme
+        : DEFAULT_APP_SETTINGS.useArtworkTheme,
     replayGainEnabled:
       typeof record.replayGainEnabled === "boolean"
         ? record.replayGainEnabled

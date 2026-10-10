@@ -45,6 +45,7 @@ console.error = (...args: any[]) => {
 
 // Context
 import { PlayerProvider } from "./contexts/PlayerContext";
+import { ArtworkThemeBridge } from "./components/ArtworkThemeBridge";
 import { AppUpdateProvider } from "./contexts/AppUpdateContext";
 import { SettingsProvider, useSettings } from "./contexts/SettingsContext";
 import { AppLockProvider } from "./contexts/AppLockContext";
@@ -962,6 +963,7 @@ function AppContent() {
             <AuthProvider>
               <AppUpdateProvider>
                 <PlayerProvider>
+                  <ArtworkThemeBridge />
                   <CloudLibraryBridge />
                   <DeepLinkBridge />
                   <PlaybackPreferenceBridge />

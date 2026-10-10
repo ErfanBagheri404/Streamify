@@ -1,6 +1,11 @@
-import React, { createContext, useContext, useMemo } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { type AppTheme, isLightAppTheme } from "../lib/app-settings";
 import { useSettings } from "./SettingsContext";
+import {
+  readArtworkTheme,
+  subscribeToArtworkTheme,
+} from "../modules/artworkThemeBus";
+import type { ArtworkThemeSeed } from "../modules/artworkTheme";
 
 interface ThemeSeed {
   background: string;
@@ -25,11 +30,7 @@ export interface ThemeColors {
   heroEnd: string;
 }
 
-interface ThemeContextValue {
-  themeName: AppTheme;
-  isLight: boolean;
-  colors: ThemeColors;
-}
+
 
 const THEME_SEEDS: Record<AppTheme, ThemeSeed> = {
   default: {
@@ -290,8 +291,7 @@ export function withOpacity(color: string, opacity: number): string {
   return `rgba(${r}, ${g}, ${b}, ${opacity})`;
 }
 
-function buildThemeColors(themeName: AppTheme): ThemeColors {
-  const seed = THEME_SEEDS[themeName];
+function buildThemeColors(themeName: AppTheme, seed: ThemeSeed): ThemeColors {
   const isLight = isLightAppTheme(themeName);
   const neutralTarget = isLight ? "#ffffff" : "#000000";
   const accentLift = isLight ? 0.18 : 0.26;
@@ -321,19 +321,58 @@ function buildThemeColors(themeName: AppTheme): ThemeColors {
   };
 }
 
+interface ThemeContextValue {
+  themeName: AppTheme;
+  isLight: boolean;
+  colors: ThemeColors;
+  /** Non-null when the palette accent was replaced by sampled artwork. */
+  artworkSeed: ArtworkThemeSeed | null;
+}
+
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { settings } = useSettings();
+  const [artwork, setArtwork] = useState(() => readArtworkTheme());
+
+  useEffect(() => {
+    const sub = subscribeToArtworkTheme(() => {
+      setArtwork(readArtworkTheme());
+    });
+    return () => sub.remove();
+  }, []);
 
   const value = useMemo<ThemeContextValue>(() => {
     const themeName = settings.theme;
+    const baseSeed = THEME_SEEDS[themeName];
+    // The artwork tint replaces only the accent pair. Everything else keeps
+    // the palette: this way a failed sample degrades to the selected theme
+    // instead of flashing a half-built UI.
+    const artworkSeed =
+      settings.useArtworkTheme && artwork.seed ? artwork.seed : null;
+    // Material You's move: pull the surface a few percent toward the accent so
+    // the whole UI reads as belonging to the album, while keeping the ratio
+    // small enough that no text on that surface loses contrast.
+    const tint = isLightAppTheme(themeName) ? 0.08 : 0.06;
+    const seed: ThemeSeed = artworkSeed
+      ? {
+          ...baseSeed,
+          background: mixColors(
+            baseSeed.background,
+            artworkSeed.accent,
+            tint,
+          ),
+          accent: artworkSeed.accent,
+          accentContrast: artworkSeed.accentContrast,
+        }
+      : baseSeed;
     return {
       themeName,
       isLight: isLightAppTheme(themeName),
-      colors: buildThemeColors(themeName),
+      colors: buildThemeColors(themeName, seed),
+      artworkSeed,
     };
-  }, [settings.theme]);
+  }, [settings.theme, settings.useArtworkTheme, artwork.seed]);
 
   return (
     <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
