@@ -15,8 +15,13 @@ import {
   StatusBar,
   TextInput,
   Image,
+  AppState,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import {
+  refreshNetworkKind,
+  setActiveQualityPolicy,
+} from "./modules/audioQualityPolicy";
 import { useFonts } from "expo-font";
 // import { LoadingScreen } from "./components/LoadingScreen";
 
@@ -404,6 +409,45 @@ function PlaybackPreferenceBridge() {
     setShowFullPlayer,
     settings.openFullscreenOnPlay,
     showFullPlayer,
+  ]);
+
+  return null;
+}
+
+/**
+ * #35: keep the cached network kind fresh so the per-track bitrate cap
+ * actually follows a Wi-Fi <-> mobile-data switch. expo-network has no sync
+ * snapshot, so the pickers read the value this bridge refreshes.
+ */
+function NetworkQualityBridge() {
+  const { settings, hasHydratedSettings } = useSettings();
+
+  useEffect(() => {
+    if (!hasHydratedSettings) {
+      return;
+    }
+
+    setActiveQualityPolicy({
+      mode: settings.audioQualityMode,
+      wifiCapKbps: settings.wifiCapKbps,
+      cellularCapKbps: settings.cellularCapKbps,
+      otherCapKbps: 320,
+    });
+
+    void refreshNetworkKind();
+
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void refreshNetworkKind();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [
+    hasHydratedSettings,
+    settings.audioQualityMode,
+    settings.wifiCapKbps,
+    settings.cellularCapKbps,
   ]);
 
   return null;
@@ -827,6 +871,7 @@ function AppContent() {
                   <CloudLibraryBridge />
                   <DeepLinkBridge />
                   <PlaybackPreferenceBridge />
+                  <NetworkQualityBridge />
                   <GlobalTextDefaultsBridge />
                   <AppShell />
                 </PlayerProvider>
