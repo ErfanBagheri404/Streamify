@@ -3,6 +3,7 @@ interface LocalPlaybackTrack {
   source?: string;
   _isLocal?: boolean;
   _isSubsonic?: boolean;
+  _isPodcast?: boolean;
   audioUrl?: string;
   url?: string;
 }
@@ -35,19 +36,29 @@ export function isSubsonicTrack(track: LocalPlaybackTrack): boolean {
   return track._isSubsonic === true || track.source === "subsonic";
 }
 
+/** Podcast episode (RSS enclosure). Its audioUrl is authoritative, like server streams. */
+export function isPodcastTrack(track: LocalPlaybackTrack): boolean {
+  return track._isPodcast === true || track.source === "podcast";
+}
+
 /**
- * Tracks that play straight from a URL we already hold: device files and
- * self-hosted server streams. None of them may be handed to a remote resolver,
- * queued for download, or blocked behind a cache-conflict prompt.
+ * Tracks that play straight from a URL we already hold: device files,
+ * self-hosted server streams, and podcast enclosures. None of them may be
+ * handed to a remote resolver, queued for download, or blocked behind a
+ * cache-conflict prompt.
  */
 export function isDirectPlayTrack(track: LocalPlaybackTrack): boolean {
-  return isLocalPlaybackTrack(track) || isSubsonicTrack(track);
+  return isLocalPlaybackTrack(track) || isSubsonicTrack(track) || isPodcastTrack(track);
 }
 
 /** Resolved URL for a direct-play track, or undefined when it has none. */
 export function getDirectPlayUri(track: LocalPlaybackTrack): string | undefined {
   if (isLocalPlaybackTrack(track)) return getLocalPlaybackUri(track);
   if (isSubsonicTrack(track)) {
+    if (typeof track.audioUrl === "string" && track.audioUrl) return track.audioUrl;
+    return track.url || undefined;
+  }
+  if (isPodcastTrack(track)) {
     if (typeof track.audioUrl === "string" && track.audioUrl) return track.audioUrl;
     return track.url || undefined;
   }
