@@ -52,7 +52,7 @@ export interface SearchResult {
     | "youtubemusic"
     | "itunes"
     | "deezer";
-  playbackSource?: "youtube" | "soundcloud" | "jiosaavn" | "youtubemusic";
+  playbackSource?: "youtube" | "soundcloud" | "jiosaavn" | "youtubemusic" | "spotify";
   providerHint?: "itunes" | "deezer";
   type?: "song" | "album" | "artist" | "playlist" | "unknown";
   albumId?: string | null;
@@ -77,7 +77,8 @@ type BackendSearchSource =
   | "soundcloud"
   | "jiosaavn"
   | "itunes"
-  | "deezer";
+  | "deezer"
+  | "spotify";
 
 type BackendSearchResponse = {
   items: any[];
@@ -564,7 +565,9 @@ function normalizeBackendCatalogItem(
       ? item.providerHint
       : undefined;
   const displaySource =
-    requestedSource === "itunes" || requestedSource === "deezer"
+    requestedSource === "itunes" ||
+    requestedSource === "deezer" ||
+    requestedSource === "spotify"
       ? requestedSource
       : providerHint || "jiosaavn";
   const imageUrl =
@@ -592,7 +595,7 @@ function normalizeBackendCatalogItem(
     img: imageUrl,
     href: item.url || "",
     source: displaySource,
-    playbackSource: "jiosaavn",
+    playbackSource: requestedSource === "spotify" ? "spotify" : "jiosaavn",
     providerHint,
     type: inferBackendItemType(item),
     albumId: rawAlbum?.id || null,
@@ -664,6 +667,7 @@ function normalizeBackendSearchResults(
         requestedSource === "jiosaavn" ||
         requestedSource === "itunes" ||
         requestedSource === "deezer" ||
+        requestedSource === "spotify" ||
         providerHint
       ) {
         return normalizeBackendCatalogItem(item, requestedSource);
@@ -1130,6 +1134,78 @@ export const searchAPI = {
     return backendResult
       ? normalizeBackendSearchResults(backendResult.items, "itunes")
       : [];
+  },
+
+  searchWithSpotify: async (
+    query: string,
+    filter?: string,
+    page?: number,
+    limit?: number,
+  ) => {
+    const backendResult = await searchViaBackend({
+      query,
+      source: "spotify",
+      filter,
+      page,
+      limit,
+    });
+
+    return backendResult
+      ? normalizeBackendSearchResults(backendResult.items, "spotify")
+      : [];
+  },
+
+  /**
+   * Spotify artist via the backend. Returns the artist card plus top songs and
+   * any albums/playlists; songs are matched to playable sources by the backend.
+   */
+  getSpotifyArtist: async (artistId: string) => {
+    const response = await fetchBackendRoute("/artist", {
+      searchParams: { id: artistId, source: "spotify" },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json()) as {
+      artist?: Record<string, any>;
+      songs?: unknown[];
+      albums?: unknown[];
+      playlists?: unknown[];
+    };
+
+    return {
+      artist: payload.artist || null,
+      songs: Array.isArray(payload.songs) ? payload.songs : [],
+      albums: Array.isArray(payload.albums) ? payload.albums : [],
+      playlists: Array.isArray(payload.playlists) ? payload.playlists : [],
+    };
+  },
+
+  /**
+   * Spotify album/playlist collection via the backend. Entries come back as
+   * Spotify tracks matched to playable sources (JioSaavn/YouTube/SoundCloud),
+   * so each one plays through the normal resolution path with urlHint.
+   */
+  getSpotifyCollection: async (id: string, kind: "album" | "playlist") => {
+    const response = await fetchBackendRoute("/collection", {
+      searchParams: { id, source: "spotify", kind },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json()) as {
+      collection?: Record<string, any>;
+      entries?: unknown[];
+    };
+
+    return {
+      collection: payload.collection || null,
+      entries: Array.isArray(payload.entries) ? payload.entries : [],
+    };
   },
 
   searchWithDeezer: async (query: string, page?: number, limit?: number) => {
