@@ -4791,27 +4791,11 @@ export class AudioStreamManager {
         return this.lastBackendDrm;
       }
 
-      // The Spotify route returns the backend audio-proxy URL, which is
-      // origin-gated and cannot be played by the native TrackPlayer.
-      // Unwrap the proxied CDN URL and play it directly — Saavn's CDN
-      // serves the file without any origin check.
-      if (backendSource === "spotify") {
-        try {
-          const parsed = new URL(audioUrl);
-          const proxiedUrl = parsed.searchParams.get("url");
-          if (proxiedUrl) {
-            console.log(
-              "[AudioStreamManager] Unwrapping Spotify audio-proxy URL",
-            );
-            return { audioUrl: proxiedUrl };
-          }
-        } catch (unwrapError) {
-          console.warn(
-            "[AudioStreamManager] Could not unwrap Spotify proxy URL",
-          );
-        }
-        return { audioUrl };
-      }
+      // NOTE: the Spotify route returns the backend audio-proxy URL
+      // (origin-gated). TrackPlayer CAN play it — for any backend-proxied
+      // URL it sends the web player Origin/Referer — and routing through the
+      // backend avoids the direct-CDN timeouts some networks hit. The URL
+      // falls through to lastBackendDrm below unchanged.
 
       this.lastBackendDrm = { audioUrl, audioType };
       return this.lastBackendDrm;
