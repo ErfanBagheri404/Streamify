@@ -54,6 +54,7 @@ import {
 import { PodcastSubscribeModal } from "../PodcastSubscribeModal";
 import { fetchPodcastFeed } from "../../modules/podcastService";
 import type { PodcastShow } from "../../modules/podcastFeed";
+import { PlaylistImportSheet } from "../PlaylistImportSheet";
 import { sanitizeImageUrl } from "../core/image";
 import { getAppFontFamily, getTextDirectionStyle } from "../../utils/fonts";
 import { useAuth } from "../../hooks/useAuth";
@@ -420,6 +421,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     React.useState(false);
   const [smartDraft, setSmartDraft] =
     React.useState<SmartPlaylistDefinition | null>(null);
+  const [showImportPlaylistSheet, setShowImportPlaylistSheet] =
+    React.useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
   const [newPlaylistDescription, setNewPlaylistDescription] = useState("");
   const {
@@ -1809,6 +1812,19 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
               </HeaderIconText>
             </HeaderIconButton>
             <HeaderIconButton
+              onPress={() => setShowImportPlaylistSheet(true)}
+              accessibilityLabel={t("library.importPlaylist")}
+              style={{ marginStart: 6, marginEnd: 6 }}
+            >
+              <HeaderIconText>
+                <Ionicons
+                  name="download-outline"
+                  size={20}
+                  color={colors.foreground}
+                />
+              </HeaderIconText>
+            </HeaderIconButton>
+            <HeaderIconButton
               onPress={() => setShowCreatePlaylistModal(true)}
               onLongPress={() =>
                 setSmartDraft({
@@ -2287,6 +2303,14 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             )}
           </Animated.View>
         </Grid>
+
+        <PlaylistImportSheet
+          visible={showImportPlaylistSheet}
+          onClose={() => setShowImportPlaylistSheet(false)}
+          onImported={() => {
+            void loadPlaylists();
+          }}
+        />
 
         <PlaylistCreateModal
           visible={showCreatePlaylistModal}
