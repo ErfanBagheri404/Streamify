@@ -19,6 +19,8 @@ import {
 import {
   APP_THEME_OPTIONS,
   HEADSET_GESTURE_ACTIONS,
+  HEARING_CEILING_OPTIONS,
+  HEARING_DEVICE_PROFILES,
   SEEK_STEP_OPTIONS,
   type AppLanguage,
   type AppTheme,
@@ -1540,6 +1542,8 @@ export default function SettingsScreen({
                 description={t("settings.headsetGesturesDescription")}
                 label={t("settings.equalizer")}
                 description={t("settings.equalizerDescription")}
+                label={t("settings.hearingLimiter")}
+                description={t("settings.hearingLimiterDescription")}
                 colors={colors}
                 controlPlacement="inline"
                 control={
@@ -1549,6 +1553,11 @@ export default function SettingsScreen({
                     value={settings.headsetGesturesEnabled}
                     onValueChange={(value) =>
                       updateSettings({ headsetGesturesEnabled: value })
+                    accessibilityLabel={t("settings.hearingLimiter")}
+                    accessibilityHint={t("settings.hearingLimiterDescription")}
+                    value={settings.hearingLimiterEnabled}
+                    onValueChange={(value) =>
+                      updateSettings({ hearingLimiterEnabled: value })
                     }
                   />
                 }
@@ -1614,6 +1623,46 @@ export default function SettingsScreen({
                   control={<EqualizerBands colors={colors} />}
                 />
               ) : null}
+              <SettingRow
+                label={t("settings.hearingCeiling")}
+                description={t("settings.hearingCeilingDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.choiceWrap}>
+                    {HEARING_CEILING_OPTIONS.map((ceiling) => (
+                      <ChoiceChip
+                        key={ceiling}
+                        label={`${ceiling}`}
+                        selected={settings.hearingCeiling === ceiling}
+                        onPress={() =>
+                          updateSettings({ hearingCeiling: ceiling })
+                        }
+                        colors={colors}
+                      />
+                    ))}
+                  </View>
+                }
+              />
+              <SettingRow
+                label={t("settings.hearingDeviceProfile")}
+                description={t("settings.hearingDeviceProfileDescription")}
+                colors={colors}
+                control={
+                  <View style={styles.choiceWrap}>
+                    {HEARING_DEVICE_PROFILES.map((profile) => (
+                      <ChoiceChip
+                        key={profile.id}
+                        label={t(`settings.hearingProfile_${profile.id}`)}
+                        selected={settings.hearingDeviceProfile === profile.id}
+                        onPress={() =>
+                          updateSettings({ hearingDeviceProfile: profile.id })
+                        }
+                        colors={colors}
+                      />
+                    ))}
+                  </View>
+                }
+              />
             </Section>
           ) : null}
 

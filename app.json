@@ -34,6 +34,7 @@
       "react-native-video",
       "expo-secure-store",
       "./plugins/withEqualizer"
+      "./plugins/withHearingSafety"
     ],
     "android": {
       "package": "com.erfanbagheri.streamifymobile",

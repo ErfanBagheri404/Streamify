@@ -62,6 +62,40 @@ export type SettingsSectionKey =
   | "updates"
   | "help";
 
+/** Per-device max-SPL table for hearing-safety estimates.
+ * `maxDbA` is the estimated output with the volume at full scale. */
+export type HearingDeviceProfile = "unknown" | "phone" | "flagship" | "wired-earbuds" | "bt-headphones" | "bt-earbuds";
+
+export interface HearingProfileEntry {
+  id: HearingDeviceProfile;
+  maxDbA: number;
+}
+
+export const HEARING_DEVICE_PROFILES: HearingProfileEntry[] = [
+  { id: "unknown", maxDbA: 0 },
+  { id: "phone", maxDbA: 100 },
+  { id: "flagship", maxDbA: 103 },
+  { id: "wired-earbuds", maxDbA: 102 },
+  { id: "bt-headphones", maxDbA: 100 },
+  { id: "bt-earbuds", maxDbA: 98 },
+];
+
+/** Limiter ceiling window (estimated dB(A)). WHO flags risk above 80 dB(A). */
+export const HEARING_CEILING_RANGE = { min: 60, max: 100 } as const;
+export const HEARING_CEILING_DEFAULT = 85;
+
+/** Stepper choices offered in Settings; all inside HEARING_CEILING_RANGE. */
+export const HEARING_CEILING_OPTIONS = [70, 80, 85, 90] as const;
+
+/** Weekly safe-listening budget in dB-hours (WHO 80 dB(A) guidance). */
+export const WHO_WEEKLY_BUDGET_DB_HOURS = 40;
+
+export function isHearingDeviceProfile(
+  value: unknown,
+): value is HearingDeviceProfile {
+  return HEARING_DEVICE_PROFILES.some((entry) => entry.id === value);
+}
+
 export interface AppSettings {
   autoplayRecommendations: boolean;
   openFullscreenOnPlay: boolean;
@@ -130,6 +164,12 @@ export interface AppSettings {
   useArtworkTheme: boolean;
   /** Enable the Android hardware equalizer on the output mix (issue #28). */
   equalizerEnabled: boolean;
+  /** Clamp output with the native limiter so playback stays under a hearing-safe ceiling. Off by default. */
+  hearingLimiterEnabled: boolean;
+  /** Limiter ceiling in estimated dB(A), clamped to HEARING_CEILING_RANGE. */
+  hearingCeiling: number;
+  /** Device profile used to estimate SPL from the volume setting ("unknown" estimates nothing). */
+  hearingDeviceProfile: HearingDeviceProfile;
   collapsedSettingsSections: Partial<Record<SettingsSectionKey, boolean>>;
 }
 
@@ -228,6 +268,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   hideMetadataWhileLocked: true,
   useArtworkTheme: false,
   equalizerEnabled: false,
+  hearingLimiterEnabled: false,
+  hearingCeiling: HEARING_CEILING_DEFAULT,
+  hearingDeviceProfile: "unknown",
   collapsedSettingsSections: {},
 };
 
@@ -464,6 +507,20 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
       : DEFAULT_APP_SETTINGS.headsetTripleTapAction,
     // (A legacy headsetLongPressAction in old records is dropped: it was
     // never read by the detector.)
+    hearingLimiterEnabled:
+      typeof record.hearingLimiterEnabled === "boolean"
+        ? record.hearingLimiterEnabled
+        : DEFAULT_APP_SETTINGS.hearingLimiterEnabled,
+    hearingCeiling:
+      typeof record.hearingCeiling === "number" &&
+      Number.isFinite(record.hearingCeiling) &&
+      record.hearingCeiling >= HEARING_CEILING_RANGE.min &&
+      record.hearingCeiling <= HEARING_CEILING_RANGE.max
+        ? Math.round(record.hearingCeiling)
+        : DEFAULT_APP_SETTINGS.hearingCeiling,
+    hearingDeviceProfile: isHearingDeviceProfile(record.hearingDeviceProfile)
+      ? record.hearingDeviceProfile
+      : DEFAULT_APP_SETTINGS.hearingDeviceProfile,
 
     collapsedSettingsSections: sanitizeCollapsedSettingsSections(
       record.collapsedSettingsSections,
