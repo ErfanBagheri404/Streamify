@@ -1899,6 +1899,18 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
       // player modal should not pay that cost until the user asks for a mix.
       const { generateAiMixPlaylist } = await import("../modules/aiMixPlaylist");
       const mix = await generateAiMixPlaylist(language === "fa" ? "fa" : "en");
+      // Dynamic import: aiMixGenerator pulls storage + replay history, and the
+      // player modal should not pay that cost until the user asks for a mix.
+      // Discovery-first: LLM writes search queries, the app's own search
+      // resolves them, scoring stays deterministic. Any stage failing falls
+      // back to the on-device mix inside the generator — mix is null only
+      // when there is genuinely no history to work from.
+      const { generateAiMixWithDiscovery } = await import(
+        "../modules/aiMixGenerator"
+      );
+      const mix = await generateAiMixWithDiscovery(
+        language === "fa" ? "fa" : "en",
+      );
       // null = not enough history to curate from. The icon stops spinning and
       // the user is still looking at the player, so the alert carries the
       // outcome — the same pattern the credits sheet already uses here.
