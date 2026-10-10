@@ -29,6 +29,7 @@ import {
   getFullyCachedAudioUrl,
   markAudioCacheComplete,
   clearAudioCacheForTrack,
+  enforceAudioCacheBudget,
   continueCachingTrack,
   monitorAndResumeCache,
   AudioStreamManager,
@@ -1483,6 +1484,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             message: `${nextTrackToCache.title} cached`,
           });
           setCacheQueueVersion((v) => v + 1);
+          const nowPlayingId = activeTrackRef.current?.id;
+          void enforceAudioCacheBudget(
+            settings.audioCacheCapMb,
+            nowPlayingId ? [nowPlayingId] : [],
+          ).then((evicted) => {
+            if (evicted.length > 0) {
+              setCacheQueueVersion((v) => v + 1);
+            }
+          });
         } else if (
           !latestInfo.isDownloading &&
           !!streamUrl &&
@@ -1509,7 +1519,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       isCacheQueueProcessingRef.current = false;
       manualDownloadRef.current = false;
     }
-  }, [resolveTrackStreamUrl, publishCacheInfo]);
+  }, [resolveTrackStreamUrl, publishCacheInfo, settings.audioCacheCapMb]);
 
   // Sync isPlayingRef so the cache queue can check it without depending
   // on the isPlaying state (which would re-create the callback).
