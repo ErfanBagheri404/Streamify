@@ -128,6 +128,8 @@ export interface AppSettings {
    * Falls back to `theme` whenever the artwork cannot be sampled; no extra
    * palette entry is needed. */
   useArtworkTheme: boolean;
+  /** Enable the Android hardware equalizer on the output mix (issue #28). */
+  equalizerEnabled: boolean;
   collapsedSettingsSections: Partial<Record<SettingsSectionKey, boolean>>;
 }
 
@@ -225,6 +227,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   headsetTripleTapAction: "likeCurrent",
   hideMetadataWhileLocked: true,
   useArtworkTheme: false,
+  equalizerEnabled: false,
   collapsedSettingsSections: {},
 };
 
@@ -429,6 +432,10 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
       typeof record.hideMetadataWhileLocked === "boolean"
         ? record.hideMetadataWhileLocked
         : DEFAULT_APP_SETTINGS.hideMetadataWhileLocked,
+    equalizerEnabled:
+      typeof record.equalizerEnabled === "boolean"
+        ? record.equalizerEnabled
+        : DEFAULT_APP_SETTINGS.equalizerEnabled,
     waveformSeekBar:
       typeof record.waveformSeekBar === "boolean"
         ? record.waveformSeekBar

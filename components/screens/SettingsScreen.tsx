@@ -9,6 +9,13 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import Slider from "@react-native-community/slider";
+import {
+  getEqualizerInfo,
+  setEqualizerBandLevel,
+  setEqualizerEnabled,
+  type EqualizerInfo,
+} from "../../modules/audioEqualizer";
 import {
   APP_THEME_OPTIONS,
   HEADSET_GESTURE_ACTIONS,
@@ -386,6 +393,62 @@ function ThemeChoiceCard({
         </View>
       ) : null}
     </TouchableOpacity>
+  );
+}
+
+/**
+ * Band sliders, shown only when the setting is on and the device actually has
+ * an equalizer. Levels live in the system effect; nothing is persisted.
+ */
+function EqualizerBands({ colors }: { colors: ReturnType<typeof useTheme>["colors"] }) {
+  const { t } = useAppLanguage();
+  const [info, setInfo] = useState<EqualizerInfo | null>(null);
+  const [levels, setLevels] = useState<number[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    getEqualizerInfo().then((next) => {
+      if (!alive) return;
+      setInfo(next);
+      setLevels(next.levels);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (!info?.supported) {
+    return <MutedText style={styles.settingDescription}>{t("settings.equalizerUnsupported")}</MutedText>;
+  }
+
+  return (
+    <View style={styles.choiceWrap}>
+      {info.centerFreqHz.map((hz, index) => (
+        <View key={hz} style={styles.equalizerBand}>
+          <MutedText style={styles.settingDescription}>
+            {hz >= 1000 ? `${hz / 1000}k` : hz}
+          </MutedText>
+          <View
+            accessible
+            accessibilityRole="adjustable"
+            accessibilityLabel={`${hz} Hz`}
+          >
+            <Slider
+              value={levels[index] ?? 0}
+              minimumValue={info.minMillibel}
+              maximumValue={Math.max(info.maxMillibel, info.minMillibel)}
+              minimumTrackTintColor={colors.accent}
+              maximumTrackTintColor={colors.borderSubtle}
+              thumbTintColor={colors.accent}
+              onValueChange={(value) => {
+                setLevels((prev) => prev.map((v, i) => (i === index ? value : v)));
+                void setEqualizerBandLevel(index, value);
+              }}
+            />
+          </View>
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -1475,6 +1538,8 @@ export default function SettingsScreen({
               <SettingRow
                 label={t("settings.headsetGestures")}
                 description={t("settings.headsetGesturesDescription")}
+                label={t("settings.equalizer")}
+                description={t("settings.equalizerDescription")}
                 colors={colors}
                 controlPlacement="inline"
                 control={
@@ -1531,6 +1596,23 @@ export default function SettingsScreen({
                     }
                   />
                 </>
+                    accessibilityLabel={t("settings.equalizer")}
+                    accessibilityHint={t("settings.equalizerDescription")}
+                    value={settings.equalizerEnabled}
+                    onValueChange={(value) => {
+                      updateSettings({ equalizerEnabled: value });
+                      void setEqualizerEnabled(value);
+                    }}
+                  />
+                }
+              />
+              {settings.equalizerEnabled ? (
+                <SettingRow
+                  label={t("settings.equalizer")}
+                  description={t("settings.equalizerDescription")}
+                  colors={colors}
+                  control={<EqualizerBands colors={colors} />}
+                />
               ) : null}
             </Section>
           ) : null}
@@ -1927,6 +2009,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+  },
+  equalizerBand: {
+    minWidth: 72,
+    flexGrow: 1,
   },
   chip: {
     minHeight: 44,
