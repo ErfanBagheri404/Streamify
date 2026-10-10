@@ -4715,7 +4715,9 @@ export class AudioStreamManager {
     // native TrackPlayer. Keep those on the legacy direct-CDN path instead.
     if (
       !backendSource ||
-      !["youtube", "youtubemusic", "soundcloud"].includes(backendSource)
+      !["youtube", "youtubemusic", "soundcloud", "spotify"].includes(
+        backendSource,
+      )
     ) {
       return null;
     }
@@ -4787,6 +4789,28 @@ export class AudioStreamManager {
           drmHeaders,
         };
         return this.lastBackendDrm;
+      }
+
+      // The Spotify route returns the backend audio-proxy URL, which is
+      // origin-gated and cannot be played by the native TrackPlayer.
+      // Unwrap the proxied CDN URL and play it directly — Saavn's CDN
+      // serves the file without any origin check.
+      if (backendSource === "spotify") {
+        try {
+          const parsed = new URL(audioUrl);
+          const proxiedUrl = parsed.searchParams.get("url");
+          if (proxiedUrl) {
+            console.log(
+              "[AudioStreamManager] Unwrapping Spotify audio-proxy URL",
+            );
+            return { audioUrl: proxiedUrl };
+          }
+        } catch (unwrapError) {
+          console.warn(
+            "[AudioStreamManager] Could not unwrap Spotify proxy URL",
+          );
+        }
+        return { audioUrl };
       }
 
       this.lastBackendDrm = { audioUrl, audioType };
@@ -5036,6 +5060,39 @@ export class AudioStreamManager {
           ? "Track is not playable from this source"
           : "All YouTube strategies failed",
       );
+    }
+
+    // --- SPOTIFY HANDLING (backend /video route, direct CDN playback) ---
+    if (source === "spotify") {
+      onStatusUpdate?.("Using Spotify strategy");
+      console.log(`[AudioStreamManager] Spotify mode activated: ${videoId}`);
+      try {
+        const backendAudioUrl = await this.tryBackendPlaybackRoute(
+          videoId,
+          source,
+          options,
+        );
+        if (backendAudioUrl) {
+          return backendAudioUrl.audioUrl;
+        }
+      } catch (error) {
+        console.error(
+          "[AudioStreamManager] Spotify backend route failed:",
+          error,
+        );
+      }
+
+      // Fallback: match the track on JioSaavn by title/artist (the Spotify
+      // catalog mirrors it, so an exact match usually exists).
+      const jioSaavnUrl = await this.tryJioSaavnExactMatch(
+        this.currentTrackTitle,
+        this.currentTrackArtist,
+      );
+      if (jioSaavnUrl) {
+        return jioSaavnUrl;
+      }
+
+      throw new Error("Spotify track could not be resolved");
     }
 
     // --- JIOSAAVN HANDLING (exclusive - no fallbacks) ---

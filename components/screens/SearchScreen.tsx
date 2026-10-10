@@ -126,6 +126,10 @@ const getDefaultFilterForSource = (source: SourceType): string => {
     return "songs";
   }
 
+  if (source === "spotify") {
+    return "all";
+  }
+
   if (source === "itunes" || source === "deezer") {
     return "";
   }
@@ -361,6 +365,7 @@ type SourceType =
   | "youtubemusic"
   | "soundcloud"
   | "jiosaavn"
+  | "spotify"
   | "local"
   | "subsonic";
 
@@ -383,6 +388,7 @@ interface SearchResult {
     | "deezer"
     | "soundcloud"
     | "jiosaavn"
+    | "spotify"
     | "youtube_channel"
     | "youtubemusic"
     | "subsonic"
@@ -404,6 +410,7 @@ const SEARCH_SOURCE_OPTIONS: SearchSourceOption[] = [
   { id: "youtubemusic", labelKey: "source.youtubemusic", color: "#ff0000" },
   { id: "soundcloud", labelKey: "source.soundcloud", color: "#ff7700" },
   { id: "jiosaavn", labelKey: "source.jiosaavn", color: "#1fa18a" },
+  { id: "spotify", labelKey: "source.spotify", color: "#1ed760" },
   { id: "subsonic", labelKey: "source.subsonic", color: "#0188d1" },
 ];
 
@@ -578,6 +585,15 @@ const JIOSAAVN_FILTER_OPTIONS: SearchFilterOption[] = [
   { value: "artists", labelKey: "search.artists" },
 ];
 
+// Spotify mirrors the web player: songs (matched to playable sources),
+// albums and artists. Playlists are not offered by the backend search route.
+const SPOTIFY_FILTER_OPTIONS: SearchFilterOption[] = [
+  { value: "all", labelKey: "search.all" },
+  { value: "songs", labelKey: "search.songs" },
+  { value: "albums", labelKey: "search.albums" },
+  { value: "artists", labelKey: "search.artists" },
+];
+
 function getFiltersForSource(source: SourceType): SearchFilterOption[] {
   switch (source) {
     case "mixed":
@@ -590,6 +606,8 @@ function getFiltersForSource(source: SourceType): SearchFilterOption[] {
       return SOUNDCLOUD_FILTER_OPTIONS;
     case "jiosaavn":
       return JIOSAAVN_FILTER_OPTIONS;
+    case "spotify":
+      return SPOTIFY_FILTER_OPTIONS;
     case "itunes":
     case "deezer":
       return [];
@@ -1101,6 +1119,16 @@ export default function SearchScreen({ navigation }: any) {
             paginationRef.current.page,
             20,
           );
+        } else if (requestSource === "spotify") {
+          results = await searchAPI.searchWithSpotify(
+            trimmedQuery,
+            requestFilter,
+            paginationRef.current.page,
+            20,
+          );
+          paginationRef.current.nextpage = null;
+          paginationRef.current.hasMore = false;
+          setHasMoreResults(false);
         } else if (requestSource === "youtubemusic") {
           const youtubeMusicResponse = await searchAPI.searchWithYouTubeMusic(
             trimmedQuery,
@@ -1593,7 +1621,11 @@ export default function SearchScreen({ navigation }: any) {
           artistId: item.id,
           artistName: item.title || item.author,
           artistImage: item.thumbnailUrl || item.img || "",
-          source: item.source === "jiosaavn" ? "jiosaavn" : "youtube",
+          source: item.source === "spotify"
+            ? "spotify"
+            : item.source === "jiosaavn"
+              ? "jiosaavn"
+              : "youtube",
         });
         return;
       }
@@ -1631,7 +1663,11 @@ export default function SearchScreen({ navigation }: any) {
         artistId: item.id,
         artistName: item.title,
         artistImage: item.thumbnailUrl || item.img || "",
-        source: item.source === "jiosaavn" ? "jiosaavn" : "youtube",
+        source: item.source === "spotify"
+          ? "spotify"
+          : item.source === "jiosaavn"
+            ? "jiosaavn"
+            : "youtube",
       });
     },
     [navigation, showSuggestions, setShowSuggestions],
@@ -1646,7 +1682,15 @@ export default function SearchScreen({ navigation }: any) {
       }
 
       // Navigate to album playlist screen
-      if (item.source === "soundcloud") {
+      if (item.source === "spotify") {
+        navigation.navigate("AlbumPlaylist", {
+          albumId: item.id,
+          albumName: item.title,
+          albumArtist: item.author,
+          source: item.source,
+          type: item.type,
+        });
+      } else if (item.source === "soundcloud") {
         navigation.navigate("AlbumPlaylist", {
           albumId: item.id,
           albumName: item.title,

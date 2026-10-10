@@ -86,7 +86,14 @@ export interface Track {
 
 function resolveTrackSource(
   track: Pick<Track, "source" | "_isSoundCloud" | "_isJioSaavn">,
-): "youtube" | "youtubemusic" | "soundcloud" | "jiosaavn" {
+): "youtube" | "youtubemusic" | "soundcloud" | "jiosaavn" | "spotify" {
+  // Spotify IDs (albums/artists from the Spotify catalog) only resolve through
+  // the backend Spotify route; the track carries a Spotify id, not a JioSaavn
+  // one, so check it before the JioSaavn flags.
+  if (track.source === "spotify") {
+    return "spotify";
+  }
+
   if (track._isSoundCloud || track.source === "soundcloud") {
     return "soundcloud";
   }
