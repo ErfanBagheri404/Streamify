@@ -36,6 +36,9 @@ import {
   enforceAudioCacheBudget,
   getAudioCacheUsageBytes,
 } from "../../modules/audioStreaming";
+import { useVault } from "../../contexts/VaultContext";
+import { isAppLockEnabled } from "../../modules/appLockStore";
+import { AppLockPinModal } from "../AppLockPinModal";
 import { useAppLanguage } from "../../hooks/useAppLanguage";
 import {
   CURRENT_APP_VERSION,
@@ -408,6 +411,13 @@ export default function SettingsScreen({
     message: string;
   } | null>(null);
   const [showScrobbleSheet, setShowScrobbleSheet] = useState(false);
+  const [appLockEnabled, setAppLockEnabled] = useState(false);
+  const [showSetPinSheet, setShowSetPinSheet] = useState(false);
+  const [showDisableLockSheet, setShowDisableLockSheet] = useState(false);
+  const vault = useVault();
+  useEffect(() => {
+    void isAppLockEnabled().then(setAppLockEnabled);
+  }, []);
   const [showSubsonicSheet, setShowSubsonicSheet] = useState(false);
   const [scrobbleProvider, setScrobbleProvider] = useState<
     "listenbrainz" | "lastfm"
@@ -1008,6 +1018,73 @@ export default function SettingsScreen({
                   </TouchableOpacity>
                 }
               />
+            </Section>
+          ) : null}
+
+          {activeTab === "account" ? (
+            <Section
+              title={t("appLock.privacyTitle")}
+              description={t("appLock.privacyDescription")}
+            >
+              <SettingRow
+                label={t("appLock.requirePin")}
+                description={t("appLock.requirePinDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      if (appLockEnabled) {
+                        setShowDisableLockSheet(true);
+                        return;
+                      }
+                      setShowSetPinSheet(true);
+                    }}
+                    style={[
+                      styles.secondaryButton,
+                      { borderColor: colors.borderSubtle },
+                    ]}
+                  >
+                    <BodyText
+                      style={{ color: colors.foreground, fontSize: 13 }}
+                    >
+                      {appLockEnabled
+                        ? t("appLock.changePin")
+                        : t("appLock.setPin")}
+                    </BodyText>
+                  </TouchableOpacity>
+                }
+              />
+              <SettingRow
+                label={t("appLock.hideMetadata")}
+                description={t("appLock.hideMetadataDescription")}
+                colors={colors}
+                controlPlacement="inline"
+                control={
+                  <SettingsSwitch
+                    accessibilityLabel={t("appLock.hideMetadata")}
+                    accessibilityHint={t("appLock.hideMetadataDescription")}
+                    value={settings.hideMetadataWhileLocked}
+                    onValueChange={(value) =>
+                      updateSettings({ hideMetadataWhileLocked: value })
+                    }
+                  />
+                }
+              />
+              {appLockEnabled && vault.privateCount > 0 ? (
+                <SettingRow
+                  label={t("appLock.vault")}
+                  description={t("appLock.vaultDescription")}
+                  colors={colors}
+                  controlPlacement="inline"
+                  control={
+                    <BodyText style={{ color: colors.muted, fontSize: 13 }}>
+                      {vault.privateCount}
+                    </BodyText>
+                  }
+                />
+              ) : null}
             </Section>
           ) : null}
 
@@ -1683,6 +1760,25 @@ export default function SettingsScreen({
           <SubsonicSheet
             visible={showSubsonicSheet}
             onClose={() => setShowSubsonicSheet(false)}
+          />
+
+          <AppLockPinModal
+            visible={showSetPinSheet}
+            mode="set"
+            onCancel={() => setShowSetPinSheet(false)}
+            onDone={() => {
+              setShowSetPinSheet(false);
+              setAppLockEnabled(true);
+            }}
+          />
+          <AppLockPinModal
+            visible={showDisableLockSheet}
+            mode="disable"
+            onCancel={() => setShowDisableLockSheet(false)}
+            onDone={() => {
+              setShowDisableLockSheet(false);
+              setAppLockEnabled(false);
+            }}
           />
         </ScrollView>
       </View>

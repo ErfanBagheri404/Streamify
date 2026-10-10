@@ -120,6 +120,10 @@ export interface AppSettings {
   // -> `recordTap`) only delivers tap events, never holds. A stored
   // long-press mapping would be a dead setting that promises a gesture the
   // detector cannot see.
+  /** When an app lock or vault is active, hide the track title/artist in the
+   * MiniPlayer so the lock screen and over-the-shoulder glances leak nothing.
+   * Defaults on — a lock that leaks is not a lock. */
+  hideMetadataWhileLocked: boolean;
   collapsedSettingsSections: Partial<Record<SettingsSectionKey, boolean>>;
 }
 
@@ -215,6 +219,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   headsetGesturesEnabled: false,
   headsetDoubleTapAction: "skipNext",
   headsetTripleTapAction: "likeCurrent",
+  hideMetadataWhileLocked: true,
   collapsedSettingsSections: {},
 };
 
@@ -411,6 +416,10 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
       typeof record.replayGainEnabled === "boolean"
         ? record.replayGainEnabled
         : DEFAULT_APP_SETTINGS.replayGainEnabled,
+    hideMetadataWhileLocked:
+      typeof record.hideMetadataWhileLocked === "boolean"
+        ? record.hideMetadataWhileLocked
+        : DEFAULT_APP_SETTINGS.hideMetadataWhileLocked,
     waveformSeekBar:
       typeof record.waveformSeekBar === "boolean"
         ? record.waveformSeekBar

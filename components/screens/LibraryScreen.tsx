@@ -18,6 +18,8 @@ import {
   Fontisto,
   Ionicons,
 } from "@expo/vector-icons";
+import { useVault } from "../../contexts/VaultContext";
+import { VaultUnlockPrompt } from "../VaultUnlockPrompt";
 import { usePlayer } from "../../contexts/PlayerContext";
 import {
   StorageService,
@@ -408,6 +410,12 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   const [sortMode, setSortMode] = useState<LibrarySortMode>("recents");
   const [viewMode, setViewMode] = useState<LibraryViewMode>("grid");
   const [playlists, setPlaylists] = React.useState<Playlist[]>([]);
+  const vault = useVault();
+  // Private playlists drop out of every browse surface until the vault opens.
+  const visiblePlaylists = React.useMemo(
+    () => vault.visible(playlists),
+    [vault, playlists],
+  );
   const [showCreatePlaylistModal, setShowCreatePlaylistModal] =
     React.useState(false);
   const [smartDraft, setSmartDraft] =
@@ -1279,7 +1287,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           }
         },
       },
-      ...playlists.map((playlist) => {
+      ...visiblePlaylists.map((playlist) => {
         const artworkUri = getPlaylistArtworkUri(playlist);
         const isSmart = Boolean(playlist.smartDefinition);
         const ruleSummary = playlist.smartDefinition
@@ -1330,7 +1338,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       copy.previouslyPlayed,
       formatSongCount,
       likedSongs,
-      playlists,
+      visiblePlaylists,
       previouslyPlayedSongs,
     ],
   );
@@ -1416,13 +1424,49 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     ],
   );
 
+  const [showVaultPrompt, setShowVaultPrompt] = React.useState(false);
+
+  // A private playlist must never appear as its own row while the vault is
+  // closed — title, track names and counts are all in `searchText`, so a row
+  // would leak the very thing the lock hides.
   const activeItems = React.useMemo<LibraryDisplayItem[]>(() => {
-    if (activeSection === null) {
-      return [
-        ...playlistItems.slice(0, 4),
-        ...mixedLibraryItems,
-        ...playlistItems.slice(4),
-      ];
+    const base =
+      activeSection === null
+        ? [
+            ...playlistItems.slice(0, 4),
+            ...mixedLibraryItems,
+            ...playlistItems.slice(4),
+          ]
+        : activeSection === "Artists"
+          ? topArtistItems
+          : activeSection === "Downloaded"
+            ? downloadedItems
+            : activeSection === "Downloading"
+          ? (() => {
+              const VISIBLE = 6;
+              const visible = downloadingItems.slice(0, VISIBLE);
+              const remaining = downloadingItems.length - VISIBLE;
+              if (remaining > 0) {
+                const next = downloadingItems[VISIBLE];
+                visible.push({
+                  id: "downloading-more-summary",
+                  trackId: next.trackId,
+                  title: next.title,
+                  subtitle: copy.downloadMoreQueued(remaining),
+                  meta: "",
+                  searchText: "",
+                  artworkKind: next.artworkKind,
+                  itemType: "collection",
+                  imageShape: "rounded",
+                  imageUri: next.imageUri,
+                });
+              }
+              return visible;
+            })()
+          : playlistItems;
+
+    if (vault.privateCount === 0 || vault.isVaultUnlocked) {
+      return base;
     }
     if (activeSection === "Artists") return topArtistItems;
     if (activeSection === "Podcasts") return podcastItems;
@@ -1459,6 +1503,24 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     podcastItems,
     topArtistItems,
   ]);
+    return [
+      ...base,
+      {
+        id: "__private_vault__",
+        title:
+          language === "fa"
+            ? `پلی‌لیست‌های خصوصی (${vault.privateCount})`
+            : `Private playlists (${vault.privateCount})`,
+        subtitle: language === "fa" ? "قفل‌شده" : "Locked",
+        meta: "",
+        searchText: "",
+        artworkKind: "playlist",
+        itemType: "collection",
+        imageShape: "rounded",
+        onPress: () => setShowVaultPrompt(true),
+      },
+    ];
+  }, [activeSection, copy.downloadMoreQueued, downloadingItems, mixedLibraryItems, playlistItems, topArtistItems, downloadedItems, vault.privateCount, vault.isVaultUnlocked, language]);
 
   const displayedItems = React.useMemo(() => {
     const query = libraryQuery.trim().toLowerCase();
@@ -2278,6 +2340,15 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           onSubmit={() => void handleSubscribe()}
           isSubmitting={isSubscribing}
           error={subscribeError}
+        <VaultUnlockPrompt
+          visible={showVaultPrompt}
+          onDismiss={() => setShowVaultPrompt(false)}
+          onSuccess={() => {
+            // The prompt already verified the credential; this just opens the
+            // vault for the rest of the launch and re-renders the list.
+            setShowVaultPrompt(false);
+            void vault.unlockVault();
+          }}
         />
 
         <SliderSheet

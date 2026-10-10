@@ -15,6 +15,7 @@ import { resolveSmartPlaylistTracks } from "../../modules/smartPlaylistResolver"
 import { StorageService } from "../../utils/storage";
 import { searchAPI } from "../../modules/searchAPI";
 import { SliderSheet } from "../SliderSheet";
+import { useVault } from "../../contexts/VaultContext";
 import { Track } from "../../contexts/PlayerContext";
 import { getBeatseekApiBase } from "../core/api";
 import { pickBestImageUrl, sanitizeImageUrl } from "../core/image";
@@ -74,6 +75,8 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
 
   // Song action sheet state
   const [showSongActionSheet, setShowSongActionSheet] = useState(false);
+  const { decorate, setPlaylistPrivate } = useVault();
+  const [isPlaylistPrivate, setIsPlaylistPrivate] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [sheetMode, setSheetMode] = useState<"playlist" | "playlist-song">(
     "playlist-song",
@@ -230,6 +233,11 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           console.warn("Export failed:", error);
           Alert.alert(t("common.error"), t("library.exportFailed"));
         }
+      if (option === playlistActions.toggleLock) {
+        const next = !isPlaylistPrivate;
+        closeSongActionSheet();
+        setIsPlaylistPrivate(next);
+        await setPlaylistPrivate(albumId, next);
         return;
       }
     }
@@ -345,6 +353,12 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
     const value = t(key);
     return value === key ? fallback : value;
   };
+  useEffect(() => {
+    if (!albumId || source !== "user-playlist") {
+      return;
+    }
+    setIsPlaylistPrivate(decorate([{ id: albumId }])[0]?.isPrivate === true);
+  }, [albumId, source, decorate]);
   const isPlaylistCollection =
     source === "user-playlist" ||
     source === "youtube" ||
@@ -386,6 +400,15 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
     removePlaylist: translateWithFallback(
       "collection.removePlaylist",
       isRtl ? "حذف پلی لیست" : "Remove playlist",
+    ),
+    toggleLock: "__toggle_playlist_lock__",
+    lockPlaylist: translateWithFallback(
+      "collection.lockPlaylist",
+      isRtl ? "مخفی کردن پلی‌لیست" : "Lock playlist",
+    ),
+    unlockPlaylist: translateWithFallback(
+      "collection.unlockPlaylist",
+      isRtl ? "نمایش پلی‌لیست" : "Unlock playlist",
     ),
     removeSong: translateWithFallback(
       "screens.actions.remove_song_from_playlist",
@@ -953,6 +976,15 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
                   key: playlistActions.rename,
                   label: playlistActions.rename,
                   icon: "create-outline",
+                },
+                {
+                  key: playlistActions.toggleLock,
+                  label: isPlaylistPrivate
+                    ? playlistActions.unlockPlaylist
+                    : playlistActions.lockPlaylist,
+                  icon: isPlaylistPrivate
+                    ? "lock-open-outline"
+                    : "lock-closed-outline",
                 },
                 {
                   key: playlistActions.removePlaylist,
