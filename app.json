@@ -35,6 +35,8 @@
       "expo-secure-store",
       "./plugins/withEqualizer"
       "./plugins/withHearingSafety"
+      "./plugins/withVideoPip",
+      "expo-secure-store"
     ],
     "android": {
       "package": "com.erfanbagheri.streamifymobile",
