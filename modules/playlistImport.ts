@@ -17,6 +17,7 @@
  *  Subsonic/Navidrome (.m3u, Deezer, ListenBrainz) is not wired yet;
  *  parsePlaylistUrl reports them as unsupported rather than guessing.
  *******************************************************************/
+import { fetchBackendRoute } from "../lib/backend-api";
 import { getBeatseekApiBase } from "../components/core/api";
 import { sanitizeImageUrl } from "../components/core/image";
 import { subsonicService, type SubsonicTrack } from "./subsonicService";
@@ -27,7 +28,11 @@ export type PlaylistImportSource =
   | "youtube"
   | "youtubemusic"
   | "soundcloud"
-  | "subsonic";
+  | "subsonic"
+  | "spotify"
+  | "deezer"
+  | "itunes"
+  | "jiosaavn";
 
 export interface ImportedTrack {
   id: string;
@@ -58,9 +63,20 @@ export interface PlaylistImportResult {
 }
 
 export interface ParsedPlaylistUrl {
-  kind: "youtube" | "youtubemusic" | "soundcloud" | "subsonic" | "m3u";
+  kind:
+    | "youtube"
+    | "youtubemusic"
+    | "soundcloud"
+    | "subsonic"
+    | "m3u"
+    | "spotify"
+    | "deezer"
+    | "itunes"
+    | "jiosaavn";
   playlistId: string;
   url: string;
+  /** Whether the link points at an album rather than a playlist. */
+  album?: boolean;
 }
 
 // ---- client / request constants -------------------------------------------
@@ -163,6 +179,75 @@ export function parsePlaylistUrl(
       };
     }
     return { unsupported: "soundcloud-no-set" };
+  }
+
+  if (host === "open.spotify.com" || host.endsWith(".spotify.com")) {
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    const spotifyIndex = segments.findIndex((segment) =>
+      ["playlist", "album", "track"].includes(segment),
+    );
+    const spotifyId =
+      spotifyIndex >= 0 ? segments[spotifyIndex + 1] || "" : "";
+    if (spotifyId && /^[A-Za-z0-9]+$/.test(spotifyId)) {
+      return {
+        kind: "spotify",
+        playlistId: spotifyId,
+        url: withScheme,
+        album: segments[spotifyIndex] === "album",
+      };
+    }
+    return { unsupported: "spotify-no-collection" };
+  }
+
+  if (host === "deezer.com" || host.endsWith(".deezer.com")) {
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    const deezerIndex = segments.findIndex((segment) =>
+      ["playlist", "album", "track"].includes(segment),
+    );
+    const deezerId =
+      deezerIndex >= 0 ? segments[deezerIndex + 1] || "" : "";
+    if (deezerId && /^\d+$/.test(deezerId)) {
+      return {
+        kind: "deezer",
+        playlistId: deezerId,
+        url: withScheme,
+        album: segments[deezerIndex] === "album",
+      };
+    }
+    return { unsupported: "deezer-no-collection" };
+  }
+
+  if (host === "music.apple.com") {
+    const match = parsed.pathname.match(/\/album\/[^/]+\/(\d+)/);
+    if (match?.[1]) {
+      return {
+        kind: "itunes",
+        playlistId: match[1],
+        url: withScheme,
+        album: true,
+      };
+    }
+    return { unsupported: "itunes-no-album" };
+  }
+
+  if (host === "jiosaavn.com" || host.endsWith(".jiosaavn.com")) {
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    const isAlbum = segments.includes("album");
+    const jioIndex = isAlbum
+      ? segments.indexOf("album")
+      : segments.indexOf("playlist") >= 0
+        ? segments.indexOf("playlist")
+        : segments.indexOf("featured");
+    const jioId = jioIndex >= 0 ? segments[jioIndex + 2] || "" : "";
+    if (jioId) {
+      return {
+        kind: "jiosaavn",
+        playlistId: jioId,
+        url: withScheme,
+        album: isAlbum,
+      };
+    }
+    return { unsupported: "jiosaavn-no-collection" };
   }
 
   if (/\.m3u8?($|\?)/i.test(parsed.pathname)) {
@@ -617,6 +702,76 @@ export async function fetchSubsonicPlaylist(
 // ---- entry point ------------------------------------------------------------
 
 /** Resolve any supported pasted link to a common import payload. */
+/**
+ * Spotify / Deezer / iTunes / JioSaavn have no keyless client API, so the
+ * backend /collection route resolves them into tracks whose urls already point
+ * at a playable preview.
+ */
+async function fetchBackendCollection(
+  source: "spotify" | "deezer" | "itunes" | "jiosaavn",
+  id: string,
+  kind: "album" | "playlist",
+): Promise<PlaylistImportResult> {
+  const response = await fetchBackendRoute("/collection", {
+    searchParams: { id, source, kind },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load ${source} ${kind}`);
+  }
+
+  const payload = (await response.json()) as {
+    collection?: {
+      id?: string;
+      title?: string;
+      author?: string;
+      thumbnailUrl?: string;
+      url?: string;
+    };
+    entries?: Array<{
+      id?: string;
+      title?: string;
+      subtitle?: string;
+      artist?: string;
+      duration?: number;
+      thumbnailUrl?: string;
+      url?: string;
+    }>;
+  };
+
+  const tracks: ImportedTrack[] = [];
+  const skipped: string[] = [];
+  for (const entry of payload.entries || []) {
+    if (!entry?.id) {
+      continue;
+    }
+    tracks.push({
+      id: String(entry.id),
+      title: entry.title || "Unknown Title",
+      artist: entry.artist || entry.subtitle || "Unknown Artist",
+      duration: entry.duration || 0,
+      thumbnail: entry.thumbnailUrl || "",
+      url: entry.url || "",
+      source,
+    });
+  }
+
+  if (!tracks.length) {
+    throw new Error(`No playable tracks in this ${source} ${kind}`);
+  }
+
+  return {
+    source,
+    sourceId: payload.collection?.id || id,
+    sourceUrl: payload.collection?.url || "",
+    name: payload.collection?.title || `${source} ${kind}`,
+    owner: payload.collection?.author || "",
+    thumbnail: payload.collection?.thumbnailUrl || "",
+    tracks,
+    skipped,
+  };
+}
+
 export async function resolvePlaylistImport(
   raw: string,
   onProgress?: (loaded: number) => void,
@@ -631,6 +786,18 @@ export async function resolvePlaylistImport(
   }
   if (parsed.kind === "soundcloud") {
     return fetchSoundCloudPlaylist(parsed.playlistId);
+  }
+  if (
+    parsed.kind === "spotify" ||
+    parsed.kind === "deezer" ||
+    parsed.kind === "itunes" ||
+    parsed.kind === "jiosaavn"
+  ) {
+    return fetchBackendCollection(
+      parsed.kind,
+      parsed.playlistId,
+      parsed.album ? "album" : "playlist",
+    );
   }
   if (parsed.kind === "subsonic") {
     return fetchSubsonicPlaylist(parsed.playlistId);
