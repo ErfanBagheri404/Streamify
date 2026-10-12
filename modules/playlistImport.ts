@@ -91,11 +91,14 @@ const YTM_CLIENT = {
   origin: "https://music.youtube.com",
 };
 
+// ponytail: youtube kind also browses as WEB_REMIX. Plain WEB answers a VL id
+// with `lockupViewModel` rows, while WEB_REMIX returns the
+// `musicResponsiveListItemRenderer` shape parseYoutubeListItem reads.
 const YT_CLIENT = {
-  name: "WEB",
-  version: "2.20250915.01.00",
-  clientNameHeader: "1",
-  origin: "https://www.youtube.com",
+  name: "WEB_REMIX",
+  version: "1.20250908.01.00",
+  clientNameHeader: "67",
+  origin: "https://music.youtube.com",
 };
 
 /** Every request in the chain needs its own deadline (see innertube.ts). */
@@ -389,6 +392,13 @@ export function parseYoutubeListItem(
     // video id only on the play button's watchEndpoint.
     const overlayVideoId = findFirst(renderer.overlay, "videoId");
     if (typeof overlayVideoId === "string") videoId = overlayVideoId;
+  }
+
+  if (!videoId) {
+    // Playlist rows (playlistBrowse) carry the id on playlistItemData, not on
+    // the title's run endpoint.
+    const dataVideoId = findFirst(renderer, "videoId");
+    if (typeof dataVideoId === "string") videoId = dataVideoId;
   }
 
   for (const column of renderer.fixedColumns || []) {
