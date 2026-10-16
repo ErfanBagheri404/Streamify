@@ -26,15 +26,22 @@ interface PlaylistImportSheetProps {
   onClose: () => void;
   /** Called with the stored playlist so the caller can refresh its list. */
   onImported: () => void;
+  /**
+   * Optional file-based import (M3U / CSV picked from the device). The header
+   * used to carry a second folder icon for this; a single import entry point
+   * keeps the library toolbar honest, so the caller passes its picker here.
+   */
+  onImportFromFile?: () => void;
 }
 
 export function PlaylistImportSheet({
   visible,
   onClose,
   onImported,
+  onImportFromFile,
 }: PlaylistImportSheetProps) {
   const { colors } = useTheme();
-  const { t, isRtl } = useAppLanguage();
+  const { t, isRtl, language } = useAppLanguage();
   const [link, setLink] = useState("");
   const [result, setResult] = useState<PlaylistImportResult | null>(null);
   const [status, setStatus] = useState("");
@@ -176,6 +183,22 @@ export function PlaylistImportSheet({
               >
                 {t("library.importPlaylistSources")}
               </BodyText>
+
+              {onImportFromFile ? (
+                <TouchableOpacity
+                  onPress={() => {
+                    handleClose();
+                    onImportFromFile();
+                  }}
+                  style={styles.fromFileLink}
+                >
+                  <BodyText style={{ color: colors.accent, fontWeight: "600" }}>
+                    {language === "fa"
+                      ? "یا از یک فایل (M3U / CSV)"
+                      : "Or import from a file (M3U / CSV)"}
+                  </BodyText>
+                </TouchableOpacity>
+              ) : null}
 
               {status ? (
                 <MutedText style={[styles.status, { color: colors.muted }]}>
@@ -351,6 +374,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "flex-end",
     gap: 12,
+    marginTop: 4,
+  },
+  fromFileLink: {
+    alignSelf: "flex-start",
+    paddingVertical: 4,
     marginTop: 4,
   },
   cancelButton: {

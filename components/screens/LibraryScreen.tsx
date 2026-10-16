@@ -55,6 +55,7 @@ import { PodcastSubscribeModal } from "../PodcastSubscribeModal";
 import { fetchPodcastFeed } from "../../modules/podcastService";
 import type { PodcastShow } from "../../modules/podcastFeed";
 import { PlaylistImportSheet } from "../PlaylistImportSheet";
+import { AI_MIX_ID } from "../../modules/aiMixPlaylist";
 import { sanitizeImageUrl } from "../core/image";
 import { getAppFontFamily, getTextDirectionStyle } from "../../utils/fonts";
 import { useAuth } from "../../hooks/useAuth";
@@ -293,7 +294,8 @@ type LibraryArtworkKind =
   | "image"
   | "artist"
   | "local"
-  | "podcast";
+  | "podcast"
+  | "aiMix";
 
 type LibraryDisplayItem = {
   id: string;
@@ -1292,6 +1294,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       ...visiblePlaylists.map((playlist) => {
         const artworkUri = getPlaylistArtworkUri(playlist);
         const isSmart = Boolean(playlist.smartDefinition);
+        const isAiMix = playlist.id === AI_MIX_ID;
         const ruleSummary = playlist.smartDefinition
           ? describeSmartPlaylist(
               playlist.smartDefinition,
@@ -1328,8 +1331,16 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           ]
             .filter(Boolean)
             .join(" "),
-          artworkKind: artworkUri ? ("image" as const) : ("playlist" as const),
+          // The AI Mix list is generated, not imported, so it renders with the
+          // sparkles tile (and keeps pinned ahead of user playlists) instead of
+          // the generic folder-artwork "playlist" kind.
+          artworkKind: artworkUri
+            ? ("image" as const)
+            : isAiMix
+              ? ("aiMix" as const)
+              : ("playlist" as const),
           imageUri: artworkUri,
+          ...(isAiMix ? { pinOrder: 4 } : {}),
           onPress: () => handleUserPlaylistPress(playlist),
         };
       }),
@@ -1606,7 +1617,9 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                   ? ["#059669", "#10b981", "#34d399"]
                   : item.artworkKind === "podcast"
                     ? ["#7c3aed", "#a855f7", "#c084fc"]
-                    : item.artworkKind === "artist"
+                    : item.artworkKind === "aiMix"
+                      ? [colors.accent, "#a855f7", "#22d3ee"]
+                      : item.artworkKind === "artist"
                     ? [colors.surface1, colors.surface2, colors.surface3]
                     : item.artworkKind === "playlist"
                       ? [colors.accent, colors.heroMid, colors.heroEnd]
@@ -1622,7 +1635,13 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             },
           ]}
         >
-          {item.artworkKind === "playlist" ? (
+          {item.artworkKind === "aiMix" ? (
+            <Ionicons
+              name="sparkles"
+              size={iconSize}
+              color={colors.accentContrast}
+            />
+          ) : item.artworkKind === "playlist" ? (
             <Ionicons
               name="folder-open-outline"
               size={iconSize}
@@ -1787,19 +1806,6 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             >
               <HeaderIconText>
                 <FontAwesome6 name="add" size={20} color={colors.foreground} />
-              </HeaderIconText>
-            </HeaderIconButton>
-            <HeaderIconButton
-              onPress={handleImportPlaylist}
-              style={{ marginStart: 6, marginEnd: 8 }}
-              accessibilityLabel="Import playlist"
-            >
-              <HeaderIconText>
-                <Ionicons
-                  name="folder-open-outline"
-                  size={20}
-                  color={colors.foreground}
-                />
               </HeaderIconText>
             </HeaderIconButton>
             <HeaderIconButton
@@ -2257,6 +2263,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           onImported={() => {
             void loadPlaylists();
           }}
+          onImportFromFile={handleImportPlaylist}
         />
 
         <PlaylistCreateModal
