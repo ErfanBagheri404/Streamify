@@ -100,14 +100,23 @@ export function parseDeepLink(
     return { action };
   }
   if (action === "open-playlist") {
-    const name = decodeURIComponent(parts[1] ?? "").trim();
-    if (!name) return null;
-    return { action, playlistName: name };
+    try {
+      const name = decodeURIComponent(parts[1] ?? "").trim();
+      if (!name) return null;
+      return { action, playlistName: name };
+    } catch {
+      // Malformed percent-encoding is ignored, not thrown into the caller.
+      return null;
+    }
   }
   if (action === "track") {
-    const trackId = decodeURIComponent(parts[1] ?? "").trim();
-    if (!trackId) return null;
-    return { action, trackId };
+    try {
+      const trackId = decodeURIComponent(parts[1] ?? "").trim();
+      if (!trackId) return null;
+      return { action, trackId };
+    } catch {
+      return null;
+    }
   }
   return null;
 }
