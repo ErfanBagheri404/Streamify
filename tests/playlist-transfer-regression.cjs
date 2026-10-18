@@ -381,6 +381,89 @@ check("a URL containing file2= does not reroute an M3U to the PLS parser", () =>
   assert.strictEqual(entries.length, 2, "must stay on the M3U path");
 });
 
+// --- parser robustness (new) ------------------------------------------------
+
+check("PLS without a Title falls back to the URI filename, and bad lengths are dropped", () => {
+  const entries = pt.parsePlaylistText(
+    "[playlist]\nFile1=http://h/a%20song.mp3\nLength1=-1\nFile2=http://h/x.mp3\nLength2=abc\n",
+  );
+  assert.strictEqual(entries.length, 2);
+  assert.strictEqual(entries[0].title, "a song", "percent-decoded filename minus extension");
+  assert.strictEqual(entries[0].durationSeconds, undefined, "-1 means unknown");
+  assert.strictEqual(entries[1].durationSeconds, undefined, "a non-numeric length is not a duration");
+});
+
+check("PLS entries without a File line are ignored, not half-imported", () => {
+  const entries = pt.parsePlaylistText(
+    "[playlist]\nTitle9=ghost\nLength9=100\nFile1=http://h/x.mp3\n",
+  );
+  assert.strictEqual(entries.length, 1, "a title with no file is not a track");
+  assert.strictEqual(entries[0].title, "x");
+});
+
+check("an empty export round-trips to zero entries without throwing", () => {
+  const CRLF = String.fromCharCode(13, 10);
+  assert.strictEqual(pt.toM3u([]), "#EXTM3U" + CRLF);
+  assert.deepStrictEqual(pt.parseM3u(pt.toM3u([])), []);
+  assert.strictEqual(pt.toCsv([]), "﻿Title,Artist,Album" + CRLF);
+  assert.deepStrictEqual(pt.parsePlaylistText(pt.toCsv([])), []);
+});
+
+check("M3U export: a missing or zero duration becomes -1, and a track with no URI falls back to its title", () => {
+  const CRLF = String.fromCharCode(13, 10);
+  const noUri = pt.toM3u([{ title: "T" }]);
+  assert.strictEqual(noUri, "#EXTM3U" + CRLF + "#EXTINF:-1,T" + CRLF + "T" + CRLF);
+  const zeroDur = pt.toM3u([{ title: "T", durationSeconds: 0 }]);
+  assert.strictEqual(zeroDur, noUri, "0 is not a playable duration");
+  const [entry] = pt.parseM3u(noUri);
+  assert.strictEqual(entry.title, "T");
+  assert.strictEqual(entry.uri, undefined, "no URI was written");
+});
+
+check("playlistFileName: extension override, reserved characters and whitespace", () => {
+  assert.strictEqual(pt.playlistFileName("a::b//c", "csv"), "a b c.csv");
+  assert.strictEqual(pt.playlistFileName("My  Mix"), "My Mix.m3u8", "runs of spaces collapse");
+  assert.strictEqual(pt.playlistFileName("   "), "playlist.m3u8", "blank falls back to the default");
+});
+
+check("normalizeMatchKey: punctuation and case fold, Persian letters survive", () => {
+  assert.strictEqual(pt.normalizeMatchKey("  Don't  Stop!! "), "dont stop");
+  const fa = pt.normalizeMatchKey("آهنگِ من");
+  assert.ok(fa.includes("آهنگ") && fa.includes("من"), "Persian letters must survive, got " + fa);
+  // The Arabic letter block (U+0621-U+064A) shares a range with the harakat,
+  // so test one specific diacritic, not a block range.
+  const KASRA = String.fromCharCode(0x0650);
+  assert.ok(!fa.includes(KASRA), "diacritics are stripped");
+});
+
+check("matching: a one-word title never matches an unrelated sentence", () => {
+  assert.ok(!pt.isLikelyMatch("It", "It Takes Two"), "single shared token is not a match");
+  assert.ok(pt.isLikelyMatch("Bohemian Rhapsody", "Bohemian Rhapsody Live at Wembley"),
+    "a two-token title is a subset of the longer version");
+});
+
+check("a bare URI list keeps every entry and derives titles from the filenames", () => {
+  const entries = pt.parseM3u("http://h/one.mp3\nhttp://h/two.mp3\nhttp://h/three.mp3");
+  assert.strictEqual(entries.length, 3);
+  assert.deepStrictEqual(entries.map((e) => e.title), ["one", "two", "three"]);
+  assert.deepStrictEqual(entries.map((e) => e.uri), [
+    "http://h/one.mp3",
+    "http://h/two.mp3",
+    "http://h/three.mp3",
+  ]);
+});
+
+check("a CSV header pair other than Title,Artist,Album is still recognised", () => {
+  const entries = pt.parsePlaylistText("Name,Performer\r\nSong,A\r\n");
+  assert.deepStrictEqual(entries.map((e) => e.title), ["Song"]);
+  assert.strictEqual(entries[0].artist, "A");
+});
+
+check("a tab-leading formula is neutralised like =, + and -", () => {
+  const csv = pt.toCsv([{ title: "\t=cmd" }]);
+  assert.ok(csv.includes("'\t=cmd"), csv);
+});
+
 // --- report -----------------------------------------------------------------
 
 const failed = results.filter((r) => r.startsWith("FAIL"));

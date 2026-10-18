@@ -448,6 +448,116 @@ check("changing a field keeps only operators that field supports", () => {
   );
 });
 
+// --- additional rule combinations and boundaries ----------------------------
+
+check("an OR chain matches when only the last rule is true", () => {
+  const t = track({ plays: 0, isLiked: false, artist: "Pink Floyd" });
+  const rules = [
+    { field: "plays", operator: "gte", value: 100 },
+    { field: "isLiked", operator: "equals", value: true },
+    { field: "artist", operator: "contains", value: "pink" },
+  ];
+  assert.strictEqual(sp.matchRules(t, rules, "or"), true, "OR needs only one match");
+  assert.strictEqual(sp.matchRules(t, rules, "and"), false, "AND needs every match");
+});
+
+check("a rule on an unknown field matches nothing and resolves to no tracks", () => {
+  const t = track({ plays: 99, isLiked: true });
+  assert.strictEqual(
+    sp.matchRule(t, { field: "genre", operator: "equals", value: "rock" }),
+    false,
+    "an unknown field must never match",
+  );
+  const out = sp.resolveSmartPlaylist(
+    { id: "s", name: "S", chain: "and", limit: 50, rules: [{ field: "genre", operator: "equals", value: "rock" }] },
+    [t],
+  );
+  assert.deepStrictEqual(out, [], "an unknown field must not accidentally match-all");
+});
+
+check("plays equals and lte honor exact numeric boundaries", () => {
+  assert.strictEqual(sp.matchRule(track({ plays: 5 }), { field: "plays", operator: "lte", value: 5 }), true);
+  assert.strictEqual(sp.matchRule(track({ plays: 6 }), { field: "plays", operator: "lte", value: 5 }), false);
+  assert.strictEqual(sp.matchRule(track({ plays: 5 }), { field: "plays", operator: "equals", value: 5 }), true);
+  assert.strictEqual(sp.matchRule(track({ plays: 5 }), { field: "plays", operator: "equals", value: "5" }), false);
+});
+
+check("lastPlayedDaysAgo equals floors both sides", () => {
+  assert.strictEqual(
+    sp.matchRule(track({ lastPlayedDaysAgo: 3.9 }), { field: "lastPlayedDaysAgo", operator: "equals", value: 3 }),
+    true,
+  );
+  assert.strictEqual(
+    sp.matchRule(track({ lastPlayedDaysAgo: 3 }), { field: "lastPlayedDaysAgo", operator: "equals", value: 3.9 }),
+    true,
+  );
+  assert.strictEqual(
+    sp.matchRule(track({}), { field: "lastPlayedDaysAgo", operator: "equals", value: 0 }),
+    false,
+    "a never-played track is not day 0",
+  );
+});
+
+check("a missing text field fails contains/equals and passes notContains", () => {
+  const t = track({ title: "Untitled" }); // no artist
+  assert.strictEqual(sp.matchRule(t, { field: "artist", operator: "equals", value: "anyone" }), false);
+  assert.strictEqual(sp.matchRule(t, { field: "artist", operator: "contains", value: "any" }), false);
+  assert.strictEqual(
+    sp.matchRule(t, { field: "artist", operator: "notContains", value: "any" }),
+    true,
+    "an empty haystack contains nothing",
+  );
+});
+
+check("resolveSmartPlaylist floors a fractional limit and falls back on a non-finite one", () => {
+  const pool = Array.from({ length: 60 }, (_, i) =>
+    track({ id: `t${i}`, title: `S${String(i).padStart(2, "0")}`, plays: 1 }),
+  );
+  const def = (limit) => ({ id: "s", name: "S", chain: "and", limit, rules: [{ field: "plays", operator: "gte", value: 1 }] });
+  assert.strictEqual(sp.resolveSmartPlaylist(def(2.9), pool).length, 2);
+  assert.strictEqual(sp.resolveSmartPlaylist(def(0), pool).length, 50, "0 is not a real limit");
+  assert.strictEqual(sp.resolveSmartPlaylist(def(-3), pool).length, 50, "a negative limit must not match everything");
+  assert.strictEqual(sp.resolveSmartPlaylist(def(Number.POSITIVE_INFINITY), pool).length, 50);
+});
+
+check("resolveSmartPlaylist returns an empty list when nothing matches", () => {
+  const out = sp.resolveSmartPlaylist(
+    { id: "s", name: "S", chain: "and", limit: 50, rules: [{ field: "plays", operator: "gte", value: 1000 }] },
+    [track({ plays: 1 }), track({ id: "t2", plays: 2 })],
+  );
+  assert.deepStrictEqual(out, []);
+});
+
+check("resolveSmartPlaylist leaves the input pool untouched", () => {
+  const pool = [track({ id: "a", title: "B", plays: 1 }), track({ id: "b", title: "A", plays: 2 })];
+  const before = pool.map((t) => t.id);
+  sp.resolveSmartPlaylist(
+    { id: "s", name: "S", chain: "and", limit: 50, rules: [{ field: "plays", operator: "gte", value: 1 }] },
+    pool,
+  );
+  assert.deepStrictEqual(pool.map((t) => t.id), before, "the sorted result must be a copy");
+});
+
+check("results tie-break on id when plays and title are identical", () => {
+  const pool = [track({ id: "z", title: "Same", plays: 2 }), track({ id: "a", title: "Same", plays: 2 })];
+  const out = sp.resolveSmartPlaylist(
+    { id: "s", name: "S", chain: "and", limit: 50, rules: [{ field: "plays", operator: "gte", value: 1 }] },
+    pool,
+  );
+  assert.deepStrictEqual(out.map((t) => t.id), ["a", "z"]);
+});
+
+check("sanitizeSmartPlaylist defaults a blank name and keeps an explicit OR chain", () => {
+  const blank = sp.sanitizeSmartPlaylist(
+    { name: "   ", chain: "or", rules: [{ field: "isLiked", operator: "equals", value: false }] },
+    "f",
+  );
+  assert.strictEqual(blank.name, "Smart playlist");
+  assert.strictEqual(blank.chain, "or");
+  assert.strictEqual(blank.limit, 50, "a missing limit defaults to 50");
+  assert.deepStrictEqual(blank.rules, [{ field: "isLiked", operator: "equals", value: false }]);
+});
+
 // --- report ------------------------------------------------------------------
 
 let failed = 0;

@@ -196,6 +196,94 @@ async function main() {
     );
   });
 
+  // ---- payload serialization (extended scenarios) -------------------------
+
+  await check('payloads are JSON round-trippable — the Data Layer carries them as JSON', () => {
+    const np = m.buildWearNowPlaying(track(), true, 65, 215);
+    const rows = m.buildWearQueue([track({ id: 'a' }), track({ id: 'b' })], 1);
+    const comp = m.buildWearComplication(track(), true);
+    for (const payload of [np, rows, comp]) {
+      const round = JSON.parse(JSON.stringify(payload));
+      assert.deepEqual(round, payload, 'a watch must see exactly what the phone built');
+    }
+    // Keys are plain JSON primitives: no undefined leaking into the wire format.
+    for (const key of Object.keys(np)) {
+      assert.ok(['string', 'boolean', 'number'].includes(typeof np[key]), `nowPlaying.${key} is ${typeof np[key]}`);
+    }
+    for (const row of rows) {
+      for (const key of Object.keys(row)) {
+        assert.notStrictEqual(row[key], undefined, `queue row ${key} must not be undefined`);
+      }
+    }
+  });
+
+  await check('a long queue still fits the 100 KB DataItem budget at 500 rows', () => {
+    // The Wear Data Layer caps a DataItem payload at 100 KB. The phone-side
+    // builder emits no cap of its own, so guard the margin the queue shape
+    // actually leaves: 500 rows of a typical track stay well inside it.
+    const rows = m.buildWearQueue(
+      Array.from({ length: 500 }, (_, i) => track({ id: `vid${i}`, title: `Track ${i}` })),
+      3,
+    );
+    assert.equal(rows.length, 500);
+    const bytes = Buffer.byteLength(JSON.stringify(rows), 'utf8');
+    assert.ok(bytes > 0 && bytes < 100 * 1024, `queue payload is ${bytes} bytes`);
+    assert.equal(rows[3].isCurrent, true);
+  });
+
+  // ---- formatting boundaries (extended scenarios) -------------------------
+
+  await check('formatWearTime: rolls 59:59 -> 1:00:00 at the hour boundary', () => {
+    assert.equal(m.formatWearTime(3599), '59:59');
+    assert.equal(m.formatWearTime(3600), '1:00:00');
+    assert.equal(m.formatWearTime(7199), '1:59:59');
+    assert.equal(m.formatWearTime(60), '1:00');
+    assert.equal(m.formatWearTime(59.9), '0:59', 'sub-second values floor, not round up');
+    assert.equal(m.formatWearTime(0.4), '0:00');
+  });
+
+  await check('nowPlaying: progress floors below 100% and starts at 0%', () => {
+    const nearEnd = m.buildWearNowPlaying(track(), true, 213.9, 215);
+    assert.equal(nearEnd.progressLabel, '99% / 3:35', '99.x floors to 99, never 100 mid-track');
+    assert.equal(nearEnd.positionLabel, '3:33');
+    const start = m.buildWearNowPlaying(track(), true, 0, 215);
+    assert.equal(start.progressLabel, '0% / 3:35');
+    assert.equal(start.positionLabel, '0:00');
+    // An unknown duration still shows the position it does know.
+    const noDur = m.buildWearNowPlaying(track(), true, 65, 0);
+    assert.equal(noDur.durationLabel, '');
+    assert.equal(noDur.progressLabel, '');
+    assert.equal(noDur.positionLabel, '1:05');
+  });
+
+  // ---- queue + complication edges (extended scenarios) --------------------
+
+  await check('queue: rows fall back to placeholders the same way the card does', () => {
+    const rows = m.buildWearQueue([{ id: 'a', title: '   ', artist: undefined, thumbnail: 'content://x.jpg' }], 0);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].title, 'Unknown Title');
+    assert.equal(rows[0].artist, 'Unknown Artist');
+    assert.equal(rows[0].artworkUrl, '', 'content:// artwork is not fetchable on the watch');
+  });
+
+  await check('queue: a fractional index marks nothing', () => {
+    const rows = m.buildWearQueue([track({ id: 'a' }), track({ id: 'b' })], 1.5);
+    assert.equal(rows.filter((r) => r.isCurrent).length, 0, 'a fractional index is not a row');
+  });
+
+  await check('complication: whitespace artist is treated as no artist', () => {
+    assert.deepEqual(
+      m.buildWearComplication({ id: 'x', title: 'Only Title' }, false),
+      { label: '⏸ Only Title', empty: false },
+      'paused, no artist: glyph + title',
+    );
+    assert.deepEqual(
+      m.buildWearComplication({ id: 'x', title: 'TT', artist: '   ' }, true),
+      { label: 'TT', empty: false },
+      'playing, blank artist: title only',
+    );
+    assert.equal(m.buildWearComplication(track(), true).label.includes('—'), true, 'em-dash joins artist and title');
+  });
   console.log(`\n${checks - failures.length}/${checks} checks passed`);
   if (failures.length > 0) process.exitCode = 1;
 }

@@ -143,9 +143,18 @@ check("applyLyricsOffset never returns a negative position or NaN", () => {
 check("common.save exists in en AND fa (the nudge sheet's apply button)", () => {
   const en = JSON.parse(read("locales", "en.json"));
   const fa = JSON.parse(read("locales", "fa.json"));
-  assert.ok(en["common.save"] && en["common.save"].trim(), "en missing common.save");
-  assert.ok(fa["common.save"] && fa["common.save"].trim(), "fa missing common.save");
-  assert.notStrictEqual(fa["common.save"], en["common.save"], "fa is an English copy");
+  // translate() resolves a dotted key against the nested object first and the
+  // flat map second; en/fa.json carry `common.save` under `common`, so read it
+  // the same way the app does rather than indexing the flat map.
+  const valueOf = (dict, key) => {
+    const nested = key
+      .split(".")
+      .reduce((cur, part) => (cur && typeof cur === "object" ? cur[part] : undefined), dict);
+    return typeof nested === "string" ? nested : dict[key];
+  };
+  assert.ok(valueOf(en, "common.save") && valueOf(en, "common.save").trim(), "en missing common.save");
+  assert.ok(valueOf(fa, "common.save") && valueOf(fa, "common.save").trim(), "fa missing common.save");
+  assert.notStrictEqual(valueOf(fa, "common.save"), valueOf(en, "common.save"), "fa is an English copy");
 });
 
 // --- applyLyricsOffset -------------------------------------------------------
@@ -216,8 +225,116 @@ check("tap-to-seek inverts the offset", () => {
   );
 });
 
+// --- applyLyricsOffset arithmetic -------------------------------------------
+
+check("applyLyricsOffset keeps fractional positions and rejects infinities", () => {
+  assert.ok(Math.abs(off.applyLyricsOffset(7.2, 2) - 9.2) < 1e-9, `got ${off.applyLyricsOffset(7.2, 2)}`);
+  assert.strictEqual(
+    off.applyLyricsOffset(Number.POSITIVE_INFINITY, 2),
+    0,
+    "an infinite position is meaningless",
+  );
+  assert.strictEqual(
+    off.applyLyricsOffset(5, Number.POSITIVE_INFINITY),
+    5,
+    "an infinite offset must not move the position",
+  );
+  assert.strictEqual(off.applyLyricsOffset(Number.NaN, Number.NaN), 0);
+});
+
+// --- late sequential scenarios ----------------------------------------------
+// The first async check above shares the module-level cache and rewrites the
+// storage key; these additions run after it finishes so they cannot interleave
+// with its resets. Same rule, separate harness so a failing assertion in one
+// scenario does not hide the others.
+
+async function runLateScenarios() {
+  async function seqCheck(name, fn) {
+    try {
+      await fn();
+      results.push(`PASS ${name}`);
+    } catch (e) {
+      results.push(`FAIL ${name}: ${e.message}`);
+    }
+  }
+
+  await seqCheck("writes clamp to the published min/max and round to a tenth", async () => {
+    assert.strictEqual(await off.setLyricsOffset("n1", 10), 10, "+max boundary");
+    assert.strictEqual(await off.setLyricsOffset("n1", 10.4), 10);
+    assert.strictEqual(await off.setLyricsOffset("n1", 10.6), 10);
+    assert.strictEqual(await off.setLyricsOffset("n2", -10), -10, "-max boundary");
+    assert.strictEqual(await off.setLyricsOffset("n2", -10.4), -10);
+    assert.strictEqual(await off.setLyricsOffset("n2", -10.6), -10);
+    assert.strictEqual(await off.setLyricsOffset("n3", 1.25), 1.3);
+    assert.strictEqual(await off.setLyricsOffset("n4", -1.25), -1.2);
+    assert.strictEqual(await off.getLyricsOffset("n4"), -1.2);
+  });
+
+  await seqCheck("a non-numeric offset is rejected instead of stored as NaN", async () => {
+    // applyLyricsOffset and readStored both fail closed on non-finite input;
+    // setLyricsOffset must do the same instead of persisting NaN into JSON.
+    assert.strictEqual(
+      await off.setLyricsOffset("bad", Number.NaN),
+      0,
+      "a NaN write must not be persisted",
+    );
+    assert.strictEqual(await off.getLyricsOffset("bad"), 0, "a NaN offset leaked into the stored table");
+    assert.strictEqual(await off.setLyricsOffset("bad", undefined), 0);
+    assert.strictEqual(await off.getLyricsOffset("bad"), 0);
+    assert.strictEqual(
+      await off.setLyricsOffset("bad", "2.5"),
+      2.5,
+      "a numeric string is a usable nudge",
+    );
+    assert.strictEqual(await off.getLyricsOffset("bad"), 2.5);
+  });
+
+  await seqCheck("a stored table is clamped and filtered on read", async () => {
+    storageStub.__store.set(
+      "@lyrics_sync_offsets",
+      JSON.stringify({ hi: 999, lo: -999, ok: 3, zero: 0, str: "4", bad: null, missing: NaN }),
+    );
+    off.__resetLyricsOffsetCache();
+    assert.strictEqual(await off.getLyricsOffset("hi"), 10, "an over-max value must clamp");
+    assert.strictEqual(await off.getLyricsOffset("lo"), -10, "an under-min value must clamp");
+    assert.strictEqual(await off.getLyricsOffset("ok"), 3);
+    assert.strictEqual(await off.getLyricsOffset("zero"), 0, "a zero is not a correction");
+    assert.strictEqual(await off.getLyricsOffset("str"), 0, "a non-number must be dropped");
+    assert.strictEqual(await off.getLyricsOffset("bad"), 0, "a null must be dropped");
+    storageStub.__store.delete("@lyrics_sync_offsets");
+    off.__resetLyricsOffsetCache();
+  });
+
+  await seqCheck("clearing and reading a missing or empty id is harmless", async () => {
+    await off.clearLyricsOffset("never-stored");
+    await off.clearLyricsOffset("");
+    assert.strictEqual(await off.getLyricsOffset(""), 0, "an empty id has no offset");
+    assert.strictEqual(await off.getLyricsOffset(undefined), 0, "a missing id has no offset");
+    storageStub.__store.delete("@lyrics_sync_offsets");
+    off.__resetLyricsOffsetCache();
+  });
+
+  await seqCheck("the tracked-offset table stays capped at 500 entries", async () => {
+    for (let i = 0; i < 502; i += 1) {
+      await off.setLyricsOffset(`cap-${i}`, 1);
+    }
+    const stored = JSON.parse(storageStub.__store.get("@lyrics_sync_offsets"));
+    assert.strictEqual(
+      Object.keys(stored).length,
+      500,
+      `expected the table capped at 500, got ${Object.keys(stored).length}`,
+    );
+    assert.ok("cap-501" in stored, "the newest nudge must survive");
+    assert.ok(!("cap-0" in stored), "the oldest entries must be evicted");
+    assert.strictEqual(await off.getLyricsOffset("cap-501"), 1);
+    storageStub.__store.delete("@lyrics_sync_offsets");
+    off.__resetLyricsOffsetCache();
+  });
+}
+
 // --- report ------------------------------------------------------------------
-Promise.all(pending).then(() => {
+Promise.all(pending).then(async () => {
+  await runLateScenarios();
   const failed = results.filter((r) => r.startsWith("FAIL"));
   for (const line of results) {
     console.log(line);

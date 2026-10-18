@@ -263,6 +263,52 @@ const now = at(10, 0);
 assert.strictEqual(svc.nextFireAt(alarm, now), at(7, 0, 1));
 });
 
+// --- window boundary (23:59 -> 00:00, DST-free local wall time) ----------
+// nextFireAt builds every candidate with the LOCAL Date API, so the boundary
+// is asserted in local wall-clock time: it holds because the computation
+// never serialises through UTC.
+await check("nextFireAt fires a 23:59 alarm today when now is 23:58", () => {
+const alarm = baseAlarm({ weekdays: [6], hour: 23, minute: 59 });
+assert.strictEqual(svc.nextFireAt(alarm, at(23, 58)), at(23, 59));
+});
+
+await check("nextFireAt rolls a 23:59 alarm to next week the instant it passes", () => {
+const alarm = baseAlarm({ weekdays: [6], hour: 23, minute: 59 });
+// now == the exact fire time: "time > from" is strict, so the alarm has fired.
+assert.strictEqual(svc.nextFireAt(alarm, at(23, 59)), at(23, 59, 7));
+});
+
+await check("nextFireAt crosses midnight: a 00:00 alarm is tomorrow, not today", () => {
+// 2026-09-26 is Saturday; the next selected day (Sunday) is +1.
+const alarm = baseAlarm({ weekdays: [0], hour: 0, minute: 0 });
+assert.strictEqual(svc.nextFireAt(alarm, at(23, 59)), at(0, 0, 1));
+});
+
+await check("nextFireAt walks day-by-day across a month boundary", () => {
+// 2026-01-31 is Saturday; the following day is Sunday 2026-02-01.
+const alarm = baseAlarm({ weekdays: [0], hour: 7, minute: 0 });
+const now = new Date(2026, 0, 31, 23, 30, 0, 0).getTime();
+const expected = new Date(2026, 1, 1, 7, 0, 0, 0).getTime();
+assert.strictEqual(svc.nextFireAt(alarm, now), expected);
+});
+
+await check("nextFireAt picks the earliest of several selected days after midnight", () => {
+const alarm = baseAlarm({ weekdays: [1, 2], hour: 0, minute: 0 });
+// now is Saturday 23:59; both Mon/Tue 00:00 are ahead, Monday is first.
+assert.strictEqual(svc.nextFireAt(alarm, at(23, 59)), at(0, 0, 2));
+});
+
+// --- validation edge cases ------------------------------------------------
+await check("validateAlarm accepts the extreme 23:59 / 00:00 boundary and rejects non-integers", () => {
+validateAlarm(baseAlarm({ hour: 23, minute: 59 }));
+validateAlarm(baseAlarm({ hour: 0, minute: 0 }));
+assert.throws(() => validateAlarm(baseAlarm({ hour: 7.5 })), /hour/);
+assert.throws(() => validateAlarm(baseAlarm({ minute: 30.2 })), /minute/);
+assert.throws(() => validateAlarm(baseAlarm({ hour: -1 })), /hour/);
+assert.throws(() => validateAlarm(baseAlarm({ minute: -1 })), /minute/);
+assert.throws(() => validateAlarm(baseAlarm({ id: "" })), /id/);
+});
+
 // --- payload parsing ----------------------------------------------------
 await check("readAlarmId extracts a string alarmId", () => {
 assert.strictEqual(svc.readAlarmId({ alarmId: "a1" }), "a1");
@@ -483,7 +529,66 @@ async function runSchedulingChecks() {
     assert.ok(fakeTrackPlayerCalls.includes("add:1"), "mix queue must be added");
     assert.deepStrictEqual(fakeRampLog, [120_000]);
   });
-}
+
+  // --- persistence + notification payload ---------------------------------
+  await check("save() with an existing id updates in place instead of duplicating", async () => {
+    memoryStore.clear();
+      await svc.save(baseAlarm({ id: "edit-me", hour: 7 }));
+      const after = await svc.save(baseAlarm({ id: "edit-me", hour: 8 }));
+      assert.strictEqual(after.length, 1, "same id must not append a second copy");
+      assert.strictEqual(after[0].hour, 8);
+      const stored = await svc.load();
+      assert.strictEqual(stored.length, 1);
+      assert.strictEqual(stored[0].hour, 8);
+    });
+
+    await check("load() on corrupt JSON returns an empty list, never throws", async () => {
+      memoryStore.set("@wake_radio_alarms", "{not json");
+      assert.deepStrictEqual(await svc.load(), []);
+      // A JSON object (not an array) is equally unusable.
+      memoryStore.set("@wake_radio_alarms", JSON.stringify({ alarms: [] }));
+      assert.deepStrictEqual(await svc.load(), []);
+    });
+
+    await check("remove() of an unknown id leaves stored alarms and cancels nothing", async () => {
+      memoryStore.clear();
+      await svc.save(baseAlarm({ id: "keep" }));
+      notifLog.length = 0;
+      const after = await svc.remove("not-there");
+      assert.strictEqual(after.length, 1, "the real alarm survives");
+      assert.strictEqual(after[0].id, "keep");
+      assert.strictEqual(notifLog.filter((e) => e.op === "cancel").length, 0, "nothing to cancel");
+      assert.strictEqual((await svc.load()).length, 1);
+    });
+
+    await check("scheduled payload carries the channel, the padded time and the weekday", async () => {
+      notifLog.length = 0;
+      await svc.save(baseAlarm({ id: "shape", weekdays: [3], hour: 5, minute: 5 }));
+      const scheduled = notifLog.filter((e) => e.op === "schedule");
+      assert.strictEqual(scheduled.length, 1);
+      const req = scheduled[0].req;
+      assert.strictEqual(req.trigger.channelId, "wake-radio-alarms", "the alarm channel");
+      assert.strictEqual(req.content.body, "Alarm 05:05", "time is zero-padded, not 5:5");
+      assert.strictEqual(req.content.data.weekday, 3, "payload weekday is the JS number");
+      assert.strictEqual(req.trigger.weekday, 4, "trigger weekday is the 1-based number");
+      assert.strictEqual(req.content.sound, true, "an alarm must be audible");
+    });
+
+    await check("syncAll() is idempotent — a second sync leaves the same schedule set", async () => {
+      memoryStore.clear();
+      await svc.save(baseAlarm({ id: "idem", weekdays: [2, 4] }));
+      notifLog.length = 0;
+      await svc.syncAll();
+      await svc.syncAll();
+      const scheduled = notifLog.filter((e) => e.op === "schedule");
+      assert.strictEqual(scheduled.length, 4, "2 weekdays x 2 syncs, no duplication beyond that");
+      assert.deepStrictEqual(
+        [...new Set(scheduled.map((e) => e.req.identifier))].sort(),
+        ["idem:2", "idem:4"],
+        "each weekday is re-armed under the same identifier",
+      );
+    });
+  }
 
 // --- FadeService ramp (runtime) ----------------------------------------
 // FadeService stamps its ramp start with Date.now(), so a mid-ramp

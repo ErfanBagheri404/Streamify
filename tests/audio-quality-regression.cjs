@@ -250,6 +250,144 @@ check("locale keys exist in both languages", () => {
   }
 });
 
+// --- network boundaries and policy sanitizing -------------------------------
+
+check("every cellular generation shares the cellular cap (no 2G/3G/4G split)", () => {
+  // The policy models the coarse kinds expo-network reports; 2G/3G/4G all
+  // arrive as "cellular", so one cap must cover them.
+  const p = {
+    ...policy.DEFAULT_QUALITY_POLICY,
+    mode: "networkAware",
+    wifiCapKbps: 320,
+    cellularCapKbps: 96,
+    otherCapKbps: 160,
+  };
+  assert.strictEqual(policy.effectiveCapKbps(p, "wifi"), 320);
+  assert.strictEqual(policy.effectiveCapKbps(p, "cellular"), 96);
+  assert.strictEqual(
+    policy.effectiveCapKbps(p, "unknown"),
+    160,
+    "offline/undetermined must not be billed at the cellular cap",
+  );
+  assert.strictEqual(policy.effectiveCapKbps(p, "other"), 160);
+});
+
+check("alwaysLow with a null cellular cap degrades to no cap, not silence", () => {
+  const p = {
+    ...policy.DEFAULT_QUALITY_POLICY,
+    mode: "alwaysLow",
+    cellularCapKbps: null,
+  };
+  assert.strictEqual(policy.effectiveCapKbps(p, "cellular"), null);
+  assert.strictEqual(policy.effectiveCapKbps(p, "wifi"), null);
+});
+
+check("an unknown mode or an unoffered cap falls back to the default", () => {
+  const s = policy.sanitizeQualityPolicy({
+    mode: "turbo",
+    wifiCapKbps: 999,
+    cellularCapKbps: 128,
+    otherCapKbps: 160,
+  });
+  assert.strictEqual(s.mode, "alwaysBest");
+  assert.strictEqual(s.wifiCapKbps, null, "999 is not an offered cap and must fall back");
+  assert.strictEqual(s.cellularCapKbps, 128);
+  assert.strictEqual(s.otherCapKbps, 160);
+});
+
+check("sanitizeQualityPolicy accepts null caps and rejects garbage shapes", () => {
+  const ok = policy.sanitizeQualityPolicy({
+    mode: "networkAware",
+    wifiCapKbps: null,
+    cellularCapKbps: 96,
+    otherCapKbps: null,
+  });
+  assert.deepStrictEqual(ok, {
+    mode: "networkAware",
+    wifiCapKbps: null,
+    cellularCapKbps: 96,
+    otherCapKbps: null,
+  });
+  assert.deepStrictEqual(policy.sanitizeQualityPolicy(null), policy.DEFAULT_QUALITY_POLICY);
+  assert.deepStrictEqual(policy.sanitizeQualityPolicy([]), policy.DEFAULT_QUALITY_POLICY);
+  assert.deepStrictEqual(policy.sanitizeQualityPolicy("nope"), policy.DEFAULT_QUALITY_POLICY);
+});
+
+check("the picker treats the cap as inclusive and never returns null for a non-empty list", () => {
+  const mk = (k) => ({ bitrateKbps: k });
+  const exact = policy.pickCandidateByCap([mk(320), mk(128), mk(96)], 128);
+  assert.strictEqual(exact && exact.bitrateKbps, 128, "a stream exactly at the cap must be allowed");
+  const zeroCap = policy.pickCandidateByCap([mk(320), mk(160)], 0);
+  assert.strictEqual(
+    zeroCap && zeroCap.bitrateKbps,
+    160,
+    "an impossible cap degrades to the lowest stream, never null",
+  );
+  assert.strictEqual(policy.pickCandidateByCap([], null), null);
+});
+
+check("parseJioSaavnQualityKbps reads the first number and rejects non-strings", () => {
+  assert.strictEqual(policy.parseJioSaavnQualityKbps("160kbps"), 160);
+  assert.strictEqual(policy.parseJioSaavnQualityKbps("96"), 96);
+  assert.strictEqual(policy.parseJioSaavnQualityKbps("kbps"), 0);
+  assert.strictEqual(policy.parseJioSaavnQualityKbps(""), 0);
+  assert.strictEqual(policy.parseJioSaavnQualityKbps(null), 0);
+  assert.strictEqual(
+    policy.parseJioSaavnQualityKbps(320),
+    0,
+    "a raw number is not a JioSaavn label and must not be priced from",
+  );
+});
+
+check("bpsToKbps rounds and rejects non-finite or non-positive input", () => {
+  assert.strictEqual(policy.bpsToKbps(96000), 96);
+  assert.strictEqual(policy.bpsToKbps(127500), 128);
+  assert.strictEqual(policy.bpsToKbps(0), 0);
+  assert.strictEqual(policy.bpsToKbps(-5), 0);
+  assert.strictEqual(policy.bpsToKbps(Number.NaN), 0);
+  assert.strictEqual(policy.bpsToKbps(Number.POSITIVE_INFINITY), 0);
+  assert.strictEqual(policy.bpsToKbps(undefined), 0);
+});
+
+check("notePickedBitrate ignores empty ids and non-positive bitrates", () => {
+  policy.notePickedBitrate("", 320);
+  assert.strictEqual(policy.pickedBitrateFor(""), 0);
+  policy.notePickedBitrate("junk", 0);
+  policy.notePickedBitrate("junk", -128);
+  policy.notePickedBitrate("junk", Number.NaN);
+  assert.strictEqual(policy.pickedBitrateFor("junk"), 0, "a bogus bitrate must never be priced");
+  policy.notePickedBitrate("junk", 127.6);
+  assert.strictEqual(policy.pickedBitrateFor("junk"), 128, "a stored bitrate is rounded to kbps");
+});
+
+check("the live cap reads the pushed policy and the last known network", () => {
+  const before = policy.getActiveQualityPolicy();
+  try {
+    policy.setActiveQualityPolicy({
+      mode: "networkAware",
+      wifiCapKbps: 96,
+      cellularCapKbps: 96,
+      otherCapKbps: 96,
+    });
+    // getCachedNetwork() starts at "unknown" until an expo-network refresh lands.
+    assert.strictEqual(policy.currentCapKbps(), 96);
+    policy.setActiveQualityPolicy({
+      mode: "alwaysBest",
+      wifiCapKbps: 96,
+      cellularCapKbps: 96,
+      otherCapKbps: 96,
+    });
+    assert.strictEqual(
+      policy.currentCapKbps(),
+      null,
+      "alwaysBest must win over the per-network caps",
+    );
+  } finally {
+    policy.setActiveQualityPolicy(before);
+  }
+  assert.deepStrictEqual(policy.getActiveQualityPolicy(), before);
+});
+
 // --- report -----------------------------------------------------------------
 
 check("a stream with no published bitrate is priced at the cap, not zero", () => {

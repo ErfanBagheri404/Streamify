@@ -38,6 +38,10 @@ function loadModule(file, fakes) {
   return mod.exports;
 }
 
+/** app-settings imports sanitizeCacheCapMb from ../modules/cacheBudget, so a
+ *  settings-level check has to hand it the real module, not a blank fakes map. */
+const cacheBudget = loadModule("modules/cacheBudget.ts", {});
+
 /** react-native fake: programmable Platform.OS + NativeModules. */
 function rnFake({ os = "android", modules = {} } = {}) {
   const calls = [];
@@ -161,11 +165,157 @@ check("wrapper no-ops on non-Android platforms", async () => {
 // --- settings plumbing ----------------------------------------------------
 
 check("equalizerEnabled is declared, defaulted false and sanitized", async () => {
-  const s = loadModule("lib/app-settings.ts", {});
+  const s = loadModule("lib/app-settings.ts", { "../modules/cacheBudget": cacheBudget });
   assert.equal(s.DEFAULT_APP_SETTINGS.equalizerEnabled, false);
   assert.equal(s.sanitizeAppSettings({}).equalizerEnabled, false);
   assert.equal(s.sanitizeAppSettings({ equalizerEnabled: true }).equalizerEnabled, true);
   assert.equal(s.sanitizeAppSettings({ equalizerEnabled: "yes" }).equalizerEnabled, false);
+});
+
+check("equalizerEnabled survives a payload of garbage settings", async () => {
+  const s = loadModule("lib/app-settings.ts", { "../modules/cacheBudget": cacheBudget });
+  const out = s.sanitizeAppSettings({
+    equalizerEnabled: true,
+    theme: "neon-tan",
+    seekStepSeconds: 7,
+    crossfadeSeconds: 99,
+  });
+  assert.equal(out.equalizerEnabled, true, "a good toggle was lost in sanitize");
+  assert.equal(out.theme, "default");
+  assert.equal(out.seekStepSeconds, 10);
+  assert.equal(out.crossfadeSeconds, 4);
+});
+
+// --- gain/enable contract on the JS surface ---------------------------------
+
+check("an out-of-range gain is passed through unclamped (native owns the clamp)", async () => {
+  const seen = [];
+  const { rn } = rnFake({
+    modules: {
+      StreamifyEqualizerModule: {
+        ...BANDS,
+        setBandLevel: async (band, millibel) => {
+          seen.push([band, millibel]);
+          return millibel;
+        },
+      },
+    },
+  });
+  const eq = loadModule("modules/audioEqualizer.ts", { "react-native": rn });
+  assert.equal(await eq.setEqualizerBandLevel(99, 99_999), 99_999, "gain was clamped in JS");
+  assert.equal(await eq.setEqualizerBandLevel(-1, -99_999), -99_999);
+  assert.equal(await eq.setEqualizerBandLevel(1, -12.5), -12.5, "gain was rounded in JS");
+  assert.deepEqual(seen, [[99, 99_999], [-1, -99_999], [1, -12.5]]);
+});
+
+check("setBandLevel resolves null when the native call throws", async () => {
+  const { rn } = rnFake({
+    modules: {
+      StreamifyEqualizerModule: {
+        ...BANDS,
+        setBandLevel: async () => {
+          throw new Error("dead effect");
+        },
+      },
+    },
+  });
+  const eq = loadModule("modules/audioEqualizer.ts", { "react-native": rn });
+  assert.equal(await eq.setEqualizerBandLevel(0, 300), null);
+});
+
+check("setEnabled resolves false when the native call throws", async () => {
+  const { rn } = rnFake({
+    modules: {
+      StreamifyEqualizerModule: {
+        ...BANDS,
+        setEnabled: async () => {
+          throw new Error("dead effect");
+        },
+      },
+    },
+  });
+  const eq = loadModule("modules/audioEqualizer.ts", { "react-native": rn });
+  assert.equal(await eq.setEqualizerEnabled(true), false);
+});
+
+check("the link warning fires once, not on every unlinked call", async () => {
+  const { rn } = rnFake({ modules: {} });
+  const eq = loadModule("modules/audioEqualizer.ts", { "react-native": rn });
+  const warnings = [];
+  const orig = console.warn;
+  console.warn = (m) => warnings.push(String(m));
+  try {
+    await eq.getEqualizerInfo();
+    await eq.getEqualizerInfo();
+    await eq.setEqualizerBandLevel(0, 100);
+    await eq.setEqualizerEnabled(true);
+  } finally {
+    console.warn = orig;
+  }
+  const linkWarnings = warnings.filter((w) => w.includes("not linked")).length;
+  assert.equal(linkWarnings, 1, `link guidance repeated ${linkWarnings} times`);
+});
+
+check("getInfo is never cached: each call re-reads the native state", async () => {
+  let levels = [0, 0];
+  const { rn } = rnFake({
+    modules: {
+      StreamifyEqualizerModule: {
+        ...BANDS,
+        getInfo: async () => ({ ...(await BANDS.getInfo()), levels }),
+      },
+    },
+  });
+  const eq = loadModule("modules/audioEqualizer.ts", { "react-native": rn });
+  await eq.setEqualizerBandLevel(1, -200);
+  levels = [0, -200];
+  assert.deepEqual((await eq.getEqualizerInfo()).levels, [0, -200]);
+  levels = [0, 0];
+  assert.deepEqual((await eq.getEqualizerInfo()).levels, [0, 0], "info was cached");
+});
+
+check("isEqualizerSupported tracks platform and module linkage", async () => {
+  const linkedAndroid = loadModule("modules/audioEqualizer.ts", {
+    "react-native": rnFake({ os: "android", modules: { StreamifyEqualizerModule: BANDS } }).rn,
+  });
+  assert.equal(linkedAndroid.isEqualizerSupported, true);
+  const unlinkedAndroid = loadModule("modules/audioEqualizer.ts", {
+    "react-native": rnFake({ os: "android", modules: {} }).rn,
+  });
+  assert.equal(unlinkedAndroid.isEqualizerSupported, false);
+  const linkedIos = loadModule("modules/audioEqualizer.ts", {
+    "react-native": rnFake({ os: "ios", modules: { StreamifyEqualizerModule: BANDS } }).rn,
+  });
+  assert.equal(linkedIos.isEqualizerSupported, false, "a linked module is useless on iOS");
+});
+
+
+check("native and settings calls keep their call order", async () => {
+  const log = [];
+  const { rn } = rnFake({
+    modules: {
+      StreamifyEqualizerModule: {
+        ...BANDS,
+        setBandLevel: async (b, m) => {
+          log.push(["band", b, m]);
+          return m;
+        },
+        setEnabled: async (v) => {
+          log.push(["enabled", v]);
+          return v;
+        },
+      },
+    },
+  });
+  const eq = loadModule("modules/audioEqualizer.ts", { "react-native": rn });
+  await eq.setEqualizerEnabled(true);
+  await eq.setEqualizerBandLevel(1, -300);
+  await eq.setEqualizerEnabled(false);
+  assert.deepEqual(log, [
+    ["enabled", true],
+    ["band", 1, -300],
+    ["enabled", false],
+  ]);
 });
 
 // --- native contract from file text ----------------------------------------

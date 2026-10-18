@@ -103,9 +103,9 @@ function transpileTo(source, outPath) {
   return outPath;
 }
 
-function mirrorTs(relPath) {
+function mirrorTs(relPath, ext = ".cjs") {
   const abs = path.join(root, relPath);
-  const out = path.join(scratchMirror, relPath.replace(/\.tsx?$/, ".cjs"));
+  const out = path.join(scratchMirror, relPath.replace(/\.tsx?$/, ext));
   return transpileTo(fs.readFileSync(abs, "utf8"), out);
 }
 
@@ -255,13 +255,76 @@ check("CDATA text nodes are unwrapped", () => {
   assert(!/[{}]/.test(parsed.show.description), "raw parser objects must not leak into UI text");
 });
 
+// ── parser (extra) ───────────────────────────────────────────────────────
+
+check("an item missing a title falls back to its audio url", () => {
+  const xml = `<rss version="2.0"><channel><title>S</title>
+    <item><guid>g1</guid><pubDate>Mon, 12 Sep 2025 06:00:00 GMT</pubDate>
+      <enclosure url="https://cdn.example.com/x.mp3" type="audio/mpeg"/></item></channel></rss>`;
+  const out = feed.parsePodcastFeed("https://example.com/f.xml", xml);
+  assert(out.episodes.length === 1, `expected 1, got ${out.episodes.length}`);
+  assert(out.episodes[0].title === "https://cdn.example.com/x.mp3", `title: ${out.episodes[0].title}`);
+});
+
+check("a bare-seconds duration parses as a number", () => {
+  const xml = `<rss version="2.0"><channel><title>S</title>
+    <item><title>E</title><guid>g2</guid><pubDate>Mon, 12 Sep 2025 06:00:00 GMT</pubDate>
+      <itunes:duration>42</itunes:duration>
+      <enclosure url="https://cdn.example.com/y.mp3" type="audio/mpeg"/></item></channel></rss>`;
+  const out = feed.parsePodcastFeed("https://example.com/f.xml", xml);
+  assert(out.episodes[0].durationSeconds === 42, `got ${out.episodes[0].durationSeconds}`);
+});
+
+check("a missing duration leaves durationSeconds undefined", () => {
+  const xml = `<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>S</title>
+    <item><title>E</title><guid>g3</guid><pubDate>Mon, 12 Sep 2025 06:00:00 GMT</pubDate>
+      <enclosure url="https://cdn.example.com/z.mp3" type="audio/mpeg"/></item></channel></rss>`;
+  const out = feed.parsePodcastFeed("https://example.com/f.xml", xml);
+  assert(out.episodes[0].durationSeconds === undefined, `got ${out.episodes[0].durationSeconds}`);
+});
+
+check("an unparseable pubDate leaves publishedAt undefined", () => {
+  const xml = `<rss version="2.0"><channel><title>S</title>
+    <item><title>E</title><guid>g4</guid><pubDate>not a date</pubDate>
+      <enclosure url="https://cdn.example.com/w.mp3" type="audio/mpeg"/></item></channel></rss>`;
+  const out = feed.parsePodcastFeed("https://example.com/f.xml", xml);
+  assert(out.episodes.length === 1, "episode dropped on bad date");
+  assert(out.episodes[0].publishedAt === undefined, `got ${out.episodes[0].publishedAt}`);
+});
+
+check("two items sharing a guid map to the same episode id", () => {
+  const xml = `<rss version="2.0"><channel><title>S</title>
+    <item><title>A</title><guid>shared</guid><pubDate>Mon, 12 Sep 2025 06:00:00 GMT</pubDate>
+      <enclosure url="https://cdn.example.com/a.mp3" type="audio/mpeg"/></item>
+    <item><title>B</title><guid>shared</guid><pubDate>Tue, 13 Sep 2025 06:00:00 GMT</pubDate>
+      <enclosure url="https://cdn.example.com/b.mp3" type="audio/mpeg"/></item></channel></rss>`;
+  const out = feed.parsePodcastFeed("https://example.com/f.xml", xml);
+  assert(out.episodes.length === 2, `expected 2, got ${out.episodes.length}`);
+  assert(out.episodes[0].id === out.episodes[1].id, "shared guid did not collapse to one id");
+});
+
+check("a media:content enclosure is used when there is no enclosure", () => {
+  const xml = `<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>S</title>
+    <item><title>E</title><guid>g5</guid><pubDate>Mon, 12 Sep 2025 06:00:00 GMT</pubDate>
+      <media:content url="https://cdn.example.com/m.mp3" type="audio/mpeg"/></item></channel></rss>`;
+  const out = feed.parsePodcastFeed("https://example.com/f.xml", xml);
+  assert(out.episodes.length === 1, `expected 1, got ${out.episodes.length}`);
+  assert(out.episodes[0].audioUrl === "https://cdn.example.com/m.mp3", `url: ${out.episodes[0].audioUrl}`);
+});
+
 // ── storage ─────────────────────────────────────────────────────────────
 
 const storage = (() => {
   // storage.ts pulls in lib/app-settings and modules/podcastFeed. Each is
   // mirrored (transpiled) so the scratch copy's relative requires resolve.
+  // app-settings carries a VALUE import of sanitizeCacheCapMb from
+  // ../modules/cacheBudget (a post-cache-budget-merge addition), so it must be
+  // mirrored too — and as .js, because Node never resolves an extension-less
+  // require() to a .cjs file.
+  const cacheBudget = mirrorTs("modules/cacheBudget.ts", ".js");
   const appSettings = mirrorTs("lib/app-settings.ts");
   const podcastFeed = mirrorTs("modules/podcastFeed.ts");
+  const smartPlaylists = mirrorTs("modules/smartPlaylists.ts", ".js");
 
   const source = fs.readFileSync(path.join(root, "utils", "storage.ts"), "utf8");
   let js = ts.transpileModule(source, {
@@ -284,6 +347,7 @@ const storage = (() => {
       `require(${JSON.stringify(path.join(__dirname, "helpers", "reactNativeStub.js"))})`,
     )
     .replace(/require\("\.\.\/lib\/app-settings"\)/g, `require(${JSON.stringify(appSettings)})`)
+    .replace(/require\("\.\.\/modules\/smartPlaylists"\)/g, `require(${JSON.stringify(smartPlaylists)})`)
     .replace(/require\("\.\.\/modules\/podcastFeed"\)/g, `require(${JSON.stringify(podcastFeed)})`);
 
   const out = path.join(scratchDir, `podcast-storage-${process.pid}.cjs`);
@@ -404,6 +468,84 @@ const storageChecks = [
         episodes: episodesFixture,
       });
       assert(shows[0].unplayedCount === 1, `badge should be 1, got ${shows[0].unplayedCount}`);
+    },
+  ],
+  [
+    "a negative or NaN resume position is rejected, not persisted",
+    async () => {
+      // A stale/absurd progress tick must not corrupt the resume point.
+      const episodeId = episodesFixture[0].id;
+      await storage.savePodcastEpisodePosition(episodeId, 60);
+      await storage.savePodcastEpisodePosition(episodeId, -5);
+      await storage.savePodcastEpisodePosition(episodeId, Number.NaN);
+      const positions = await storage.loadPodcastPositions();
+      assert(
+        positions[episodeId] === 60,
+        `position became ${positions[episodeId]}`,
+      );
+    },
+  ],
+  [
+    "a zero position is not stored as a resume point",
+    async () => {
+      const episodeId = episodesFixture[0].id;
+      await storage.savePodcastEpisodePosition(episodeId, 0);
+      const positions = await storage.loadPodcastPositions();
+      assert(
+        !(episodeId in positions),
+        `zero leaked into the positions map: ${positions[episodeId]}`,
+      );
+      const episodes = await storage.loadPodcastEpisodes();
+      const found = episodes.find((e) => e.id === episodeId);
+      assert(found.positionSeconds === undefined, `got ${found.positionSeconds}`);
+    },
+  ],
+  [
+    "marking an unknown episode finished is a no-op",
+    async () => {
+      await storage.markPodcastEpisodeFinished("no-such-episode");
+      const episodes = await storage.loadPodcastEpisodes();
+      assert(
+        episodes.every((e) => e.played !== true || e.id !== "no-such-episode"),
+        "a phantom episode was created",
+      );
+      assert(episodes.length > 0, "the mark wiped the episode list");
+    },
+  ],
+  [
+    "unsubscribing an unknown show leaves the library untouched",
+    async () => {
+      const beforeShows = await storage.loadPodcastShows();
+      const beforeEpisodes = await storage.loadPodcastEpisodes();
+      const shows = await storage.unsubscribeFromPodcast("not-subscribed");
+      const afterShows = await storage.loadPodcastShows();
+      assert(shows.length === beforeShows.length, "shows were dropped");
+      assert(JSON.stringify(afterShows) === JSON.stringify(beforeShows), "shows were dropped");
+      const afterEpisodes = await storage.loadPodcastEpisodes();
+      assert(
+        JSON.stringify(afterEpisodes) === JSON.stringify(beforeEpisodes),
+        "episodes were dropped",
+      );
+    },
+  ],
+  [
+    "episodes missing a playable url are dropped when loading",
+    async () => {
+      const stub = require(path.join(__dirname, "helpers", "asyncStorageStub.js"));
+      await stub.__setItem(
+        "@podcast_episodes",
+        JSON.stringify([
+          { id: "bad-1", showId: showFixture.id, title: "No url" },
+          episodesFixture[0],
+        ]),
+      );
+      const episodes = await storage.loadPodcastEpisodes();
+      assert(
+        episodes.every((e) => e.id !== "bad-1"),
+        "an episode with no audio url survived the load",
+      );
+      assert(episodes.length >= 1, "good episodes were dropped too");
+      await stub.__reset();
     },
   ],
   [

@@ -236,6 +236,98 @@ const runtimeChecks = [
       assert.deepStrictEqual(playlists, copy);
     },
   ],
+  [
+    "the backoff doubles exactly five times then caps at five minutes",
+    () => {
+      const now = 1_000_000;
+      let state = { failedAttempts: 0, lockedUntil: 0 };
+      const waits = [];
+      for (let i = 0; i < 12; i += 1) {
+        state = appLock.nextLockout(state, now);
+        waits.push(appLock.remainingLockoutMs(state, now));
+      }
+      assert.deepStrictEqual(
+        waits,
+        [0, 0, 0, 0, 5000, 10000, 20000, 40000, 80000, 160000, 300000, 300000],
+        `backoff schedule: ${waits.join(",")}`,
+      );
+    },
+  ],
+  [
+    "the failed-attempt counter keeps counting while locked out",
+    () => {
+      let state = { failedAttempts: 0, lockedUntil: 0 };
+      const now = 1_000_000;
+      for (let i = 1; i <= 10; i += 1) {
+        state = appLock.nextLockout(state, now);
+        assert.strictEqual(
+          appLock.isLockedOut(state, now),
+          i >= 5,
+          `attempt ${i} has the wrong lock state`,
+        );
+      }
+      assert.strictEqual(state.failedAttempts, 10, `counter stopped at ${state.failedAttempts}`);
+    },
+  ],
+  [
+    "the lockout expires exactly at the boundary, not one ms later",
+    () => {
+      const now = 1_000_000;
+      let state = { failedAttempts: 0, lockedUntil: 0 };
+      for (let i = 0; i < 5; i += 1) {
+        state = appLock.nextLockout(state, now);
+      }
+      assert.ok(appLock.isLockedOut(state, now + 4999), "still locked one ms early");
+      assert.ok(!appLock.isLockedOut(state, now + 5000), "unlocked one ms late");
+    },
+  ],
+  [
+    "a corrupt lockout counter is treated as zero, not a crash",
+    () => {
+      const next = appLock.nextLockout({ failedAttempts: -7, lockedUntil: -1 }, 1_000_000);
+      assert.strictEqual(next.failedAttempts, 1);
+      assert.strictEqual(next.lockedUntil, 0);
+    },
+  ],
+  [
+    "the pin length is part of the stored hash",
+    () => {
+      const four = appLock.hashPin("4821");
+      const five = appLock.hashPin("48211");
+      assert.ok(four.endsWith("-4"), `four-digit hash lost its length: ${four}`);
+      assert.notStrictEqual(four, five, "same digits at another length must not collide");
+      assert.ok(!appLock.verifyPinHash("4821", five), "a longer pin verified against a shorter hash");
+    },
+  ],
+  [
+    "a non-string or tampered stored credential never verifies",
+    () => {
+      const stored = appLock.hashPin("4821");
+      assert.ok(!appLock.verifyPinHash("4821", 12345), "a number credential verified");
+      assert.ok(!appLock.verifyPinHash("4821", ["x"]), "an array credential verified");
+      assert.ok(!appLock.verifyPinHash("4821", "deadbeef-4"), "a tampered hash verified");
+      assert.ok(appLock.verifyPinHash("4821", stored), "the real hash must still verify");
+    },
+  ],
+  [
+    "the wait string rounds partial seconds up and pads minutes",
+    () => {
+      assert.strictEqual(appLock.formatLockoutWait(1), "1s");
+      assert.strictEqual(appLock.formatLockoutWait(59_999), "1:00");
+      assert.strictEqual(appLock.formatLockoutWait(300_000), "5:00");
+      assert.strictEqual(appLock.formatLockoutWait(605_000), "10:05");
+    },
+  ],
+  [
+    "the pin length bounds are 4 through 12 digits",
+    () => {
+      assert.ok(appLock.isValidPin("1234"), "4 digits must be valid");
+      assert.ok(appLock.isValidPin("123456789012"), "12 digits must be valid");
+      assert.ok(!appLock.isValidPin("1234567890123"), "13 digits must be rejected");
+      assert.strictEqual(appLock.sanitizePin("1234 5678 9012"), "123456789012");
+      assert.ok(appLock.isValidPin(appLock.sanitizePin("1234 5678 9012")), "a formatted PIN is rejected");
+    },
+  ],
 ];
 
 const wiringChecks = [

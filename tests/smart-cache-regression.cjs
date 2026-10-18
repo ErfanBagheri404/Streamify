@@ -56,6 +56,8 @@ const {
   sanitizeCacheCapMb,
   summarizeCacheUsage,
   toBytes,
+  MIN_CACHE_CAP_MB,
+  CACHE_CAP_OPTIONS_MB,
 } = loadPlanner();
 
 const MB = (n) => n * 1024 * 1024;
@@ -296,6 +298,133 @@ check("both locales carry the cache-cap labels", () => {
       );
     }
   }
+});
+
+// ── budget boundaries and eviction ordering ──────────────────────────────
+
+check("exactly at the cap is not over budget", () => {
+  const plan = planCacheEviction([entry("a", 300, T0), entry("b", 200, T0 + 1)], 500);
+  assert(!plan.overBudget, "500MB in a 500MB cap is within budget");
+  assert(plan.evict.length === 0, "nothing to evict at the boundary");
+  assert(plan.projectedBytes === toBytes(500), `expected 500MB, got ${plan.projectedBytes}`);
+});
+
+check("a single byte over the cap triggers exactly one eviction", () => {
+  const plan = planCacheEviction(
+    [{ trackId: "over", sizeBytes: toBytes(500) + 1, lastUsedAt: T0 }],
+    500,
+  );
+  assert(plan.overBudget, "one byte over the cap must be reclaimed");
+  assert(plan.evict.length === 1, "the only entry is the victim");
+  assert(plan.projectedBytes === 0, `expected an empty cache, got ${plan.projectedBytes}`);
+});
+
+check("one large victim clears the excess before many small ones", () => {
+  // 800MB under a 500MB cap: the single 400MB oldest entry already frees the
+  // 300MB excess, so the four 100MB entries must survive.
+  const plan = planCacheEviction(
+    [
+      entry("big-old", 400, T0),
+      entry("s1", 100, T0 + 1),
+      entry("s2", 100, T0 + 2),
+      entry("s3", 100, T0 + 3),
+      entry("s4", 100, T0 + 4),
+    ],
+    500,
+  );
+  assert(plan.evict.length === 1, `expected one victim, got ${plan.evict.length}`);
+  assert(plan.evict[0].trackId === "big-old", `expected big-old, got ${plan.evict[0].trackId}`);
+  assert(plan.projectedBytes === toBytes(400), `expected 400MB left, got ${plan.projectedBytes}`);
+});
+
+check("pinned bytes still consume the budget", () => {
+  // A pin protects the entry; it must not hand its bytes to the rest.
+  const plan = planCacheEviction(
+    [entry("pinned", 400, T0), entry("free", 300, T0 + 1)],
+    500,
+    ["pinned"],
+  );
+  assert(plan.evict.length === 1 && plan.evict[0].trackId === "free", "only the unpinned entry may go");
+  assert(
+    plan.projectedBytes === toBytes(400),
+    `expected the pinned 400MB to remain, got ${plan.projectedBytes}`,
+  );
+  assert(plan.overBudget, "still over budget with only pinned data");
+});
+
+check("an all-pinned cache reports over budget but evicts nothing", () => {
+  const plan = planCacheEviction(
+    [entry("p1", 300, T0), entry("p2", 300, T0 + 1)],
+    500,
+    ["p1", "p2"],
+  );
+  assert(plan.overBudget, "the plan must not pretend the cache fits");
+  assert(plan.evict.length === 0, "pinned entries are never victims");
+  assert(plan.projectedBytes === toBytes(600), `expected 600MB retained, got ${plan.projectedBytes}`);
+});
+
+check("partials are ordered by recency among themselves and go before completes", () => {
+  const plan = planCacheEviction(
+    [
+      entry("complete-oldest", 300, T0),
+      entry("partial-new", 300, T0 + 5000, { isFullyCached: false }),
+      entry("partial-old", 300, T0 + 1000, { isFullyCached: false }),
+    ],
+    500,
+  );
+  assert(plan.evict.length === 2, `expected two victims, got ${plan.evict.length}`);
+  assert(plan.evict[0].trackId === "partial-old", `partial order wrong: ${plan.evict[0].trackId}`);
+  assert(plan.evict[1].trackId === "partial-new", `partial order wrong: ${plan.evict[1].trackId}`);
+  assert(
+    plan.keep.some((e) => e.trackId === "complete-oldest"),
+    "the oldest complete track must outlive newer partials",
+  );
+});
+
+check("the eviction plan partitions the inventory exactly once", () => {
+  const input = [entry("a", 300, T0), entry("b", 300, T0 + 1), entry("c", 300, T0 + 2)];
+  const plan = planCacheEviction(input, 500);
+  const keptIds = plan.keep.map((e) => e.trackId);
+  const evictedIds = plan.evict.map((e) => e.trackId);
+  assert(
+    keptIds.length + evictedIds.length === input.length,
+    `every entry must land in one bucket, got ${keptIds.length}+${evictedIds.length}`,
+  );
+  assert(
+    new Set([...keptIds, ...evictedIds]).size === input.length,
+    "no entry may be both kept and evicted",
+  );
+  assert(plan.evict.length === 2 && keptIds.length === 1, "900MB over a 500MB cap evicts two of three");
+  assert(plan.projectedBytes === toBytes(300), `expected 300MB left, got ${plan.projectedBytes}`);
+});
+
+check("cap snapping is deterministic at the midpoint", () => {
+  assert(sanitizeCacheCapMb(1249) === 500, "below the midpoint stays on the lower option");
+  assert(sanitizeCacheCapMb(1250) === 500, "an exact tie keeps the lower option");
+  assert(sanitizeCacheCapMb(1251) === 2000, "just past the midpoint snaps up");
+  assert(sanitizeCacheCapMb(3500) === 2000, "3500 is equidistant; the earlier option wins");
+  assert(sanitizeCacheCapMb(Number.NaN) === MIN_CACHE_CAP_MB, "NaN must not reach the planner");
+  assert(CACHE_CAP_OPTIONS_MB.includes(sanitizeCacheCapMb(1e9)), "a huge value lands on an offered option");
+});
+
+check("usage summary ignores unknown liked ids and negative sizes", () => {
+  const summary = summarizeCacheUsage(
+    [entry("liked", 10, T0), entry("other", 5, T0), entry("bogus", -50, T0)],
+    ["liked", "ghost"],
+  );
+  assert(summary.likedBytes === MB(10), `an id with no entry must add no bytes: ${summary.likedBytes}`);
+  assert(summary.otherBytes === MB(5), `negative sizes must not offset the total: ${summary.otherBytes}`);
+  assert(summary.totalBytes === MB(15), `total ${summary.totalBytes}`);
+});
+
+check("a partial liked track is counted once, in both buckets", () => {
+  const summary = summarizeCacheUsage(
+    [entry("half-liked", 8, T0, { isFullyCached: false })],
+    ["half-liked"],
+  );
+  assert(summary.likedBytes === MB(8), `liked ${summary.likedBytes}`);
+  assert(summary.partialBytes === MB(8), `partial ${summary.partialBytes}`);
+  assert(summary.totalBytes === MB(8), `a partial must not be double counted: ${summary.totalBytes}`);
 });
 
 console.log(`\n${passed}/${passed + failed} passed`);

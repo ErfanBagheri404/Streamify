@@ -362,6 +362,109 @@ const quiet = async (fn) => {
     assert.throws(() => build('.OtherActivity', ''), /MainActivity not found/);
   });
 
+  await check('formatHeight falls back to qualityLabel then 0', () => {
+    const mv = loadModule('modules/musicVideo.ts');
+    assert.equal(mv.formatHeight({ height: 720 }), 720);
+    assert.equal(mv.formatHeight({ qualityLabel: '1080p' }), 1080);
+    assert.equal(mv.formatHeight({ qualityLabel: '2160p60' }), 2160);
+    assert.equal(mv.formatHeight({}), 0);
+    assert.equal(mv.formatHeight({ qualityLabel: 'hd' }), 0);
+    assert.equal(mv.formatHeight(null), 0);
+  });
+
+  await check('pickBestVideoFormat picks the highest height, then the highest bitrate', () => {
+    const mv = loadModule('modules/musicVideo.ts');
+    const muxed = 'video/mp4; codecs="avc1.42001E, mp4a.40.2"';
+    const a = { itag: 1, mimeType: muxed, url: 'u1', audioQuality: 'AUDIO_QUALITY_LOW', height: 360, bitrate: 500000 };
+    const b = { itag: 2, mimeType: muxed, url: 'u2', audioQuality: 'AUDIO_QUALITY_LOW', height: 720, bitrate: 1000000 };
+    const c = { itag: 3, mimeType: muxed, url: 'u3', audioQuality: 'AUDIO_QUALITY_LOW', height: 720, bitrate: 2000000 };
+    assert.equal(mv.pickBestVideoFormat([a, b, c]).itag, 3, '720p wins over 360p, and the higher bitrate wins the tie');
+    assert.equal(mv.pickBestVideoFormat([a]).itag, 1);
+    assert.equal(mv.pickBestVideoFormat([]), null);
+  });
+
+  await check('isPlayable rejects every non-muxed shape', () => {
+    const mv = loadModule('modules/musicVideo.ts');
+    const muxed = 'video/mp4; codecs="avc1.42001E, mp4a.40.2"';
+    const good = { itag: 18, mimeType: muxed, url: 'u', audioQuality: 'AUDIO_QUALITY_LOW' };
+    assert.equal(mv.pickVideoFormat([good]).length, 1);
+    assert.equal(mv.pickVideoFormat([{ ...good, mimeType: 'video/mp4; codecs="vp9, opus"' }]).length, 0, 'vp9 codec rejected (ExoPlayer safe bet is avc1)');
+    assert.equal(mv.pickVideoFormat([{ ...good, audioQuality: 'AUDIO_QUALITY_NONE' }]).length, 0, 'silent mux rejected');
+    assert.equal(mv.pickVideoFormat([{ ...good, audioQuality: undefined }]).length, 0, 'missing audioQuality rejected (video-only shape)');
+    assert.equal(mv.pickVideoFormat([{ ...good, url: '' }]).length, 0, 'empty url rejected');
+    assert.equal(mv.pickVideoFormat([{ ...good, url: undefined }]).length, 0, 'ciphered rejected');
+    assert.equal(mv.pickVideoFormat([{ ...good, mimeType: 'audio/mp4; codecs="mp4a.40.2"' }]).length, 0, 'audio-only rejected');
+  });
+
+  await check('extractYouTubeVideoId handles embed, /v/, and rejects malformed ids', () => {
+    const mv = loadModule('modules/musicVideo.ts');
+    const id = 'dQw4w9WgXcQ';
+    assert.equal(mv.extractYouTubeVideoId({ id: 'short' }), null, 'a short id is not a video id');
+    assert.equal(mv.extractYouTubeVideoId({ id: 'this-is-too-long-for-an-id' }), null, 'a long id is not a video id');
+    assert.equal(mv.extractYouTubeVideoId({ id: 'invalid!', url: `https://www.youtube.com/embed/${id}` }), id, 'embed path fallback');
+    assert.equal(mv.extractYouTubeVideoId({ id: 'invalid!', url: `https://www.youtube.com/v/${id}` }), id, '/v/ path fallback');
+    assert.equal(mv.extractYouTubeVideoId({ url: `https://www.youtube.com/watch?v=${id}&t=10` }), id, 'watch?v= with extra params');
+    assert.equal(mv.extractYouTubeVideoId({ id: 'saavn:9', url: 'https://www.jiosaavn.com/song/x/abc' }), null, 'non-YouTube track');
+    assert.equal(mv.extractYouTubeVideoId({ id: '', url: '' }), null, 'no id and no url');
+    assert.equal(mv.extractYouTubeVideoId({ id: ` ${id} ` }), id, 'padded id trimmed');
+  });
+
+  await check('resolveMusicVideo reports unavailable when the stream is missing, never fabricates', async () => {
+    const none = loadModule('modules/musicVideo.ts', {
+      './innertube': { resolveInnertubeVideo: async () => null },
+    });
+    assert.deepEqual(await quiet(() => none.resolveMusicVideo({ id: 'dQw4w9WgXcQ' })), { ok: false, reason: 'unavailable' });
+    // A stream without height or qualityLabel must not crash and yields height 0.
+    const stream = { videoId: 'dQw4w9WgXcQ', url: 'https://rr4.googlevideo.com/x', itag: 18, bitrate: 0, mimeType: 'video/mp4; codecs="avc1.42001E, mp4a.40.2"', mediaHeaders: { 'User-Agent': 'ua' } };
+    const mv = loadModule('modules/musicVideo.ts', {
+      './innertube': { resolveInnertubeVideo: async () => stream },
+    });
+    const res = await quiet(() => mv.resolveMusicVideo({ id: 'dQw4w9WgXcQ' }));
+    assert.equal(res.ok, true);
+    assert.equal(res.video.height, 0, 'missing height is 0, not a placeholder crash');
+    assert.equal(res.video.source.type, 'mp4');
+    assert.deepEqual(res.video.source.headers, { 'User-Agent': 'ua' });
+  });
+
+  await check('PiP: player uses contain mode and the PiP prop is enabled, not disabled', () => {
+    const player = liveCode('components/MusicVideoPlayer.tsx');
+    assert.match(player, /resizeMode="contain"/);
+    assert.match(player, /enterPictureInPictureOnLeave(?!=)/);
+    assert.equal(/enterPictureInPictureOnLeave=\{false\}/.test(player), false, 'auto-enter PiP on leave must be ENABLED');
+    // The PiP config plugin must be registered so prebuild ships the manifest attrs.
+    const app = JSON.parse(read('app.json'));
+    assert.ok(app.expo.plugins.includes('./plugins/withVideoPip'), 'plugin not registered');
+  });
+
+  await check('withVideoPip dedupes pre-existing flags and adds all required ones', () => {
+    const code = read('plugins/withVideoPip.js');
+    const build = (declaredConfigChanges) => {
+      const activity = { $: { 'android:name': '.MainActivity' } };
+      if (declaredConfigChanges) activity.$['android:configChanges'] = declaredConfigChanges;
+      const cfg = { modResults: { manifest: { application: [{ activity: [activity] }] } } };
+      const withAndroidManifest = (config, mod) => { const r = mod(config); config.modResults = r.modResults; return config; };
+      const mod_ = { exports: {} };
+      const fakeRequire = (id) => {
+        if (id === '@expo/config-plugins') return { withAndroidManifest };
+        throw new Error(`unexpected require(${id})`);
+      };
+      new Function('require', 'module', 'exports', code)(fakeRequire, mod_, mod_.exports);
+      const fn = typeof mod_.exports === 'function' ? mod_.exports : mod_.exports.default;
+      return fn(cfg).modResults.manifest.application[0].activity[0].$;
+    };
+    const attrs = build('keyboard|screenLayout');
+    const flags = String(attrs['android:configChanges']).split('|');
+    for (const f of ['density', 'keyboard', 'keyboardHidden', 'orientation', 'screenSize', 'smallestScreenSize', 'uiMode']) {
+      assert.ok(flags.includes(f), `configChanges missing ${f}`);
+    }
+    assert.ok(flags.includes('screenLayout'), 'pre-existing flag preserved');
+    assert.equal(flags.length, new Set(flags).size, 'no duplicate flags');
+    // A configChanges attribute that is missing entirely still gets the full set.
+    const attrs2 = build(undefined);
+    const flags2 = String(attrs2['android:configChanges']).split('|');
+    assert.ok(flags2.includes('density') && flags2.includes('uiMode'), 'missing attribute is populated');
+  });
+
   if (failures.length) {
     console.log(`\n${failures.length} FAILED: ${failures.join(', ')}`);
     process.exit(1);

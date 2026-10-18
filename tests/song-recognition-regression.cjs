@@ -244,6 +244,138 @@ function fakeFetch(payload, { calls = null, ok = true } = {}) {
     assert.ok('auddToken' in app.expo.extra, 'auddToken slot missing from expo.extra');
   });
 
-  console.log(failures.length === 0 ? `\nALL ${14} PASS` : `\n${failures.length} FAILED: ${failures.join(', ')}`);
+  await check('empty clip uri -> bad_response, NO network call', async () => {
+    const calls = [];
+    const rec = loadRecognition();
+    const out = await rec.recognize('', fakeFetch(FIXTURE_HIT, { calls }));
+    assert.equal(out.ok, false);
+    assert.equal(out.reason, 'bad_response');
+    assert.equal(calls.length, 0, 'an empty clip must not reach the provider');
+  });
+
+  await check('a hit with a blank title is no_match, never an empty match', async () => {
+    const rec = loadRecognition();
+    for (const title of ['', '   ']) {
+      const out = await rec.recognize(
+        'file:///x.m4a',
+        fakeFetch({ status: 'success', result: { title, artist: 'Someone' } }),
+      );
+      assert.equal(out.ok, false, `title ${JSON.stringify(title)} must not match`);
+      assert.equal(out.reason, 'no_match');
+    }
+  });
+
+  await check('confidence is clamped to 0..1 and defaults to 0 when absent', async () => {
+    const rec = loadRecognition();
+    const clamp = (confidence) =>
+      fakeFetch({ status: 'success', result: { title: 'T', artist: 'A', songlet: { confidence } } });
+    assert.equal((await rec.recognize('f', clamp(1.5))).match.confidence, 1, 'above 1 clamps down');
+    assert.equal((await rec.recognize('f', clamp(-0.5))).match.confidence, 0, 'below 0 clamps up');
+    assert.equal((await rec.recognize('f', clamp(Number.NaN))).match.confidence, 0, 'NaN -> 0');
+    const absent = await rec.recognize(
+      'f',
+      fakeFetch({ status: 'success', result: { title: 'T', artist: 'A' } }),
+    );
+    assert.equal(absent.match.confidence, 0, 'no songlet -> confidence 0');
+  });
+
+  await check('optional fields are only present when the provider sent them', async () => {
+    const rec = loadRecognition();
+    const out = await rec.recognize('f', fakeFetch(FIXTURE_HIT));
+    assert.equal(out.match.album, 'A Night at the Opera');
+    assert.equal(out.match.artwork, 'https://i.scdn.co/image/abc123');
+    const bare = await rec.recognize(
+      'f',
+      fakeFetch({ status: 'success', result: { title: 'Only', artist: 'One' } }),
+    );
+    assert.equal(bare.ok, true);
+    assert.equal(bare.match.album, undefined, 'missing album stays undefined');
+    assert.equal(bare.match.artwork, undefined, 'missing artwork stays undefined');
+    assert.equal(bare.match.provider, 'audd');
+  });
+
+  await check('remainingSnippetMs counts down and never goes negative', () => {
+    const rec = loadRecognition();
+    assert.equal(rec.remainingSnippetMs(0), rec.MAX_SNIPPET_MS);
+    assert.equal(rec.remainingSnippetMs(3000), rec.MAX_SNIPPET_MS - 3000);
+    assert.equal(rec.remainingSnippetMs(8000), 0);
+    assert.equal(rec.remainingSnippetMs(9000), 0, 'past the bound is 0, not negative');
+    assert.equal(rec.remainingSnippetMs(-50), rec.MAX_SNIPPET_MS, 'a negative elapsed is treated as 0');
+  });
+
+  await check('a whitespace-only token is not configured and never dials out', async () => {
+    const calls = [];
+    const rec = loadRecognition({
+      'expo-constants': { expoConfig: { extra: { auddToken: '   ' } } },
+    });
+    assert.equal(rec.getRecognitionToken(), '', 'token is trimmed');
+    assert.equal(rec.isRecognitionConfigured(), false);
+    const out = await rec.recognize('file:///x.m4a', fakeFetch(FIXTURE_HIT, { calls }));
+    assert.equal(out.reason, 'not_configured');
+    assert.equal(calls.length, 0);
+  });
+
+  await check('a hung/aborted request surfaces as network, and a thrown json is network', async () => {
+    const rec = loadRecognition();
+    const abort = new Error('Aborted');
+    abort.name = 'AbortError';
+    const out = await rec.recognize('file:///x.m4a', async () => {
+      throw abort;
+    });
+    assert.equal(out.ok, false);
+    assert.equal(out.reason, 'network', 'an aborted fetch degrades to network, never a match');
+    const badJson = await rec.recognize('file:///x.m4a', async () => ({
+      ok: true,
+      json: async () => {
+        throw new Error('bad json');
+      },
+    }));
+    assert.equal(badJson.reason, 'network');
+  });
+
+  await check('clip cleanup: delete failure is reported, discardSnippet delegates', async () => {
+    const deleted = [];
+    const okRec = loadRecognition({
+      'expo-file-system': { deleteAsync: async (uri) => { deleted.push(uri); } },
+    });
+    assert.equal(await okRec.discardSnippet('file:///clip.m4a'), true);
+    assert.deepEqual(deleted, ['file:///clip.m4a'], 'discard must delete');
+    const failing = loadRecognition({
+      'expo-file-system': { deleteAsync: async () => { throw new Error('busy'); } },
+    });
+    assert.equal(await failing.finalizeSnippet('file:///clip.m4a', false), false, 'a failed delete reports false');
+    assert.equal(await failing.finalizeSnippet('file:///clip.m4a', true), false, 'keep short-circuits before IO');
+  });
+
+  await check('recorder returns a bounded duration between MIN and MAX', async () => {
+    const rec = loadRecognition({
+      'expo-av': {
+        Audio: {
+          requestPermissionsAsync: async () => ({ granted: true }),
+          RecordingOptionsPresets: { LOW_QUALITY: {} },
+          Recording: {
+            createAsync: async (preset, onStatus) => {
+              // Simulate the interval callback reporting the hard max reached.
+              if (onStatus) onStatus({ durationMillis: 8000 });
+              return {
+                recording: {
+                  getStatusAsync: async () => ({ uri: 'file:///clip.m4a', durationMillis: 30000 }),
+                  stopAndUnloadAsync: async () => {},
+                },
+                status: { uri: 'file:///clip.m4a', durationMillis: 30000 },
+              };
+            },
+          },
+        },
+      },
+    });
+    const out = await rec.recordSnippet();
+    assert.equal(out.ok, true, JSON.stringify(out));
+    assert.equal(out.uri, 'file:///clip.m4a');
+    assert.ok(out.durationMs >= rec.MIN_SNIPPET_MS && out.durationMs <= rec.MAX_SNIPPET_MS, `duration ${out.durationMs}`);
+    assert.equal(out.durationMs, rec.MAX_SNIPPET_MS, 'a long recording clamps to MAX');
+  });
+
+  console.log(failures.length === 0 ? `\nALL PASS` : `\n${failures.length} FAILED: ${failures.join(', ')}`);
   process.exit(failures.length === 0 ? 0 : 1);
 })();

@@ -74,7 +74,174 @@ function compile(rel) {
 const MIX = compile('modules/aiMixPlaylist.ts');
 const GEN = compile('modules/aiMixGenerator.ts');
 
+const discoveryTracks = (n) => Array.from({ length: n }, (_, i) => track(`d${i}`, `New ${i}`, 'Delta', `https://img/d${i}.jpg`));
+
+let offlineFailures = [];
+let offlineChecks = 0;
+async function offCheck(name, fn) {
+  offlineChecks += 1;
+  try {
+    await fn();
+    console.log(`ok   ${name}`);
+  } catch (error) {
+    offlineFailures.push({ name, error });
+    console.log(`FAIL ${name}: ${error && error.message}`);
+  }
+}
+
+let offLlmContent = '["lofi hip hop beats","90s alternative rock"]';
+let offLlmStatus = 200;
+let offLlmThrow = null;
+let offLlmCalls = 0;
+const offLlmFetch = async (url, opts) => {
+  offLlmCalls += 1;
+  if (offLlmThrow) throw offLlmThrow;
+  if (offLlmStatus !== 200) {
+    return { ok: false, status: offLlmStatus, json: async () => ({}) };
+  }
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ choices: [{ message: { content: offLlmContent } }] }),
+  };
+};
+
+let offSearchResults = [];
+const offSearch = async () => offSearchResults;
+
+function resetOfflineBase() {
+  liked = Array.from({ length: 6 }, (_, i) => track(`a${i}`, `Old ${i}`, 'Alpha', `https://img/a${i}.jpg`));
+  recent = [track('r1', 'Recent One', 'Delta', 'https://img/r1.jpg'), ...liked];
+  playlists = [];
+  playCounts = new Map(liked.map((t) => [t.id, 10]));
+  offLlmContent = '["lofi hip hop beats","90s alternative rock","persian pop classics","jazz for rainy days"]';
+  offLlmStatus = 200;
+  offLlmThrow = null;
+  offLlmCalls = 0;
+  offSearchResults = discoveryTracks(40);
+}
+
+async function offlineScenarios() {
+  // 1. LLM error -> fallback to on-device mix.
+  await offCheck('discovery-e2e: LLM error falls back to template (on-device) mix', async () => {
+    resetOfflineBase();
+    offLlmStatus = 500;
+    const mix = await GEN.generateAiMixWithDiscovery('en', { fetchImpl: offLlmFetch, search: offSearch });
+    assert.ok(mix, 'fallback must produce a mix');
+    assert.ok(mix.tracks.every((t) => !String(t.id).startsWith('d')), 'fallback must be on-device tracks');
+  });
+
+  // 2. HTTP 402 -> fallback.
+  await offCheck('discovery-e2e: HTTP 402 falls back to template (on-device) mix', async () => {
+    resetOfflineBase();
+    offLlmStatus = 402;
+    const mix = await GEN.generateAiMixWithDiscovery('en', { fetchImpl: offLlmFetch, search: offSearch });
+    assert.ok(mix);
+    assert.ok(mix.tracks.every((t) => !String(t.id).startsWith('d')));
+  });
+
+  // 3. Timeout (fetch throws) -> fallback.
+  await offCheck('discovery-e2e: LLM timeout falls back to template (on-device) mix', async () => {
+    resetOfflineBase();
+    offLlmThrow = new Error('aborted');
+    const mix = await GEN.generateAiMixWithDiscovery('en', { fetchImpl: offLlmFetch, search: offSearch });
+    assert.ok(mix);
+    assert.ok(mix.tracks.every((t) => !String(t.id).startsWith('d')));
+  });
+
+  // 4. Empty listening history -> null, no LLM call.
+  await offCheck('discovery-e2e: empty listening history returns null without calling the LLM', async () => {
+    resetOfflineBase();
+    liked = [];
+    recent = [];
+    offLlmCalls = 0;
+    const mix = await GEN.generateAiMixWithDiscovery('en', { fetchImpl: offLlmFetch, search: offSearch });
+    assert.equal(mix, null);
+    assert.equal(offLlmCalls, 0, 'no history must not hit the LLM');
+    assert.equal(playlists.length, 0);
+  });
+
+  // 5. Single-track history -> on-device mix has too little pool, returns null.
+  await offCheck('discovery-e2e: single-track history returns null (insufficient pool)', async () => {
+    resetOfflineBase();
+    liked = [track('only', 'Only Song', 'Solo', 'https://img/only.jpg')];
+    recent = [liked[0]];
+    playCounts = new Map([['only', 5]]);
+    const mix = await MIX.generateAiMixPlaylist('en');
+    assert.equal(mix, null);
+    assert.equal(playlists.length, 0);
+  });
+
+  // 6. Malformed track metadata is skipped by resolveQueries.
+  await offCheck('discovery-e2e: malformed track metadata is skipped during resolution', async () => {
+    const out = await GEN.resolveQueries(['q'], async () => ([
+      { id: 'ok1', title: 'Good One', artist: 'A' },
+      { id: '', title: 'No Id' },
+      { title: 'No Id Either' },
+      { id: 'noTitle', title: '' },
+      { id: 'ok2', title: 'Good Two' },
+    ]));
+    assert.deepEqual(out.map((t) => t.id), ['ok1', 'ok2']);
+  });
+
+  // 7. Deduplication of repeated ids (same artist repeated).
+  await offCheck('discovery-e2e: repeated track ids are deduplicated even for one artist', async () => {
+    const out = await GEN.resolveQueries(['q'], async () => ([
+      { id: '1', title: 'First', artist: 'Same Artist' },
+      { id: '1', title: 'Duplicate', artist: 'Same Artist' },
+      { id: '2', title: 'Second', artist: 'Same Artist' },
+    ]));
+    assert.equal(out.length, 2);
+    assert.deepEqual(out.map((t) => t.id), ['1', '2']);
+  });
+
+  // 8. Query cap: at most MAX_QUERIES (6) queries are issued.
+  await offCheck('discovery-e2e: query list is capped at 6 entries', async () => {
+    const many = Array.from({ length: 10 }, (_, i) => `discovery query number ${i}`);
+    const parsed = GEN.parseQueryList(JSON.stringify(many));
+    assert.equal(parsed.length, 6);
+  });
+  await offCheck('discovery-e2e: resolveQueries issues at most 6 searches', async () => {
+    resetOfflineBase();
+    let calls = 0;
+    await GEN.resolveQueries(Array.from({ length: 10 }, (_, i) => `q${i}`), async () => {
+      calls += 1;
+      return [];
+    });
+    assert.equal(calls, 6);
+  });
+
+  // 9. Result-length cap: discovery mix never exceeds 30 tracks.
+  await offCheck('discovery-e2e: discovery result is capped at 30 tracks', async () => {
+    resetOfflineBase();
+    offSearchResults = discoveryTracks(100);
+    const mix = await GEN.generateAiMixWithDiscovery('en', { fetchImpl: offLlmFetch, search: offSearch });
+    assert.ok(mix);
+    assert.ok(mix.tracks.length <= 30, `expected <=30, got ${mix.tracks.length}`);
+  });
+
+  // 10. Persist/read round-trip under @ai_mix via aiMixPlaylist.
+  await offCheck('discovery-e2e: AI Mix persists and reads back under @ai_mix', async () => {
+    resetOfflineBase();
+    const tracks = discoveryTracks(5);
+    const saved = await MIX.persistAiMix(tracks, 'en');
+    assert.equal(saved.id, '@ai_mix');
+    const loaded = await storageStub.StorageService.loadPlaylists();
+    const found = loaded.find((p) => p.id === '@ai_mix');
+    assert.ok(found, 'persisted mix must be readable');
+    assert.equal(found.tracks.length, tracks.length);
+    assert.deepEqual(found.tracks.map((t) => t.id), tracks.map((t) => t.id));
+  });
+
+  console.log('\noffline: ' + (offlineChecks - offlineFailures.length) + '/' + offlineChecks + ' passed');
+  if (offlineFailures.length > 0) {
+    process.exitCode = 1;
+  }
+}
+
 async function main() {
+  await offlineScenarios();
+
   // Enough library that buildSmartQueue yields, so a fallback is visible as
   // library ids and a discovery run as the stub's new ids.
   liked = Array.from({ length: 6 }, (_, i) => track(`a${i}`, `Old ${i}`, 'Alpha'));

@@ -227,6 +227,82 @@ async function main() {
     assert.equal(m.nextCastItem(q, 5), null);
   });
 
+  // ---- artwork fallback (extended scenarios) -----------------------------
+
+  await check('metadata: plain http artwork is accepted, other schemes are not', () => {
+    assert.equal(m.buildCastMetadata(track({ thumbnail: 'http://i.ytimg.com/vi/vid1/hq.jpg' })).imageUrl, 'http://i.ytimg.com/vi/vid1/hq.jpg', 'http is still absolute');
+    assert.equal(m.buildCastMetadata(track({ thumbnail: 'HTTPS://i.ytimg.com/vi/vid1/hq.jpg' })).imageUrl, 'HTTPS://i.ytimg.com/vi/vid1/hq.jpg', 'scheme match is case-insensitive');
+    for (const bad of ['content://media/art.jpg', 'ftp://host/art.jpg', '//cdn.example/art.jpg', '   ']) {
+      assert.equal(m.buildCastMetadata(track({ thumbnail: bad })).imageUrl, '', `${bad} must be dropped`);
+    }
+  });
+
+  await check('metadata: titles and artists are trimmed for the receiver', () => {
+    const meta = m.buildCastMetadata(track({ title: '  Padded Song  ', artist: '  The Band  ' }));
+    assert.equal(meta.title, 'Padded Song');
+    assert.equal(meta.artist, 'The Band');
+    assert.equal(meta.albumArtist, 'The Band');
+  });
+
+  await check('streamUrl: whitespace-only urls cast nothing, http still casts', () => {
+    assert.equal(m.castStreamUrl(track({ audioUrl: '   ' })), '');
+    assert.equal(
+      m.castStreamUrl(track({ audioUrl: '   ', url: 'https://b.example/s.mp3' })),
+      'https://b.example/s.mp3',
+      'the fallback url is used when audioUrl is blank',
+    );
+    assert.equal(m.castStreamUrl(track({ audioUrl: 'http://a.example/s.mp3' })), 'http://a.example/s.mp3');
+  });
+
+  // ---- queue transfer (extended scenarios) --------------------------------
+
+  await check('queue: items keep receiver-safe fallbacks for missing fields', () => {
+    const q = m.buildCastQueue([track({ id: 'a', title: '  ', artist: undefined, thumbnail: 'file:///x.jpg', duration: Number.NaN })], 0);
+    const item = q.items[0];
+    assert.equal(item.title, 'Unknown Title');
+    assert.equal(item.artist, 'Unknown Artist');
+    assert.equal(item.imageUrl, '', 'a file:// artwork cannot be fetched by the receiver');
+    assert.equal(item.duration, 0);
+    assert.equal(item.streamUrl.startsWith('https://'), true);
+  });
+
+  await check('queue: a non-array input is an empty, non-castable queue', () => {
+    assert.deepEqual(m.buildCastQueue('nonsense', 0), { items: [], startIndex: 0 });
+    assert.deepEqual(m.buildCastQueue({ items: [] }, 0), { items: [], startIndex: 0 });
+    assert.equal(m.isCastable(m.buildCastQueue(42, 0)), false);
+  });
+
+  await check('queue: a dropped current track falls back to the first castable item', () => {
+    const tracks = [
+      track({ id: 'a', audioUrl: undefined }), // not castable
+      track({ id: 'b' }),
+      track({ id: 'c' }),
+    ];
+    const q = m.buildCastQueue(tracks, 0);
+    assert.equal(q.startIndex, 0, 'position 0 was dropped, so playback starts on the first surviving item (b)');
+    assert.equal(q.items[q.startIndex].mediaId, 'b');
+  });
+
+  await check('queue: ids must be non-empty strings', () => {
+    for (const id of [undefined, null, '', 42, {}]) {
+      const q = m.buildCastQueue([track({ id }), track({ id: 'ok' })], 0);
+      assert.deepEqual(q.items.map((i) => i.mediaId), ['ok'], `id ${JSON.stringify(id)} must not survive`);
+    }
+  });
+
+  await check('queue: item durations round like metadata durations', () => {
+    const q = m.buildCastQueue([track({ id: 'a', duration: 215.4 }), track({ id: 'b', duration: 215.6 })], 0);
+    assert.equal(q.items[0].duration, 215);
+    assert.equal(q.items[1].duration, 216);
+  });
+
+  // ---- next ---------------------------------------------------------------
+
+  await check('nextCastItem with a negative start index reads from the beginning', () => {
+    const q = m.buildCastQueue([track({ id: 'a' }), track({ id: 'b' })], 0);
+    assert.equal(m.nextCastItem(q, -1), q.items[0], 'next = 0 is the first item, not a crash');
+  });
+
   console.log(`\n${checks - failures.length}/${checks} checks passed`);
   if (failures.length > 0) process.exitCode = 1;
 }

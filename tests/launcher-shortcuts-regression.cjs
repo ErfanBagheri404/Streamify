@@ -17,10 +17,20 @@ const root = path.join(__dirname, "..");
 const read = (...parts) => fs.readFileSync(path.join(root, ...parts), "utf8");
 
 const results = [];
+const pending = [];
 function check(name, fn) {
   try {
-    fn();
-    results.push(`PASS ${name}`);
+    const out = fn();
+    if (out && typeof out.then === "function") {
+      pending.push(
+        out.then(
+          () => results.push(`PASS ${name}`),
+          (e) => results.push(`FAIL ${name}: ${e.message}`),
+        ),
+      );
+    } else {
+      results.push(`PASS ${name}`);
+    }
   } catch (e) {
     results.push(`FAIL ${name}: ${e.message}`);
   }
@@ -353,11 +363,170 @@ check("the native module exposes the shortcut bridge to JS", () => {
   assert.ok(module_.includes("StreamifyLauncherShortcuts.updateRecentTracks"));
 });
 
-const failures = results.filter((r) => r.startsWith("FAIL"));
-const skips = results.filter((r) => r.startsWith("SKIP"));
-console.log(results.join("\n"));
-console.log(
-  `\n${results.length - failures.length - skips.length}/${results.length - skips.length} passed` +
-    (skips.length ? `, ${skips.length} skipped (no android/ prebuild)` : ""),
-);
-process.exit(failures.length > 0 ? 1 : 0);
+// --- runtime: modules/deepLink.ts under Node with a stubbed Linking ----------
+
+// Small TS loader with a per-call Module._load interceptor, so the transpiled
+// module resolves `expo-linking` to an in-memory stub.
+const os = require("os");
+const ts = require(path.join(root, "node_modules", "typescript"));
+const Module = require("module");
+const origLoad = Module._load.bind(Module);
+let virtual = new Map();
+Module._load = function (request, parent, isMain) {
+  if (virtual.has(request)) return virtual.get(request);
+  return origLoad(request, parent, isMain);
+};
+function loadDeepLinkModule(linking) {
+  const js = ts.transpileModule(read("modules", "deepLink.ts"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  }).outputText;
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "deeplink-"));
+  const file = path.join(scratch, "deepLink.cjs");
+  fs.writeFileSync(file, js);
+  virtual = new Map();
+  virtual.set("expo-linking", linking);
+  let mod;
+  try {
+    mod = require(file);
+  } finally {
+    virtual = new Map();
+    try { fs.rmSync(scratch, { recursive: true, force: true }); } catch {}
+  }
+  return mod;
+}
+
+function makeLinkingStub(initialUrl = null) {
+  const listeners = {};
+  const stub = {
+    addEventListener: (name, cb) => {
+      listeners.name = name;
+      listeners.cb = cb;
+      return { remove: () => { listeners.cb = null; } };
+    },
+    getInitialURL: async () => initialUrl,
+  };
+  return { stub, listeners };
+}
+
+check("runtime: parseDeepLink rejects junk input instead of dispatching", () => {
+  const dl = loadDeepLinkModule(makeLinkingStub().stub);
+  for (const url of [null, "", undefined, "https://example.com", "streamify://nope", "Streamify://resume"]) {
+    assert.strictEqual(dl.parseDeepLink(url), null, `expected null for ${JSON.stringify(url)}`);
+  }
+});
+
+check("runtime: open-playlist name is percent-decoded and trimmed exactly", () => {
+  const dl = loadDeepLinkModule(makeLinkingStub().stub);
+  assert.deepStrictEqual(dl.parseDeepLink("streamify://open-playlist/My%20Playlist%20Flame"), {
+    action: "open-playlist",
+    playlistName: "My Playlist Flame",
+  });
+  assert.deepStrictEqual(dl.parseDeepLink("streamify://open-playlist/%20padded%20"), {
+    action: "open-playlist",
+    playlistName: "padded",
+  });
+  assert.strictEqual(
+    dl.parseDeepLink("streamify://open-playlist/%20"),
+    null,
+    "a whitespace-only name must be rejected",
+  );
+});
+
+check("runtime: a track URL carries the id and survives a fragment", () => {
+  const dl = loadDeepLinkModule(makeLinkingStub().stub);
+  assert.deepStrictEqual(dl.parseDeepLink("streamify://track/t1#frag"), {
+    action: "track",
+    trackId: "t1",
+  });
+  assert.deepStrictEqual(dl.parseDeepLink("streamify://track/my%2Fid"), {
+    action: "track",
+    trackId: "my/id",
+  });
+  assert.strictEqual(dl.parseDeepLink("streamify://track/"), null);
+});
+
+check("runtime: bare actions ignore query strings and trailing separators", () => {
+  const dl = loadDeepLinkModule(makeLinkingStub().stub);
+  assert.strictEqual(dl.parseDeepLink("streamify://resume?x=1").action, "resume");
+  assert.strictEqual(dl.parseDeepLink("streamify://search/").action, "search");
+  assert.strictEqual(dl.parseDeepLink("streamify://resume/extra/").action, "resume");
+});
+
+check("runtime: a duplicate delivery inside the debounce window is dropped", async () => {
+  const dl = loadDeepLinkModule(makeLinkingStub().stub);
+  const seen = [];
+  dl.setDeepLinkHandlers({
+    resume: () => seen.push("resume"),
+    "shuffle-liked": () => {},
+    "smart-queue": () => {},
+    search: () => {},
+    "open-playlist": (r) => seen.push(r.playlistName),
+    track: () => {},
+  });
+  assert.strictEqual(await dl.handleDeepLink("streamify://resume"), true);
+  assert.strictEqual(await dl.handleDeepLink("streamify://resume"), false, "duplicate dropped");
+  // a different target is a different command even for the same action
+  assert.strictEqual(await dl.handleDeepLink("streamify://open-playlist/Alpha"), true);
+  assert.strictEqual(await dl.handleDeepLink("streamify://open-playlist/Beta"), true);
+  assert.deepStrictEqual(seen, ["resume", "Alpha", "Beta"]);
+});
+
+check("runtime: a throwing handler never rejects the caller", async () => {
+  const dl = loadDeepLinkModule(makeLinkingStub().stub);
+  dl.setDeepLinkHandlers({
+    resume: () => { throw new Error("boom"); },
+    "shuffle-liked": () => {},
+    "smart-queue": () => {},
+    search: () => {},
+    "open-playlist": () => {},
+    track: () => {},
+  });
+  const out = await dl.handleDeepLink("streamify://resume");
+  assert.strictEqual(out, true, "a failed handler must be swallowed, not thrown");
+});
+
+check("runtime: handlers must be registered before anything dispatches", async () => {
+  const { stub, listeners } = makeLinkingStub();
+  const dl = loadDeepLinkModule(stub);
+  const seen = [];
+  dl.setDeepLinkHandlers({
+    resume: () => seen.push("resume"),
+    "shuffle-liked": () => {},
+    "smart-queue": () => {},
+    search: () => {},
+    "open-playlist": (r) => seen.push(`open:${r.playlistName}`),
+    track: () => {},
+  });
+  assert.ok(listeners.cb, "one url listener installed");
+  // A warm-start URL that arrives through the pre-ready pending queue replays
+  // with its payload intact.
+  listeners.cb({ url: "streamify://open-playlist/Evening%20Drive" });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepStrictEqual(seen, ["open:Evening Drive"]);
+});
+
+// A malformed URL is exactly what parseDeepLink promises to ignore ("returns
+// null for anything else"). A %zz segment throws URIError instead, blowing out
+// of both parseDeepLink and the awaiting dispatch() — so this scenario is
+// asserted against the documented contract and currently FAILS.
+check("runtime: malformed percent-encoding is ignored, not thrown", () => {
+  const dl = loadDeepLinkModule(makeLinkingStub().stub);
+  assert.strictEqual(
+    dl.parseDeepLink("streamify://open-playlist/%zz"),
+    null,
+    "malformed input must be ignored, not crash the listener",
+  );
+});
+
+// --- report -----------------------------------------------------------------
+
+Promise.all(pending).then(() => {
+  const failures = results.filter((r) => r.startsWith("FAIL"));
+  const skips = results.filter((r) => r.startsWith("SKIP"));
+  console.log(results.join("\n"));
+  console.log(
+    `\n${results.length - failures.length - skips.length}/${results.length - skips.length} passed` +
+      (skips.length ? `, ${skips.length} skipped (no android/ prebuild)` : ""),
+  );
+  process.exit(failures.length > 0 ? 1 : 0);
+});

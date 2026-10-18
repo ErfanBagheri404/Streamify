@@ -72,13 +72,14 @@ function loadImageModule() {
 
 const STUBS = {
   '../components/core/api': { getBeatseekApiBase: () => 'https://beatseek.io/api' },
+  '../lib/backend-api': { fetchBackendRoute: async () => ({ ok: true, json: async () => ({ collection: {}, entries: [] }) }) },
   '../components/core/image': loadImageModule(),
   './subsonicService': { subsonicService: { getPlaylist: async () => ({ name: '', coverArtUrl: null, tracks: [] }) } },
   '../contexts/PlayerContext': {},
   '../utils/storage': { StorageService: { addPlaylist: async () => {} } },
 };
 
-function loadPlaylistImport() {
+function loadPlaylistImport(overrides = {}) {
   const file = path.join(root, 'modules', 'playlistImport.ts');
   const js = ts.transpileModule(readRepoFile('modules/playlistImport.ts'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
@@ -87,6 +88,9 @@ function loadPlaylistImport() {
   fs.writeFileSync(compiled, js);
   const module = { exports: {} };
   const stubRequire = (specifier) => {
+    if (Object.prototype.hasOwnProperty.call(overrides, specifier)) {
+      return { __esModule: true, ...overrides[specifier] };
+    }
     if (Object.prototype.hasOwnProperty.call(STUBS, specifier)) {
       return { __esModule: true, ...STUBS[specifier] };
     }
@@ -175,7 +179,10 @@ async function main() {
   });
 
   await check('parsePlaylistUrl: unsupported hosts and blanks never throw', () => {
-    for (const value of ['', '   ', 'not a url', 'https://deezer.com/playlist/123', 'https://x.com/']) {
+    // Deezer is no longer unsupported (backend /collection import), so the
+    // remaining set is: blank, unparseable, and hosts the importer never
+    // routed. All must answer `{unsupported}`, never a half classification.
+    for (const value of ['', '   ', 'not a url', 'https://x.com/', 'https://example.com/playlist/123']) {
       const parsed = IMPORT.parsePlaylistUrl(value);
       assert.ok(parsed.unsupported, `expected unsupported for ${JSON.stringify(value)}`);
     }
@@ -471,6 +478,191 @@ async function main() {
     assert.match(source, /if \(parsed\.kind === "m3u"\)/);
     assert.match(source, /throw new Error\("Unsupported playlist link \(m3u\)"\)/);
     assert.match(source, /throw new Error\(`Unsupported playlist link \(\$\{parsed\.unsupported\}\)`\)/);
+  });
+
+  // ---- backend collections (spotify / deezer / itunes / jiosaavn) --------
+
+  await check('parsePlaylistUrl: Spotify playlist, album and track shapes all classify', () => {
+    const playlist = IMPORT.parsePlaylistUrl('https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M');
+    assert.equal(playlist.kind, 'spotify');
+    assert.equal(playlist.playlistId, '37i9dQZF1DXcBWIGoYBM5M');
+    assert.ok(!playlist.album, 'a playlist link is not an album');
+
+    const album = IMPORT.parsePlaylistUrl('https://open.spotify.com/album/1ATL5GLyefJaxhQzSPVrLX');
+    assert.equal(album.kind, 'spotify');
+    assert.equal(album.album, true, 'album segment must set the album flag');
+
+    const track = IMPORT.parsePlaylistUrl('https://open.spotify.com/track/5ChkMS8OtdzJeqyybCc9R5');
+    assert.equal(track.kind, 'spotify');
+    assert.equal(track.album, false);
+
+    // A share link carries ?si=…; the id must still come from the path.
+    const share = IMPORT.parsePlaylistUrl('https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=abc123');
+    assert.equal(share.playlistId, '37i9dQZF1DXcBWIGoYBM5M');
+  });
+
+  await check('parsePlaylistUrl: a Spotify link with no collection id is refused', () => {
+    const parsed = IMPORT.parsePlaylistUrl('https://open.spotify.com/user/somebody');
+    assert.ok(parsed.unsupported, 'user page is not a collection');
+    const emptyId = IMPORT.parsePlaylistUrl('https://open.spotify.com/playlist/');
+    assert.equal(emptyId.unsupported, 'spotify-no-collection');
+  });
+
+  await check('parsePlaylistUrl: Deezer needs a numeric id, not any path segment', () => {
+    const playlist = IMPORT.parsePlaylistUrl('https://www.deezer.com/playlist/908622995');
+    assert.equal(playlist.kind, 'deezer');
+    assert.equal(playlist.playlistId, '908622995');
+    const album = IMPORT.parsePlaylistUrl('https://www.deezer.com/album/302127');
+    assert.equal(album.album, true);
+    // A slug instead of an id must not be imported as a broken collection.
+    assert.equal(IMPORT.parsePlaylistUrl('https://www.deezer.com/playlist/my-mix').unsupported,
+      'deezer-no-collection');
+    assert.equal(IMPORT.parsePlaylistUrl('https://www.deezer.com/artist/13').unsupported,
+      'deezer-no-collection');
+  });
+
+  await check('parsePlaylistUrl: iTunes albums resolve, other Apple Music links are refused', () => {
+    const album = IMPORT.parsePlaylistUrl(
+      'https://music.apple.com/us/album/random-access-memories/1440818588',
+    );
+    assert.equal(album.kind, 'itunes');
+    assert.equal(album.playlistId, '1440818588');
+    assert.equal(album.album, true, 'the Apple Music album id only exists on albums');
+    const playlist = IMPORT.parsePlaylistUrl('https://music.apple.com/us/playlist/p/pl.abcDEF123');
+    assert.equal(playlist.unsupported, 'itunes-no-album');
+  });
+
+  await check('parsePlaylistUrl: JioSaavn album, playlist and featured links extract the id', () => {
+    const album = IMPORT.parsePlaylistUrl(
+      'https://www.jiosaavn.com/album/shubh-mangal-zyada-savdhan/ho87yUyxKi8_',
+    );
+    assert.equal(album.kind, 'jiosaavn');
+    assert.equal(album.playlistId, 'ho87yUyxKi8_');
+    assert.equal(album.album, true);
+    const playlist = IMPORT.parsePlaylistUrl(
+      'https://www.jiosaavn.com/playlist/best-of-2020/AbCdEf_1234',
+    );
+    assert.equal(playlist.kind, 'jiosaavn');
+    assert.equal(playlist.playlistId, 'AbCdEf_1234');
+    assert.ok(!playlist.album);
+    const featured = IMPORT.parsePlaylistUrl(
+      'https://www.jiosaavn.com/featured/top-50/ZzZyYy_9876',
+    );
+    assert.equal(featured.kind, 'jiosaavn');
+    assert.equal(featured.playlistId, 'ZzZyYy_9876');
+    const bare = IMPORT.parsePlaylistUrl('https://www.jiosaavn.com/artist/somebody');
+    assert.equal(bare.unsupported, 'jiosaavn-no-collection');
+  });
+
+  await check('parsePlaylistUrl: .m3u/.m3u8 file links classify as m3u (so resolve refuses them)', () => {
+    for (const value of [
+      'https://example.com/lists/songs.m3u',
+      'https://example.com/lists/songs.m3u8',
+      'https://example.com/lists/songs.m3u?token=abc',
+    ]) {
+      const parsed = IMPORT.parsePlaylistUrl(value);
+      assert.equal(parsed.kind, 'm3u', `expected m3u for ${value}`);
+    }
+  });
+
+  await check('resolvePlaylistImport: a Spotify playlist resolves through the backend /collection route', async () => {
+    const calls = [];
+    const M = loadPlaylistImport({
+      '../lib/backend-api': {
+        fetchBackendRoute: async (route, options) => {
+          calls.push({ route, options });
+          return {
+            ok: true,
+            json: async () => ({
+              collection: { id: 'PL1', title: 'Road Trip', author: 'DJ', thumbnailUrl: 'https://img/x.jpg', url: 'https://open.spotify.com/playlist/PL1' },
+              entries: [
+                { id: 's1', title: 'One', artist: 'A1', duration: 101, thumbnailUrl: 'https://img/1.jpg', url: 'https://p.scdn.co/x1' },
+                { id: 's2', title: 'Two', subtitle: 'Fallback Artist', duration: 202, url: 'https://p.scdn.co/x2' },
+              ],
+            }),
+          };
+        },
+      },
+    });
+    const result = await M.resolvePlaylistImport('https://open.spotify.com/playlist/PL1');
+    assert.equal(calls.length, 1, 'exactly one backend call');
+    assert.equal(calls[0].route, '/collection');
+    assert.deepEqual(calls[0].options.searchParams, { id: 'PL1', source: 'spotify', kind: 'playlist' });
+    assert.equal(result.source, 'spotify');
+    assert.equal(result.name, 'Road Trip');
+    assert.equal(result.owner, 'DJ');
+    assert.equal(result.sourceUrl, 'https://open.spotify.com/playlist/PL1');
+    assert.equal(result.tracks.length, 2);
+    assert.equal(result.tracks[0].source, 'spotify');
+    assert.equal(result.tracks[0].thumbnail, 'https://img/1.jpg');
+    assert.equal(result.tracks[1].artist, 'Fallback Artist', 'subtitle is the artist fallback');
+  });
+
+  await check('resolvePlaylistImport: a Spotify album link asks the backend for an album', async () => {
+    const calls = [];
+    const M = loadPlaylistImport({
+      '../lib/backend-api': {
+        fetchBackendRoute: async (route, options) => {
+          calls.push({ route, options });
+          return { ok: true, json: async () => ({ collection: {}, entries: [{ id: 's1', title: 'One' }] }) };
+        },
+      },
+    });
+    const result = await M.resolvePlaylistImport('https://open.spotify.com/album/1ATL5GLyefJaxhQzSPVrLX');
+    assert.equal(calls[0].options.searchParams.kind, 'album', 'album flag must reach the backend');
+    // Collection metadata missing entirely: fall back, never crash.
+    assert.equal(result.name, 'spotify album', 'name falls back to source+kind');
+    assert.equal(result.sourceUrl, '', 'no collection.url means no sourceUrl');
+    assert.equal(result.sourceId, '1ATL5GLyefJaxhQzSPVrLX', 'id falls back to the requested id');
+  });
+
+  await check('backend collection mapping: entries without an id are dropped, blanks get placeholders', async () => {
+    const M = loadPlaylistImport({
+      '../lib/backend-api': {
+        fetchBackendRoute: async () => ({
+          ok: true,
+          json: async () => ({
+            entries: [
+              { id: 's1', title: 'Full' },
+              { title: 'No id at all' },
+              { id: 's2' },
+              null,
+            ],
+          }),
+        }),
+      },
+    });
+    const result = await M.resolvePlaylistImport('https://www.deezer.com/playlist/908622995');
+    assert.equal(result.tracks.length, 2, 'id-less and null rows must not become tracks');
+    assert.equal(result.tracks[0].title, 'Full');
+    assert.equal(result.tracks[1].title, 'Unknown Title');
+    assert.equal(result.tracks[1].artist, 'Unknown Artist');
+    assert.equal(result.tracks[1].duration, 0, 'missing duration becomes 0, not NaN');
+    assert.equal(result.tracks[1].url, '');
+  });
+
+  await check('backend collection: an empty or unplayable collection throws instead of importing nothing', async () => {
+    const M = loadPlaylistImport({
+      '../lib/backend-api': {
+        fetchBackendRoute: async () => ({ ok: true, json: async () => ({ entries: [] }) }),
+      },
+    });
+    await assert.rejects(
+      () => M.resolvePlaylistImport('https://www.deezer.com/playlist/908622995'),
+      /No playable tracks in this deezer playlist/,
+    );
+  });
+
+  await check('backend collection: a non-ok response throws a source-specific error', async () => {
+    const M = loadPlaylistImport({
+      '../lib/backend-api': {
+        fetchBackendRoute: async () => ({ ok: false, json: async () => ({}) }),
+      },
+    });
+    await assert.rejects(
+      () => M.resolvePlaylistImport('https://open.spotify.com/album/1ATL5GLyefJaxhQzSPVrLX'),
+      /Failed to load spotify album/,
+    );
   });
 
   console.log(`\n${checks - failures.length}/${checks} checks passed`);

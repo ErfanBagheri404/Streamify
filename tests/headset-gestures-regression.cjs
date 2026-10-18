@@ -371,6 +371,119 @@ check("a 4th tap inside the window does not start a phantom sequence", async () 
   detector.reset();
 });
 
+// --- Runtime: debounce window boundaries ------------------------------------
+
+check("taps separated by more than the window are two independent single taps", async () => {
+  const dispatched = [];
+  const detector = new HeadsetGestureDetector((a) => dispatched.push(a), { windowMs: 40 });
+  detector.recordTap();
+  await new Promise((r) => setTimeout(r, 70));
+  detector.recordTap();
+  await new Promise((r) => setTimeout(r, 70));
+  assert.deepStrictEqual(dispatched, ["playPause", "playPause"]);
+  detector.reset();
+});
+
+check("a single tap does not fire before its debounce window elapses", async () => {
+  const dispatched = [];
+  const detector = new HeadsetGestureDetector((a) => dispatched.push(a), { windowMs: 120 });
+  detector.recordTap();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.deepStrictEqual(dispatched, [], "the tap must wait out the window");
+  await new Promise((r) => setTimeout(r, 120));
+  assert.deepStrictEqual(dispatched, ["playPause"]);
+  detector.reset();
+});
+
+check("a tap 9ms after the previous is swallowed as a double-fired press", async () => {
+  const dispatched = [];
+  const detector = new HeadsetGestureDetector((a) => dispatched.push(a), { windowMs: 40 });
+  const t0 = 1_700_000_000_000;
+  detector.now = () => t0;
+  detector.recordTap();
+  detector.now = () => t0 + 9;
+  detector.recordTap();
+  await new Promise((r) => setTimeout(r, 60));
+  assert.deepStrictEqual(dispatched, ["playPause"], "a 9ms double-fire must not become a double tap");
+  detector.reset();
+});
+
+check("a tap 10ms after the previous counts as a fresh tap", async () => {
+  const dispatched = [];
+  const detector = new HeadsetGestureDetector((a) => dispatched.push(a), { windowMs: 40 });
+  const t0 = 1_700_000_000_000;
+  detector.now = () => t0;
+  detector.recordTap();
+  detector.now = () => t0 + 10;
+  detector.recordTap();
+  await new Promise((r) => setTimeout(r, 60));
+  assert.deepStrictEqual(dispatched, ["skipNext"], "the second tap must be counted at exactly 10ms");
+  detector.reset();
+});
+
+check("triple tap dispatches the configured tripleTapAction", async () => {
+  const dispatched = [];
+  const detector = new HeadsetGestureDetector((a) => dispatched.push(a), { windowMs: 200, tripleTapAction: "sleepTimer" });
+  detector.recordTap();
+  await new Promise((r) => setTimeout(r, 20));
+  detector.recordTap();
+  await new Promise((r) => setTimeout(r, 20));
+  detector.recordTap();
+  assert.deepStrictEqual(dispatched, ["sleepTimer"]);
+  detector.reset();
+});
+
+check("a fresh sequence starts once the 4th-tap suppression window drains", async () => {
+  const dispatched = [];
+  const detector = new HeadsetGestureDetector((a) => dispatched.push(a), { windowMs: 60, tripleTapAction: "likeCurrent" });
+  detector.recordTap();
+  await new Promise((r) => setTimeout(r, 15));
+  detector.recordTap();
+  await new Promise((r) => setTimeout(r, 15));
+  detector.recordTap(); // triple, suppresses until now + 60ms
+  await new Promise((r) => setTimeout(r, 90)); // window has drained
+  detector.recordTap(); // a genuine new single tap
+  await new Promise((r) => setTimeout(r, 80));
+  assert.deepStrictEqual(dispatched, ["likeCurrent", "playPause"]);
+  detector.reset();
+});
+
+check("getConfig returns a detached snapshot", () => {
+  const detector = new HeadsetGestureDetector(() => {}, { windowMs: 123 });
+  const snapshot = detector.getConfig();
+  snapshot.windowMs = 999;
+  assert.strictEqual(detector.getConfig().windowMs, 123, "mutating the snapshot must not retune the detector");
+  detector.reset();
+});
+
+check("disabled mode still collapses a same-tick double fire", () => {
+  const dispatched = [];
+  const detector = new HeadsetGestureDetector((a) => dispatched.push(a), { enabled: false });
+  detector.recordTap();
+  detector.recordTap();
+  assert.deepStrictEqual(dispatched, ["playPause"], "two listeners, one press => one pass-through");
+  detector.reset();
+});
+
+check("re-enabling gestures through updateConfig switches to debounce", async () => {
+  const dispatched = [];
+  const detector = new HeadsetGestureDetector((a) => dispatched.push(a), {
+    windowMs: 60,
+    enabled: false,
+    doubleTapAction: "skipNext",
+  });
+  detector.recordTap();
+  assert.deepStrictEqual(dispatched, ["playPause"], "a disabled press passes through immediately");
+  await new Promise((r) => setTimeout(r, 20));
+  detector.updateConfig({ enabled: true });
+  detector.recordTap();
+  await new Promise((r) => setTimeout(r, 15));
+  detector.recordTap();
+  await new Promise((r) => setTimeout(r, 80));
+  assert.deepStrictEqual(dispatched, ["playPause", "skipNext"], "enabled taps must be debounced into a double tap");
+  detector.reset();
+});
+
 // --- Report -----------------------------------------------------------------
 
 Promise.all(pending).then(() => {

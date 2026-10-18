@@ -176,6 +176,108 @@ check("months are ordered most recent year first", () => {
   );
 });
 
+// --- date boundaries -------------------------------------------------------
+
+check("the anniversary window is inclusive at 3 days and exclusive at 4", () => {
+  // Today is 2025-06-18. 06-15 is 3 days back (in window); 06-14 is 4
+  // days back and would otherwise win on volume, so the window edge is the
+  // only thing keeping it out.
+  const memories = m.findYearlyMemories(
+    [bucket("2024-06", 15, 3_600_000), bucket("2024-06", 14, 9_000_000)],
+    new Date(2025, 5, 18),
+  );
+  assert.strictEqual(memories.length, 1, `expected 1, got ${memories.length}`);
+  assert.strictEqual(memories[0].listenedMs, 3_600_000);
+  assert.strictEqual(memories[0].monthDay, "06-15");
+});
+
+check("a zero-day window only matches the exact anniversary", () => {
+  const exact = m.findYearlyMemories(
+    [bucket("2024-06", 15, 3_600_000)],
+    new Date(2025, 5, 15),
+    0,
+  );
+  assert.strictEqual(exact.length, 1, "the exact anniversary must match");
+  const late = m.findYearlyMemories(
+    [bucket("2024-06", 15, 3_600_000)],
+    new Date(2025, 5, 16),
+    0,
+  );
+  assert.strictEqual(late.length, 0, "one day late must not match a 0-day window");
+});
+
+check("a day whose anniversary is still ahead is not a memory", () => {
+  // Today 2025-06-13; the bucket's anniversary (06-15) is two days in the
+  // future and inside the window. The window forgives opening LATE, not
+  // early, so nothing may surface yet.
+  const memories = m.findYearlyMemories(
+    [bucket("2024-06", 15, 9_000_000), bucket("2024-06", 14, 9_000_000)],
+    new Date(2025, 5, 13),
+  );
+  assert.strictEqual(memories.length, 0, "an upcoming anniversary must not surface");
+  const after = m.findYearlyMemories(
+    [bucket("2024-06", 15, 9_000_000)],
+    new Date(2025, 5, 17),
+  );
+  assert.strictEqual(after.length, 1, "two days after the anniversary must surface");
+});
+
+check("three historic years of the same date produce three memories", () => {
+  const memories = m.findYearlyMemories(
+    [
+      bucket("2024-06", 15, 3_000_000),
+      bucket("2023-06", 15, 2_000_000),
+      bucket("2022-06", 15, 1_000_000),
+    ],
+    new Date(2025, 5, 15),
+  );
+  assert.strictEqual(memories.length, 3, `expected 3, got ${memories.length}`);
+  assert.deepStrictEqual(
+    memories.map((x) => [x.yearsAgo, x.listenedMs]),
+    [
+      [1, 3_000_000],
+      [2, 2_000_000],
+      [3, 1_000_000],
+    ],
+  );
+});
+
+check("a bucket dated later than today is never a memory", () => {
+  const memories = m.findYearlyMemories(
+    [bucket("2025-12", 15, 3_600_000), bucket("2024-12", 15, 3_600_000)],
+    new Date(2025, 5, 15),
+  );
+  assert.strictEqual(memories.length, 0, "future or far-past buckets must not match");
+});
+
+check("the busiest day wins even across a month boundary", () => {
+  // Today is 2025-07-02. 06-29, 06-30 and 07-01 are all inside the window and
+  // all one year old, so they compete on volume and the winner's day must be
+  // the one reported.
+  const memories = m.findYearlyMemories(
+    [
+      bucket("2024-06", 30, 1_000_000),
+      bucket("2024-07", 1, 5_000_000),
+      bucket("2024-06", 29, 9_000_000),
+    ],
+    new Date(2025, 6, 2),
+  );
+  assert.strictEqual(memories.length, 1, `expected 1, got ${memories.length}`);
+  assert.strictEqual(memories[0].listenedMs, 9_000_000);
+  assert.strictEqual(memories[0].monthDay, "06-29");
+});
+
+check("the memory's date names the busiest day, not the window midpoint", () => {
+  // Today is 2025-06-15; 06-14 outranks 06-16 and both are in the window.
+  const louder = bucket("2024-06", 14, 5_000_000);
+  louder.days["16"] = 3_000_000;
+  const memories = m.findYearlyMemories([louder], new Date(2025, 5, 15));
+  assert.strictEqual(memories.length, 1);
+  assert.strictEqual(memories[0].date, "2024-06-14");
+  assert.strictEqual(memories[0].monthDay, "06-14");
+  assert.strictEqual(memories[0].listenedMs, 5_000_000);
+});
+
 // --- payload ----------------------------------------------------------------
 
 check("memory tracks are the month's top, capped and deterministic", () => {
@@ -246,6 +348,25 @@ check("a full year of history is enough", () => {
   assert.strictEqual(
     m.historySpansAYear([bucket("2024-06", 5, 1000)], new Date(2025, 5, 15)),
     true,
+  );
+});
+
+check("eleven months of history is not a year", () => {
+  // 2024-07 to 2025-06 is 11 calendar months: the boundary must be strict,
+  // otherwise the Replay screen would open on a 11-month library.
+  assert.strictEqual(
+    m.historySpansAYear([bucket("2024-07", 5, 1000)], new Date(2025, 5, 15)),
+    false,
+  );
+});
+
+check("a memory four days out of the window never surfaces", () => {
+  // Today 2025-06-11, memory 2024-06-15: the day sits inside the year but
+  // four days before its anniversary.
+  assert.strictEqual(
+    m.findYearlyMemories([bucket("2024-06", 15, 3_600_000)], new Date(2025, 5, 11))
+      .length,
+    0,
   );
 });
 

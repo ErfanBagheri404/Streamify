@@ -333,6 +333,155 @@ async function main() {
     assert.equal(UP.parseSoapFault(''), '');
   });
 
+  // ---- new: SSDP robustness ----------------------------------------------
+
+  await check('parseSsdpReply: LF-only line endings and case-insensitive headers', () => {
+    const reply = UP.parseSsdpReply(
+      'HTTP/1.1 200 OK\n' +
+      'location: http://192.168.1.51:8200/rootDesc.xml\n' +
+      'usn: uuid:ABC::urn:schemas-upnp-org:service:AVTransport:1\n' +
+      'st: urn:schemas-upnp-org:service:AVTransport:1',
+    );
+    assert.ok(reply, 'LF-only replies are real datagrams too');
+    assert.equal(reply.location, 'http://192.168.1.51:8200/rootDesc.xml');
+    assert.equal(reply.usn, 'uuid:ABC::urn:schemas-upnp-org:service:AVTransport:1');
+  });
+
+  await check('parseSsdpReply: a non-http LOCATION is not a fetchable device', () => {
+    // A malformed or spoofed reply must not reach the description fetch.
+    assert.equal(UP.parseSsdpReply(
+      'HTTP/1.1 200 OK\r\nLOCATION: file:///etc/passwd\r\nUSN: uuid:x\r\nST: x',
+    ), null);
+    assert.equal(UP.parseSsdpReply(
+      'HTTP/1.1 200 OK\r\nLOCATION: http://192.168.1.50/rootDesc.xml\r\nST: x',
+    ), null, 'a missing USN cannot be deduped');
+    assert.equal(UP.parseSsdpReply(
+      'HTTP/1.1 200 OK\r\nLOCATION: http://192.168.1.50/rootDesc.xml\r\nUSN: uuid:x',
+    ), null, 'a missing ST cannot be matched to a service');
+  });
+
+  await check('usnDevice: degenerate USNs', () => {
+    assert.equal(UP.usnDevice(''), '');
+    assert.equal(UP.usnDevice('uuid:only'), 'uuid:only', 'no :: means the whole string');
+    assert.equal(UP.usnDevice('::urn:service'), '', 'empty device half');
+  });
+
+  // ---- new: description robustness ----------------------------------------
+
+  await check('parseDeviceDescription: a nameless device still gets a label', () => {
+    const d = UP.parseDeviceDescription('<root><device><deviceType>x</deviceType></device></root>');
+    assert.equal(d.name, 'UPnP renderer', 'the picker needs something to show');
+    assert.equal(d.manufacturer, '');
+    assert.deepEqual(d.services, []);
+  });
+
+  await check('parseDeviceDescription: a service without controlURL is skipped', () => {
+    const xml = '<root><device><serviceList>' +
+      '<service><serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType></service>' +
+      '<service><serviceType>urn:schemas-upnp-org:service:RenderingControl:1</serviceType>' +
+      '<controlURL>/rc/control</controlURL></service>' +
+      '</serviceList></device></root>';
+    const d = UP.parseDeviceDescription(xml);
+    assert.equal(d.services.length, 1, 'the AVTransport entry has no controlURL');
+    assert.equal(d.services[0].serviceType, 'urn:schemas-upnp-org:service:RenderingControl:1');
+  });
+
+  await check('parseDeviceDescription: every service of a multi-service device is kept', () => {
+    const xml = '<root><device><serviceList>' +
+      [1, 2, 3].map((n) =>
+        `<service><serviceType>urn:schemas-upnp-org:service:S${n}:1</serviceType>` +
+        `<controlURL>/s${n}</controlURL></service>`).join('') +
+      '</serviceList></device></root>';
+    assert.equal(UP.parseDeviceDescription(xml).services.length, 3);
+  });
+
+  await check('absoluteControlUrl: empty href and unresolvable base', () => {
+    assert.equal(UP.absoluteControlUrl('http://h/rootDesc.xml', ''), '');
+    assert.equal(UP.absoluteControlUrl('', '/avt'), '', 'no base means no URL');
+    assert.equal(UP.absoluteControlUrl('not a url', '/avt'), '');
+    // A description served from a deep path resolves relative to that path.
+    assert.equal(
+      UP.absoluteControlUrl('http://h:8200/a/b/rootDesc.xml', 'avt/control'),
+      'http://h:8200/a/b/avt/control',
+    );
+  });
+
+  await check('buildRenderer: a device with no services at all is refused', () => {
+    assert.equal(UP.buildRenderer(UP.parseSsdpReply(SSDP_REPLY), '<root><device/></root>'), null);
+  });
+
+  // ---- new: DIDL boundaries -----------------------------------------------
+
+  await check('escapeXml: quotes, apostrophes and nullish values', () => {
+    assert.equal(UP.escapeXml('a "b" \'c\''), 'a &quot;b&quot; &apos;c&apos;');
+    assert.equal(UP.escapeXml(''), '');
+    assert.equal(UP.escapeXml(undefined), '', 'a missing field must not render "undefined"');
+    assert.equal(UP.escapeXml(null), '');
+  });
+
+  await check('toDidlDuration: negative, fractional and very long', () => {
+    assert.equal(UP.toDidlDuration(-5), '0:00:00', 'a negative duration is a live stream');
+    assert.equal(UP.toDidlDuration(59.9), '0:00:59', 'fractional seconds floor');
+    assert.equal(UP.toDidlDuration(36000), '10:00:00', 'a 10-hour audiobook');
+    assert.equal(UP.toDidlDuration(NaN), '0:00:00');
+  });
+
+  await check('buildDidl: missing artist, album, mime and url degrade gracefully', () => {
+    const didl = UP.buildDidl({ id: 't', title: 'T', url: 'http://h/s.mp3' });
+    assert.match(didl, /<dc:creator>Unknown Artist<\/dc:creator>/);
+    assert.match(didl, /<upnp:album><\/upnp:album>/);
+    assert.match(didl, /protocolInfo="http-get:\*:audio\/mpeg:\*"/, 'default mime is mp3');
+    const noUrl = UP.buildDidl({ id: 't', title: 'T', url: '' });
+    assert.match(noUrl, /<res duration="0:00:00"[^>]*><\/res>/, 'an empty res, not a broken one');
+  });
+
+  await check('buildDidlWithIndex: a queue past 99999 keeps its digits', () => {
+    assert.match(UP.buildDidlWithIndex(TRACK, 99999), /<item id="100000"/);
+    assert.match(UP.buildDidlWithIndex(TRACK, 0), /<item id="00001"/);
+  });
+
+  // ---- new: SOAP boundaries -----------------------------------------------
+
+  await check('play: a non-integer instance id falls back to 0', () => {
+    assert.match(UP.play(1.5).body, /<u:InstanceID>0<\/u:InstanceID>/);
+    assert.match(UP.play(7).body, /<u:InstanceID>7<\/u:InstanceID>/);
+  });
+
+  await check('parsePositionInfo: a missing or malformed RelTime is zero', () => {
+    assert.deepEqual(UP.parsePositionInfo('<x/>'), { trackSeconds: 0 });
+    assert.deepEqual(UP.parsePositionInfo('<RelTime>n/a</RelTime>'), { trackSeconds: 0 });
+    assert.deepEqual(UP.parsePositionInfo('<RelTime>1:02:03.5</RelTime>'), { trackSeconds: 3723 },
+      'a fractional RelTime still parses the H:MM:SS prefix');
+    assert.deepEqual(UP.parsePositionInfo('<RelTime>0:00:00</RelTime>'), { trackSeconds: 0 });
+  });
+
+  await check('parseSoapFault: a fault without a description is empty', () => {
+    assert.equal(UP.parseSoapFault('<s:Fault><faultcode>s:Client</faultcode></s:Fault>'), '');
+  });
+
+  await check('actionUrn: a higher service version is honoured per family', () => {
+    assert.equal(
+      UP.actionUrn('Play', 'urn:schemas-upnp-org:service:AVTransport:3'),
+      'urn:schemas-upnp-org:service:AVTransport:3#Play',
+    );
+    assert.equal(
+      UP.actionUrn('SetVolume', 'urn:schemas-upnp-org:service:RenderingControl:2'),
+      'urn:schemas-upnp-org:service:RenderingControl:2#SetVolume',
+    );
+    assert.equal(
+      UP.actionUrn('Play', 'urn:schemas-upnp-org:service:AVTransport'),
+      'urn:schemas-upnp-org:service:AVTransport:1#Play',
+      'no version digit means the v1 default',
+    );
+  });
+
+  await check('controlUrlFor: transport-info actions stay on AVTransport', () => {
+    const r = UP.buildRenderer(UP.parseSsdpReply(SSDP_REPLY), DEVICE_XML);
+    assert.equal(UP.controlUrlFor(r, 'GetTransportInfo'), r.controlUrl);
+    assert.equal(UP.controlUrlFor(r, 'Pause'), r.controlUrl);
+    assert.equal(UP.controlUrlFor(r, 'GetVolume'), r.renderingControlUrl);
+  });
+
   // ---- scope guard -------------------------------------------------------
 
   await check('the module stays free of native imports', () => {

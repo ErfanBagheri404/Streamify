@@ -87,19 +87,6 @@ const STUBS = {
   '../contexts/PlayerContext': {},
 };
 
-function loadModule() {
-  const js = ts.transpileModule(readRepoFile('modules/aiMixPlaylist.ts'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-  }).outputText;
-  const compiled = path.join(os.tmpdir(), `aiMixPlaylist.${process.pid}.cjs`);
-  fs.writeFileSync(compiled, js);
-  const module = { exports: {} };
-  const stubRequire = (spec) => {
-    if (Object.prototype.hasOwnProperty.call(STUBS, spec)) {
-      return { __esModule: true, ...STUBS[spec] };
-    }
-    throw new Error(`unexpected require(${spec}) in aiMixPlaylist.ts`);
-  };
 // Modules whose lookups are resolved lazily, so the discovery generator
 // can swap its history + LLM + search stubs per test.
 const LAZY = {};
@@ -213,6 +200,120 @@ function resetDiscovery() {
     llmCalls = 0;
   }
 
+
+// ---- searchAPI harness (PR #98 probe/spotify-search) -----------------------
+// searchAPI.ts is driven through the same lazy-require harness so the
+// Spotify / JioSaavn / YouTube routes run real code: real provider endpoint
+// URL assembly, real normalization, real error paths. Only the transport
+// seams are replaced — the backend route, the provider fetch/retry, and
+// the runtime config that supplies provider bases.
+const searchState = {
+  backend: null,
+  backendError: null,
+  backendCalls: [],
+  providerPayloads: [],
+  providerError: null,
+  providerCalls: [],
+  mixPayload: null,
+  mixId: null,
+  pipedPayload: null,
+  pipedCalls: [],
+};
+const resetSearch = () => {
+  searchState.backend = null;
+  searchState.backendError = null;
+  searchState.backendCalls = [];
+  searchState.providerPayloads = [];
+  searchState.providerError = null;
+  searchState.providerCalls = [];
+  searchState.mixPayload = null;
+  searchState.mixId = null;
+  searchState.pipedPayload = null;
+  searchState.pipedCalls = [];
+};
+const runtimeConfigSnapshot = {
+  providers: {
+    jiosaavn: {
+      apiBase: 'https://streamifyjiosaavn.vercel.app',
+      fallbackSearchBase: 'https://jiosaavn-api.vercel.app',
+      webOrigin: 'https://www.jiosaavn.com',
+    },
+  },
+};
+
+Object.assign(STUBS, {
+  './runtime-config': {
+    getRuntimeConfig: async () => runtimeConfigSnapshot,
+    getCachedRuntimeConfigSnapshot: async () => runtimeConfigSnapshot,
+  },
+  '../lib/runtime-services': {
+    getRuntimeServiceConfig: async () => ({
+      search: { jiosaavnSearchFallbackUrl: 'https://fallback-search.example/search' },
+    }),
+  },
+  '../lib/backend-api': {
+    fetchBackendRoute: async (route, options) => {
+      searchState.backendCalls.push({ route, searchParams: options?.searchParams });
+      if (searchState.backendError) throw searchState.backendError;
+      return searchState.backend;
+    },
+  },
+  '../components/core/image': {
+    absolutizeImageUrl: (url) => url,
+    buildProxiedYouTubeThumbnailUrl: () => '',
+    pickBestImageUrl: () => '',
+    sanitizeImageUrl: (url) => url,
+    upgradeSoundCloudImage: (url) => url,
+  },
+  '../components/core/api': {
+    API: { piped: ['https://piped.example'], invidious: [], jiosaavn: { base: 'https://jio.example/api' } },
+    DYNAMIC_INVIDIOUS_INSTANCES: [],
+    fetchStreamFromPipedWithFallback: async () => ({}),
+    fetchStreamFromInvidiousWithFallback: async () => ({}),
+    getBeatseekApiBase: () => 'https://beatseek.example/api',
+    getJioSaavnSearchEndpoint: (query) => `https://jio.example/api/search?query=${encodeURIComponent(query)}`,
+    getJioSaavnSongEndpoint: (id) => `https://jio.example/api/songs/${encodeURIComponent(id)}`,
+    getJioSaavnArtistEndpoint: (id) => `https://jio.example/api/artists/${encodeURIComponent(id)}`,
+    getJioSaavnPlaylistEndpoint: (id) => `https://jio.example/api/playlists/${encodeURIComponent(id)}`,
+    getSoundCloudSearchProxyBase: () => 'https://proxy.example',
+    fetchWithRetry: async (url) => {
+      searchState.providerCalls.push(url);
+      if (searchState.providerError) throw new Error(`provider down: ${url}`);
+      const payloads = searchState.providerPayloads;
+      return (payloads.length ? payloads[Math.min(searchState.providerCalls.length - 1, payloads.length - 1)] : {});
+    },
+    idFromURL: () => '',
+    convertSStoHHMMSS: () => '',
+    numFormatter: () => '',
+    fetchYouTubeMix: async (id) => {
+      searchState.mixId = id;
+      return searchState.mixPayload;
+    },
+  },
+});
+
+STUBS['../lib/provider-endpoints'] = compileModule('lib/provider-endpoints.ts');
+const SEARCH = compileModule('modules/searchAPI.ts').searchAPI;
+
+const backendResponse = (payload, ok = true) => ({
+  ok,
+  status: ok ? 200 : 500,
+  json: async () => payload,
+});
+
+async function withPipedCapture(fn) {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    searchState.pipedCalls.push(String(url));
+    if (!searchState.pipedPayload) throw new Error('piped down');
+    return { ok: true, status: 200, text: async () => JSON.stringify(searchState.pipedPayload) };
+  };
+  try {
+    return await fn();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
 
 async function main() {
   await check('generates a mix and pins it under the stable AI Mix id', async () => {
@@ -344,14 +445,14 @@ async function main() {
 
   await check('generating is lazy-imported, not pulled into the player bundle', () => {
     const src = readRepoFile('components/FullPlayerModal.tsx');
-    assert.match(src, /await import\("\.\.\/modules\/aiMixPlaylist"\)/);
-    assert.ok(
-      !/^import .*from "\.\.\/modules\/aiMixPlaylist";$/m.test(src),
-      'aiMixPlaylist must not be a static import of the player modal',
+    // Discovery mode (#96) ships the button through aiMixGenerator, which
+    // lazy-falls back into aiMixPlaylist from inside its own lazy chunk, so
+    // neither module may be a static import of the modal.
     assert.match(src, /await import\(\s*"\.\.\/modules\/aiMixGenerator"\s*\)/);
-    assert.ok(
-      !/^import .*from "\.\.\/modules\/aiMix(Gen|Play)";?/m.test(src),
-      'the generator must not be a static import of the player modal',
+    assert.strictEqual(
+      /^import .*from "\.\.\/modules\/aiMix(Gen|Play)list?"$/m.test(src),
+      false,
+      'neither ai mix module may be a static import of the player modal',
     );
   });
 
@@ -492,6 +593,120 @@ async function main() {
     assert.deepEqual(seenModels, ['openai', 'openai-fast'], 'chain walks the alias, then the canonical id');
     assert.ok(mix, 'fallback model must rescue the run');
     assert.ok(mix.tracks.every((t) => t.id.startsWith('d')), 'rescued run is still discovery');
+  });
+
+  // ---- searchAPI edge cases (PR #98 probe/spotify-search) ------------------
+
+  await check('searchAPI: Spotify backend results normalize into playable Spotify tracks', async () => {
+    resetSearch();
+    searchState.backend = backendResponse({
+      items: [
+        { id: 'sp1', name: 'Spotify Track', artist: 'Spotify Artist', duration: '180', url: 'https://open.spotify.com/track/sp1' },
+      ],
+    });
+    const out = await SEARCH.searchWithSpotify('query');
+    assert.equal(out.length, 1);
+    assert.equal(out[0].id, 'sp1');
+    assert.equal(out[0].source, 'spotify');
+    assert.equal(out[0].playbackSource, 'spotify');
+  });
+
+  await check('searchAPI: Spotify search returns an empty list for an empty backend result', async () => {
+    resetSearch();
+    searchState.backend = backendResponse({ items: [] });
+    const out = await SEARCH.searchWithSpotify('query');
+    assert.deepEqual(out, []);
+  });
+
+  await check('searchAPI: Spotify search swallows a backend network failure', async () => {
+    resetSearch();
+    searchState.backendError = new Error('backend down');
+    const out = await SEARCH.searchWithSpotify('query');
+    assert.deepEqual(out, []);
+    assert.equal(searchState.backendCalls.length, 1, 'the backend must have been attempted');
+  });
+
+  await check('searchAPI: JioSaavn falls back to the provider when the backend is non-ok', async () => {
+    resetSearch();
+    searchState.backend = backendResponse({ items: [] }, false);
+    searchState.providerPayloads = [{
+      songs: [
+        { id: 'j1', name: 'Jio Song', primaryArtists: 'Jio Artist', duration: '200', url: 'https://www.jiosaavn.com/song/j1' },
+      ],
+    }];
+    const out = await SEARCH.searchWithJioSaavn('jio query');
+    assert.ok(out.length >= 1, 'provider fallback must return the song');
+    assert.equal(out[0].source, 'jiosaavn');
+    assert.equal(out[0].id, 'j1');
+    assert.ok(searchState.providerCalls.length > 0, 'the provider endpoint must have been hit');
+  });
+
+  await check('searchAPI: JioSaavn provider failure returns an empty list, not a throw', async () => {
+    resetSearch();
+    searchState.backend = backendResponse({ items: [] }, false);
+    searchState.providerError = new Error('provider down');
+    const out = await SEARCH.searchWithJioSaavn('jio query');
+    assert.deepEqual(out, []);
+  });
+
+  await check('searchAPI: duplicate backend tracks are deduplicated', async () => {
+    resetSearch();
+    searchState.backend = backendResponse({
+      items: [
+        { id: 'dup', name: 'First Title' },
+        { id: 'dup', name: 'Second Title' },
+      ],
+    });
+    const out = await SEARCH.searchWithSpotify('query');
+    assert.equal(out.length, 1, 'the same id must not appear twice');
+  });
+
+  await check('searchAPI: malformed backend entries are skipped', async () => {
+    resetSearch();
+    searchState.backend = backendResponse({
+      items: [null, 'not-an-object', 42, { id: 'ok', name: 'Good Entry' }],
+    });
+    const out = await SEARCH.searchWithSpotify('query');
+    assert.equal(out.length, 1);
+    assert.equal(out[0].id, 'ok');
+  });
+
+  await check('searchAPI: a unicode query reaches the provider percent-encoded', async () => {
+    resetSearch();
+    const query = '\u0645\u06cc\u0648\u0632\u06cc\u06a9';
+    searchState.backend = backendResponse({ items: [] }, false);
+    searchState.providerPayloads = [{ songs: [{ id: 'j2', name: 'Song' }] }];
+    await SEARCH.searchWithJioSaavn(query);
+    const encoded = encodeURIComponent(query);
+    assert.ok(
+      searchState.providerCalls.some((url) => url.includes(encoded)),
+      'provider URL must carry the percent-encoded query',
+    );
+  });
+
+  await check('searchAPI: a very long query is passed through without crashing', async () => {
+    resetSearch();
+    const longQuery = 'a'.repeat(2000);
+    searchState.backend = backendResponse({ items: [] }, false);
+    searchState.providerPayloads = [{ songs: [{ id: 'j3', name: 'Song' }] }];
+    const out = await SEARCH.searchWithJioSaavn(longQuery);
+    assert.ok(Array.isArray(out));
+    assert.ok(searchState.providerCalls.length > 0);
+    assert.ok(
+      searchState.providerCalls.some((url) => url.length > 2000),
+      'the long query must survive into the provider URL',
+    );
+  });
+
+  await check('searchAPI: a URL-special Spotify collection id is carried intact', async () => {
+    resetSearch();
+    searchState.backend = backendResponse({ collection: { id: 'alb um/1' }, entries: [] });
+    const result = await SEARCH.getSpotifyCollection('alb um/1', 'album');
+    assert.ok(result);
+    const call = searchState.backendCalls.find((c) => c.route === '/collection');
+    assert.ok(call, 'the collection route must be used');
+    assert.equal(call.searchParams.id, 'alb um/1');
+    assert.equal(call.searchParams.kind, 'album');
   });
 
   console.log(`\n${checks - failures.length}/${checks} checks passed`);

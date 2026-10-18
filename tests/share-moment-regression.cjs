@@ -227,6 +227,86 @@ check("the player offers the timestamped share action", () => {
   );
 });
 
+// --- additional edge-case coverage (PR #70) --------------------------------
+
+check("formatTimestamp clamps non-finite and negative input to 0:00", () => {
+  assert.strictEqual(share.formatTimestamp(NaN), "0:00");
+  assert.strictEqual(share.formatTimestamp(Infinity), "0:00");
+  assert.strictEqual(share.formatTimestamp(-5), "0:00");
+  assert.strictEqual(share.formatTimestamp(3600), "1:00:00");
+  assert.strictEqual(share.formatTimestamp(65), "1:05");
+});
+
+check("parseTimestamp trims whitespace and floors plain seconds", () => {
+  assert.strictEqual(share.parseTimestamp("  83  "), 83);
+  assert.strictEqual(share.parseTimestamp(" 1:23 "), 83);
+  assert.strictEqual(share.parseTimestamp("83.9"), 83);
+});
+
+check("parseTimestamp rejects too many segments and negative parts", () => {
+  assert.strictEqual(share.parseTimestamp("1:2:3:4"), null);
+  assert.strictEqual(share.parseTimestamp("-1:23"), null);
+  assert.strictEqual(share.parseTimestamp("1:-2"), null);
+});
+
+check("buildShareMomentUrl floors and ignores non-positive seconds", () => {
+  const url = share.buildShareMomentUrl({ id: "x" }, 83.9);
+  assert.ok(url.includes("t=83"), url);
+  assert.ok(!share.buildShareMomentUrl({ id: "x" }, -5).includes("t="));
+  assert.ok(!share.buildShareMomentUrl({ id: "x" }, NaN).includes("t="));
+  assert.ok(!share.buildShareMomentUrl({ id: "x" }, 0).includes("t="));
+});
+
+check("buildShareMomentUrl omits empty metadata fields", () => {
+  const url = share.buildShareMomentUrl(
+    { id: "x", title: "", artist: "A & B" },
+    0,
+  );
+  assert.ok(!url.includes("n="), url);
+  assert.ok(url.includes("a="), url);
+  const moment = share.parseShareMomentUrl(url);
+  assert.strictEqual(moment.title, undefined);
+  assert.strictEqual(moment.artist, "A & B");
+});
+
+check("parseShareMomentUrl treats missing and zero timestamps as zero", () => {
+  assert.strictEqual(
+    share.parseShareMomentUrl("streamify://track/x").seconds,
+    0,
+  );
+  assert.strictEqual(
+    share.parseShareMomentUrl("streamify://track/x?t=0").seconds,
+    0,
+  );
+});
+
+check("parseShareMomentUrl round-trips unicode ids and metadata", () => {
+  const track = { id: "caf\xc3\xa9/\u266b", title: "\u0645\u0648\u0633\u06cc\u0642\u06cc", artist: "Bj\u00f6rk" };
+  const url = share.buildShareMomentUrl(track, 42);
+  const moment = share.parseShareMomentUrl(url);
+  assert.strictEqual(moment.id, track.id);
+  assert.strictEqual(moment.seconds, 42);
+  assert.strictEqual(moment.title, track.title);
+  assert.strictEqual(moment.artist, track.artist);
+});
+
+check("buildShareMessage returns the bare url without heading or timestamp", () => {
+  const url = "streamify://track/x";
+  assert.strictEqual(
+    share.buildShareMessage({ id: "x", seconds: 0 }, url),
+    url,
+  );
+});
+
+check("RUNTIME: handler is not invoked for a malformed moment url", async () => {
+  share.__resetShareMomentForTests();
+  const seen = [];
+  share.setShareMomentHandler((moment) => seen.push(moment));
+  const handled = await share.routeShareMomentUrl("streamify://track/%zz");
+  assert.strictEqual(handled, false);
+  assert.strictEqual(seen.length, 0);
+});
+
 // --- report -----------------------------------------------------------------
 
 Promise.all(pending).then(() => {

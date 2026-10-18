@@ -14,10 +14,20 @@ const root = path.join(__dirname, "..");
 const read = (...parts) => fs.readFileSync(path.join(root, ...parts), "utf8");
 
 const results = [];
+const pending = [];
 function check(name, fn) {
   try {
-    fn();
-    results.push(`PASS ${name}`);
+    const out = fn();
+    if (out && typeof out.then === "function") {
+      pending.push(
+        out.then(
+          () => results.push(`PASS ${name}`),
+          (e) => results.push(`FAIL ${name}: ${e.message}`),
+        ),
+      );
+    } else {
+      results.push(`PASS ${name}`);
+    }
   } catch (e) {
     results.push(`FAIL ${name}: ${e.message}`);
   }
@@ -100,9 +110,14 @@ check("scrobble finalize/start is gated on track change", () => {
   );
 });
 
-check("previously-played write is gated", () => {
+  check("previously-played write is gated", () => {
+  // The merge folded the podcast gate into the same condition as the
+  // incognito gate, so anchor on the gate, not on one exact line shape.
+  const writeAt = playerContext.indexOf("setPreviouslyPlayedSongs((prev)");
+  assert.ok(writeAt > -1, "the previously-played write exists");
+  const gate = playerContext.slice(writeAt - 700, writeAt);
   assert.ok(
-    playerContext.includes("if (!incognitoRef.current && ("),
+    /!incognitoRef\.current &&/.test(gate),
     "setPreviouslyPlayedSongs must be skipped while incognito",
   );
 });
@@ -214,13 +229,180 @@ check("locale keys exist in both languages", () => {
   }
 });
 
+// --- runtime: sanitizer + auto-exit logic under Node -------------------------
+
+const os = require("os");
+const ts = require(path.join(root, "node_modules", "typescript"));
+const Module = require("module");
+const origLoad = Module._load.bind(Module);
+let virtual = new Map();
+Module._load = function (request, parent, isMain) {
+  if (virtual.has(request)) return virtual.get(request);
+  return origLoad(request, parent, isMain);
+};
+function loadTs(relPath, provide) {
+  const js = ts.transpileModule(read(...relPath.split("/")), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  }).outputText;
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "incognito-"));
+  const file = path.join(scratch, "mod.cjs");
+  fs.writeFileSync(file, js);
+  virtual = new Map(Object.entries(provide || {}));
+  let mod;
+  try {
+    mod = require(file);
+  } finally {
+    virtual = new Map();
+    try { fs.rmSync(scratch, { recursive: true, force: true }); } catch {}
+  }
+  return mod;
+}
+
+const CACHE_BUDGET_STUB = {
+  sanitizeCacheCapMb: (v) => (v === 500 || v === 2000 || v === 5000 ? v : 500),
+};
+const settingsModule = () =>
+  loadTs("lib/app-settings.ts", { "../modules/cacheBudget": CACHE_BUDGET_STUB });
+
+check("runtime: sanitizer coerces every junk incognito field back to default", () => {
+  const { sanitizeAppSettings, DEFAULT_APP_SETTINGS } = settingsModule();
+  const out = sanitizeAppSettings({
+    incognitoMode: "yes",
+    incognitoAutoExit: "sometimes",
+    incognitoDayEnd: "tomorrow",
+  });
+  assert.strictEqual(out.incognitoMode, false);
+  assert.strictEqual(out.incognitoAutoExit, "manual");
+  assert.strictEqual(out.incognitoDayEnd, null);
+  assert.strictEqual(out.incognitoMode, DEFAULT_APP_SETTINGS.incognitoMode);
+});
+
+check("runtime: sanitizer keeps the three valid auto-exit modes only", () => {
+  const { sanitizeAppSettings } = settingsModule();
+  for (const mode of ["manual", "queueEnd", "dayEnd"]) {
+    assert.strictEqual(sanitizeAppSettings({ incognitoAutoExit: mode }).incognitoAutoExit, mode);
+  }
+  assert.strictEqual(sanitizeAppSettings({ incognitoAutoExit: "QueueEnd" }).incognitoAutoExit, "manual");
+  assert.strictEqual(sanitizeAppSettings({ incognitoAutoExit: null }).incognitoAutoExit, "manual");
+});
+
+check("runtime: a non-finite day boundary is dropped, a finite one survives", () => {
+  const { sanitizeAppSettings } = settingsModule();
+  assert.strictEqual(sanitizeAppSettings({ incognitoDayEnd: NaN }).incognitoDayEnd, null);
+  assert.strictEqual(sanitizeAppSettings({ incognitoDayEnd: Infinity }).incognitoDayEnd, null);
+  assert.strictEqual(
+    sanitizeAppSettings({ incognitoDayEnd: 1781555401000 }).incognitoDayEnd,
+    1781555401000,
+  );
+});
+
+check("runtime: a settings round-trip through JSON is idempotent", () => {
+  const { sanitizeAppSettings } = settingsModule();
+  const stored = sanitizeAppSettings({
+    incognitoMode: true,
+    incognitoAutoExit: "dayEnd",
+    incognitoDayEnd: 1781555401000,
+  });
+  const reloaded = sanitizeAppSettings(JSON.parse(JSON.stringify(stored)));
+  assert.deepStrictEqual(reloaded, stored, "a persisted incognito snapshot must reload unchanged");
+});
+
+check("runtime: a garbage record falls back to defaults, never to incognito on", () => {
+  const { sanitizeAppSettings, DEFAULT_APP_SETTINGS } = settingsModule();
+  for (const junk of [null, [], "nonsense", 42]) {
+    const out = sanitizeAppSettings(junk);
+    assert.strictEqual(out.incognitoMode, false);
+    assert.deepStrictEqual(out, DEFAULT_APP_SETTINGS);
+  }
+});
+
+// --- runtime: subscribeIncognitoAutoExit under Node ---------------------------
+
+function makeAutoExit() {
+  const appState = { subs: {}, addEventListener: (n, cb) => { appState.subs[n] = cb; return { remove: () => { delete appState.subs[n]; } }; } };
+  const tp = { subs: {}, addEventListener: (n, cb) => { tp.subs[n] = cb; return { remove: () => { delete tp.subs[n]; } }; } };
+  const rn = { AppState: appState, __esModule: true };
+  const tpStub = { Event: { PlaybackQueueEnded: "PlaybackQueueEnded" }, State: {}, default: tp, __esModule: true };
+  tpStub.default.default = tp;
+  const mod = loadTs("modules/incognitoAutoExit.ts", {
+    "react-native": rn,
+    "react-native-track-player": tpStub,
+  });
+  return { mod, appState, tp };
+}
+
+check("runtime: past boundary disables immediately and arms no timers", () => {
+  const { mod } = makeAutoExit();
+  let disabled = 0;
+  mod.subscribeIncognitoAutoExit({ mode: "dayEnd", disable: () => { disabled++; }, dayBoundary: Date.now() - 1000 });
+  assert.strictEqual(disabled, 1, "an elapsed boundary must exit on the spot");
+});
+
+check("runtime: future boundary waits, and a foreground event before it does not exit", () => {
+  const { mod, appState } = makeAutoExit();
+  let disabled = 0;
+  const dispose = mod.subscribeIncognitoAutoExit({
+    mode: "dayEnd",
+    disable: () => { disabled++; },
+    dayBoundary: Date.now() + 3600000,
+  });
+  assert.strictEqual(disabled, 0, "a future boundary must not fire early");
+  assert.ok(appState.subs.change, "dayEnd must listen to AppState to re-check on foreground");
+  appState.subs.change("active");
+  assert.strictEqual(disabled, 0, "foreground before the boundary must not exit");
+  dispose();
+  assert.ok(!("change" in appState.subs), "the disposer must remove the AppState listener");
+});
+
+check("runtime: queueEnd subscribes, disables once, and the disposer unsubscribes", () => {
+  const { mod, tp } = makeAutoExit();
+  let disabled = 0;
+  const dispose = mod.subscribeIncognitoAutoExit({ mode: "queueEnd", disable: () => { disabled++; }, dayBoundary: null });
+  assert.ok(tp.subs.PlaybackQueueEnded, "must subscribe to the queue-ended event");
+  tp.subs.PlaybackQueueEnded();
+  assert.strictEqual(disabled, 1);
+  dispose();
+  assert.ok(!("PlaybackQueueEnded" in tp.subs), "the disposer must remove the listener");
+});
+
+check("runtime: manual mode disables nothing and arms no listeners", () => {
+  const { mod, appState, tp } = makeAutoExit();
+  let disabled = 0;
+  const dispose = mod.subscribeIncognitoAutoExit({ mode: "manual", disable: () => { disabled++; }, dayBoundary: null });
+  assert.strictEqual(disabled, 0);
+  assert.ok(!("change" in appState.subs));
+  assert.strictEqual(Object.keys(tp.subs).length, 0);
+  dispose();
+});
+
+check("runtime: nextDayEndMillis lands on the next local midnight", () => {
+  const { mod } = makeAutoExit();
+  const from = new Date("2026-06-15T23:59:30").getTime();
+  const boundary = mod.nextDayEndMillis(from);
+  assert.ok(boundary > from, "boundary must be in the future");
+  assert.strictEqual(new Date(boundary).getHours(), 0);
+  assert.strictEqual(new Date(boundary).getMinutes(), 0);
+  assert.strictEqual(new Date(boundary).getSeconds(), 1);
+  assert.strictEqual(new Date(boundary).getDate(), 16);
+});
+
+check("runtime: nextDayEndMillis never returns a same-day boundary", () => {
+  const { mod } = makeAutoExit();
+  const from = new Date("2026-06-15T00:00:30").getTime();
+  const boundary = mod.nextDayEndMillis(from);
+  assert.ok(boundary > from);
+  assert.strictEqual(boundary - from > 1439 * 60000, true, "a boundary captured right after midnight must be a full day out");
+});
+
 // --- report -----------------------------------------------------------------
 
-const failed = results.filter((r) => r.startsWith("FAIL"));
-for (const line of results) {
-  console.log(line);
-}
-console.log(`\n${results.length - failed.length}/${results.length} passed`);
-process.exit(failed.length === 0 ? 0 : 1);
+Promise.all(pending).then(() => {
+  const failed = results.filter((r) => r.startsWith("FAIL"));
+  for (const line of results) {
+    console.log(line);
+  }
+  console.log(`\n${results.length - failed.length}/${results.length} passed`);
+  process.exit(failed.length === 0 ? 0 : 1);
+});
 
 

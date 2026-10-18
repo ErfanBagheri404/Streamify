@@ -259,6 +259,151 @@ runtimeChecks.push([
   },
 ]);
 
+runtimeChecks.push([
+  "a dark navy cover keeps its hue family",
+  () => {
+    // Cover of a near-black navy: l is low enough that a naive extractor
+    // hands back mud, and s must survive for the accent to stay blue at all.
+    const pixels = Array.from({ length: 16 }, () => ({ r: 20, g: 24, b: 60 }));
+    const dominant = art.extractDominantColor(pixels);
+    assert.ok(dominant, "dark cover produced no colour");
+    const { h, s, l } = art.rgbToHsl(dominant);
+    assert.ok(s > 0.3, `dark cover came back desaturated: ${s}`);
+    assert.ok(l > 0.05 && l < 0.3, `dark cover came back too bright: ${l}`);
+    for (const isLight of [false, true]) {
+      const seed = art.deriveArtworkSeed(dominant, isLight);
+      const accentHue = art.rgbToHsl(parse(seed.accent)).h;
+      const diff = Math.min(
+        Math.abs(accentHue - h),
+        360 - Math.abs(accentHue - h),
+      );
+      assert.ok(
+        diff <= 45,
+        `light=${isLight}: accent ${seed.accent} left the navy hue (${Math.round(accentHue)} vs ${Math.round(h)})`,
+      );
+    }
+  },
+]);
+
+runtimeChecks.push([
+  "mono artwork falls back to the exact average colour",
+  () => {
+    assert.deepStrictEqual(
+      art.extractDominantColor(COVERS.grey),
+      { r: 128, g: 128, b: 128 },
+      "a grey cover must keep its grey, not snap to a hue",
+    );
+    assert.deepStrictEqual(
+      art.extractDominantColor(Array.from({ length: 8 }, () => WHITE)),
+      WHITE,
+    );
+    assert.deepStrictEqual(
+      art.extractDominantColor(Array.from({ length: 8 }, () => BLACK)),
+      BLACK,
+    );
+  },
+]);
+
+runtimeChecks.push([
+  "pure-black artwork never yields a black accent",
+  () => {
+    // Every pixel is below the luminance floor, so no hue bucket survives and
+    // the fallback is the average: black. The seed clamp must still rescue it.
+    for (const isLight of [false, true]) {
+      const seed = art.deriveArtworkSeed(
+        art.extractDominantColor(COVERS["pure black"]),
+        isLight,
+      );
+      const accent = parse(seed.accent);
+      assert.ok(accent, "no accent produced");
+      const background = isLight ? WHITE : { r: 5, g: 5, b: 5 };
+      const ratio = art.contrastRatio(accent, background);
+      assert.ok(
+        ratio >= 3,
+        `light=${isLight}: black artwork gave ${seed.accent} at only ${ratio.toFixed(2)}:1`,
+      );
+      const { l } = art.rgbToHsl(accent);
+      assert.ok(l > 0.2 && l < 0.95, `accent is not a usable mid-tone: ${l}`);
+    }
+  },
+]);
+
+runtimeChecks.push([
+  "hex parsing tolerates case and whitespace, rejects bad lengths",
+  () => {
+    assert.deepStrictEqual(parse("#FFFFFF"), WHITE, "uppercase must parse");
+    assert.deepStrictEqual(parse("  #fff  "), WHITE, "whitespace must be trimmed");
+    assert.strictEqual(parse("#ff"), null, "2-digit hex accepted");
+    assert.strictEqual(parse("#ffff"), null, "4-digit hex accepted");
+    assert.strictEqual(parse("#1234567"), null, "7-digit hex accepted");
+    assert.strictEqual(parse("#12345g"), null, "non-hex digit accepted");
+  },
+]);
+
+runtimeChecks.push([
+  "rgbToHex clamps out-of-range channels instead of wrapping",
+  () => {
+    assert.strictEqual(art.rgbToHex({ r: 300, g: -20, b: 128.6 }), "#ff0081");
+    assert.strictEqual(art.rgbToHex({ r: 0, g: 0, b: 0 }), "#000000");
+  },
+]);
+
+runtimeChecks.push([
+  "hslToRgb wraps hue outside the wheel and clamps s/l",
+  () => {
+    assert.deepStrictEqual(art.hslToRgb(-45, 1, 0.5), { r: 255, g: 0, b: 191 });
+    assert.deepStrictEqual(art.hslToRgb(480, 2, -1), { r: 0, g: 0, b: 0 });
+    assert.deepStrictEqual(art.hslToRgb(0, -1, 2), { r: 255, g: 255, b: 255 });
+  },
+]);
+
+runtimeChecks.push([
+  "contrast is symmetric and a colour matches itself at exactly 1:1",
+  () => {
+    const a = { r: 214, g: 51, b: 132 };
+    const b = { r: 12, g: 200, b: 90 };
+    assert.ok(art.contrastRatio(a, b) === art.contrastRatio(b, a), "contrast is order-sensitive");
+    assert.strictEqual(art.contrastRatio(WHITE, WHITE), 1);
+    assert.strictEqual(art.contrastRatio(BLACK, BLACK), 1);
+    const ratio = art.contrastRatio(WHITE, BLACK);
+    assert.ok(ratio > 20.9 && ratio < 21.1, `black/white is ${ratio}`);
+  },
+]);
+
+runtimeChecks.push([
+  "the accent keeps the artwork's hue family across the clamp",
+  () => {
+    // Three saturated covers: whatever the clamp does to s and l, the hue
+    // must survive or the app no longer reads as the album it is playing.
+    const samples = [
+      ["neon magenta", 300],
+      ["acid green", 110],
+      ["sunset", 19],
+      ["dark with one bright pixel", 10],
+    ];
+    for (const [name, expected] of samples) {
+      const dominant = art.extractDominantColor(COVERS[name]);
+      const artworkHue = art.rgbToHsl(dominant).h;
+      for (const isLight of [false, true]) {
+        const seed = art.deriveArtworkSeed(dominant, isLight);
+        const accentHue = art.rgbToHsl(parse(seed.accent)).h;
+        const diff = Math.min(
+          Math.abs(accentHue - artworkHue),
+          360 - Math.abs(accentHue - artworkHue),
+        );
+        assert.ok(
+          diff <= 45,
+          `${name}/light=${isLight}: accent ${seed.accent} hue ${Math.round(accentHue)} vs artwork ${Math.round(artworkHue)}`,
+        );
+      }
+      assert.ok(
+        Math.abs(artworkHue - expected) <= 45,
+        `${name} dominant hue drifted: ${Math.round(artworkHue)} vs ${expected}`,
+      );
+    }
+  },
+]);
+
 const wiringChecks = [
   [
     "no new dependency is introduced",

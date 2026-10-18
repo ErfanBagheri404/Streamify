@@ -5,15 +5,6 @@
  * regression suites that exercise storage-backed pure modules inject this in
  * place of it (see tests/lyrics-offset-regression.cjs).
  *
- * `__esModule` + a self-referencing `default` are required because the
- * TypeScript transpile emits `__importDefault(require(...)).default`, which
- * looks for `.default` on an already-default object without the flag.
- */
-const store = new Map();
-
-const api = {
- * In-memory AsyncStorage stand-in for Node regression suites.
- *
  * Dual-shaped on purpose: TypeScript emits `__importDefault(...)` for a default
  * import, so the module must expose both `module.exports` members and a
  * `.default` alias plus `__esModule`. A default-only stub resolves to
@@ -31,11 +22,6 @@ const AsyncStorage = {
   async removeItem(key) {
     store.delete(key);
   },
-  __store: store,
-};
-
-module.exports = api;
-module.exports.default = api;
   async clear() {
     store.clear();
   },
@@ -56,6 +42,7 @@ module.exports.default = api;
   __reset() {
     store.clear();
   },
+  __store: store,
 };
 
 module.exports = AsyncStorage;

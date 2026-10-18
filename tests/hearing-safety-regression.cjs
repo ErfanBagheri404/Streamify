@@ -72,6 +72,13 @@ function loadModule(file, fakes) {
   return mod.exports;
 }
 
+/** CacheBudget is pure — load it once and feed the real module to app-settings. */
+let _cacheBudget = null;
+function loadCacheBudget() {
+  if (!_cacheBudget) _cacheBudget = loadModule("modules/cacheBudget.ts", {});
+  return _cacheBudget;
+}
+
 /** hearingSafety loaded with a programmable native module. */
 function loadHearing({ os = "android", native = null } = {}) {
   const storage = storageStub();
@@ -83,6 +90,7 @@ function loadHearing({ os = "android", native = null } = {}) {
   const settings = loadModule("lib/app-settings.ts", {
     "react-native": rn,
     "@react-native-async-storage/async-storage": storage,
+    "../modules/cacheBudget": loadCacheBudget(),
   });
   const hearing = loadModule("modules/hearingSafety.ts", {
     "react-native": rn,
@@ -438,6 +446,153 @@ check("exposure: recordExposure persists and clearExposure empties", async () =>
   await hearing.clearExposure();
   const after = await storage.getItem(hearing.HEARING_EXPOSURE_STORAGE_KEY);
   assert.strictEqual(after, "[]", "clear writes an empty list");
+});
+
+/* ------------------------------------------------------------------ */
+/* Ceiling clamp + native degradation (extended scenarios)              */
+/* ------------------------------------------------------------------ */
+
+check("clamp: the exact range bounds round-trip and out-of-bounds hits the walls", async () => {
+  const { hearing, settings } = loadHearing();
+  const { min, max } = settings.HEARING_CEILING_RANGE;
+  assert.strictEqual(hearing.clampCeiling(min), min, "the minimum is usable as-is");
+  assert.strictEqual(hearing.clampCeiling(max), max, "the maximum is usable as-is");
+  assert.strictEqual(hearing.clampCeiling(min - 1), min);
+  assert.strictEqual(hearing.clampCeiling(max + 1), max);
+  assert.strictEqual(hearing.clampCeiling(Infinity), settings.HEARING_CEILING_DEFAULT, "Infinity is not a ceiling");
+  assert.strictEqual(hearing.clampCeiling(-Infinity), settings.HEARING_CEILING_DEFAULT);
+  // Rounding must not smuggle a value past a wall: 99.5 rounds to 100 (in), and
+  // 100.5 rounds to 101 then clamps back to 100.
+  assert.strictEqual(hearing.clampCeiling(99.5), max);
+});
+
+check("clamp: a supported device applies the clamped ceiling and a failure falls back locally", async () => {
+  const calls = [];
+  let exploded = null;
+  const native = {
+    getState: async () => {
+      if (exploded) throw exploded;
+      return { supported: true, enabled: false, ceiling: 85, minCeiling: 60, maxCeiling: 100, deviceMax: 0 };
+    },
+    setCeiling: async (raw) => {
+      calls.push(raw);
+      if (exploded) throw exploded;
+      return 100;
+    },
+    setEnabled: async (value) => {
+      if (exploded) throw exploded;
+      return value;
+    },
+    getOutputVolume: async () => {
+      if (exploded) throw exploded;
+      return 0.5;
+    },
+  };
+  const { hearing } = loadHearing({ native });
+  assert.strictEqual(await hearing.getHearingLimiterState().then((s) => s.supported), true);
+  assert.strictEqual(await hearing.setHearingCeiling(200), 100, "the value the DEVICE applied wins");
+  assert.strictEqual(await hearing.setHearingLimiterEnabled(true), true);
+  assert.strictEqual(await hearing.getOutputVolume(), 0.5);
+  exploded = new Error("boom");
+  // Native trouble degrades to the local clamp, never rejects.
+  assert.strictEqual(await hearing.setHearingCeiling(140), 100);
+  assert.strictEqual(await hearing.setHearingLimiterEnabled(true), false);
+  assert.strictEqual(await hearing.getOutputVolume(), null);
+  assert.strictEqual(await hearing.getHearingLimiterState().then((s) => s.supported), false);
+});
+
+check("clamp: a non-finite volume reading is silence, not a number", async () => {
+  const native = {
+    getOutputVolume: async () => Number.POSITIVE_INFINITY,
+  };
+  const { hearing } = loadHearing({ native });
+  assert.strictEqual(await hearing.getOutputVolume(), null, "Infinity must read as could-not-report");
+});
+
+/* ------------------------------------------------------------------ */
+/* Exposure meter (extended scenarios)                                  */
+/* ------------------------------------------------------------------ */
+
+check("exposure: a day stamp is UTC yyyy-mm-dd and staleness is a strict date compare", async () => {
+  const { hearing } = loadHearing();
+  assert.match(hearing.dayStamp(new Date("2026-03-05T23:59:59Z")), /^\d{4}-\d{2}-\d{2}$/);
+  assert.strictEqual(hearing.dayStamp(new Date("2026-03-05T23:59:59Z")), "2026-03-05");
+  assert.strictEqual(hearing.isExposureDayStale({ day: "2026-03-04" }, "2026-03-05"), true);
+  assert.strictEqual(hearing.isExposureDayStale({ day: "2026-03-05" }, "2026-03-05"), false);
+});
+
+check("exposure: three ticks fold into one row and the weighted average is exact", async () => {
+  const { hearing } = loadHearing();
+  const today = hearing.dayStamp();
+  let days = hearing.accumulateExposure([], { dbA: 80, elapsedSeconds: 1800, today });
+  days = hearing.accumulateExposure(days, { dbA: 100, elapsedSeconds: 1800, today });
+  days = hearing.accumulateExposure(days, { dbA: 90, elapsedSeconds: 3600, today });
+  assert.strictEqual(days.length, 1, "one day, one row");
+  assert.strictEqual(days[0].seconds, 1800 + 1800 + 3600);
+  // dB-hours: 80*0.5 + 100*0.5 + 90*1 = 180.
+  assert.ok(Math.abs(days[0].dbHours - 180) < 1e-9, `dbHours=${days[0].dbHours}`);
+  // Weighted: (80*1800 + 100*1800 + 90*3600) / 7200 = 90.0.
+  assert.ok(Math.abs(days[0].avgDbA - 90) < 1e-9, `avgDbA=${days[0].avgDbA}`);
+  // A zero-estimate tick is a muted tick: no accrual, no row growth.
+  const muted = hearing.accumulateExposure(days, { dbA: 0, elapsedSeconds: 600, today });
+  assert.strictEqual(muted[0].dbHours, 180, "dbA=0 must not accrue");
+  assert.strictEqual(muted[0].seconds, 7200, "and must not extend the window");
+});
+
+check("exposure: an empty history summarizes to zeros without NaN", async () => {
+  const { hearing, settings } = loadHearing();
+  const s = hearing.summarizeExposure([], hearing.dayStamp());
+  assert.strictEqual(s.todayDbHours, 0);
+  assert.strictEqual(s.weeklyDbHours, 0);
+  assert.strictEqual(s.weeklyRatio, 0);
+  assert.strictEqual(s.budgetDbHours, settings.WHO_WEEKLY_BUDGET_DB_HOURS);
+  assert.deepStrictEqual(s.days, []);
+});
+
+check("exposure: the weekly window is inclusive of day-6 but drops day-7", async () => {
+  const { hearing } = loadHearing();
+  const today = hearing.dayStamp();
+  const at = (offset) => hearing.dayStamp(new Date(new Date(`${today}T00:00:00.000Z`).getTime() - offset * 86_400_000));
+  const days = [-1, 0, 6, 7, 10].map((offset) => ({
+    day: at(offset),
+    dbHours: 10,
+    avgDbA: 80,
+    seconds: 36000,
+  }));
+  const s = hearing.summarizeExposure(days, today);
+  assert.strictEqual(s.weeklyDbHours, 20, "today + 6-days-ago only; the 7- and 10-day rows are outside");
+  assert.strictEqual(s.days.length, 4, "the future row does not survive the summary filter");
+});
+
+check("exposure: loading non-array or null-ish raw values never throws", async () => {
+  const { hearing } = loadHearing();
+  const today = hearing.dayStamp();
+  assert.deepStrictEqual(hearing.loadExposureFromRaw(null, today), []);
+  assert.deepStrictEqual(hearing.loadExposureFromRaw('{"day":"x"}', today), [], "an object is not an array");
+  assert.deepStrictEqual(hearing.loadExposureFromRaw("[]", today), []);
+  // dbHours = Infinity serializes to null in JSON: not a finite number -> dropped.
+  assert.deepStrictEqual(
+    hearing.loadExposureFromRaw(JSON.stringify([{ day: today, dbHours: null, seconds: 5 }]), today),
+    [],
+    "non-finite dbHours is not a valid row",
+  );
+});
+
+/* ------------------------------------------------------------------ */
+/* Timer contracts (the meter's tick is the app-side "decay" gate)      */
+/* ------------------------------------------------------------------ */
+
+check("tick: the hook caps one interval at 120s and folds exactly the ladder it should", async () => {
+  const hook = stripComments(read("hooks/useHearingSafety.ts"));
+  // elapsedSeconds = Math.min((now - last) / 1000, 120): a long sleep must
+  // not be billed as hours of listening in a single fold.
+  assert.ok(/Math\.min\(\(now - last\) \/ 1000, 120\)/.test(hook), "elapsed clamp to 120s");
+  assert.ok(/if \(!isPlaying\) return;/.test(hook), "paused contributes nothing");
+  assert.ok(/\(volume === null \|\| volume <= 0\) return;/.test(hook), "muted contributes nothing");
+  assert.ok(/if \(dbA === null\) return;/.test(hook), "an unknown profile contributes nothing");
+  // The meter folds on an interval, not a buildup: 30 000 ms.
+  assert.ok(/setInterval\(/.test(hook), "the tick is driven by an interval");
+  assert.ok(/TICK_MS\s*=\s*30_000/.test(hook), "tick is 30s");
 });
 
 /* ------------------------------------------------------------------ */

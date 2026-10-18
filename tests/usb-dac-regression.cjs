@@ -221,6 +221,107 @@ async function main() {
     assert.ok(registered, 'withUsbDac not registered in app.json expo.plugins');
   });
 
+  // ---- new: unplug / replug ----------------------------------------------
+
+  await check('unplug then replug reflects the new state on each call', async () => {
+    // The JS layer holds no cache, so the next getUsbAudioOutput() must see the
+    // post-unplug answer rather than a stale snapshot.
+    let available = true;
+    const m = loadUsbAudio({
+      native: {
+        getOutputInfo: async () => ({ available, name: 'FiiO K3', isDac: true, sampleRateHz: 96000 }),
+        listUsbDevices: async () => [],
+      },
+    });
+    const before = await m.getUsbAudioOutput();
+    assert.equal(before.sampleRateHz, 96000);
+    available = false;
+    assert.equal(await m.getUsbAudioOutput(), null, 'unplug shows no output');
+    available = true;
+    const after = await m.getUsbAudioOutput();
+    assert.equal(after.sampleRateHz, 96000, 'replug restores the rate');
+  });
+
+  await check('a DAC with no reported sample rate still resolves to a usable output', async () => {
+    // OEMs that omit the rate must not turn the device into null: the settings
+    // row still wants to show "USB DAC" without a number.
+    const m = loadUsbAudio({
+      native: {
+        getOutputInfo: async () => ({ available: true, name: 'Generic DAC', isDac: true, sampleRateHz: 0 }),
+        listUsbDevices: async () => [],
+      },
+    });
+    const info = await m.getUsbAudioOutput();
+    assert.ok(info, 'a DAC without a rate is still a DAC');
+    assert.equal(info.isDac, true);
+    assert.equal(m.formatSampleRate(info.sampleRateHz), '', 'no number renders empty, not "0 kHz"');
+  });
+
+  await check('getUsbAudioOutput: a missing available flag is treated as unavailable', async () => {
+    const m = loadUsbAudio({
+      native: {
+        getOutputInfo: async () => ({ name: 'Phantom' }),
+        listUsbDevices: async () => [],
+      },
+    });
+    assert.equal(await m.getUsbAudioOutput(), null);
+  });
+
+  await check('listUsbAudioDevices: partial entries survive the JS pass-through', async () => {
+    // The native side always fills every field, but a partial object from a
+    // buggy OEM must not throw the whole list away.
+    const m = loadUsbAudio({
+      native: {
+        getOutputInfo: async () => ({ available: false }),
+        listUsbDevices: async () => [
+          { name: 'FiiO K3', vendorId: 0x2972, productId: 0x0004, class: 0xff },
+          { name: 'Unknown' },
+        ],
+      },
+    });
+    const list = await m.listUsbAudioDevices();
+    assert.equal(list.length, 2);
+    assert.equal(list[1].vendorId, undefined, 'a missing field stays missing, not NaN');
+  });
+
+  await check('formatSampleRate: 88.2 and 192 kHz boundaries', () => {
+    const m = loadUsbAudio({ native: goodNative });
+    assert.equal(m.formatSampleRate(88200), '88.2 kHz');
+    assert.equal(m.formatSampleRate(176400), '176.4 kHz');
+    assert.equal(m.formatSampleRate(22050), '22.1 kHz', 'fractional kHz rounds to one decimal');
+    assert.equal(m.formatSampleRate(1000), '1 kHz');
+  });
+
+  await check('isHiRes: the 44.1 kHz boundary is exclusive', () => {
+    const m = loadUsbAudio({ native: goodNative });
+    assert.equal(m.isHiRes(44100), false, 'CD quality is not hi-res');
+    assert.equal(m.isHiRes(44101), true, 'anything above CD is');
+    assert.equal(m.isHiRes(Infinity), false, 'Infinity is not a real sample rate');
+    assert.equal(m.isHiRes(-1), false);
+  });
+
+  await check('isUsbDacAvailable is fixed at import time, not live', () => {
+    // The flag is `native !== null`, evaluated once when the module loads. A
+    // native module that appears later (hot reload) does not flip it; the
+    // platform must be restarted. Documenting this so the settings screen does
+    // not expect a live toggle.
+    const m1 = loadUsbAudio({ native: null });
+    assert.equal(m1.isUsbDacAvailable, false);
+    const m2 = loadUsbAudio({ native: goodNative });
+    assert.equal(m2.isUsbDacAvailable, true);
+  });
+
+  await check('the Kotlin module reports the USB list without throwing', () => {
+    const kt = read('plugins/android/StreamifyUsbAudioModule.kt');
+    // listUsbDevices resolves (never rejects) on every path, including a
+    // missing UsbManager, so a mid-unplug enumeration cannot crash the screen.
+    const body = kt.slice(kt.indexOf('fun listUsbDevices'));
+    assert.match(body, /manager == null/);
+    assert.match(body, /promise\.resolve\(Arguments\.createArray\(\)\)/);
+    // No reject anywhere in the module (already asserted above, re-check the list path).
+    assert.equal(/promise\.reject/.test(body), false);
+  });
+
   console.log(`\n${checks - failures.length}/${checks} checks passed`);
   if (failures.length > 0) {
     process.exitCode = 1;
