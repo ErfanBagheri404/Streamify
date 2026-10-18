@@ -56,9 +56,14 @@ export async function savePlaybackSession<T extends SessionTrack>(
       await AsyncStorage.removeItem(SESSION_KEY);
       return;
     }
+    const stored = playlist.slice(0, MAX_RESTORED_PLAYLIST).map(stripVolatile);
     const session: PlaybackSession<T> = {
-      playlist: playlist.slice(0, MAX_RESTORED_PLAYLIST).map(stripVolatile),
-      index: Math.max(0, Math.min(index, playlist.length - 1)),
+      playlist: stored,
+      // Clamp against what is actually STORED: clamping against the full
+      // playlist first would persist an index past the end of the slice, and a
+      // cold start would then resume on the last stored track instead of the
+      // one the user was on.
+      index: Math.max(0, Math.min(index, stored.length - 1)),
       updatedAt: Date.now(),
     };
     await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
