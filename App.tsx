@@ -53,6 +53,8 @@ import { VaultProvider } from "./contexts/VaultContext";
 import { ThemeProvider, useTheme, withOpacity } from "./contexts/ThemeContext";
 import { usePlayer } from "./contexts/PlayerContext";
 import { AuthProvider } from "./contexts/AuthContext";
+import { useAppSettings } from "./hooks/useAppSettings";
+import { useHearingSafety } from "./hooks/useHearingSafety";
 
 // API
 import { initializeDynamicInstances } from "./components/core/api";
@@ -953,6 +955,20 @@ function AppShell() {
   );
 }
 
+/**
+ * Mounts the hearing-safety hook next to the player: pushes the saved
+ * limiter state to the native module and drives the exposure meter.
+ */
+function HearingSafetyBridge() {
+  const { isPlaying } = usePlayer();
+  const { settings } = useAppSettings();
+  useHearingSafety({
+    isPlaying,
+    deviceProfile: settings.hearingDeviceProfile,
+  });
+  return null;
+}
+
 function AppContent() {
   return (
     <DebugStartupBoundary>
@@ -965,6 +981,7 @@ function AppContent() {
                   <AppUpdateProvider>
                     <PlayerProvider>
                       <ArtworkThemeBridge />
+                      <HearingSafetyBridge />
                       <CloudLibraryBridge />
                       <DeepLinkBridge />
                       <PlaybackPreferenceBridge />
