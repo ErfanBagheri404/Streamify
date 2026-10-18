@@ -71,9 +71,16 @@ export async function setLyricsOffset(
   seconds: number,
 ): Promise<number> {
   if (!trackId) return 0;
+  // A NaN (or a non-numeric value) is not a usable nudge: `Math.round(NaN*10)`
+  // survives every clamp and lands in the persisted JSON as null. Fail closed
+  // and report the offset that is actually stored. Numeric strings stay usable.
+  const requested = typeof seconds === "string" ? Number(seconds) : seconds;
+  if (typeof requested !== "number" || !Number.isFinite(requested)) {
+    return getLyricsOffset(trackId);
+  }
   const map = { ...(await load()) };
   const clamped = clamp(
-    Math.round(seconds * 10) / 10,
+    Math.round(requested * 10) / 10,
     -MAX_LYRICS_OFFSET_SECONDS,
     MAX_LYRICS_OFFSET_SECONDS,
   );
