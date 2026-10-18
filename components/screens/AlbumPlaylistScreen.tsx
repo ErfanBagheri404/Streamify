@@ -7,9 +7,11 @@ import {
   Text,
   TouchableOpacity,
   Share,
+  Alert,
 } from "react-native";
 import { usePlayer } from "../../contexts/PlayerContext";
 import Playlist from "../Playlist";
+import { resolveSmartPlaylistTracks } from "../../modules/smartPlaylistResolver";
 import { StorageService } from "../../utils/storage";
 import { searchAPI } from "../../modules/searchAPI";
 import { SliderSheet } from "../SliderSheet";
@@ -44,6 +46,8 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
   const [albumArtist, setAlbumArtist] = useState("");
   const [albumArtUrl, setAlbumArtUrl] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  /** True for a rule-based playlist: its tracks are derived, not stored. */
+  const [isSmartPlaylist, setIsSmartPlaylist] = useState(false);
 
   // Debug logging for state changes
   useEffect(() => {
@@ -186,6 +190,20 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
         return;
       }
 
+      // A smart playlist is recomputed from its rules on every open, so manual
+      // reordering would be discarded at the next resolve. Say so instead of
+      // letting the edit appear to work.
+      if (isSmartPlaylist && option === playlistActions.reorder) {
+        Alert.alert(
+          isRtl ? "پلی‌لیست هوشمند" : "Smart playlist",
+          isRtl
+            ? "ترتیب این پلی‌لیست با قوانین آن ساخته می‌شود و دستی قابل تغییر نیست."
+            : "This playlist is built from its rules, so its order cannot be changed by hand.",
+        );
+        closeSongActionSheet();
+        return;
+      }
+
       if (option === playlistActions.rename) {
         setRenameValue(albumTitle);
         closeSongActionSheet();
@@ -227,6 +245,18 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
       sheetMode === "playlist-song" &&
       option === playlistActions.removeSong
     ) {
+      // Same rule as reordering: the list is derived on open, so dropping a
+      // song would silently come back next time.
+      if (isSmartPlaylist) {
+        Alert.alert(
+          isRtl ? "پلی‌لیست هوشمند" : "Smart playlist",
+          isRtl
+            ? "این پلی‌لیست با قوانینش ساخته می‌شود؛ آهنگ اضافه یا حذف دستی ندارد."
+            : "This playlist is built from its rules, so songs cannot be added or removed by hand.",
+        );
+        closeSongActionSheet();
+        return;
+      }
       const playlists = await StorageService.loadPlaylists();
       const playlist = playlists.find((p) => p.id === albumId);
       if (!playlist || !selectedTrack) {
@@ -480,20 +510,28 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
           const playlist = allPlaylists.find((p) => p.id === albumId);
 
           if (playlist) {
+            // A smart playlist's stored `tracks` is only a cache (often empty):
+            // its rules are re-resolved here so likes and plays made since the
+            // last open are reflected.
+            const resolvedSongs = playlist.smartDefinition
+              ? (await resolveSmartPlaylistTracks(playlist.smartDefinition))
+                  .tracks
+              : playlist.tracks;
             console.log(
-              `[AlbumPlaylistScreen] Found playlist with ${playlist.tracks.length} songs`,
+              `[AlbumPlaylistScreen] Found playlist with ${resolvedSongs.length} songs`,
             );
-            setAlbumSongs(playlist.tracks);
+            setAlbumSongs(resolvedSongs);
             setAlbumTitle(playlist.name);
             setAlbumArtist(
-              isRtl || playlist.tracks.length !== 1
-                ? `${playlist.tracks.length} ${t("search.songs")}`
-                : `${playlist.tracks.length} song`,
+              isRtl || resolvedSongs.length !== 1
+                ? `${resolvedSongs.length} ${t("search.songs")}`
+                : `${resolvedSongs.length} song`,
             );
             // Use first song's thumbnail as album art if available
-            if (playlist.tracks.length > 0 && playlist.tracks[0].thumbnail) {
-              setAlbumArtUrl(playlist.tracks[0].thumbnail);
+            if (resolvedSongs.length > 0 && resolvedSongs[0].thumbnail) {
+              setAlbumArtUrl(resolvedSongs[0].thumbnail);
             }
+            setIsSmartPlaylist(Boolean(playlist.smartDefinition));
           } else {
             console.warn("[AlbumPlaylistScreen] Playlist not found");
             setAlbumSongs([]);
