@@ -32,6 +32,13 @@ import {
   buildTimedLyrics,
   findActiveLyricIndex,
 } from "../modules/lyricsShared";
+import {
+  applyLyricsOffset,
+  clearLyricsOffset,
+  getLyricsOffset,
+  setLyricsOffset,
+  MAX_LYRICS_OFFSET_SECONDS,
+} from "../modules/lyricsOffset";
 import { Share } from "react-native";
 import { normalizeYouTubeThumbnailUrl, sanitizeImageUrl } from "./core/image";
 import { SliderSheet } from "./SliderSheet";
@@ -546,6 +553,53 @@ const LyricLine = styled.Text<{ isActive: boolean }>`
   align-self: stretch;
 `;
 
+const LyricsOffsetHint = styled.Text`
+  font-size: 13px;
+  line-height: 18px;
+  padding-horizontal: 22px;
+  padding-top: 16px;
+`;
+
+const LyricsOffsetValue = styled.Text`
+  font-size: 30px;
+  line-height: 36px;
+  padding-vertical: 18px;
+`;
+
+const LyricsOffsetRow = styled.View`
+  flex-direction: row;
+  align-items: center;
+  padding-horizontal: 22px;
+  padding-top: 12px;
+`;
+
+const LyricsOffsetButton = styled(TouchableOpacity)`
+  flex: 1;
+  padding-vertical: 13px;
+  border-radius: 10px;
+  align-items: center;
+  margin-horizontal: 5px;
+`;
+
+const LyricsOffsetButtonLabel = styled.Text`
+  font-size: 14px;
+`;
+
+const LyricsOffsetReset = styled(TouchableOpacity)`
+  flex: 1;
+  padding-vertical: 13px;
+  align-items: center;
+  margin-horizontal: 5px;
+`;
+
+const LyricsOffsetApply = styled(TouchableOpacity)`
+  flex: 1;
+  padding-vertical: 13px;
+  border-radius: 10px;
+  align-items: center;
+  margin-horizontal: 5px;
+`;
+
 const CacheOverlay = styled.View`
   position: absolute;
   top: 0;
@@ -683,6 +737,9 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   } | null>(null);
   const [showCacheSize, setShowCacheSize] = useState(false);
   const [lyricsText, setLyricsText] = useState("");
+  const [lyricsOffsetSeconds, setLyricsOffsetSeconds] = useState(0);
+  const [showLyricsOffsetSheet, setShowLyricsOffsetSheet] = useState(false);
+  const [lyricsOffsetDraft, setLyricsOffsetDraft] = useState(0);
   const [isSyncedLyrics, setIsSyncedLyrics] = useState(false);
   const [isLoadingLyrics, setIsLoadingLyrics] = useState(false);
   const [lyricsError, setLyricsError] = useState<string | null>(null);
@@ -810,6 +867,19 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
         language === "fa"
           ? "ما همیشه در حال گسترش پایگاه داده متن ترانه هستیم"
           : "We're always working to expand our lyrics database",
+      lyricsSync:
+        language === "fa" ? "تنظیم هم‌زمانی" : "Sync",
+      lyricsSyncHint:
+        language === "fa"
+          ? "اگر متن ترانه جلو یا عقب پخش می‌شود، آن را تنظیم کنید"
+          : "If the lyrics run early or late, nudge them here",
+      lyricsSyncAdvance: language === "fa" ? "جلو" : "Earlier",
+      lyricsSyncDelay: language === "fa" ? "عقب" : "Later",
+      lyricsSyncReset: language === "fa" ? "بازنشانی" : "Reset",
+      lyricsSyncValue: (value: number) =>
+        language === "fa"
+          ? `${value > 0 ? "+" : ""}${value.toFixed(1)} ثانیه`
+          : `${value > 0 ? "+" : ""}${value.toFixed(1)}s`,
       noPlaylists:
         language === "fa" ? "هیچ پلی‌لیستی پیدا نشد" : "No playlists found",
       createPlaylistHint:
@@ -1019,8 +1089,11 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     if (!syncedLyrics.length) {
       return -1;
     }
-    return findActiveLyricIndex(syncedLyrics, displayPositionSeconds);
-  }, [displayPositionSeconds, syncedLyrics]);
+    return findActiveLyricIndex(
+      syncedLyrics,
+      applyLyricsOffset(displayPositionSeconds, lyricsOffsetSeconds),
+    );
+  }, [displayPositionSeconds, syncedLyrics, lyricsOffsetSeconds]);
 
   const isLyricsManualMode = lyricsManualModeUntil > Date.now();
 
@@ -1053,6 +1126,17 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
     setManualLyricsTitle(currentTrack.title || "");
     setLyricsManualModeUntil(0);
     lyricsLineLayoutsRef.current = {};
+    let cancelled = false;
+    getLyricsOffset(currentTrack.id)
+      .then((stored) => {
+        if (!cancelled) setLyricsOffsetSeconds(stored);
+      })
+      .catch(() => {
+        if (!cancelled) setLyricsOffsetSeconds(0);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [currentTrack?.artist, currentTrack?.id, currentTrack?.title]);
 
   useEffect(() => {
@@ -2184,6 +2268,52 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   >
                     {t("player.lyrics")}
                   </LyricsTitle>
+                  {syncedLyrics.length > 0 ? (
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      accessibilityLabel={copy.lyricsSync}
+                      onPress={() => {
+                        setLyricsOffsetDraft(lyricsOffsetSeconds);
+                        setShowLyricsOffsetSheet(true);
+                      }}
+                      style={{
+                        paddingHorizontal: 10,
+                        paddingVertical: 4,
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: colors.borderSubtle,
+                        flexDirection: "row",
+                        alignItems: "center",
+                      }}
+                    >
+                      <Ionicons
+                        name="timer-outline"
+                        size={13}
+                        color={
+                          lyricsOffsetSeconds !== 0
+                            ? colors.foreground
+                            : mutedTextColor
+                        }
+                        style={{ marginEnd: 4 }}
+                      />
+                      <LyricLine
+                        isActive={false}
+                        style={{
+                          color:
+                            lyricsOffsetSeconds !== 0
+                              ? colors.foreground
+                              : mutedTextColor,
+                          opacity: 0.9,
+                          fontSize: 12,
+                          fontFamily: getAppFontFamily(isRtl, "regular"),
+                        }}
+                      >
+                        {lyricsOffsetSeconds !== 0
+                          ? copy.lyricsSyncValue(lyricsOffsetSeconds)
+                          : copy.lyricsSync}
+                      </LyricLine>
+                    </TouchableOpacity>
+                  ) : null}
                 </LyricsHeader>
 
                 {!settings.lyricsEnabled ? (
@@ -2248,7 +2378,11 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                         activeOpacity={0.84}
                         onPress={() => {
                           setLyricsManualModeUntil(0);
-                          void seekTo(line.startTime);
+                          // Invert the nudge: line.startTime is the authored
+                          // time, the real playback position is startTime - offset.
+                          void seekTo(
+                            Math.max(0, line.startTime - lyricsOffsetSeconds),
+                          );
                         }}
                         onLayout={(event) => {
                           lyricsLineLayoutsRef.current[index] = {
@@ -2973,6 +3107,160 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               });
           }}
         />
+
+        {showLyricsOffsetSheet ? (
+          <PlaylistSelectionModal
+            visible={showLyricsOffsetSheet}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setShowLyricsOffsetSheet(false)}
+          >
+            <PlaylistSelectionContainer
+              style={{ backgroundColor: colors.background }}
+            >
+              <PlaylistSelectionHeader
+                style={{
+                  borderBottomColor: colors.borderSubtle,
+                  flexDirection: "row",
+                }}
+              >
+                <PlaylistSelectionTitle
+                  style={{
+                    color: colors.foreground,
+                    fontFamily: getAppFontFamily(isRtl, "bold"),
+                    ...getTextDirectionStyle(isRtl),
+                  }}
+                >
+                  {copy.lyricsSync}
+                </PlaylistSelectionTitle>
+                <PlaylistSelectionClose
+                  onPress={() => setShowLyricsOffsetSheet(false)}
+                >
+                  <Ionicons
+                    name="close"
+                    size={20}
+                    color={colors.foreground}
+                  />
+                </PlaylistSelectionClose>
+              </PlaylistSelectionHeader>
+
+              <LyricsOffsetHint
+                style={{
+                  color: mutedTextColor,
+                  fontFamily: getAppFontFamily(isRtl, "regular"),
+                  ...getTextDirectionStyle(isRtl),
+                }}
+              >
+                {copy.lyricsSyncHint}
+              </LyricsOffsetHint>
+
+              <LyricsOffsetValue
+                style={{
+                  color: colors.foreground,
+                  fontFamily: getAppFontFamily(isRtl, "bold"),
+                  textAlign: "center",
+                }}
+              >
+                {copy.lyricsSyncValue(lyricsOffsetDraft)}
+              </LyricsOffsetValue>
+
+              <LyricsOffsetRow>
+                <LyricsOffsetButton
+                  activeOpacity={0.75}
+                  disabled={
+                    lyricsOffsetDraft <= -MAX_LYRICS_OFFSET_SECONDS + 0.05
+                  }
+                  onPress={() =>
+                    setLyricsOffsetDraft((v) =>
+                      Math.max(-MAX_LYRICS_OFFSET_SECONDS, v - 0.5),
+                    )
+                  }
+                  style={{ backgroundColor: withOpacity(colors.surface1, 0.8) }}
+                >
+                  <LyricsOffsetButtonLabel
+                    style={{
+                      color: colors.foreground,
+                      fontFamily: getAppFontFamily(isRtl, "medium"),
+                      ...getTextDirectionStyle(isRtl),
+                    }}
+                  >
+                    {copy.lyricsSyncAdvance} −0.5s
+                  </LyricsOffsetButtonLabel>
+                </LyricsOffsetButton>
+
+                <LyricsOffsetButton
+                  activeOpacity={0.75}
+                  disabled={
+                    lyricsOffsetDraft >= MAX_LYRICS_OFFSET_SECONDS - 0.05
+                  }
+                  onPress={() =>
+                    setLyricsOffsetDraft((v) =>
+                      Math.min(MAX_LYRICS_OFFSET_SECONDS, v + 0.5),
+                    )
+                  }
+                  style={{ backgroundColor: withOpacity(colors.surface1, 0.8) }}
+                >
+                  <LyricsOffsetButtonLabel
+                    style={{
+                      color: colors.foreground,
+                      fontFamily: getAppFontFamily(isRtl, "medium"),
+                      ...getTextDirectionStyle(isRtl),
+                    }}
+                  >
+                    {copy.lyricsSyncDelay} +0.5s
+                  </LyricsOffsetButtonLabel>
+                </LyricsOffsetButton>
+              </LyricsOffsetRow>
+
+              <LyricsOffsetRow>
+                <LyricsOffsetReset
+                  activeOpacity={0.75}
+                  onPress={async () => {
+                    if (!currentTrack) return;
+                    await clearLyricsOffset(currentTrack.id);
+                    setLyricsOffsetSeconds(0);
+                    setLyricsOffsetDraft(0);
+                    setShowLyricsOffsetSheet(false);
+                  }}
+                >
+                  <LyricsOffsetButtonLabel
+                    style={{
+                      color: activeAccentColor,
+                      fontFamily: getAppFontFamily(isRtl, "medium"),
+                      ...getTextDirectionStyle(isRtl),
+                    }}
+                  >
+                    {copy.lyricsSyncReset}
+                  </LyricsOffsetButtonLabel>
+                </LyricsOffsetReset>
+
+                <LyricsOffsetApply
+                  activeOpacity={0.8}
+                  style={{ backgroundColor: colors.foreground }}
+                  onPress={async () => {
+                    if (!currentTrack) return;
+                    const saved = await setLyricsOffset(
+                      currentTrack.id,
+                      lyricsOffsetDraft,
+                    );
+                    setLyricsOffsetSeconds(saved);
+                    setShowLyricsOffsetSheet(false);
+                  }}
+                >
+                  <LyricsOffsetButtonLabel
+                    style={{
+                      color: colors.background,
+                      fontFamily: getAppFontFamily(isRtl, "bold"),
+                      ...getTextDirectionStyle(isRtl),
+                    }}
+                  >
+                    {t("common.save")}
+                  </LyricsOffsetButtonLabel>
+                </LyricsOffsetApply>
+              </LyricsOffsetRow>
+            </PlaylistSelectionContainer>
+          </PlaylistSelectionModal>
+        ) : null}
       </ModalContainer>
     </Modal>
   );
