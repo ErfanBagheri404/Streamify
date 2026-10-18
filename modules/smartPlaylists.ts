@@ -161,6 +161,11 @@ export function matchRule(track: MatchableTrack, rule: SmartRule): boolean {
       if (rule.operator === "notContains") return !haystack.includes(needle);
       return false;
     }
+    default:
+      // A stored rule naming a field this build does not know can never match:
+      // fail closed rather than fall through to `undefined` (which resolves
+      // truthily nowhere but confuses every caller that expects a boolean).
+      return false;
   }
 }
 
