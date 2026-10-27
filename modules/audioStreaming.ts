@@ -4715,7 +4715,9 @@ export class AudioStreamManager {
     // native TrackPlayer. Keep those on the legacy direct-CDN path instead.
     if (
       !backendSource ||
-      !["youtube", "youtubemusic", "soundcloud"].includes(backendSource)
+      !["youtube", "youtubemusic", "soundcloud", "spotify"].includes(
+        backendSource,
+      )
     ) {
       return null;
     }
@@ -4788,6 +4790,12 @@ export class AudioStreamManager {
         };
         return this.lastBackendDrm;
       }
+
+      // NOTE: the Spotify route returns the backend audio-proxy URL
+      // (origin-gated). TrackPlayer CAN play it — for any backend-proxied
+      // URL it sends the web player Origin/Referer — and routing through the
+      // backend avoids the direct-CDN timeouts some networks hit. The URL
+      // falls through to lastBackendDrm below unchanged.
 
       this.lastBackendDrm = { audioUrl, audioType };
       return this.lastBackendDrm;
@@ -5036,6 +5044,39 @@ export class AudioStreamManager {
           ? "Track is not playable from this source"
           : "All YouTube strategies failed",
       );
+    }
+
+    // --- SPOTIFY HANDLING (backend /video route, direct CDN playback) ---
+    if (source === "spotify") {
+      onStatusUpdate?.("Using Spotify strategy");
+      console.log(`[AudioStreamManager] Spotify mode activated: ${videoId}`);
+      try {
+        const backendAudioUrl = await this.tryBackendPlaybackRoute(
+          videoId,
+          source,
+          options,
+        );
+        if (backendAudioUrl) {
+          return backendAudioUrl.audioUrl;
+        }
+      } catch (error) {
+        console.error(
+          "[AudioStreamManager] Spotify backend route failed:",
+          error,
+        );
+      }
+
+      // Fallback: match the track on JioSaavn by title/artist (the Spotify
+      // catalog mirrors it, so an exact match usually exists).
+      const jioSaavnUrl = await this.tryJioSaavnExactMatch(
+        this.currentTrackTitle,
+        this.currentTrackArtist,
+      );
+      if (jioSaavnUrl) {
+        return jioSaavnUrl;
+      }
+
+      throw new Error("Spotify track could not be resolved");
     }
 
     // --- JIOSAAVN HANDLING (exclusive - no fallbacks) ---
