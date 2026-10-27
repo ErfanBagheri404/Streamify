@@ -299,3 +299,65 @@ test('the notification module never throws into the cache loop', () => {
   const dbody = src.slice(dstart, dend > -1 ? dend : src.length);
   assert.doesNotMatch(dbody, /throw /, 'dismiss must not throw either');
 });
+
+/* ---------------- resume-on-open acceptance ---------------- */
+
+const queueBody = (() => {
+  const start = pc.indexOf('const processLikedSongsCacheQueue');
+  const end = pc.indexOf('}, [resolveTrackStreamUrl', start);
+  return start > -1 && end > start ? pc.slice(start, end) : '';
+})();
+
+test('opening the app restarts the queue once liked songs are hydrated', () => {
+  // The library loads asynchronously; the queue must fire when the list lands,
+  // not only when the phone comes back to the foreground.
+  const idx = pc.indexOf('const hasMissingMetadata = likedSongs.some(');
+  assert.ok(idx > -1, 'metadata gate missing');
+  const tail = pc.slice(idx, idx + 900);
+  assert.match(tail, /void processLikedSongsCacheQueue\(\);/,
+    'the likedSongs effect never starts the queue');
+  assert.match(tail, /!hasMissingMetadata/,
+    'the queue must wait for real metadata before downloading');
+});
+
+test('returning to the foreground resumes the queue', () => {
+  const start = pc.indexOf("AppState.addEventListener(\"change\"");
+  assert.ok(start > -1, 'no AppState listener');
+  const body = pc.slice(start, start + 400);
+  assert.match(body, /nextAppState === "active"/);
+  assert.match(body, /void processLikedSongsCacheQueue\(\);/);
+});
+
+test('a drained queue is retried on a slow interval, not a tight loop', () => {
+  const m = pc.match(/setInterval\(\(\) => \{\s*void processLikedSongsCacheQueue\(\);\s*\}, (\d+_?\d*)\)/);
+  assert.ok(m, 'no retry interval around the queue');
+  const ms = Number(m[1].replace(/_/g, ''));
+  assert.ok(ms >= 60_000, `retry interval too aggressive: ${ms}ms`);
+});
+
+test('the queue never spends metered data on background caching', () => {
+  assert.match(queueBody, /getCachedNetwork\(\)/);
+  assert.match(queueBody, /net === "cellular" \|\| net === "unknown"/);
+});
+
+test('the queue yields while a track is playing', () => {
+  assert.match(queueBody, /while \(isPlayingRef\.current\)/);
+  // It must re-check the stop flag inside the wait, or a stopped queue would
+  // keep sleeping forever.
+  assert.match(queueBody, /if \(!isCacheQueueProcessingRef\.current\)/);
+});
+
+test('already-cached tracks are never re-downloaded', () => {
+  assert.match(queueBody, /r\.info\.isFullyCached \|\| r\.info\.isDownloading/);
+  assert.match(queueBody, /attemptedTrackIds\.add\(r\.track\.id\)/);
+});
+
+test('the scan is batched and yields between batches', () => {
+  assert.match(queueBody, /const SCAN_BATCH = 10;/);
+  assert.match(queueBody, /setTimeout\(\(\) => resolve\(\), 400\)/);
+});
+
+test('a finished track is enforced against the storage budget', () => {
+  assert.match(queueBody, /enforceAudioCacheBudget\(/);
+  assert.match(queueBody, /settings\.audioCacheCapMb/);
+});

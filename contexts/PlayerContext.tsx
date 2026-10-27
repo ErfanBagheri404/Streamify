@@ -1591,12 +1591,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       cacheRunSeededRef.current = false;
       void dismissCacheNotification();
     }
-  }, [
-    resolveTrackStreamUrl,
-    publishCacheInfo,
-    postCacheNotification,
-    settings.audioCacheCapMb,
-  ]);
+  }, [resolveTrackStreamUrl, publishCacheInfo, postCacheNotification, settings.audioCacheCapMb]);
 
   // Sync isPlayingRef so the cache queue can check it without depending
   // on the isPlaying state (which would re-create the callback).
