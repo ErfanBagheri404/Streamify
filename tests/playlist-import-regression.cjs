@@ -75,6 +75,11 @@ const STUBS = {
   '../components/core/image': loadImageModule(),
   './subsonicService': { subsonicService: { getPlaylist: async () => ({ name: '', coverArtUrl: null, tracks: [] }) } },
   '../contexts/PlayerContext': {},
+  // Added with the backend-backed URL importer: a rejected route keeps every
+  // direct-source test offline.
+  '../lib/backend-api': {
+    fetchBackendRoute: async () => ({ ok: false, status: 503, json: async () => ({}) }),
+  },
   '../utils/storage': { StorageService: { addPlaylist: async () => {} } },
 };
 
@@ -175,7 +180,9 @@ async function main() {
   });
 
   await check('parsePlaylistUrl: unsupported hosts and blanks never throw', () => {
-    for (const value of ['', '   ', 'not a url', 'https://deezer.com/playlist/123', 'https://x.com/']) {
+    // Deezer is supported now (backend-backed importer), so it is not part
+    // of the "unsupported" set any more.
+    for (const value of ['', '   ', 'not a url', 'https://x.com/', 'https://example.org/playlist/123']) {
       const parsed = IMPORT.parsePlaylistUrl(value);
       assert.ok(parsed.unsupported, `expected unsupported for ${JSON.stringify(value)}`);
     }

@@ -9,7 +9,10 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const { test } = require('node:test');
 const root = path.resolve(__dirname, '..');
-const source = fs.readFileSync(path.join(root, 'contexts/PlayerContext.tsx'), 'utf8');
+// Normalise line endings: the Windows checkout is CRLF, and the seams below
+// compare literal newline sequences.
+const source = fs.readFileSync(path.join(root, 'contexts/PlayerContext.tsx'), 'utf8')
+  .replace(/\r\n/g, '\n');
 const ast = ts.createSourceFile('PlayerContext.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 function find(predicate) {
   let found;
