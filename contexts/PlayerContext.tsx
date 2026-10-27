@@ -28,6 +28,7 @@ import {
   getFullyCachedAudioUrl,
   markAudioCacheComplete,
   clearAudioCacheForTrack,
+  enforceAudioCacheBudget,
   continueCachingTrack,
   monitorAndResumeCache,
   AudioStreamManager,
@@ -1548,6 +1549,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           // Notification: one post per finished track, throttled by the
           // notifier so a fast run does not spam the shade.
           postCacheNotification(0, false);
+          // Keep the cache inside the user's storage budget: evict LRU
+          // entries, but never the track that is currently playing.
+          const nowPlayingId = activeTrackRef.current?.id;
+          void enforceAudioCacheBudget(
+            settings.audioCacheCapMb,
+            nowPlayingId ? [nowPlayingId] : [],
+          ).then((evicted) => {
+            if (evicted.length > 0) {
+              setCacheQueueVersion((v) => v + 1);
+            }
+          });
         } else if (
           !latestInfo.isDownloading &&
           !!streamUrl &&
@@ -1579,7 +1591,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       cacheRunSeededRef.current = false;
       void dismissCacheNotification();
     }
-  }, [resolveTrackStreamUrl, publishCacheInfo, postCacheNotification]);
+  }, [
+    resolveTrackStreamUrl,
+    publishCacheInfo,
+    postCacheNotification,
+    settings.audioCacheCapMb,
+  ]);
 
   // Sync isPlayingRef so the cache queue can check it without depending
   // on the isPlaying state (which would re-create the callback).
