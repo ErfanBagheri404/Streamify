@@ -276,6 +276,31 @@ async function main() {
     }
   });
 
+  await check('the Library renders the AI Mix with the sparkles tile', () => {
+    const library = readRepoFile('components/screens/LibraryScreen.tsx');
+    assert.match(library, /import \{ AI_MIX_ID \} from "\.\.\/\.\.\/modules\/aiMixPlaylist"/);
+    assert.match(library, /playlist\.id === AI_MIX_ID/);
+    assert.match(library, /artworkKind[\s\S]{0,200}"aiMix"/,
+      'the AI Mix must not fall back to the folder artwork');
+    assert.match(library, /name="sparkles"/);
+  });
+
+  await check('the AI Mix stays pinned right after Local files', () => {
+    const library = readRepoFile('components/screens/LibraryScreen.tsx');
+    assert.match(library, /pinOrder: 3,/,
+      'Local files is expected at pinOrder 3');
+    assert.match(library, /\.\.\.\(isAiMix \? \{ pinOrder: 4 \} : \{\}\)/);
+  });
+
+  await check('only the AI Mix gets the sparkles branch, not every playlist', () => {
+    const library = readRepoFile('components/screens/LibraryScreen.tsx');
+    const icon = library.indexOf('name="sparkles"');
+    const folder = library.indexOf('name="folder-open-outline"');
+    assert.ok(icon > -1 && folder > icon,
+      'the sparkles branch must precede the generic folder branch');
+    assert.match(library, /item\.artworkKind === "aiMix" \? \(/);
+  });
+
   console.log(`\n${checks - failures.length}/${checks} checks passed`);
   if (failures.length > 0) {
     process.exitCode = 1;
