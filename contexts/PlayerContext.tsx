@@ -35,6 +35,12 @@ import {
   getAllTrackCacheStatus,
 } from "../modules/audioStreaming";
 import {
+  loadPlaybackSession,
+  savePlaybackSession,
+  clearPlaybackSession,
+  resolveRestoredSession,
+} from "../modules/playbackSession";
+import {
   cacheTrackThumbnail,
   getCachedThumbnailPath,
 } from "../utils/thumbnailCache";
@@ -560,7 +566,33 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         return;
       }
 
+      // Prefer the persisted playback session: it records the LOGICAL
+      // playlist the user was listening from. The native queue alone cannot
+      // (it is empty after the OS kills the app, and addTracks() drops
+      // tracks whose audioUrl had not resolved yet, truncating long
+      // playlists). loadPlaybackSession already strips expired audio URLs.
+      const session = await loadPlaybackSession();
       const queue = await TrackPlayer.getQueue();
+      const nativeIds: string[] = (queue || []).map((t: any) =>
+        String(t.id ?? t.url ?? t.title ?? ""),
+      );
+      const nativeActiveIndex =
+        (await TrackPlayer.getCurrentTrack()) ?? 0;
+      const restored = resolveRestoredSession(
+        session,
+        nativeIds,
+        nativeActiveIndex,
+      );
+      if (restored) {
+        const nextCurrentTrack = restored.playlist[restored.index];
+        setPlaylist(restored.playlist);
+        setCurrentIndex(restored.index);
+        setCurrentTrack(nextCurrentTrack);
+        currentPlaylistContextRef.current = restored.playlist;
+        setIsInPlaylistContext(restored.playlist.length > 1);
+        return;
+      }
+
       if (!queue || queue.length === 0) {
         return;
       }
@@ -2012,6 +2044,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         // Set playlist context - true if we have a playlist with more than one track
         setIsInPlaylistContext(effectivePlaylist.length > 1);
 
+        // Persist the logical playlist so the app restores it after a cold start.
+        void savePlaybackSession(effectivePlaylist, effectiveIndex);
+
         // Add to previously played songs (only if it's from SoundCloud, YouTube, JioSaavn, or has identifying properties)
         if (
           track.source === "soundcloud" ||
@@ -3269,6 +3304,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     currentPlaylistContextRef.current = [];
     setPlaylist([]);
     setCurrentIndex(0);
+    // User explicitly cleared playback — do not restore the old playlist
+    // on the next cold start.
+    void clearPlaybackSession();
     setShowFullPlayer(false);
     setIsPlaying(false);
     setIsLoading(false);
