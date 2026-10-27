@@ -28,7 +28,7 @@ import { getInnertubeMediaHeaders } from "../modules/innertube";
 
 function resolveTrackSource(
   track: Pick<Track, "source" | "_isSoundCloud" | "_isJioSaavn">,
-): "youtube" | "youtubemusic" | "soundcloud" | "jiosaavn" {
+): "youtube" | "youtubemusic" | "soundcloud" | "jiosaavn" | "spotify" {
   if (track._isSoundCloud || track.source === "soundcloud") {
     return "soundcloud";
   }
@@ -39,6 +39,10 @@ function resolveTrackSource(
 
   if (track.source === "youtubemusic") {
     return "youtubemusic";
+  }
+
+  if (track.source === "spotify") {
+    return "spotify";
   }
 
   return "youtube";
@@ -668,6 +672,7 @@ export class TrackPlayerService {
             currentTrack?.audioUrl &&
             (currentTrack._isJioSaavn ||
               currentTrack.source === "jiosaavn" ||
+              currentTrack.source === "spotify" ||
               currentTrack._isSoundCloud ||
               currentTrack.source === "soundcloud"));
 

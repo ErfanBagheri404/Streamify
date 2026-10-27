@@ -28,15 +28,28 @@ import {
   getFullyCachedAudioUrl,
   markAudioCacheComplete,
   clearAudioCacheForTrack,
+  enforceAudioCacheBudget,
   continueCachingTrack,
   monitorAndResumeCache,
   AudioStreamManager,
   subscribeToAudioCacheProgress,
+  getAllTrackCacheStatus,
 } from "../modules/audioStreaming";
+import {
+  loadPlaybackSession,
+  savePlaybackSession,
+  clearPlaybackSession,
+  resolveRestoredSession,
+} from "../modules/playbackSession";
 import {
   cacheTrackThumbnail,
   getCachedThumbnailPath,
 } from "../utils/thumbnailCache";
+import { cacheQueueCounters } from "../modules/cacheQueueNotify";
+import {
+  dismissCacheNotification,
+  updateCacheNotification,
+} from "../modules/cacheQueueNotifier";
 
 import { StorageService, subscribeToLibraryUpdates } from "../utils/storage";
 import { trackPlayerService } from "../services/TrackPlayerService";
@@ -46,6 +59,8 @@ import { CacheToast } from "../components/ui/CacheToast";
 import { QueueConflictModal } from "../components/ui/QueueConflictModal";
 import { hasPlaceholderTrackMetadata } from "../lib/cloud-library-sync";
 import { normalizeYouTubeThumbnailUrl } from "../components/core/image";
+import { pickedBitrateFor, currentCapKbps, getCachedNetwork } from "../modules/audioQualityPolicy";
+import { recordDataUsage } from "../modules/dataUsageStore";
 import DrmAudioPlayer, {
   DrmAudioPlayerRef,
 } from "../components/DrmAudioPlayer";
@@ -86,7 +101,14 @@ export interface Track {
 
 function resolveTrackSource(
   track: Pick<Track, "source" | "_isSoundCloud" | "_isJioSaavn">,
-): "youtube" | "youtubemusic" | "soundcloud" | "jiosaavn" {
+): "youtube" | "youtubemusic" | "soundcloud" | "jiosaavn" | "spotify" {
+  // Spotify IDs (albums/artists from the Spotify catalog) only resolve through
+  // the backend Spotify route; the track carries a Spotify id, not a JioSaavn
+  // one, so check it before the JioSaavn flags.
+  if (track.source === "spotify") {
+    return "spotify";
+  }
+
   if (track._isSoundCloud || track.source === "soundcloud") {
     return "soundcloud";
   }
@@ -322,6 +344,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }>({ visible: false, trackTitle: "" });
   const [cacheQueueVersion, setCacheQueueVersion] = useState(0);
   const [cacheCooldownSeconds, setCacheCooldownSeconds] = useState(0);
+  // Cache-run counters backing the system notification (issue #94).
+  // finishedInRun grows once per cached track; alreadyCachedBeforeRun seeds
+  // it on a resumed run so the first post does not claim everything is due.
+  const cacheRunFinishedRef = useRef(0);
+  const cacheRunSeededRef = useRef(false);
   const queueConflictResolverRef = useRef<
     ((_choice: "cancel" | "play") => void) | null
   >(null);
@@ -542,7 +569,33 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         return;
       }
 
+      // Prefer the persisted playback session: it records the LOGICAL
+      // playlist the user was listening from. The native queue alone cannot
+      // (it is empty after the OS kills the app, and addTracks() drops
+      // tracks whose audioUrl had not resolved yet, truncating long
+      // playlists). loadPlaybackSession already strips expired audio URLs.
+      const session = await loadPlaybackSession();
       const queue = await TrackPlayer.getQueue();
+      const nativeIds: string[] = (queue || []).map((t: any) =>
+        String(t.id ?? t.url ?? t.title ?? ""),
+      );
+      const nativeActiveIndex =
+        (await TrackPlayer.getCurrentTrack()) ?? 0;
+      const restored = resolveRestoredSession(
+        session,
+        nativeIds,
+        nativeActiveIndex,
+      );
+      if (restored) {
+        const nextCurrentTrack = restored.playlist[restored.index];
+        setPlaylist(restored.playlist);
+        setCurrentIndex(restored.index);
+        setCurrentTrack(nextCurrentTrack);
+        currentPlaylistContextRef.current = restored.playlist;
+        setIsInPlaylistContext(restored.playlist.length > 1);
+        return;
+      }
+
       if (!queue || queue.length === 0) {
         return;
       }
@@ -1048,7 +1101,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   useEffect(() => {
     likedSongsRef.current = likedSongs;
-  }, [likedSongs]);
+      }, [likedSongs]);
+
+  // The cache queue is a long-lived callback whose dependency list does not
+  // include settings, so it cannot read settings.language directly without
+  // capturing a stale locale. Mirror the value into a ref for the
+  // notification copy (issue #94).
+  const cacheNotifyLanguageRef = useRef(settings.language);
+  useEffect(() => {
+    cacheNotifyLanguageRef.current = settings.language;
+  }, [settings.language]);
 
   // Update color theme immediately when track changes (before loading completes)
   useEffect(() => {
@@ -1208,6 +1270,40 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [publishCacheInfo],
   );
 
+  /**
+   * Single entry point for every cache-queue notification, so the counters,
+   * the locale, and the "is auto-caching still on?" gate live in one place.
+   *
+   * The gate matters: toggling the setting off dismisses the notification,
+   * and without this check the next finished track would immediately repost
+   * a notification for work the user just switched off.
+   *
+   * @param cooldownSeconds batch cooldown length, or 0 while downloading
+   * @param force            bypass the time throttle (state transitions only)
+   */
+  const postCacheNotification = useCallback(
+    (cooldownSeconds: number, force: boolean) => {
+      if (!settings.autoCacheLikedSongs) {
+        return;
+      }
+      const { total, remaining } = cacheQueueCounters({
+        total: likedSongsRef.current.length,
+        finishedInRun: cacheRunFinishedRef.current,
+        alreadyCachedBeforeRun: 0,
+      });
+      void updateCacheNotification(
+        {
+          total,
+          remaining,
+          cooldownSeconds,
+          language: cacheNotifyLanguageRef.current,
+        },
+        { force },
+      );
+    },
+    [settings.autoCacheLikedSongs],
+  );
+
   const processLikedSongsCacheQueue = useCallback(async () => {
     if (isCacheQueueProcessingRef.current) {
       return;
@@ -1216,6 +1312,33 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     isCacheQueueProcessingRef.current = true;
     const attemptedTrackIds = new Set<string>();
     let songsInBatch = 0;
+
+    // Seed the notification counters once per run. The queue scans liked
+    // songs in batches of 10, so the first scan pass tells us how many are
+    // already cached; that number seeds the "remaining" count so the first
+    // notification does not claim the whole library is outstanding.
+    if (!cacheRunSeededRef.current) {
+      cacheRunSeededRef.current = true;
+      cacheRunFinishedRef.current = 0;
+      try {
+        const liked = likedSongsRef.current;
+        const status = await getAllTrackCacheStatus();
+        let cached = 0;
+        for (const t of liked) {
+          if (t?.id && status.get(t.id)?.isFullyCached) {
+            cached += 1;
+          }
+        }
+        cacheRunFinishedRef.current = cached;
+      } catch {
+        // Counting is best-effort; a failure just means the notification
+        // starts from "everything remaining".
+      }
+      // Announce the run before the first track finishes. A batch can take a
+      // while, and the user has to be able to see the work from the moment it
+      // starts - not only once something has already been cached.
+      postCacheNotification(0, true);
+    }
 
     try {
       while (true) {
@@ -1240,12 +1363,27 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           }
         }
 
+        // #35: never spend metered data on background auto-caching. A manual
+        // download tap still works — that is an explicit opt-in.
+        if (!manualDownloadRef.current) {
+          const net = getCachedNetwork();
+          if (net === "cellular" || net === "unknown") {
+            return;
+          }
+        }
+
         // Enforce batch cooldown: after processing CACHE_BATCH_SIZE songs,
         // pause before starting the next batch to reduce API pressure.
         if (songsInBatch >= CACHE_BATCH_SIZE) {
           songsInBatch = 0;
           // Use setInterval so React state updates aren't batched by concurrent mode
           const totalSec = Math.ceil(CACHE_BATCH_COOLDOWN_MS / 1000);
+          // Notification: announce the pause once, with the full cooldown
+          // duration. The countdown itself ticks through React state only,
+          // so the shade shows a stable line instead of a per-second churn.
+          // Forced: entering a cooldown sits ~8s after the previous track's
+          // post, inside the throttle window, so the pause would never land.
+          postCacheNotification(totalSec, true);
           await new Promise<void>((resolve) => {
             let remaining = totalSec;
             setCacheCooldownSeconds(remaining);
@@ -1260,6 +1398,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               }
             }, 1000);
           });
+          // Cooldown over: replace the "resuming in" line immediately.
+          // Without this the shade keeps promising a countdown that already
+          // elapsed until the next track finishes downloading.
+          postCacheNotification(0, true);
         }
 
         // ── Find the next track to cache ──────────────────────────
@@ -1414,6 +1556,21 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             message: `${nextTrackToCache.title} cached`,
           });
           setCacheQueueVersion((v) => v + 1);
+          cacheRunFinishedRef.current += 1;
+          // Notification: one post per finished track, throttled by the
+          // notifier so a fast run does not spam the shade.
+          postCacheNotification(0, false);
+          // Keep the cache inside the user's storage budget: evict LRU
+          // entries, but never the track that is currently playing.
+          const nowPlayingId = activeTrackRef.current?.id;
+          void enforceAudioCacheBudget(
+            settings.audioCacheCapMb,
+            nowPlayingId ? [nowPlayingId] : [],
+          ).then((evicted) => {
+            if (evicted.length > 0) {
+              setCacheQueueVersion((v) => v + 1);
+            }
+          });
         } else if (
           !latestInfo.isDownloading &&
           !!streamUrl &&
@@ -1439,8 +1596,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       activeCacheTrackIdRef.current = null;
       isCacheQueueProcessingRef.current = false;
       manualDownloadRef.current = false;
+      // Drain or abort: nothing is being cached any more, so the "caching"
+      // notification must go. Leaving it behind is a notification describing
+      // work that has stopped.
+      cacheRunSeededRef.current = false;
+      void dismissCacheNotification();
     }
-  }, [resolveTrackStreamUrl, publishCacheInfo]);
+  }, [resolveTrackStreamUrl, publishCacheInfo, postCacheNotification, settings.audioCacheCapMb]);
 
   // Sync isPlayingRef so the cache queue can check it without depending
   // on the isPlaying state (which would re-create the callback).
@@ -1450,6 +1612,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   useEffect(() => {
     if (!settings.autoCacheLikedSongs) {
+      // Toggled off mid-run: the queue's own loop keeps draining, but the
+      // user just asked for auto-caching to stop — the system notification
+      // must not keep advertising work they switched off. (The remaining
+      // drains keep their toast/section feedback in Library.)
+      void dismissCacheNotification();
       return;
     }
 
@@ -1899,6 +2066,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
         // Set playlist context - true if we have a playlist with more than one track
         setIsInPlaylistContext(effectivePlaylist.length > 1);
+
+        // Persist the logical playlist so the app restores it after a cold start.
+        void savePlaybackSession(effectivePlaylist, effectiveIndex);
 
         // Add to previously played songs (only if it's from SoundCloud, YouTube, JioSaavn, or has identifying properties)
         if (
@@ -2431,6 +2601,26 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 // Feed the same verified-played delta to the scrobbler so
                 // paused/buffering time can never inflate a scrobble.
                 scrobblerService.recordProgress(deltaMs);
+                // #35: price the bytes at the bitrate this track's stream
+                // actually resolved to. When no resolver published one (the
+                // innertube and jiosaavn paths do; invidious/piped/omada and
+                // friends do not), fall back to the enforced cap instead of
+                // silently counting zero — a playing stream is never free.
+                // Fully cached/local files stay free: they consume no data.
+                const picked = pickedBitrateFor(statsTrack.id);
+                const isLocalFile = statsTrack.audioUrl?.startsWith("file://");
+                const kbps = picked > 0
+                  ? picked
+                  : isLocalFile
+                    ? 0
+                    : (currentCapKbps() ?? 0);
+                if (kbps > 0) {
+                  void recordDataUsage(
+                    (statsTrack as any).source ?? "unknown",
+                    kbps,
+                    deltaMs,
+                  );
+                }
                 if (shouldCountPlay)
                   statsPlayCountedRef.current = statsTrack.id;
               } else if (deltaMs <= 0) {
@@ -3157,6 +3347,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     currentPlaylistContextRef.current = [];
     setPlaylist([]);
     setCurrentIndex(0);
+    // User explicitly cleared playback — do not restore the old playlist
+    // on the next cold start.
+    void clearPlaybackSession();
     setShowFullPlayer(false);
     setIsPlaying(false);
     setIsLoading(false);

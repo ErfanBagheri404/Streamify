@@ -2,7 +2,7 @@
   "expo": {
     "newArchEnabled": false,
     "name": "Streamify",
-    "version": "2.31.00",
+    "version": "2.32.00",
     "slug": "streamify-mobile",
     "scheme": "streamify",
     "sdkVersion": "54.0.0",
@@ -30,7 +30,8 @@
         }
       ],
       "react-native-video",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-notifications"
     ],
     "android": {
       "package": "com.erfanbagheri.streamifymobile",
@@ -39,7 +40,8 @@
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.WAKE_LOCK",
         "android.permission.INTERNET",
-        "android.permission.ACCESS_NETWORK_STATE"
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "versionCode": 29
     },

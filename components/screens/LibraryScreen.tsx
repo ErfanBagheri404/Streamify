@@ -35,6 +35,7 @@ import { useAppLanguage } from "../../hooks/useAppLanguage";
 import { isLocalMediaSupported } from "../../modules/localMedia";
 import { useTheme, withOpacity } from "../../hooks/useTheme";
 import { PlaylistCreateModal } from "../PlaylistCreateModal";
+import { PlaylistImportSheet } from "../PlaylistImportSheet";
 import { sanitizeImageUrl } from "../core/image";
 import { getAppFontFamily, getTextDirectionStyle } from "../../utils/fonts";
 import { useAuth } from "../../hooks/useAuth";
@@ -381,6 +382,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   const [playlists, setPlaylists] = React.useState<Playlist[]>([]);
   const [showCreatePlaylistModal, setShowCreatePlaylistModal] =
     React.useState(false);
+  const [showImportPlaylistSheet, setShowImportPlaylistSheet] =
+    React.useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
   const [newPlaylistDescription, setNewPlaylistDescription] = useState("");
   const {
@@ -390,7 +393,6 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     getCacheInfo,
     cacheProgress,
     stopCachingAndUnlike,
-    startCacheQueue,
   } = usePlayer();
   const [downloadingTracks, setDownloadingTracks] = React.useState<
     { track: Track; percentage: number; status: "caching" | "queued" }[]
@@ -1462,19 +1464,13 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
               </HeaderIconButton>
             ) : null}
             <HeaderIconButton
-              disabled={!likedSongs.length}
-              onPress={() => {
-                startCacheQueue();
-              }}
-              style={{
-                marginStart: 6,
-                marginEnd: 6,
-                opacity: likedSongs.length === 0 ? 0.4 : 1,
-              }}
+              onPress={() => setShowImportPlaylistSheet(true)}
+              accessibilityLabel={t("library.importPlaylist")}
+              style={{ marginStart: 6, marginEnd: 6 }}
             >
               <HeaderIconText>
                 <Ionicons
-                  name="cloud-download-outline"
+                  name="download-outline"
                   size={20}
                   color={colors.foreground}
                 />
@@ -1936,6 +1932,14 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             )}
           </Animated.View>
         </Grid>
+
+        <PlaylistImportSheet
+          visible={showImportPlaylistSheet}
+          onClose={() => setShowImportPlaylistSheet(false)}
+          onImported={() => {
+            void loadPlaylists();
+          }}
+        />
 
         <PlaylistCreateModal
           visible={showCreatePlaylistModal}
