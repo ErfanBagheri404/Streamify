@@ -31,7 +31,8 @@
       ],
       "react-native-video",
       "expo-secure-store",
-      "expo-notifications"
+      "expo-notifications",
+      "./plugins/withEqualizer"
     ],
     "android": {
       "package": "com.erfanbagheri.streamifymobile",
