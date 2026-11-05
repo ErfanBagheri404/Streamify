@@ -293,6 +293,7 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
     albumArtist: routeArtist,
     source,
     href: routeHref,
+    type: routeType,
   } = route.params || {};
   const translateWithFallback = (key: string, fallback: string) => {
     const value = t(key);
@@ -302,7 +303,8 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
     source === "user-playlist" ||
     source === "youtube" ||
     source === "youtubemusic" ||
-    source === "soundcloud";
+    source === "soundcloud" ||
+    (source === "spotify" && routeType === "playlist");
   const collectionFallbackTitle = isPlaylistCollection
     ? translateWithFallback(
         "collection.collection",
@@ -418,7 +420,45 @@ export const AlbumPlaylistScreen: React.FC<AlbumPlaylistScreenProps> = ({
     try {
       setIsLoading(true);
 
-      if (source === "jiosaavn") {
+      if (source === "spotify") {
+        // Spotify album/playlist via the backend; entries are Spotify tracks
+        // matched to playable sources and play through normal resolution.
+        const kind = routeType === "playlist" ? "playlist" : "album";
+        const collection = await searchAPI.getSpotifyCollection(
+          String(albumId),
+          kind,
+        );
+
+        if (collection && collection.entries.length > 0) {
+          const songs = collection.entries.map((entry: any) => ({
+            id: String(entry.id || entry.spotifyId || ""),
+            title: entry.title || entry.name || "Unknown Title",
+            artist: entry.artist || entry.subtitle || routeArtist || "",
+            duration: entry.duration || 0,
+            thumbnail: entry.thumbnailUrl || "",
+            source: "spotify",
+            _isJioSaavn: false,
+            albumId: String(albumId),
+            albumName: albumName,
+            url: entry.url || "",
+          }));
+
+          setAlbumSongs(songs);
+          setAlbumTitle(collection.collection?.title || albumName);
+          setAlbumArtist(
+            collection.collection?.author || routeArtist || "Various Artists",
+          );
+          setAlbumArtUrl(
+            collection.collection?.thumbnailUrl || songs[0]?.thumbnail || "",
+          );
+        } else {
+          setAlbumSongs([]);
+          setAlbumTitle(albumName);
+          setAlbumArtist(routeArtist || "Unknown Artist");
+          setAlbumArtUrl("");
+          setErrorMessage("Failed to load Spotify album");
+        }
+      } else if (source === "jiosaavn") {
         const albumDetails = await searchAPI.getJioSaavnAlbumDetails(
           String(albumId),
           albumName,
