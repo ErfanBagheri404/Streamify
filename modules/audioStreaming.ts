@@ -25,7 +25,17 @@ import {
   getProviderEndpoints,
 } from "../lib/provider-endpoints";
 import { getRuntimeServiceConfig } from "../lib/runtime-services";
-import { fetchBackendRoute, getBackendBaseUrls } from "../lib/backend-api";
+import {
+  fetchBackendRoute,
+  getBackendBaseUrls,
+} from "../lib/backend-api";
+import {
+  bpsToKbps,
+  currentCapKbps,
+  notePickedBitrate,
+  parseJioSaavnQualityKbps,
+  pickCandidateByCap,
+} from "./audioQualityPolicy";
 import { resolveInnertubeStream, type InnertubeStream } from "./innertube";
 
 /**
@@ -471,6 +481,8 @@ export class AudioStreamManager {
   // Track information for better SoundCloud searching
   private currentTrackTitle?: string;
   private currentTrackArtist?: string;
+  /** #35: the id whose stream we are resolving — keys the byte counter. */
+  private currentTrackId?: string;
 
   // SoundCloud stream cache (1MB pre-buffering)
   private soundCloudCache: Map<string, string> = new Map();
@@ -4715,7 +4727,9 @@ export class AudioStreamManager {
     // native TrackPlayer. Keep those on the legacy direct-CDN path instead.
     if (
       !backendSource ||
-      !["youtube", "youtubemusic", "soundcloud"].includes(backendSource)
+      !["youtube", "youtubemusic", "soundcloud", "spotify"].includes(
+        backendSource,
+      )
     ) {
       return null;
     }
@@ -4789,6 +4803,12 @@ export class AudioStreamManager {
         return this.lastBackendDrm;
       }
 
+      // NOTE: the Spotify route returns the backend audio-proxy URL
+      // (origin-gated). TrackPlayer CAN play it — for any backend-proxied
+      // URL it sends the web player Origin/Referer — and routing through the
+      // backend avoids the direct-CDN timeouts some networks hit. The URL
+      // falls through to lastBackendDrm below unchanged.
+
       this.lastBackendDrm = { audioUrl, audioType };
       return this.lastBackendDrm;
     } catch (error) {
@@ -4811,6 +4831,7 @@ export class AudioStreamManager {
     // Store track information for better SoundCloud searching
     this.currentTrackTitle = trackTitle;
     this.currentTrackArtist = trackArtist;
+    this.currentTrackId = videoId;
 
     console.log("[AudioStreamManager] getAudioUrl called with:", {
       videoId,
@@ -5036,6 +5057,39 @@ export class AudioStreamManager {
           ? "Track is not playable from this source"
           : "All YouTube strategies failed",
       );
+    }
+
+    // --- SPOTIFY HANDLING (backend /video route, direct CDN playback) ---
+    if (source === "spotify") {
+      onStatusUpdate?.("Using Spotify strategy");
+      console.log(`[AudioStreamManager] Spotify mode activated: ${videoId}`);
+      try {
+        const backendAudioUrl = await this.tryBackendPlaybackRoute(
+          videoId,
+          source,
+          options,
+        );
+        if (backendAudioUrl) {
+          return backendAudioUrl.audioUrl;
+        }
+      } catch (error) {
+        console.error(
+          "[AudioStreamManager] Spotify backend route failed:",
+          error,
+        );
+      }
+
+      // Fallback: match the track on JioSaavn by title/artist (the Spotify
+      // catalog mirrors it, so an exact match usually exists).
+      const jioSaavnUrl = await this.tryJioSaavnExactMatch(
+        this.currentTrackTitle,
+        this.currentTrackArtist,
+      );
+      if (jioSaavnUrl) {
+        return jioSaavnUrl;
+      }
+
+      throw new Error("Spotify track could not be resolved");
     }
 
     // --- JIOSAAVN HANDLING (exclusive - no fallbacks) ---
@@ -5478,6 +5532,7 @@ export class AudioStreamManager {
 
   private extractJioSaavnAudioUrl(payload: unknown): string | null {
     const records = this.getJioSaavnRecords(payload);
+    const id = this.currentTrackId;
 
     for (const record of records) {
       const downloadCandidates = [
@@ -5489,36 +5544,35 @@ export class AudioStreamManager {
       ].find((value) => Array.isArray(value));
 
       if (Array.isArray(downloadCandidates)) {
-        const best = [...downloadCandidates]
+        // #35: score every entry, then pick through the shared cap-aware
+        // picker instead of "sort descending, take first". With no cap this
+        // is identical to the old behavior.
+        const scored = downloadCandidates
           .map((entry) => (entry && typeof entry === "object" ? entry : {}))
-          .sort((a: any, b: any) => {
-            const score = (value: unknown) => {
-              if (typeof value === "number" && Number.isFinite(value)) {
-                return value;
-              }
-              if (typeof value === "string") {
-                const match = value.match(/(\d+)/);
-                if (match) return Number(match[1]);
-              }
-              return 0;
-            };
-
-            return (
-              score(b.quality || b.bitrate || b.kbps) -
-              score(a.quality || a.bitrate || a.kbps)
-            );
-          })
-          .map(
-            (entry: any) =>
+          .map((entry: any) => {
+            const raw =
+              entry.quality || entry.bitrate || entry.kbps;
+            const bitrateKbps =
+              typeof raw === "number"
+                ? raw
+                : parseJioSaavnQualityKbps(raw);
+            const url =
               entry.url ||
               entry.link ||
               entry.downloadUrl ||
-              entry.download_url,
-          )
-          .find(Boolean);
+              entry.download_url;
+            return { entry, bitrateKbps, url };
+          })
+          .filter((candidate) => Boolean(candidate.url));
 
-        if (best) {
-          return String(best).replace("http:", "https:");
+        const picked = pickCandidateByCap(scored, currentCapKbps());
+
+        if (picked) {
+          // #35: publish the bitrate actually chosen for the byte counter.
+          if (id) {
+            notePickedBitrate(id, picked.bitrateKbps);
+          }
+          return String(picked.url).replace("http:", "https:");
         }
       }
 
@@ -8236,4 +8290,75 @@ export async function clearAudioCacheForTrack(trackId: string): Promise<void> {
     index.totalBytes = nextTotal;
     await saveAudioCacheIndex(index);
   }
+}
+
+/**
+ * Cache inventory for the storage budget (#31), read straight from the
+ * index the download loop already maintains. A corrupt entry is treated as
+ * absent rather than poisoning the total.
+ */
+export async function listCacheEntriesForBudget(): Promise<
+  Array<{
+    trackId: string;
+    sizeBytes: number;
+    lastUsedAt: number;
+    isFullyCached: boolean;
+    isDownloading: boolean;
+  }>
+> {
+  const index = await loadAudioCacheIndex();
+  return Object.values(index.entries)
+    .filter((entry) => entry && typeof entry.trackId === "string")
+    .map((entry) => ({
+      trackId: entry.trackId,
+      sizeBytes: Math.max(0, entry.sizeBytes || 0),
+      lastUsedAt: entry.lastUsedAt || entry.updatedAt || 0,
+      isFullyCached: !!entry.isFullyCached,
+      isDownloading: !!entry.isDownloading,
+    }));
+}
+
+/**
+ * Current cache usage in bytes. Recomputed from entries rather than trusting
+ * `index.totalBytes`, which drifts whenever a download is interrupted
+ * mid-write.
+ */
+export async function getAudioCacheUsageBytes(): Promise<number> {
+  const entries = await listCacheEntriesForBudget();
+  return entries.reduce((sum, entry) => sum + entry.sizeBytes, 0);
+}
+
+/**
+ * Enforces the storage cap: evicts LRU entries until the cache fits, skipping
+ * pinned ids and in-flight downloads. Returns the ids it actually removed.
+ *
+ * Call after a download completes, not on a timer — a scheduled sweep would
+ * delete files while the queue is still filling the cache it just measured.
+ */
+export async function enforceAudioCacheBudget(
+  capMb: number,
+  pinnedTrackIds: Iterable<string> = [],
+): Promise<string[]> {
+  const { planCacheEviction } = await import("./cacheBudget");
+
+  const entries = await listCacheEntriesForBudget();
+  const plan = planCacheEviction(entries, capMb, pinnedTrackIds);
+  if (!plan.overBudget || plan.evict.length === 0) {
+    return [];
+  }
+
+  const evicted: string[] = [];
+  for (const entry of plan.evict) {
+    try {
+      await clearAudioCacheForTrack(entry.trackId);
+      evicted.push(entry.trackId);
+    } catch (error) {
+      // One undeletable file must not abort the sweep; the next pass retries.
+      console.warn(
+        `[Audio] Cache eviction skipped for ${entry.trackId}:`,
+        error,
+      );
+    }
+  }
+  return evicted;
 }

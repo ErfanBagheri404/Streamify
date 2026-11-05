@@ -18,6 +18,7 @@ import { useAppLanguage } from "../../hooks/useAppLanguage";
 import { useTheme, withOpacity } from "../../hooks/useTheme";
 import { getAppFontFamily, getTextDirectionStyle } from "../../utils/fonts";
 import { fetchWithRetry } from "../core/api";
+import { searchAPI } from "../../modules/searchAPI";
 import {
   buildProviderUrlCandidates,
   getProviderEndpoints,
@@ -39,7 +40,7 @@ interface ArtistScreenProps {
   route: any;
 }
 
-type ArtistSource = "youtube" | "jiosaavn";
+type ArtistSource = "youtube" | "jiosaavn" | "spotify";
 
 interface Artist {
   id: string;
@@ -523,6 +524,9 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
     [artistId],
   );
   const resolvedSource = useMemo<ArtistSource>(() => {
+    if (routeSource === "spotify") {
+      return "spotify";
+    }
     if (routeSource === "jiosaavn") {
       return "jiosaavn";
     }
@@ -639,6 +643,56 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ navigation, route }) => {
     try {
       setLoading(true);
       setError(null);
+
+      if (resolvedSource === "spotify") {
+        const spotifyArtistId = String(artistId || "");
+        if (!spotifyArtistId) {
+          throw new Error("Missing artist id");
+        }
+
+        const payload = await searchAPI.getSpotifyArtist(spotifyArtistId);
+        if (!payload || !payload.artist) {
+          throw new Error("Failed to load Spotify artist");
+        }
+
+        const artistCore = payload.artist;
+        const nextArtist: Artist = {
+          id: safeString(artistCore.id) || spotifyArtistId,
+          name:
+            safeString(artistCore.name).trim() ||
+            String(artistName || "Artist"),
+          image: safeString(artistCore.image) || String(artistImage || ""),
+          banner:
+            safeString(artistCore.banner) ||
+            safeString(artistCore.image) ||
+            String(artistImage || ""),
+          monthlyListeners: 0,
+          verified: false,
+          description: "",
+          source: "spotify",
+          url: safeString(artistCore.url),
+        };
+
+        const nextSongs: Song[] = payload.songs
+          .map((entry: any) => ({
+            id: String(entry.id || entry.spotifyId || ""),
+            title: safeString(entry.title || entry.name) || "Unknown Title",
+            thumbnail: safeString(entry.thumbnail || entry.thumbnailUrl),
+            playCount: 0,
+            duration: safeNumber(entry.duration),
+            artist: safeString(entry.artist) || nextArtist.name,
+            url: safeString(entry.url),
+            source: "spotify" as ArtistSource,
+            _isJioSaavn: false,
+          }))
+          .filter((song) => Boolean(song.id));
+
+        setArtistData(nextArtist);
+        setPopularSongs(nextSongs);
+        setAlbums([]);
+        setPlaylists([]);
+        return;
+      }
 
       if (resolvedSource === "youtube") {
         const channelId = normalizedArtistId || String(artistId || "");

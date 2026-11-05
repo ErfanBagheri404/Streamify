@@ -35,6 +35,8 @@ import { useAppLanguage } from "../../hooks/useAppLanguage";
 import { isLocalMediaSupported } from "../../modules/localMedia";
 import { useTheme, withOpacity } from "../../hooks/useTheme";
 import { PlaylistCreateModal } from "../PlaylistCreateModal";
+import { PlaylistImportSheet } from "../PlaylistImportSheet";
+import { AI_MIX_ID } from "../../modules/aiMixPlaylist";
 import { sanitizeImageUrl } from "../core/image";
 import { getAppFontFamily, getTextDirectionStyle } from "../../utils/fonts";
 import { useAuth } from "../../hooks/useAuth";
@@ -262,7 +264,8 @@ type LibraryArtworkKind =
   | "playlist"
   | "image"
   | "artist"
-  | "local";
+  | "local"
+  | "aiMix";
 
 type LibraryDisplayItem = {
   id: string;
@@ -381,6 +384,8 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
   const [playlists, setPlaylists] = React.useState<Playlist[]>([]);
   const [showCreatePlaylistModal, setShowCreatePlaylistModal] =
     React.useState(false);
+  const [showImportPlaylistSheet, setShowImportPlaylistSheet] =
+    React.useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
   const [newPlaylistDescription, setNewPlaylistDescription] = useState("");
   const {
@@ -390,7 +395,6 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
     getCacheInfo,
     cacheProgress,
     stopCachingAndUnlike,
-    startCacheQueue,
   } = usePlayer();
   const [downloadingTracks, setDownloadingTracks] = React.useState<
     { track: Track; percentage: number; status: "caching" | "queued" }[]
@@ -1051,6 +1055,7 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
       },
       ...playlists.map((playlist) => {
         const artworkUri = getPlaylistArtworkUri(playlist);
+        const isAiMix = playlist.id === AI_MIX_ID;
         return {
           id: playlist.id,
           title: playlist.name,
@@ -1069,8 +1074,15 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
           ]
             .filter(Boolean)
             .join(" "),
-          artworkKind: artworkUri ? ("image" as const) : ("playlist" as const),
+          // The AI Mix is generated, not imported: it gets the sparkles tile
+          // and stays pinned after Local files instead of the folder artwork.
+          artworkKind: artworkUri
+            ? ("image" as const)
+            : isAiMix
+              ? ("aiMix" as const)
+              : ("playlist" as const),
           imageUri: artworkUri,
+          ...(isAiMix ? { pinOrder: 4 } : {}),
           onPress: () => handleUserPlaylistPress(playlist),
         };
       }),
@@ -1315,11 +1327,13 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
                 ? ["#f43f5e", "#a21caf", "#4f46e5"]
                 : item.artworkKind === "local"
                   ? ["#059669", "#10b981", "#34d399"]
-                  : item.artworkKind === "artist"
-                    ? [colors.surface1, colors.surface2, colors.surface3]
-                    : item.artworkKind === "playlist"
-                      ? [colors.accent, colors.heroMid, colors.heroEnd]
-                      : ["#1a1a1a", "#404040", "#525252"]
+                  : item.artworkKind === "aiMix"
+                    ? [colors.accent, "#a855f7", "#22d3ee"]
+                    : item.artworkKind === "artist"
+                      ? [colors.surface1, colors.surface2, colors.surface3]
+                      : item.artworkKind === "playlist"
+                        ? [colors.accent, colors.heroMid, colors.heroEnd]
+                        : ["#1a1a1a", "#404040", "#525252"]
           }
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -1331,7 +1345,13 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             },
           ]}
         >
-          {item.artworkKind === "playlist" ? (
+          {item.artworkKind === "aiMix" ? (
+            <Ionicons
+              name="sparkles"
+              size={iconSize}
+              color={colors.accentContrast}
+            />
+          ) : item.artworkKind === "playlist" ? (
             <Ionicons
               name="folder-open-outline"
               size={iconSize}
@@ -1462,19 +1482,13 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
               </HeaderIconButton>
             ) : null}
             <HeaderIconButton
-              disabled={!likedSongs.length}
-              onPress={() => {
-                startCacheQueue();
-              }}
-              style={{
-                marginStart: 6,
-                marginEnd: 6,
-                opacity: likedSongs.length === 0 ? 0.4 : 1,
-              }}
+              onPress={() => setShowImportPlaylistSheet(true)}
+              accessibilityLabel={t("library.importPlaylist")}
+              style={{ marginStart: 6, marginEnd: 6 }}
             >
               <HeaderIconText>
                 <Ionicons
-                  name="cloud-download-outline"
+                  name="download-outline"
                   size={20}
                   color={colors.foreground}
                 />
@@ -1936,6 +1950,14 @@ export default function LibraryScreen({ navigation }: { navigation: any }) {
             )}
           </Animated.View>
         </Grid>
+
+        <PlaylistImportSheet
+          visible={showImportPlaylistSheet}
+          onClose={() => setShowImportPlaylistSheet(false)}
+          onImported={() => {
+            void loadPlaylists();
+          }}
+        />
 
         <PlaylistCreateModal
           visible={showCreatePlaylistModal}
