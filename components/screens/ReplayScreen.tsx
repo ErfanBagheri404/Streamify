@@ -24,10 +24,17 @@ import styled from "styled-components/native";
 import { useTheme, withOpacity } from "../../hooks/useTheme";
 import { useAppLanguage } from "../../hooks/useAppLanguage";
 import {
+  loadMemoryMonths,
   loadReplaySummary,
   type ReplayPeriod,
   type ReplaySummary,
 } from "../../utils/listeningStats";
+import {
+  findYearlyMemories,
+  historySpansAYear,
+  yearsAgoLabel,
+  type YearlyMemory,
+} from "../../modules/memories";
 import { playHaptic, Haptic } from "../../utils/haptics";
 import { usePlayer } from "../../contexts/PlayerContext";
 
@@ -176,17 +183,33 @@ const PERIODS: Array<{ key: ReplayPeriod; labelKey: string }> = [
 export const ReplayScreen: React.FC = () => {
   const navigation = useNavigation();
   const { colors } = useTheme();
-  const { t, isRtl } = useAppLanguage();
+  const { t, isRtl, language } = useAppLanguage();
   const insets = useSafeAreaInsets();
   const [period, setPeriod] = useState<ReplayPeriod>("month");
   const [summary, setSummary] = useState<ReplaySummary | null>(null);
   const [loading, setLoading] = useState(true);
+  /**
+   * Yearly throwbacks, loaded alongside the summary so the section never lags
+   * behind the period chips. Empty for young histories; `undefined` only before
+   * the first load, so "no memories yet" is a deliberate state, not a default.
+   */
+  const [memories, setMemories] = useState<YearlyMemory[] | undefined>(undefined);
 
   const load = useCallback(async (p: ReplayPeriod) => {
     setLoading(true);
     try {
-      const s = await loadReplaySummary(p);
+      const [s, months] = await Promise.all([
+        loadReplaySummary(p),
+        loadMemoryMonths(),
+      ]);
       setSummary(s);
+      // A history younger than a year has no possible "year ago" — resolving to
+      // [] hides the Memories section instead of showing an empty one.
+      setMemories(
+        historySpansAYear(months, new Date())
+          ? findYearlyMemories(months, new Date())
+          : [],
+      );
     } finally {
       setLoading(false);
     }
@@ -270,6 +293,18 @@ export const ReplayScreen: React.FC = () => {
     [playTrack],
   );
 
+  // A memory's era-top list becomes a playable queue through the same path as
+  // the Replay charts: the memory tracks carry artwork and ids, so turning
+  // the whole memory into a queue replays the era.
+  const handleMemoryPlay = useCallback(
+    async (memory: YearlyMemory) => {
+      if (memory.tracks.length === 0) return;
+      playHaptic(Haptic.Select);
+      await playTrack(memory.tracks[0], memory.tracks, 0);
+    },
+    [playTrack],
+  );
+
   return (
     <Container theme={colors}>
       <View style={{ paddingTop: insets.top, backgroundColor: colors.background }}>
@@ -342,6 +377,64 @@ export const ReplayScreen: React.FC = () => {
                 <ClockLabel theme={colors}>18</ClockLabel>
                 <ClockLabel theme={colors}>23</ClockLabel>
               </ClockLabels>
+
+              {(memories ?? []).length > 0 ? (
+                <>
+                  <SectionTitle theme={colors}>
+                    {t("replay.memories")}
+                  </SectionTitle>
+                  {(memories ?? []).map((memory) => (
+                    <View key={memory.id}>
+                      <TouchableOpacity
+                        onPress={() => void handleMemoryPlay(memory)}
+                        style={{
+                          flexDirection: isRtl ? "row-reverse" : "row",
+                          alignItems: "center",
+                          marginHorizontal: 16,
+                          marginBottom: 8,
+                          padding: 14,
+                          borderRadius: 16,
+                          backgroundColor: colors.surface1,
+                          borderWidth: 1,
+                          borderColor: colors.borderSubtle,
+                        }}
+                      >
+                        <Ionicons
+                          name="calendar-outline"
+                          size={26}
+                          color={colors.accent}
+                          style={{ marginRight: isRtl ? 0 : 12, marginLeft: isRtl ? 12 : 0 }}
+                        />
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            numberOfLines={1}
+                            style={{
+                              color: colors.foreground,
+                              fontWeight: "700",
+                              fontSize: 16,
+                              fontFamily: getAppFontFamily(isRtl, "semibold"),
+                              ...getTextDirectionStyle(isRtl),
+                            }}
+                          >
+                            {yearsAgoLabel(memory.yearsAgo, language)}
+                          </Text>
+                          <StatSub theme={colors}>
+                            {formatMs(memory.listenedMs)} ·{" "}
+                            {memory.tracks[0]
+                              ? `${memory.tracks[0].title}${memory.tracks[0].artist ? ` — ${memory.tracks[0].artist}` : ""}`
+                              : t("replay.empty")}
+                          </StatSub>
+                        </View>
+                        <Ionicons
+                          name="play"
+                          size={20}
+                          color={colors.foreground}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </>
+              ) : null}
 
               <SectionTitle theme={colors}>{t("replay.topArtists")}</SectionTitle>
               {(summary?.topArtists ?? []).slice(0, 10).map((a, i) => (

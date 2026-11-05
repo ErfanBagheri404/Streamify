@@ -409,5 +409,64 @@ export async function loadReplaySummary(period: ReplayPeriod): Promise<ReplaySum
   };
 }
 
+/**
+ * Every bucket on disk, for callers that need whole-month history rather than
+ * a display summary. Same read path as `loadReplaySummary` minus the flush:
+ * memories are read on screen mount, and forcing a flush there would write on
+ * a screen the user may only be passing through.
+ */
+export async function loadMemoryMonths(): Promise<
+  Array<{
+    month: string;
+    tracks: Array<{
+      id: string;
+      title: string;
+      artist?: string;
+      art?: string | null;
+      ms: number;
+      plays: number;
+    }>;
+    artists: Array<{ name: string; art?: string | null; ms: number; plays: number }>;
+    days: Record<string, number>;
+  }>
+> {
+  const months = await listMonths();
+  const out: Array<{
+    month: string;
+    tracks: Array<{
+      id: string;
+      title: string;
+      artist?: string;
+      art?: string | null;
+      ms: number;
+      plays: number;
+    }>;
+    artists: Array<{ name: string; art?: string | null; ms: number; plays: number }>;
+    days: Record<string, number>;
+  }> = [];
+  for (const month of months) {
+    const bucket = (await readBucket(month)) ?? emptyBucket(month);
+    out.push({
+      month: bucket.month,
+      tracks: bucket.tracks.map((track) => ({
+        id: track.id,
+        title: track.title,
+        artist: track.artist,
+        art: track.art,
+        ms: track.ms,
+        plays: track.plays,
+      })),
+      artists: bucket.artists.map((artist) => ({
+        name: artist.name,
+        art: artist.art,
+        ms: artist.ms,
+        plays: artist.plays,
+      })),
+      days: bucket.days ?? {},
+    });
+  }
+  return out;
+}
+
 /** The play-count threshold a caller watching a track should use. */
 export const PLAY_COUNT_THRESHOLD_MS = PLAY_THRESHOLD_MS;
