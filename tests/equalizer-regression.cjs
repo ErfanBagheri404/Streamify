@@ -161,7 +161,8 @@ check("wrapper no-ops on non-Android platforms", async () => {
 // --- settings plumbing ----------------------------------------------------
 
 check("equalizerEnabled is declared, defaulted false and sanitized", async () => {
-  const s = loadModule("lib/app-settings.ts", {});
+  const cacheBudget = loadModule("modules/cacheBudget.ts", {});
+  const s = loadModule("lib/app-settings.ts", { "../modules/cacheBudget": cacheBudget });
   assert.equal(s.DEFAULT_APP_SETTINGS.equalizerEnabled, false);
   assert.equal(s.sanitizeAppSettings({}).equalizerEnabled, false);
   assert.equal(s.sanitizeAppSettings({ equalizerEnabled: true }).equalizerEnabled, true);
