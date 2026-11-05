@@ -57,6 +57,7 @@ import { initializeDynamicInstances } from "./components/core/api";
 import { MiniPlayer } from "./components/MiniPlayer";
 import { FullPlayerModal } from "./components/FullPlayerModal";
 import { CloudLibraryBridge } from "./components/CloudLibraryBridge";
+import { AlarmBridge } from "./components/AlarmBridge";
 import { useAppLanguage } from "./hooks/useAppLanguage";
 import { getAppFontFamily } from "./utils/fonts";
 import {
@@ -714,6 +715,7 @@ function AppContent() {
                   <PlaybackPreferenceBridge />
                   <NetworkQualityBridge />
                   <GlobalTextDefaultsBridge />
+                  <AlarmBridge />
                   <AppShell />
                 </PlayerProvider>
               </AppUpdateProvider>

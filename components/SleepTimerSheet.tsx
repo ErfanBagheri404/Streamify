@@ -18,6 +18,7 @@ import {
   sleepTimerService,
   useSleepTimerStore,
 } from "../services/SleepTimerService";
+import { AlarmList } from "./AlarmList";
 
 interface SleepTimerSheetProps {
   visible: boolean;
@@ -229,6 +230,8 @@ export const SleepTimerSheet: React.FC<SleepTimerSheetProps> = ({ visible, onClo
             color={withOpacity(colors.foreground, 0.6)}
           />
         </EndOfTrackRow>
+
+        <AlarmList />
       </SheetBody>
     </SheetModal>
   );
