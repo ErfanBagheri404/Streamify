@@ -14,6 +14,8 @@
     "plugins": [
       "expo-font",
       "expo-task-manager",
+      "./plugins/withVideoCacheFlatDir",
+      "./plugins/withStreamifyWidget",
       [
         "expo-build-properties",
         {
