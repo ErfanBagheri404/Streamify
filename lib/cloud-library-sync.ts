@@ -676,6 +676,18 @@ function mergePlaylistSnapshotWithBase(
     return localPlaylist || basePlaylist || null;
   }
 
+  // The cloud push is a full replace (delete-then-insert), so a GET can
+  // legitimately observe a playlist with no tracks. Reading that as "deleted
+  // on another device" wipes songs that still exist locally, and saving the
+  // merged result makes the loss permanent (the push guard runs after
+  // restoreCloudLibrary has already written the emptied playlist).
+  // An empty remote never deletes: keep local songs in that case.
+  const baseSongs = basePlaylist?.songs || [];
+  const remoteSongs =
+    remotePlaylist.songs.length === 0 && baseSongs.length > 0
+      ? localPlaylist.songs
+      : remotePlaylist.songs;
+
   return {
     id: localPlaylist.id,
     name: chooseScalarValue(
@@ -694,9 +706,9 @@ function mergePlaylistSnapshotWithBase(
       remotePlaylist.createdAt,
     ),
     songs: mergeTrackRefsWithBase(
-      basePlaylist?.songs || [],
+      baseSongs,
       localPlaylist.songs,
-      remotePlaylist.songs,
+      remoteSongs,
     ),
   };
 }
